@@ -342,14 +342,12 @@ export function refreshDropdownOptions<T extends TabItem>(
 ): void {
 	const currentValue = dropdown.getValue();
 	const selectEl = dropdown.selectEl;
-	selectEl.innerHTML = '';
+	selectEl.empty();
 
 	for (const item of items) {
 		const label = getLabel ? getLabel(item) : (item.name || 'Unnamed');
-		const opt = document.createElement('option');
+		const opt = selectEl.createEl('option', { text: label });
 		opt.value = item.id;
-		opt.textContent = label;
-		selectEl.appendChild(opt);
 	}
 
 	// Restore selection if the value still exists

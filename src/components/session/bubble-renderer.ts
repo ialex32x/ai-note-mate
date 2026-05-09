@@ -597,7 +597,9 @@ export class BubbleRenderer extends Component {
                 : 'session-bubble__thinking-header',
             attr: { 'aria-label': t('view.toggleThinking'), role: 'button', tabindex: '0' },
         });
-        header.innerHTML = `<span class="session-bubble__thinking-arrow">${arrow}</span> <span class="session-bubble__thinking-summary">${summaryText}</span>`;
+        header.createEl('span', { cls: 'session-bubble__thinking-arrow', text: arrow });
+        header.appendText(' ');
+        header.createEl('span', { cls: 'session-bubble__thinking-summary', text: summaryText });
 
         const body = wrapper.createEl('div', {
             cls: startExpanded
@@ -664,7 +666,12 @@ export class BubbleRenderer extends Component {
             },
         });
         const arrow = previouslyExpanded ? '▾' : '▸';
-        header.innerHTML = `<span class="session-bubble__subagent-reply-arrow">${arrow}</span> <span class="session-bubble__subagent-reply-summary">${t('view.subAgentReplySummary', { agent: agentLabel })}</span>`;
+        header.createEl('span', { cls: 'session-bubble__subagent-reply-arrow', text: arrow });
+        header.appendText(' ');
+        header.createEl('span', {
+            cls: 'session-bubble__subagent-reply-summary',
+            text: t('view.subAgentReplySummary', { agent: agentLabel }),
+        });
 
         // Replace the pre-created contentEl with a body wrapper that contains it.
         contentEl.addClass('session-bubble__subagent-reply-body');
@@ -1243,7 +1250,7 @@ export class BubbleRenderer extends Component {
         utterance.onend = () => this.resetSpeakButton();
         utterance.onerror = () => this.resetSpeakButton();
 
-        btn.innerHTML = '';
+        btn.empty();
         setIcon(btn, BubbleRenderer.STOP_ICON_NAME);
         btn.classList.add('session-bubble__action-btn--speaking');
         this.speakingBtn = btn;
@@ -1344,7 +1351,7 @@ export class BubbleRenderer extends Component {
 
     resetSpeakButton(): void {
         if (this.speakingBtn) {
-            this.speakingBtn.innerHTML = '';
+            this.speakingBtn.empty();
             setIcon(this.speakingBtn, BubbleRenderer.SPEAK_ICON_NAME);
             this.speakingBtn.classList.remove('session-bubble__action-btn--speaking');
         }

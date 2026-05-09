@@ -385,7 +385,6 @@ export class ProfileSettingsSection implements SettingsSection {
 			return;
 		}
 
-		const originalIcon = btnEl.querySelector('svg')?.outerHTML;
 		setIcon(btnEl, 'loader-2');
 		btnEl.classList.add('oap-spin');
 		btnEl.disabled = true;
@@ -406,11 +405,7 @@ export class ProfileSettingsSection implements SettingsSection {
 			new Notice(t('settings.refreshModelsFailed'));
 		} finally {
 			btnEl.classList.remove('oap-spin');
-			if (originalIcon) {
-				btnEl.innerHTML = originalIcon;
-			} else {
-				setIcon(btnEl, 'refresh-cw');
-			}
+			setIcon(btnEl, 'refresh-cw');
 			btnEl.disabled = false;
 		}
 	}
