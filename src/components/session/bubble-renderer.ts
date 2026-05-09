@@ -36,6 +36,27 @@ export class BubbleRenderer extends Component {
      */
     private streamingControllers = new Map<string, StreamingMarkdownController>();
 
+    /**
+     * Lazily-created floating layer mounted inside `dropdownHost`. Acts as the
+     * positioned ancestor (containing block) for absolute-positioned popups
+     * such as the voice picker and tool-confirm dropdowns.
+     *
+     * Why a dedicated layer instead of mounting popups directly on the host:
+     * - We don't want to mutate the host's `position`/style (the host is owned
+     *   by the view and may be Obsidian's `containerEl`).
+     * - `position: fixed` would also work, but its containing block can be
+     *   hijacked by any ancestor with `transform`/`filter`/`contain`/
+     *   `will-change`, which Obsidian and themes occasionally apply — that
+     *   silently breaks viewport-based coordinates and pushes popups off
+     *   screen. Anchoring to our own positioned layer avoids that class of
+     *   bug entirely.
+     *
+     * The layer itself has zero footprint (`position: relative` with no size)
+     * and is `pointer-events: none`; child popups opt back into pointer events
+     * via the standard `.session-dropdown-menu` styles.
+     */
+    private floatingLayer: HTMLElement | null = null;
+
     constructor(
         private app: App,
         private onScrollNeeded: () => void,
@@ -49,9 +70,49 @@ export class BubbleRenderer extends Component {
          * When omitted, the action button is not rendered (the feature
          * gracefully degrades for renderer hosts that haven't opted in).
          */
-        private onExtractInsights?: (msg: ChatMessage) => void
+        private onExtractInsights?: (msg: ChatMessage) => void,
+        /**
+         * Mount point for floating UI (e.g. the tool-confirm and voice
+         * dropdowns) that must escape its bubble's clipping ancestors. When
+         * omitted, falls back to `document.body` to preserve legacy behavior.
+         *
+         * Hosts should pass the view's container (e.g. `ItemView.containerEl`)
+         * so floating elements are scoped to the view and get cleaned up
+         * naturally when the view is detached. The renderer creates its own
+         * positioned `session-floating-layer` inside this host, which acts
+         * as the containing block for anchored popups — this avoids relying
+         * on `position: fixed` (whose containing block can be hijacked by
+         * ancestors with transform/filter/contain).
+         */
+        private dropdownHost: HTMLElement = document.body,
     ) {
         super();
+    }
+
+    /** Returns the host element used to mount floating UI. */
+    getDropdownHost(): HTMLElement {
+        return this.dropdownHost;
+    }
+
+    /**
+     * Get (or lazily create) the floating layer used as the positioned
+     * containing block for anchored popups. Mounted as a child of
+     * `dropdownHost` so it shares the host's lifecycle.
+     */
+    private getFloatingLayer(): HTMLElement {
+        if (!this.floatingLayer || !this.floatingLayer.isConnected) {
+            this.floatingLayer = this.dropdownHost.createEl('div', {
+                cls: 'session-floating-layer',
+            });
+            // Make sure the layer is removed when the renderer unloads, even
+            // if the host outlives us (e.g. host is a long-lived containerEl
+            // and the renderer is recreated across session switches).
+            this.register(() => {
+                this.floatingLayer?.remove();
+                this.floatingLayer = null;
+            });
+        }
+        return this.floatingLayer;
     }
 
     /**
@@ -758,8 +819,9 @@ export class BubbleRenderer extends Component {
     /**
      * Render speak button with voice picker.
      *
-     * The voice dropdown is lazily created on first open and lives in
-     * `document.body` (to escape bubble overflow/stacking contexts). While
+     * The voice dropdown is lazily created on first open and lives in the
+     * renderer's floating layer (a positioned child of `dropdownHost`) to
+     * escape bubble overflow/stacking contexts. While
      * open, the host bubble gets a `--actions-pinned` modifier so the action
      * bar remains visible even when the pointer hovers the dropdown itself
      * (which lies outside the bubble and would otherwise end the :hover
@@ -783,7 +845,7 @@ export class BubbleRenderer extends Component {
         setIcon(voicePickerBtn, 'chevron-down');
 
         // Lazily created on first open; torn down on close to avoid leaking
-        // detached dropdowns into document.body across bubble re-renders.
+        // detached dropdowns into the host element across bubble re-renders.
         let voiceDropdown: HTMLElement | null = null;
         let outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
         let voicesChangedHandler: (() => void) | null = null;
@@ -844,10 +906,15 @@ export class BubbleRenderer extends Component {
         };
 
         const openVoiceDropdown = () => {
-            // Fresh element each open — keeps document.body clean and avoids
-            // stale state accumulating across bubble re-renders.
-            voiceDropdown = document.body.createEl('div', {
-                cls: 'session-dropdown-menu session-dropdown-menu--fixed session-bubble__voice-dropdown',
+            // Fresh element each open — keeps the floating layer clean and
+            // avoids stale state accumulating across bubble re-renders.
+            // Mounted on the renderer's floating layer (a positioned child of
+            // `dropdownHost`) so absolute coordinates resolve against a known
+            // containing block, immune to ancestor transform/contain quirks
+            // that would hijack `position: fixed`.
+            const layer = this.getFloatingLayer();
+            voiceDropdown = layer.createEl('div', {
+                cls: 'session-dropdown-menu session-dropdown-menu--anchored session-bubble__voice-dropdown',
             });
 
             const voicesReady = populateVoiceDropdown();
@@ -861,19 +928,28 @@ export class BubbleRenderer extends Component {
                 speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
             }
 
+            // Convert the button's viewport rect into coordinates relative to
+            // the floating layer (our positioned ancestor) so the absolute
+            // popup lands in the right place regardless of ancestor scrolling
+            // or transforms.
             const btnRect = voicePickerBtn.getBoundingClientRect();
-            voiceDropdown.style.position = 'fixed';
-            voiceDropdown.style.bottom = `${window.innerHeight - btnRect.top + 4}px`;
-            voiceDropdown.style.left = `${btnRect.left}px`;
+            const layerRect = layer.getBoundingClientRect();
+            voiceDropdown.style.left = `${btnRect.left - layerRect.left}px`;
             voiceDropdown.style.right = '';
+            // Position the popup above the button: its `bottom` (in layer
+            // space) sits 4px above the button's top edge.
+            voiceDropdown.style.bottom = `${layerRect.bottom - btnRect.top + 4}px`;
             voiceDropdown.addClass('session-dropdown-menu--open');
             findBubble()?.addClass('session-bubble--actions-pinned');
 
             requestAnimationFrame(() => {
                 if (!voiceDropdown) return;
+                // Edge-clamp using viewport coords (the user-visible window),
+                // then translate the corrected x back into layer space.
                 const rect = voiceDropdown.getBoundingClientRect();
                 if (rect.right > window.innerWidth) {
-                    voiceDropdown.style.left = `${window.innerWidth - rect.width - 8}px`;
+                    const clampedViewportLeft = window.innerWidth - rect.width - 8;
+                    voiceDropdown.style.left = `${clampedViewportLeft - layerRect.left}px`;
                 }
             });
 
@@ -1079,8 +1155,10 @@ export class BubbleRenderer extends Component {
         messageId: string,
         pendingConfirmations: Map<string, (approved: boolean) => void>
     ): void {
-        // Remove orphaned dropdown
-        document.body.querySelector(`[data-confirm-msg-id="${messageId}"]`)?.remove();
+        // Remove orphaned dropdown (re-render of the same message recreates the
+        // confirm UI; any leftover popup from a previous render must go).
+        const layer = this.getFloatingLayer();
+        layer.querySelector(`[data-confirm-msg-id="${messageId}"]`)?.remove();
 
         const confirmRow = container.createEl('div', { cls: 'session-bubble__tool-confirm' });
 
@@ -1097,8 +1175,8 @@ export class BubbleRenderer extends Component {
         });
         setIcon(arrowBtn, 'chevron-down');
 
-        const dropdown = document.body.createEl('div', {
-            cls: 'session-dropdown-menu session-dropdown-menu--fixed session-bubble__tool-confirm-dropdown',
+        const dropdown = layer.createEl('div', {
+            cls: 'session-dropdown-menu session-dropdown-menu--anchored session-bubble__tool-confirm-dropdown',
             attr: { 'data-confirm-msg-id': messageId },
         });
         dropdown.hide();
@@ -1151,10 +1229,14 @@ export class BubbleRenderer extends Component {
             if (dropdownOpen) {
                 closeDropdown();
             } else {
+                // Translate the trigger's viewport rect into floating-layer
+                // coordinates so the absolute popup is anchored to a known
+                // containing block (immune to ancestor transform/contain
+                // hijacking `position: fixed`).
                 const rect = arrowBtn.getBoundingClientRect();
-                dropdown.style.position = 'fixed';
-                dropdown.style.top = `${rect.bottom + 4}px`;
-                dropdown.style.left = `${rect.left}px`;
+                const layerRect = layer.getBoundingClientRect();
+                dropdown.style.top = `${rect.bottom - layerRect.top + 4}px`;
+                dropdown.style.left = `${rect.left - layerRect.left}px`;
                 dropdown.show();
                 dropdownOpen = true;
             }

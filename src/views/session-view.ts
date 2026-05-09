@@ -569,6 +569,10 @@ export class SessionView extends ItemView {
                 this.app,
                 () => this.maybeScrollToBottom(),
                 (msg) => this.handleExtractInsightsForMessage(msg),
+                // Mount floating (fixed-positioned) dropdowns inside this view's
+                // container so they don't leak onto document.body and are
+                // cleaned up naturally when the view is detached.
+                this.containerEl,
             );
             this.addChild(this.bubbleRenderer);
 
@@ -867,7 +871,7 @@ export class SessionView extends ItemView {
         this.abortedMessageIds.clear();
 
         for (const msgId of this.pendingConfirmations.keys()) {
-            document.body.querySelector(`[data-confirm-msg-id="${msgId}"]`)?.remove();
+            this.containerEl.querySelector(`[data-confirm-msg-id="${msgId}"]`)?.remove();
         }
         this.pendingConfirmations.clear();
         this.chat = undefined;

@@ -79,8 +79,38 @@
     display: flex;
 }
 
-.session-dropdown-menu--fixed {
-    position: fixed;
+// Anchored variant: positioned relative to the BubbleRenderer's
+// `session-floating-layer` (a positioned child of `dropdownHost`). Use
+// `position: absolute` so the popup is unaffected by transformed/contained
+// ancestors that would otherwise hijack `position: fixed` containing blocks
+// and push the popup off-screen. Coordinates passed by JS are expected to be
+// already converted from viewport space to layer-relative space.
+.session-dropdown-menu--anchored {
+    position: absolute;
+}
+
+// Renderer-owned positioned layer that hosts anchored popups. Acts as the
+// containing block for absolute-positioned popups within the host.
+//
+// Layout invariants (kept tight to avoid disturbing the host's own layout):
+//   - `position: relative` so child popups anchor here, not to some
+//     transform-tainted ancestor (which is what bites `position: fixed`).
+//   - Zero box (width / height / line-height) so the layer occupies no space
+//     in the host's normal flow.
+//   - `pointer-events: none` so the empty layer never intercepts clicks; the
+//     actual popups opt back in via the descendant rule below.
+.session-floating-layer {
+    position: relative;
+    display: block;
+    width: 0;
+    height: 0;
+    line-height: 0;
+    pointer-events: none;
+
+    > * {
+        pointer-events: auto;
+        line-height: normal;
+    }
 }
 
 // Base dropdown item
