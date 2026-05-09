@@ -319,13 +319,7 @@ export class SessionView extends ItemView {
                 this.chat = new AgentOrchestrator({
                     ...chatStreamConfig,
                     subAgents: subAgentConfigs,
-                    onSubAgentStart: (agentName, task) => {
-                        // console.log(`[Orchestrator] Sub-agent "${agentName}" started: ${task}`);
-                    },
-                    onSubAgentEnd: (agentName, result) => {
-                        // console.log(`[Orchestrator] Sub-agent "${agentName}" finished (${result.tokenUsage.totalTokens} tokens)`);
-                    },
-                    onSubAgentMessageUpdate: (agentName, msg) => {
+                    onSubAgentMessageUpdate: (_agentName, msg) => {
                         if (this.chatGeneration !== generation) return;
                         // Mirror the main-agent rule: once the sub-agent
                         // starts emitting visible content, hide the global
@@ -365,7 +359,13 @@ export class SessionView extends ItemView {
 
         // Mobile keyboard handling with VirtualKeyboard API
         if (Platform.isMobile && 'virtualKeyboard' in navigator) {
-            const vk = (navigator as any).virtualKeyboard;
+            // W3C VirtualKeyboard API — not yet in lib.dom.d.ts. Narrow locally
+            // instead of `as any` so the only untyped surface is the cast itself.
+            interface VirtualKeyboard extends EventTarget {
+                overlaysContent: boolean;
+                boundingRect: DOMRectReadOnly;
+            }
+            const vk = (navigator as Navigator & { virtualKeyboard: VirtualKeyboard }).virtualKeyboard;
             vk.overlaysContent = true;
             const updatePadding = () => {
                 const height = vk.boundingRect.height;

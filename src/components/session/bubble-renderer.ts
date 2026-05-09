@@ -14,6 +14,7 @@ import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { extractFileRefs } from '../cm-input/cm-input';
 import { openFileInWorkspace, revealInNavigation, resolveFileRef } from '../../utils/workspace-utils';
+import { resolveAppUrlToVaultPath } from '../../utils/path-helper';
 import { StreamingMarkdownController } from './streaming-markdown-controller';
 import { stripStructuredBlock } from '../../services/suggestions';
 
@@ -1383,25 +1384,7 @@ export class BubbleRenderer extends Component {
                 const srcAttr = img.getAttribute('src') || '';
                 if (srcAttr.startsWith('data:')) return null;
                 if (srcAttr.startsWith('http')) return null;
-
-                const match = srcAttr.match(/^app:\/\/[^/]+\/(.+?)(?:\?\d+)?$/);
-                if (match && match[1]) {
-                    const absolutePath = decodeURIComponent(match[1]);
-                    const vaultBasePath = (this.app.vault.adapter as any).basePath as string;
-                    if (vaultBasePath && absolutePath.startsWith(vaultBasePath)) {
-                        let relativePath = absolutePath.slice(vaultBasePath.length);
-                        relativePath = relativePath.replace(/^[\/\\]+/, '');
-                        return relativePath;
-                    }
-                    const vaultName = this.app.vault.getName();
-                    const vaultNameIndex = absolutePath.lastIndexOf(vaultName);
-                    if (vaultNameIndex !== -1) {
-                        let relativePath = absolutePath.slice(vaultNameIndex + vaultName.length);
-                        relativePath = relativePath.replace(/^[\/\\]+/, '');
-                        return relativePath;
-                    }
-                }
-                return null;
+                return resolveAppUrlToVaultPath(this.app, srcAttr);
             };
 
             img.addEventListener('click', (e: MouseEvent) => {
@@ -1468,24 +1451,10 @@ export class BubbleRenderer extends Component {
                 if (!hrefAttr) return null;
 
                 if (hrefAttr.startsWith('app://')) {
-                    const match = hrefAttr.match(/^app:\/\/[^/]+\/(.+?)(?:\?\d+)?$/);
-                    if (match && match[1]) {
-                        const absolutePath = decodeURIComponent(match[1]);
-                        const vaultBasePath = (this.app.vault.adapter as any).basePath as string;
-                        if (vaultBasePath && absolutePath.startsWith(vaultBasePath)) {
-                            let relativePath = absolutePath.slice(vaultBasePath.length);
-                            relativePath = relativePath.replace(/^[\/\\]+/, '');
-                            const file = this.app.vault.getAbstractFileByPath(relativePath);
-                            if (file instanceof TFile) return file;
-                        }
-                        const vaultName = this.app.vault.getName();
-                        const vaultNameIndex = absolutePath.lastIndexOf(vaultName);
-                        if (vaultNameIndex !== -1) {
-                            let relativePath = absolutePath.slice(vaultNameIndex + vaultName.length);
-                            relativePath = relativePath.replace(/^[\/\\]+/, '');
-                            const file = this.app.vault.getAbstractFileByPath(relativePath);
-                            if (file instanceof TFile) return file;
-                        }
+                    const relativePath = resolveAppUrlToVaultPath(this.app, hrefAttr);
+                    if (relativePath) {
+                        const file = this.app.vault.getAbstractFileByPath(relativePath);
+                        if (file instanceof TFile) return file;
                     }
                     return null;
                 }

@@ -1,6 +1,23 @@
 import { App, TFile, TFolder, TAbstractFile } from 'obsidian';
 
 /**
+ * Obsidian's public types don't expose these internal view fields, but they
+ * are stable across versions and are the canonical way to:
+ *
+ *   - tell *which* file a markdown leaf has open (`view.file?.path`), and
+ *   - ask the file-explorer to scroll to / highlight a node (`revealInFolder`).
+ *
+ * We narrow once here so callers stay typed without `as any`.
+ */
+interface MarkdownLeafView {
+    file?: { path: string };
+}
+
+interface FileExplorerLeafView {
+    revealInFolder?: (target: TAbstractFile) => void;
+}
+
+/**
  * Result of resolving a file reference path.
  */
 export interface ResolvedFileRef {
@@ -96,7 +113,7 @@ export function fileRefExists(app: App, path: string): boolean {
  */
 export function openFileInWorkspace(app: App, file: TFile): void {
     const existingLeaf = app.workspace.getLeavesOfType('markdown').find(
-        leaf => (leaf.view as any)?.file?.path === file.path
+        leaf => (leaf.view as MarkdownLeafView).file?.path === file.path
     );
     if (existingLeaf) {
         app.workspace.setActiveLeaf(existingLeaf);
@@ -111,6 +128,6 @@ export function openFileInWorkspace(app: App, file: TFile): void {
 export function revealInNavigation(app: App, target: TFile | TFolder): void {
     const explorerLeaf = app.workspace.getLeavesOfType('file-explorer')[0];
     if (explorerLeaf?.view) {
-        (explorerLeaf.view as any).revealInFolder?.(target);
+        (explorerLeaf.view as FileExplorerLeafView).revealInFolder?.(target);
     }
 }

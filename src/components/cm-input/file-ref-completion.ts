@@ -5,6 +5,7 @@
  */
 
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import { EditorView } from '@codemirror/view';
 import { App, MarkdownView, TAbstractFile, TFile, TFolder } from 'obsidian';
 
 /**
@@ -131,7 +132,7 @@ export function fileRefCompletionSource(app: App) {
             label: file.path,
             displayLabel: file.path,
             boost: getBoostScore(file),
-            apply: (view: any, completion: Completion, from: number, to: number) => {
+            apply: (view: EditorView, completion: Completion, from: number, to: number) => {
                 // Check if there's ]] right after cursor position (auto-inserted by closeBrackets)
                 const docAfterPos = doc.slice(pos, pos + 2);
                 const hasAutoClose = docAfterPos === ']]';

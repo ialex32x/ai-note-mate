@@ -157,16 +157,37 @@ function normalizeTool(raw: { name: string; description?: string; inputSchema: R
 	};
 }
 
+/**
+ * Shape of a single MCP text content item.
+ *
+ * The MCP SDK's content type is a discriminated union of (text | image | resource | …),
+ * but for our purposes we only consume the `text` variant. We narrow with a
+ * structural type guard rather than `as any`.
+ */
+interface McpTextContentItem {
+	type: 'text';
+	text?: string;
+}
+
+function isTextContentItem(c: unknown): c is McpTextContentItem {
+	return typeof c === 'object' && c !== null
+		&& (c as { type?: unknown }).type === 'text';
+}
+
+function hasTextField(c: unknown): c is { text: unknown } {
+	return typeof c === 'object' && c !== null && 'text' in c;
+}
+
 /** Extract plain text from MCP content items */
 function extractText(content: unknown): string | null {
 	if (!content) return null;
 	if (typeof content === 'string') return content;
 	if (Array.isArray(content)) {
 		return content
-			.filter((c: any) => c.type === 'text')
-			.map((c: any) => c.text ?? '')
+			.filter(isTextContentItem)
+			.map((c) => c.text ?? '')
 			.join('\n');
 	}
-	if (typeof content === 'object' && 'text' in content) return String((content as any).text);
+	if (hasTextField(content)) return String(content.text);
 	return null;
 }

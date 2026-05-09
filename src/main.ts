@@ -247,7 +247,6 @@ export default class NoteAssistantPlugin extends Plugin {
 		}
 
 		await this.skillManager.discoverSkills({ skillDirs: paths });
-		// console.log(`Loaded ${this.skillManager.getSkills().length} skills from ${paths.length} directories`);
 	}
 
 	/**

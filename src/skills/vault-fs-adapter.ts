@@ -3,7 +3,7 @@
  * Uses Obsidian's Vault API for cross-platform compatibility (desktop and mobile).
  */
 
-import { TAbstractFile, TFile, TFolder, Vault, normalizePath } from 'obsidian';
+import { TFile, TFolder, Vault, normalizePath } from 'obsidian';
 import type { FileSystemAdapter } from './skill-loader.js';
 
 /**
@@ -15,7 +15,6 @@ export function createVaultFsAdapter(vault: Vault): FileSystemAdapter {
     async isDirectory(path: string): Promise<boolean> {
       const normalizedPath = normalizePath(path);
       const folder = vault.getFolderByPath(normalizedPath);
-      // console.log("isdir", path, normalizedPath, folder);
       return !!folder;
     },
 
@@ -35,7 +34,6 @@ export function createVaultFsAdapter(vault: Vault): FileSystemAdapter {
       const normalizedBaseDir = normalizePath(baseDir);
       const results: string[] = [];
 
-      // console.log('findSkillFiles:', baseDir, normalizedBaseDir);
       const baseFolder = normalizedBaseDir === '/' || normalizedBaseDir === ''
         ? vault.getRoot()
         : vault.getAbstractFileByPath(normalizedBaseDir);

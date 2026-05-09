@@ -11,6 +11,28 @@ import type {
 } from "../llm-provider";
 
 /**
+ * Locally-narrowed view of a Gemini `Part`.
+ *
+ * The `@google/genai` SDK types a `Part` as a wide discriminated union, which
+ * makes structural property access (`part.text`, `part.thought`,
+ * `part.functionCall`, `part.thoughtSignature`) cumbersome — we'd otherwise
+ * need a chain of type guards just to read fields that every variant either
+ * has or omits. Since we already do explicit `if (...)` checks before touching
+ * each field, declaring a permissive optional-fields shape is the cleanest
+ * way to keep this file `any`-free without fighting the SDK types.
+ */
+interface GeminiPartView {
+    text?: string;
+    thought?: boolean;
+    thoughtSignature?: string;
+    functionCall?: {
+        name?: string;
+        args?: Record<string, unknown>;
+        signature?: string;
+    };
+}
+
+/**
  * Google Gemini LLM provider using the @google/genai SDK.
  */
 export class GeminiProvider implements LLMProvider {
@@ -98,17 +120,18 @@ export class GeminiProvider implements LLMProvider {
             const parts = chunk.candidates?.[0]?.content?.parts;
             if (parts) {
                 let fcIndex = 0;
-                for (const part of parts) {
+                for (const rawPart of parts) {
+                    const part = rawPart as GeminiPartView;
                     // Extract thought/reasoning text from thinking model parts
-                    if ((part as any).thought === true && (part as any).text) {
-                        thoughtText += (part as any).text;
+                    if (part.thought === true && part.text) {
+                        thoughtText += part.text;
                     }
                     // Extract regular text content (not thought)
-                    else if ((part as any).text) {
-                        content = (content ?? "") + (part as any).text;
+                    else if (part.text) {
+                        content = (content ?? "") + part.text;
                     }
-                    if ((part as any).functionCall) {
-                        const fc = (part as any).functionCall;
+                    if (part.functionCall) {
+                        const fc = part.functionCall;
                         toolCallDeltas.push({
                             index: fcIndex,
                             id: `call_${fc.name}_${fcIndex}`,
@@ -118,7 +141,7 @@ export class GeminiProvider implements LLMProvider {
                             },
                         });
                         // Capture thoughtSignature from the SAME part as the functionCall
-                        const sig = (part as any).thoughtSignature || fc.signature;
+                        const sig = part.thoughtSignature || fc.signature;
                         if (sig) {
                             thoughtSignatures.push(sig);
                         }
@@ -167,8 +190,8 @@ export class GeminiProvider implements LLMProvider {
             if (m.role === "assistant") {
                 const hasToolCalls = !!(m.toolCalls && m.toolCalls.length > 0);
                 const hasContent = typeof m.content === "string" && m.content.length > 0;
-                const hasThinking = typeof (m as any).thinkingContent === "string"
-                    && (m as any).thinkingContent.length > 0;
+                const hasThinking = typeof m.thinkingContent === "string"
+                    && m.thinkingContent.length > 0;
                 if (!hasToolCalls && !hasContent && !hasThinking) {
                     console.warn("[gemini-provider] dropping empty assistant message");
                     continue;

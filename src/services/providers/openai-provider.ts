@@ -11,6 +11,23 @@ import type {
 } from "../llm-provider";
 
 /**
+ * Some OpenAI-compatible thinking models (DeepSeek R1, certain Qwen
+ * thinking variants) require an out-of-spec `reasoning_content` field
+ * to be echoed back on assistant messages, and also surface it on the
+ * streaming `delta`. The OpenAI SDK types do not declare it.
+ *
+ * We use these narrow local extensions instead of `as any` so the only
+ * untyped surface is the single `reasoning_content` property.
+ */
+type OpenAIMessageWithReasoning = OpenAI.Chat.ChatCompletionMessageParam & {
+    reasoning_content?: string;
+};
+
+type OpenAIDeltaWithReasoning = OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
+    reasoning_content?: string | null;
+};
+
+/**
  * OpenAI-compatible LLM provider.
  * Works with any API that implements the OpenAI chat completions format
  * (DeepSeek, OpenRouter, Together AI, etc.)
@@ -62,8 +79,8 @@ export class OpenAIProvider implements LLMProvider {
             if (m.role === "assistant") {
                 const hasToolCalls = !!(m.toolCalls && m.toolCalls.length > 0);
                 const hasContent = typeof m.content === "string" && m.content.length > 0;
-                const hasThinking = typeof (m as any).thinkingContent === "string"
-                    && (m as any).thinkingContent.length > 0;
+                const hasThinking = typeof m.thinkingContent === "string"
+                    && m.thinkingContent.length > 0;
                 if (!hasToolCalls && !hasContent && !hasThinking) {
                     console.warn("[openai-provider] dropping empty assistant message");
                     continue;
@@ -90,7 +107,7 @@ export class OpenAIProvider implements LLMProvider {
         // Convert our messages to OpenAI format
         const openaiMessages = sanitized.map((m): OpenAI.Chat.ChatCompletionMessageParam => {
             if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
-                const base: OpenAI.Chat.ChatCompletionMessageParam = {
+                const base: OpenAIMessageWithReasoning = {
                     role: "assistant" as const,
                     content: m.content || null,
                     tool_calls: m.toolCalls.map((tc) => ({
@@ -100,7 +117,7 @@ export class OpenAIProvider implements LLMProvider {
                     })),
                 };
                 if (m.thinkingContent) {
-                    (base as any).reasoning_content = m.thinkingContent;
+                    base.reasoning_content = m.thinkingContent;
                 }
                 return base;
             }
@@ -140,12 +157,12 @@ export class OpenAIProvider implements LLMProvider {
                 };
             }
             if (m.role === "assistant") {
-                const base: OpenAI.Chat.ChatCompletionMessageParam = {
+                const base: OpenAIMessageWithReasoning = {
                     role: "assistant" as const,
                     content: m.content,
                 };
                 if (m.thinkingContent) {
-                    (base as any).reasoning_content = m.thinkingContent;
+                    base.reasoning_content = m.thinkingContent;
                 }
                 return base;
             }
@@ -208,7 +225,7 @@ export class OpenAIProvider implements LLMProvider {
                 } catch { /* noop */ }
                 chunkIdx++;
             }
-            const delta = chunk.choices[0]?.delta;
+            const delta = chunk.choices[0]?.delta as OpenAIDeltaWithReasoning | undefined;
             const finishReason = chunk.choices[0]?.finish_reason ?? null;
             const usage = chunk.usage
                 ? {
@@ -234,7 +251,7 @@ export class OpenAIProvider implements LLMProvider {
             yield {
                 content: delta?.content ?? null,
                 // DeepSeek R1 and compatible models return reasoning_content in the delta
-                reasoningContent: (delta as any)?.reasoning_content ?? null,
+                reasoningContent: delta?.reasoning_content ?? null,
                 toolCallDeltas,
                 finishReason,
                 usage,
