@@ -17,7 +17,6 @@ import NoteAssistantPlugin from 'main';
 import { t } from '../i18n';
 import { SessionManager } from '../session-manager';
 import { SessionSearchModal, SessionSearchResult } from '../modals/session-search-modal';
-import { DeleteHistoryConfirmModal } from '../modals/delete-history-confirm-modal';
 import {
     DropdownManager,
     BubbleRenderer,
@@ -47,7 +46,8 @@ import {
     createChatAgent,
     buildDynamicTools,
     InsightCoordinator,
-    rebuildSessionDropdown,
+    SessionNavigator,
+    buildChatAgentCallbacks,
 } from './session-view/index';
 
 export class SessionView extends ItemView {
@@ -69,7 +69,7 @@ export class SessionView extends ItemView {
     private isSwitchingSession = false;
     private scrollToBottomBtn!: HTMLButtonElement;
     private newChatBtn!: HTMLButtonElement;
-    private sessionBtn!: HTMLButtonElement;
+    private sessionNavigator!: SessionNavigator;
     private sessionTitleEl!: HTMLElement;
     /** Incremented on each resetChat(); callbacks from a stale generation are silently discarded */
     private chatGeneration = 0;
@@ -79,7 +79,6 @@ export class SessionView extends ItemView {
 
     // ── Session management ──────────────────────────────────────────────────
     private sessionManager: SessionManager;
-    private sessionDropdownEl!: HTMLElement;
 
     private plugin!: NoteAssistantPlugin;
 
@@ -147,77 +146,26 @@ export class SessionView extends ItemView {
                     hasContextCompressed: this.hasContextCompressed,
                     enabledMcpServers: this.mcpSelector.getEnabledServers(),
                 }),
-                onStart: () => {
-                    this.isStreaming = true;
-                    this.setInputLocked(true);
-                    this.showTypingIndicator();
-                },
-                onMessageUpdate: (msg) => {
-                    // Hide typing indicator as soon as the assistant starts
-                    // producing visible content (thinking text, streaming
-                    // content, or a streaming tool_call). In those states the
-                    // bubble itself (plus the blinking in-bubble `▍` cursor)
-                    // already indicates activity, so the global "waiting" dots
-                    // should step aside.
-                    if (this.isMessageProducingVisibleContent(msg)) {
-                        this.hideTypingIndicator();
-                    }
-                    this.handleMessageUpdate(msg);
-                },
-                onToolCallEnd: () => {
-                    // Tool execution completed - show typing indicator to fill the gap
-                    // before AI starts its next response (may include thinking)
-                    this.showTypingIndicator();
-                },
-                onFinish: () => {
-                    this.isStreaming = false;
-                    this.scroller.clearUserScrolledUp();
-                    this.hideTypingIndicator();
-                    this.setInputLocked(false);
-                    void this.saveCurrentSessionState();
-                    void this.maybeGenerateSessionTitle();
-                    // Save session cache to disk after each complete conversation round
-                    void this.sessionManager.saveToCache();
-                    // Offer quick-pick follow-up suggestions derived from the last
-                    // assistant reply, if the user has the feature enabled.
-                    this.maybeShowFollowUpSuggestions();
-                    // Optionally extract reusable knowledge nuggets from this turn.
-                    void this.insightCoordinator.maybeShowInsightCard();
-                },
-                onAbort: (msg) => {
-                    this.isStreaming = false;
-                    this.scroller.clearUserScrolledUp();
-                    this.hideTypingIndicator();
-                    this.handleAbort(msg);
-                },
-                onUsageUpdate: () => {
-                    this.updateSessionStatusDisplay();
-                },
-                onError: (err) => {
-                    console.warn('ChatStream error:', err);
-                    this.isStreaming = false;
-                    this.scroller.clearUserScrolledUp();
-                    this.hideTypingIndicator();
-                    this.setInputLocked(false);
-                    this.appendErrorBubble(err.message);
-                },
-                onContextCompressed: () => {
-                    this.hasContextCompressed = true;
-                },
-                onSubAgentMessageUpdate: (_agentName, msg) => {
-                    // Mirror the main-agent rule: once the sub-agent
-                    // starts emitting visible content, hide the global
-                    // typing dots so the bubble's own cursor takes over.
-                    if (this.isMessageProducingVisibleContent(msg)) {
-                        this.hideTypingIndicator();
-                    }
-                    this.handleSubAgentMessageUpdate(msg);
-                },
-                onConfirmToolCall: (messageId) => {
-                    return new Promise<boolean>((resolve) => {
-                        this.pendingConfirmations.set(messageId, resolve);
-                    });
-                },
+                ...buildChatAgentCallbacks({
+                    setStreaming: (v) => { this.isStreaming = v; },
+                    setInputLocked: (locked) => this.setInputLocked(locked),
+                    showTypingIndicator: () => this.showTypingIndicator(),
+                    hideTypingIndicator: () => this.hideTypingIndicator(),
+                    handleMessageUpdate: (msg) => this.handleMessageUpdate(msg),
+                    handleSubAgentMessageUpdate: (msg) => this.handleSubAgentMessageUpdate(msg),
+                    handleAbort: (msg) => this.handleAbort(msg),
+                    appendErrorBubble: (m) => this.appendErrorBubble(m),
+                    isMessageProducingVisibleContent: (msg) => this.isMessageProducingVisibleContent(msg),
+                    saveCurrentSessionState: () => this.saveCurrentSessionState(),
+                    maybeGenerateSessionTitle: () => this.maybeGenerateSessionTitle(),
+                    maybeShowFollowUpSuggestions: () => this.maybeShowFollowUpSuggestions(),
+                    updateSessionStatusDisplay: () => this.updateSessionStatusDisplay(),
+                    markContextCompressed: () => { this.hasContextCompressed = true; },
+                    sessionManager: this.sessionManager,
+                    scroller: this.scroller,
+                    insightCoordinator: this.insightCoordinator,
+                    pendingConfirmations: this.pendingConfirmations,
+                }),
             });
         }
         return this.chat;
@@ -266,58 +214,19 @@ export class SessionView extends ItemView {
             const leftGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--left' });
 
             // Session switcher button with dropdown and more actions
-            const sessionWrapper = leftGroup.createEl('span', { cls: 'session-selector session-session-selector' });
-            const sessionBtnGroup = sessionWrapper.createEl('span', {
-                cls: 'session-toolbar__btn-group',
-            });
-
-            const sessionBtn = sessionBtnGroup.createEl('button', {
-                cls: 'session-toolbar__btn session-toolbar__session-btn',
-                attr: { 'aria-label': t('view.switchSession') },
-            });
-            setIcon(sessionBtn, 'list');
-            this.sessionBtn = sessionBtn;
-
-            this.sessionDropdownEl = sessionWrapper.createEl('div', {
-                cls: 'session-dropdown',
-            });
-
-            this.dropdownManager.registerToggle({
-                wrapper: sessionWrapper,
-                button: sessionBtn,
-                dropdown: this.sessionDropdownEl,
-                onOpen: () => this.rebuildSessionDropdown(),
-            });
-
-            // More actions dropdown button for session operations
-            const sessionMoreActionsBtn = sessionBtnGroup.createEl('button', {
-                cls: 'session-toolbar__btn session-toolbar__btn--dropdown',
-                attr: { 'aria-label': t('view.moreSessionActions') },
-            });
-            setIcon(sessionMoreActionsBtn, 'chevron-down');
-
-            const sessionMoreActionsDropdown = sessionBtnGroup.createEl('div', {
-                cls: 'session-dropdown-menu session-dropdown-menu--toolbar',
-            });
-
-            // Delete history sessions menu item
-            const deleteHistoryItem = sessionMoreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
-            const deleteIcon = deleteHistoryItem.createEl('span', { cls: 'session-dropdown-item__icon' });
-            setIcon(deleteIcon, 'trash-2');
-            deleteHistoryItem.createEl('span', { text: t('view.deleteHistorySessions') });
-            deleteHistoryItem.addEventListener('click', () => {
-                this.dropdownManager.closeActive();
-                void this.handleDeleteHistorySessions();
-            });
-
-            this.dropdownManager.registerToggle({
-                wrapper: sessionBtnGroup,
-                button: sessionMoreActionsBtn,
-                dropdown: sessionMoreActionsDropdown,
-                onOpen: () => {
-                    // DropdownManager automatically closes other active dropdowns
+            this.sessionNavigator = new SessionNavigator({
+                app: this.app,
+                sessionManager: this.sessionManager,
+                dropdownManager: this.dropdownManager,
+                isStreaming: () => this.isStreaming,
+                clearActiveDraftTimer: () => this.draftController.clearTimer(),
+                onSwitchSession: (id) => { void this.handleSwitchSession(id); },
+                onActiveSessionDeleted: async () => {
+                    this.clearViewForSessionSwitch();
+                    await this.restoreSessionUI();
                 },
             });
+            this.sessionNavigator.mount(leftGroup);
 
             // Session status indicator (primary metric: token usage).
             // Structure:
@@ -798,58 +707,7 @@ export class SessionView extends ItemView {
      * Rebuild session dropdown content (called by DropdownManager onOpen)
      */
     private rebuildSessionDropdown(): void {
-        rebuildSessionDropdown({
-            dropdownEl: this.sessionDropdownEl,
-            sessionManager: this.sessionManager,
-            closeDropdown: () => this.dropdownManager.closeActive(),
-            onSwitchSession: (id) => { void this.handleSwitchSession(id); },
-            onDeleteSession: (id, itemEl, isActive) => {
-                void this.handleDeleteSession(id, itemEl, isActive);
-            },
-        });
-    }
-
-    private async handleDeleteSession(sessionId: string, itemEl: HTMLElement, isActive: boolean) {
-        // Prevent deleting while streaming
-        if (this.isStreaming) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
-            return;
-        }
-
-        // Clear draft save timer before deleting (draft will be lost with the session)
-        if (isActive) {
-            this.draftController.clearTimer();
-        }
-
-        const newActiveId = await this.sessionManager.deleteSession(sessionId);
-        if (newActiveId === undefined) {
-            // Delete failed (session not found)
-            return;
-        }
-
-        // Remove from dropdown with animation
-        itemEl.addClass('session-dropdown__item--deleting');
-        setTimeout(() => {
-            itemEl.remove();
-            // Update session button visibility
-            this.updateSessionBtnState();
-            // Close dropdown if no more sessions
-            if (this.sessionDropdownEl && this.sessionDropdownEl.querySelectorAll('.session-dropdown__item').length === 0) {
-                this.sessionDropdownEl.createEl('div', { cls: 'session-dropdown__empty', text: t('view.noSessions') });
-            }
-        }, 200);
-
-        // If deleted session was active, switch to the new active session
-        if (isActive && newActiveId !== null) {
-            // Close dropdown
-            this.dropdownManager.closeActive();
-            // Clear and restore UI for the new active session
-            await this.sessionManager.ensureActiveMessagesLoaded();
-            this.clearViewForSessionSwitch();
-            await this.restoreSessionUI();
-        }
-
-        new Notice(t('view.sessionDeleted'));
+        this.sessionNavigator.rebuildDropdown();
     }
 
     private async openSessionSearch() {
@@ -1234,26 +1092,8 @@ export class SessionView extends ItemView {
         if (this.newChatBtn) {
             this.newChatBtn.disabled = !this.hasUserMessages();
         }
-        this.updateSessionBtnState();
+        this.sessionNavigator?.updateButtonVisibility();
         this.updateSessionTitle();
-    }
-
-    private updateSessionBtnState(): void {
-        // Update session button visibility based on session count
-        const shouldShow = this.sessionManager.sessionCount > 1;
-
-        if (this.sessionBtn) {
-            this.sessionBtn.style.display = shouldShow ? '' : 'none';
-        }
-
-        // Also hide the more actions button when there's only one session
-        const sessionBtnGroup = this.sessionBtn?.parentElement;
-        if (sessionBtnGroup) {
-            const moreActionsBtn = sessionBtnGroup.querySelector('.session-toolbar__btn--dropdown');
-            if (moreActionsBtn) {
-                (moreActionsBtn as HTMLElement).style.display = shouldShow ? '' : 'none';
-            }
-        }
     }
 
     private updateSessionTitle() {
@@ -1319,52 +1159,5 @@ export class SessionView extends ItemView {
             return;
         }
         void exportSessionToVault(this.app, messages);
-    }
-
-    private async handleDeleteHistorySessions(): Promise<void> {
-        // Prevent deletion while streaming
-        if (this.isStreaming) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
-            return;
-        }
-
-        // Check if there are any sessions to delete (excluding current)
-        const allSessions = this.sessionManager.getAllSessions();
-        const historySessionsCount = allSessions.filter(s => s.id !== this.sessionManager.activeSessionId).length;
-
-        if (historySessionsCount === 0) {
-            new Notice(t('view.noHistorySessionsToDelete'));
-            return;
-        }
-
-        // Show confirmation dialog
-        const confirmed = await this.showDeleteHistoryConfirmation(historySessionsCount);
-        if (!confirmed) return;
-
-        try {
-            // Delete all history sessions
-            const deletedCount = await this.sessionManager.deleteAllHistorySessions();
-
-            if (deletedCount > 0) {
-                new Notice(t('view.historySessionsDeleted', { count: deletedCount }));
-
-                // Update UI
-                this.updateSessionBtnState();
-
-                // Rebuild dropdown if open
-                if (this.sessionDropdownEl && this.sessionDropdownEl.classList.contains('session-dropdown--open')) {
-                    this.rebuildSessionDropdown();
-                }
-            } else {
-                new Notice(t('view.noHistorySessionsDeleted'));
-            }
-        } catch (error) {
-            console.error('Failed to delete history sessions:', error);
-            new Notice(t('view.deleteHistorySessionsFailed'));
-        }
-    }
-
-    private async showDeleteHistoryConfirmation(sessionCount: number): Promise<boolean> {
-        return new DeleteHistoryConfirmModal(this.app, sessionCount).waitForResult();
     }
 }
