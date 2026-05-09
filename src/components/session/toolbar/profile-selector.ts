@@ -1,0 +1,137 @@
+import { setIcon, setTooltip } from 'obsidian';
+import { t } from '../../../i18n';
+import { DropdownManager } from '../dropdown-manager';
+import { getActiveProfile } from '../../../settings';
+import type NoteAssistantPlugin from 'main';
+
+export interface ProfileSelectorHandle {
+    /** Remove settings-change subscription. Called from SessionView.onClose. */
+    dispose(): void;
+}
+
+/**
+ * Setup profile selector using DropdownManager.
+ * Extracted from SessionView.setupProfileSelector.
+ *
+ * Side effect: subscribes to plugin.onSettingsChange to keep button text in sync.
+ * The returned handle exposes dispose() to unsubscribe.
+ */
+export function createProfileSelector(
+    parent: HTMLElement,
+    plugin: NoteAssistantPlugin,
+    dropdownManager: DropdownManager,
+): ProfileSelectorHandle {
+    const profileWrapper = parent.createEl('span', { cls: 'session-selector session-profile-selector' });
+    const { button, textEl } = DropdownManager.createButton({
+        parent: profileWrapper,
+        cls: 'session-dropdown-btn',
+        ariaLabel: t('view.profile'),
+    });
+    const profileBtnEl = button;
+    const profileBtnTextEl = textEl;
+
+    const profileDropdownEl = profileWrapper.createEl('div', {
+        cls: 'session-dropdown-menu',
+    });
+
+    const activeProfile = getActiveProfile(plugin.settings);
+    profileBtnTextEl.setText(activeProfile.name);
+
+    const rebuildProfileDropdown = () => {
+        profileDropdownEl.empty();
+        const current = plugin.settings;
+        const currentActive = getActiveProfile(current);
+        profileBtnTextEl.setText(currentActive.name);
+
+        // Profiles Section
+        const profilesHeader = profileDropdownEl.createEl('div', {
+            cls: 'session-dropdown-section-header',
+        });
+        profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.profiles') });
+
+        for (const p of current.profiles) {
+            const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
+            const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
+            item.createEl('span', { text: p.name });
+            item.createEl('span', { cls: 'session-dropdown-item__model', text: p.model });
+            if (p.id === current.summarizerProfileId) {
+                const badge = item.createEl('span', {
+                    cls: 'session-dropdown-item__badge session-dropdown-item__badge--summarizer',
+                });
+                setIcon(badge, 'scroll-text');
+                setTooltip(badge, t('view.profileSummarizerBadge'));
+                setTooltip(item, t('view.profileSummarizerBadge'));
+            }
+            if (p.id === current.activeProfileId) {
+                item.addClass('session-dropdown-item--active');
+                setIcon(checkIcon, 'check');
+            }
+            item.addEventListener('click', () => {
+                plugin.settings.activeProfileId = p.id;
+                void plugin.saveSettings();
+                profileBtnTextEl.setText(p.name);
+                DropdownManager.updateActiveState(
+                    profileDropdownEl.querySelectorAll('.session-dropdown-item'),
+                    item,
+                    'session-dropdown-item'
+                );
+                dropdownManager.closeActive();
+            });
+        }
+
+        // Image Generation Section
+        const imageGenHeader = profileDropdownEl.createEl('div', {
+            cls: 'session-dropdown-section-header',
+        });
+        imageGenHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.imageGen') });
+
+        const imageGenConfigs = current.imageGenConfigs;
+        if (imageGenConfigs.length === 0) {
+            const noConfigItem = profileDropdownEl.createEl('div', {
+                cls: 'session-dropdown-item session-dropdown-item--disabled',
+            });
+            noConfigItem.createEl('span', { text: t('settings.imageGenEmpty') });
+        } else {
+            for (const cfg of imageGenConfigs) {
+                const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
+                const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
+                item.createEl('span', { text: cfg.name });
+                item.createEl('span', { cls: 'session-dropdown-item__model', text: cfg.model });
+                if (cfg.id === current.activeImageGenId) {
+                    item.addClass('session-dropdown-item--active');
+                    setIcon(checkIcon, 'check');
+                }
+                item.addEventListener('click', () => {
+                    plugin.settings.activeImageGenId = cfg.id;
+                    void plugin.saveSettings();
+                    DropdownManager.updateActiveState(
+                        profileDropdownEl.querySelectorAll('.session-dropdown-item'),
+                        item,
+                        'session-dropdown-item'
+                    );
+                    dropdownManager.closeActive();
+                });
+            }
+        }
+    };
+
+    dropdownManager.registerToggle({
+        wrapper: profileWrapper,
+        button: profileBtnEl,
+        dropdown: profileDropdownEl,
+        onOpen: rebuildProfileDropdown,
+    });
+
+    // Keep button text in sync with active profile
+    const onSettingsChanged = () => {
+        const p = getActiveProfile(plugin.settings);
+        profileBtnTextEl.setText(p.name);
+    };
+    plugin.onSettingsChange(onSettingsChanged);
+
+    return {
+        dispose: () => {
+            plugin.offSettingsChange(onSettingsChanged);
+        },
+    };
+}

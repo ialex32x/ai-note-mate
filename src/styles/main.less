@@ -1,0 +1,43 @@
+/*
+ * Main Less entry point for Obsidian Assistant Plugin
+ * This file imports all modular style components
+ * Build output: styles.css
+ */
+
+// Core variables and mixins
+@import "variables";
+@import "mixins";
+
+// Base / shared components
+@import "components/dropdown";
+
+// Session view layout
+@import "components/session-view";
+@import "components/session-dropdown";
+@import "components/input-area";
+
+// Message bubbles
+@import "components/bubbles";
+@import "components/bubble-extensions";
+
+// Follow-up suggestion bar (one-shot quick-pick buttons after the last assistant reply)
+@import "components/follow-up-bar";
+
+// Conversation insight card (read-only preview of candidate knowledge nuggets)
+@import "components/insight-card";
+
+// CodeMirror input editor
+@import "components/cm-input";
+
+// Modals
+@import "components/modals";
+@import "components/search-modal";
+
+// Settings
+@import "components/settings";
+
+// AI Edit History view
+@import "components/edit-history";
+
+// Note: Additional components can be added here as needed
+// All existing styles have been migrated to the modular system

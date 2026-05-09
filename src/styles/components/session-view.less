@@ -1,0 +1,315 @@
+/* ─────────────────────────────────────────────
+   Session View layout
+   ───────────────────────────────────────────── */
+
+// Root container: full height, column flex
+.session-view {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+// Toolbar (top, fixed height)
+.session-toolbar {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    padding: @spacing-sm @spacing-lg;
+    border-bottom: 1px solid @bg-modifier-border;
+    position: relative;
+}
+
+.session-toolbar__group {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+}
+
+.session-toolbar__group--left {
+    flex: 0 0 auto;
+}
+
+.session-toolbar__group--center {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.session-toolbar__group--right {
+    flex: 0 0 auto;
+}
+
+.session-toolbar__btn {
+    .button-medium();
+    color: @text-secondary;
+    background: transparent;
+    
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+    
+    &:disabled {
+        opacity: 0.35;
+        cursor: default;
+        pointer-events: none;
+    }
+    
+    svg {
+        .icon-size(16px);
+    }
+}
+
+.session-toolbar__status {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.78em;
+    color: @text-secondary;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.session-toolbar__status-main {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    line-height: 1.2;
+    cursor: pointer;
+    padding: @spacing-xs @spacing-sm;
+    border-radius: @radius-sm;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+.session-status-display {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: @spacing-xs;
+    line-height: 1.2;
+}
+
+.session-status-display__icon {
+    .flex-center();
+    
+    svg {
+        .icon-size(12px);
+    }
+}
+
+.session-status-display__value {
+    font-size: 0.9em;
+}
+
+// Session status pop-up panel (opened via click, managed by DropdownManager)
+.session-status-panel {
+    min-width: 240px;
+    padding: @spacing-md;
+    gap: @spacing-md;
+    cursor: default;
+}
+
+.session-status-panel__section {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+}
+
+.session-status-panel__title {
+    font-size: 0.7em;
+    font-weight: 600;
+    color: @text-faint;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: @spacing-xs;
+}
+
+.session-status-panel__row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: @spacing-md;
+    font-size: 0.82em;
+    line-height: 1.4;
+}
+
+.session-status-panel__label {
+    color: @text-secondary;
+}
+
+.session-status-panel__value {
+    color: @text-primary;
+    font-variant-numeric: tabular-nums;
+}
+
+.session-status-panel__value--icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.session-toolbar__title {
+    .text-truncate();
+    font-size: 0.85em;
+    color: @text-primary;
+    text-align: center;
+    user-select: none;
+    max-width: 100%;
+    padding: 0 @spacing-lg;
+    cursor: pointer;
+    
+    &:hover {
+        color: @text-accent;
+    }
+}
+
+.session-toolbar__title-input {
+    width: 100%;
+    max-width: 200px;
+    font-size: 0.85em;
+    padding: @spacing-xs @spacing-md;
+    border: 1px solid @text-accent;
+    border-radius: @radius-sm;
+    background: @bg-primary;
+    color: @text-primary;
+    outline: none;
+    
+    &:focus {
+        box-shadow: 0 0 0 2px color-mix(in srgb, @text-accent 20%, transparent);
+    }
+}
+
+.session-toolbar__session-btn {
+    font-size: 1em;
+}
+
+// Toolbar button group (split button)
+.session-toolbar__btn-group {
+    display: inline-flex;
+    position: relative;
+    
+    .session-toolbar__btn {
+        margin-left: 0;
+    }
+}
+
+.session-toolbar__btn--primary {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.session-toolbar__btn--dropdown {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid @bg-modifier-border;
+    
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.session-dropdown-menu--toolbar {
+    bottom: auto;
+    top: 100%;
+    left: 0;
+    right: auto;
+    margin-bottom: 0;
+    margin-top: @spacing-sm;
+    min-width: 150px;
+}
+
+.session-dropdown-menu--toolbar-right {
+    bottom: auto;
+    top: 100%;
+    left: auto;
+    right: 0;
+    margin-bottom: 0;
+    margin-top: @spacing-sm;
+    min-width: 150px;
+}
+
+// Message list wrapper (fills remaining space)
+.session-messages-wrapper {
+    position: relative;
+    flex: 1 1 0;
+    overflow: hidden;
+}
+
+// Message list (fills remaining space, scrollable)
+.session-messages {
+    height: 100%;
+    overflow-y: auto;
+    padding: @spacing-lg @spacing-md;
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-md;
+}
+
+// Scroll-to-bottom button
+.session-scroll-to-bottom-btn {
+    position: absolute;
+    bottom: @spacing-xl;
+    right: @spacing-xl;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    .flex-center();
+    border-radius: 50%;
+    background: @bg-secondary;
+    border: 1px solid @bg-modifier-border;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    color: @text-secondary;
+    z-index: 10;
+    animation: scroll-btn-bounce 1.5s ease-in-out infinite;
+    transition: color @duration-normal, background @duration-normal;
+    
+    &:hover {
+        color: @text-primary;
+        background: @bg-secondary-alt;
+    }
+    
+    svg {
+        .icon-size(18px);
+    }
+}
+
+@keyframes scroll-btn-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+}
+
+// Mobile responsive adjustments
+.mobile({
+    .session-toolbar {
+        padding: @spacing-sm @spacing-md;
+    }
+    
+    .session-messages {
+        padding: @spacing-md @spacing-sm;
+    }
+    
+    .session-scroll-to-bottom-btn {
+        bottom: @spacing-lg;
+        right: @spacing-lg;
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
+        
+        svg {
+            .icon-size(16px);
+        }
+    }
+});

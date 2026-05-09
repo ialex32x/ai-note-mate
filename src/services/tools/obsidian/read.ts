@@ -1,0 +1,570 @@
+import { TFile, arrayBufferToBase64 } from "obsidian";
+import type NoteAssistantPlugin from "../../../main";
+import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
+import type { ToolCapability } from "../../llm-provider";
+import { resolveFileRef } from "../../../utils/workspace-utils";
+import { TFolder } from "obsidian";
+import {
+    getMimeType,
+    isFailure,
+    isMediaFile,
+    isNonMediaBinaryFile,
+    LARGE_FILE_LINE_THRESHOLD,
+    MAX_PDF_INLINE_BYTES,
+    mediaKindFromMime,
+    PREVIEW_LINE_COUNT,
+    requireFile,
+    validateLineRange,
+} from "./_shared";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: vault_read_file
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "vault_read_file",
+                description:
+                    "Read the content of a file in the Obsidian vault. " +
+                    "For text/markdown files, optionally specify start_line and end_line (1-based, inclusive) " +
+                    "to read only a specific line range; omit both to read the entire file. " +
+                    "IMPORTANT: When the file is large (more than ~200 lines) and no line range is specified, " +
+                    "this tool returns a structured outline with headings and line numbers plus a content preview " +
+                    "instead of the full content. Use the heading line numbers to decide which sections to read " +
+                    "with start_line/end_line in a follow-up call. " +
+                    "For media files (images: png, jpg, gif, webp, svg, etc.; videos: mp4, webm, mov, etc.; " +
+                    "audio: mp3, wav, ogg, flac, etc.; documents: pdf), " +
+                    "returns the file as base64 data for viewing and analysis (line range is not applicable). " +
+                    "Whether the audio/video/pdf content is actually delivered to you depends on the active model's " +
+                    "configured input modalities; unsupported modalities are silently dropped with a short text note. " +
+                    "PDFs above ~20 MB are rejected to stay within provider inline-attachment limits. " +
+                    "BINARY FORMATS NOT SUPPORTED: Office documents (doc/docx/xls/xlsx/ppt/pptx/...), archives (zip/rar/7z/...), " +
+                    "executables, fonts, design files, databases, etc. are rejected — do not attempt to read them with this tool; " +
+                    "ask the user to convert to a supported format first. " +
+                    "Use this when the user wants to read, view, check, examine, see, open, or show the content of a specific file.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        path: {
+                            type: "string",
+                            description:
+                                "Vault-relative path to the file, e.g. 'Notes/MyNote.md' or 'Images/photo.png'.",
+                        },
+                        start_line: {
+                            type: "number",
+                            description:
+                                "1-based starting line number for reading a specific range. " +
+                                "Must be used together with end_line. Omit to read the entire file.",
+                        },
+                        end_line: {
+                            type: "number",
+                            description:
+                                "1-based ending line number (inclusive) for reading a specific range. " +
+                                "Must be used together with start_line. Omit to read the entire file.",
+                        },
+                    },
+                    required: ["path"],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+            const path = args["path"] as string;
+            const fileOrErr = requireFile(plugin.app, path);
+            if (isFailure(fileOrErr)) return fileOrErr;
+            const file = fileOrErr;
+
+            // Media files (images/videos/audio/pdf): read as binary and return base64 for multimodal processing
+            if (isMediaFile(file)) {
+                const mimeType = getMimeType(file.extension);
+                const kind = mediaKindFromMime(mimeType);
+
+                // Pre-check: PDFs above the inline limit would be rejected by upstream providers
+                // (OpenAI 32 MB hard cap; Gemini also memory-bound on mobile). Refuse loudly here
+                // so the user gets an actionable hint instead of an opaque 4xx.
+                if (kind === "pdf" && file.stat.size > MAX_PDF_INLINE_BYTES) {
+                    const sizeMb = (file.stat.size / 1024 / 1024).toFixed(1);
+                    const limitMb = (MAX_PDF_INLINE_BYTES / 1024 / 1024).toFixed(0);
+                    return {
+                        success: false,
+                        type: "text",
+                        content:
+                            `PDF '${path}' is too large (${sizeMb} MB) to inline as a multimodal attachment ` +
+                            `(limit: ${limitMb} MB). Ask the user to compress the PDF, extract a smaller page range, ` +
+                            `or convert the relevant sections to text/markdown first.`,
+                    };
+                }
+
+                try {
+                    const buffer = await plugin.app.vault.readBinary(file);
+                    const base64 = arrayBufferToBase64(buffer);
+                    return {
+                        success: true,
+                        type: "media",
+                        content: { path, kind, mimeType, base64, size: file.stat.size },
+                    };
+                } catch (err) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `Failed to read media file: ${err instanceof Error ? err.message : String(err)}`,
+                    };
+                }
+            }
+
+            // Known non-media binary formats (Office, archives, executables, ...): refuse loudly.
+            // Reading these through the text path would yield garbage bytes that the model tends
+            // to "interpret" as plausible-looking content (hallucination).
+            if (isNonMediaBinaryFile(file)) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `Cannot read '${path}' as text: file extension '.${file.extension}' is a binary format ` +
+                        `(e.g. Office documents, archives, executables) and cannot be decoded as text. ` +
+                        `This tool currently supports text/markdown files and the following media files via the multimodal channel: ` +
+                        `images (png, jpg, gif, webp, svg, bmp, ico, tiff), ` +
+                        `videos (mp4, webm, mov, avi, mkv), ` +
+                        `audio (mp3, wav, ogg, flac, aac, wma, m4a, opus), ` +
+                        `documents (pdf). ` +
+                        `Other binary formats are not supported — ask the user to convert the file to a supported format first.`,
+                };
+            }
+
+            const content = await plugin.app.vault.read(file);
+            const startLine = args["start_line"] as number | undefined;
+            const endLine = args["end_line"] as number | undefined;
+
+            // No range specified — check if file is large enough to auto-downgrade
+            if (startLine === undefined && endLine === undefined) {
+                const lines = content.split("\n");
+                const totalLines = lines.length;
+
+                if (totalLines <= LARGE_FILE_LINE_THRESHOLD) {
+                    return { success: true, type: "object", content: { path, content } };
+                }
+
+                // ── Large file: return outline + preview instead of full content ──
+                const cache = plugin.app.metadataCache.getFileCache(file);
+                const headings = (cache?.headings ?? []).map((h) => ({
+                    level: h.level,
+                    heading: h.heading,
+                    line: h.position.start.line + 1, // Convert 0-based to 1-based
+                }));
+
+                const previewEnd = Math.min(PREVIEW_LINE_COUNT, totalLines);
+                const preview = lines.slice(0, previewEnd).join("\n");
+
+                return {
+                    success: true,
+                    type: "object",
+                    content: {
+                        path,
+                        total_lines: totalLines,
+                        notice:
+                            `This file is large (${totalLines} lines). Showing outline and first ${previewEnd} lines as preview. ` +
+                            `Use start_line and end_line to read specific sections.`,
+                        outline: headings,
+                        preview: {
+                            start_line: 1,
+                            end_line: previewEnd,
+                            content: preview,
+                        },
+                    },
+                };
+            }
+
+            // Validate: both or neither must be provided
+            if (startLine === undefined || endLine === undefined) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `Invalid line range: start_line and end_line must both be specified together.`,
+                };
+            }
+
+            const lines = content.split("\n");
+            const totalLines = lines.length;
+
+            const rangeErr = validateLineRange(startLine, endLine, totalLines);
+            if (rangeErr) return rangeErr;
+
+            const selectedContent = lines.slice(startLine - 1, endLine).join("\n");
+
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    path,
+                    content: selectedContent,
+                    start_line: startLine,
+                    end_line: endLine,
+                    total_lines: totalLines,
+                },
+            };
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: vault_get_active_file
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "vault_get_active_file",
+                description:
+                    "Get information about the file currently open and focused in the editor. " +
+                    "Use this when the user refers to 'this file', 'current note', 'active file', " +
+                    "'the note I'm viewing', or 'the file I'm looking at'. " +
+                    "Optionally include its content. " +
+                    "NOTE: When include_content is true and the file is large (more than ~200 lines), " +
+                    "only an outline with headings/line numbers and a content preview are returned " +
+                    "instead of the full content. Use vault_read_file with start_line/end_line to read specific sections.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        include_content: {
+                            type: "boolean",
+                            description:
+                                "If true, also return the text content of the file (or outline+preview for large files). Defaults to false.",
+                        },
+                    },
+                    required: [],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal) => {
+            const includeContent = (args["include_content"] as boolean) ?? false;
+            const activeFile = plugin.app.workspace.getActiveFile();
+
+            if (!activeFile) {
+                return { success: false, type: "text", content: "No file is currently active in the editor." };
+            }
+
+            const result: Record<string, unknown> = {
+                path: activeFile.path,
+                name: activeFile.name,
+                extension: activeFile.extension,
+                size: activeFile.stat.size,
+                created: activeFile.stat.ctime,
+                modified: activeFile.stat.mtime,
+            };
+
+            if (includeContent) {
+                if (isMediaFile(activeFile)) {
+                    result["content_omitted"] =
+                        `File extension '.${activeFile.extension}' is a media file. ` +
+                        `Use vault_read_file to load it via the multimodal channel.`;
+                } else if (isNonMediaBinaryFile(activeFile)) {
+                    result["content_omitted"] =
+                        `File extension '.${activeFile.extension}' is a binary format and cannot be decoded as text.`;
+                } else {
+                    const content = await plugin.app.vault.read(activeFile);
+                    const lines = content.split("\n");
+                    const totalLines = lines.length;
+
+                    if (totalLines <= LARGE_FILE_LINE_THRESHOLD) {
+                        result["content"] = content;
+                    } else {
+                        // Large file: return outline + preview
+                        const cache = plugin.app.metadataCache.getFileCache(activeFile);
+                        const headings = (cache?.headings ?? []).map((h) => ({
+                            level: h.level,
+                            heading: h.heading,
+                            line: h.position.start.line + 1,
+                        }));
+                        const previewEnd = Math.min(PREVIEW_LINE_COUNT, totalLines);
+                        result["content"] = {
+                            total_lines: totalLines,
+                            notice:
+                                `This file is large (${totalLines} lines). Showing outline and first ${previewEnd} lines as preview. ` +
+                                `Use vault_read_file with start_line/end_line to read specific sections.`,
+                            outline: headings,
+                            preview: {
+                                start_line: 1,
+                                end_line: previewEnd,
+                                content: lines.slice(0, previewEnd).join("\n"),
+                            },
+                        };
+                    }
+                }
+            }
+
+            return { success: true, type: "object", content: result };
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: vault_get_metadata
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "vault_get_metadata",
+                description:
+                    "Get the parsed frontmatter metadata and structural info (headings, tags, links) " +
+                    "of one or more markdown files, without reading the full content. " +
+                    "Accepts up to 200 paths in a single call — prefer batching over sequential single-path calls. " +
+                    "Use this when the user wants to see a note's structure, outline, tags, links, " +
+                    "or frontmatter/YAML metadata without loading the entire file.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        paths: {
+                            type: "array",
+                            items: { type: "string" },
+                            description:
+                                "Array of vault-relative paths to markdown files (1–200 paths). " +
+                                "Example: ['Notes/A.md', 'Notes/B.md'].",
+                        },
+                    },
+                    required: ["paths"],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal) => {
+            const rawPaths = args["paths"] as string[];
+
+            if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
+                return { success: false, type: "text", content: "paths must be a non-empty array of file paths." };
+            }
+            if (rawPaths.length > 200) {
+                return { success: false, type: "text", content: `Too many paths (${rawPaths.length}); maximum is 200.` };
+            }
+
+            const results: Array<Record<string, unknown>> = [];
+
+            for (const path of rawPaths) {
+                const fileOrErr = requireFile(plugin.app, path);
+                if (isFailure(fileOrErr)) {
+                    results.push({ path, error: (fileOrErr as ToolCallResult).content });
+                    continue;
+                }
+                const file = fileOrErr;
+
+                const cache = plugin.app.metadataCache.getFileCache(file);
+
+                if (!cache) {
+                    results.push({ path, frontmatter: null, headings: [], tags: [], links: [] });
+                    continue;
+                }
+
+                const headings = (cache.headings ?? []).map((h) => ({
+                    level: h.level,
+                    heading: h.heading,
+                    line: h.position.start.line + 1, // Convert 0-based to 1-based
+                }));
+
+                const tags = (cache.tags ?? []).map((t) => t.tag);
+
+                const links = (cache.links ?? []).map((l) => ({
+                    link: l.link,
+                    displayText: l.displayText,
+                }));
+
+                results.push({
+                    path,
+                    frontmatter: cache.frontmatter ?? null,
+                    headings,
+                    tags,
+                    links,
+                });
+            }
+
+            return {
+                success: true,
+                type: "object",
+                content: { files: results },
+            };
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: vault_get_file_state
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultGetFileState(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "vault_get_file_state",
+                description:
+                    "Get the state information (creation time, modification time, size) for a file. " +
+                    "Use this when the user asks about when a file was created, modified, last edited, " +
+                    "or its size/file size. Time is represented as a Unix timestamp in milliseconds.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        path: {
+                            type: "string",
+                            description: "Vault-relative path to the file.",
+                        },
+                    },
+                    required: ["path"],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal) => {
+            const path = args["path"] as string;
+            const fileOrErr = requireFile(plugin.app, path);
+            if (isFailure(fileOrErr)) return fileOrErr;
+            const file = fileOrErr;
+
+            const stat = file.stat;
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    path,
+                    name: file.name,
+                    extension: file.extension,
+                    ctime: stat.ctime,
+                    mtime: stat.mtime,
+                    size: stat.size,
+                },
+            };
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: vault_is_directory
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultIsDirectory(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "vault_is_directory",
+                description:
+                    "Check if a given path in the vault is a directory (folder) or a file. " +
+                    "Use this when the user wants to verify if a path is a folder or check path type.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        path: {
+                            type: "string",
+                            description: "Vault-relative path to check.",
+                        },
+                    },
+                    required: ["path"],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal) => {
+            const path = args["path"] as string;
+            const file = plugin.app.vault.getAbstractFileByPath(path);
+
+            if (!file) {
+                return {
+                    success: true,
+                    type: "object",
+                    content: {
+                        path,
+                        exists: false,
+                        isDirectory: false,
+                    },
+                };
+            }
+
+            const isDir = file instanceof TFolder;
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    path,
+                    exists: true,
+                    isDirectory: isDir,
+                },
+            };
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: vault_resolve_link
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultResolveLink(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "vault_resolve_link",
+                description:
+                    "Resolve a wikilink reference to its full vault path. " +
+                    "IMPORTANT: Only use this tool when the reference does NOT contain a path separator (/). " +
+                    "For example, use this for 'MyNote' but NOT for 'Notes/MyNote.md' (which already has a path). " +
+                    "When the reference contains '/', resolve it directly from the path structure without using this tool. " +
+                    "For short links (filename-only), searches the entire vault for a unique match. " +
+                    "If a file and folder share the same name, the file takes priority.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        reference: {
+                            type: "string",
+                            description:
+                                "The file/folder reference to resolve, e.g. 'MyNote' or 'Notes/MyNote.md'. " +
+                                "Can be a wikilink inner text without the [[]] brackets.",
+                        },
+                    },
+                    required: ["reference"],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal) => {
+            const reference = args["reference"] as string;
+            const resolved = resolveFileRef(plugin.app, reference);
+
+            if (!resolved) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `Could not resolve reference: '${reference}'. No unique match found in the vault.`,
+                };
+            }
+
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    reference,
+                    resolvedPath: resolved.path,
+                    isFolder: resolved.isFolder,
+                    isShortLink: resolved.isShortLink,
+                },
+            };
+        },
+    };
+}

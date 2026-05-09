@@ -1,0 +1,392 @@
+/* ─────────────────────────────────────────────
+   Save File Modal
+   ───────────────────────────────────────────── */
+
+.save-file-modal.modal-content {
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column;
+    height: 80vh;
+    min-height: 0;
+
+    .modal-title {
+        padding: @spacing-xl 20px 0;
+        flex-shrink: 0;
+    }
+}
+
+.save-file-modal__main {
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+    margin: @spacing-lg 20px;
+    border-top: 1px solid @bg-modifier-border;
+    border-bottom: 1px solid @bg-modifier-border;
+    overflow: hidden;
+}
+
+// Tree panel
+.save-file-modal__tree-panel {
+    width: 200px;
+    flex-shrink: 0;
+    .flex-column();
+    overflow: hidden;
+    min-height: 0;
+}
+
+.save-file-modal__divider {
+    width: 5px;
+    cursor: col-resize;
+    background: transparent;
+    position: relative;
+    flex-shrink: 0;
+    transition: background @duration-normal;
+
+    &::after {
+        content: '';
+        position: absolute;
+        left: 2px;
+        top: 0;
+        bottom: 0;
+        width: 1px;
+        background: @bg-modifier-border;
+        transition: width @duration-normal, left @duration-normal;
+    }
+
+    &:hover,
+    &--active {
+        background: @bg-modifier-hover;
+    }
+
+    &:hover::after,
+    &--active::after {
+        left: 1.5px;
+        width: 2px;
+        background: @text-accent;
+    }
+}
+
+.save-file-modal__file-panel {
+    flex: 1;
+    .flex-column();
+    overflow: hidden;
+    min-height: 0;
+}
+
+.save-file-modal__panel-header {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    padding: 6px @spacing-lg;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: @text-faint;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid @bg-modifier-border;
+    user-select: none;
+    gap: 6px;
+}
+
+.save-file-modal__panel-header-text {
+    flex: 1;
+    .text-truncate();
+}
+
+.save-file-modal__new-folder-btn {
+    flex-shrink: 0;
+    .flex-center();
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: @radius-sm;
+    border: 1px solid @bg-modifier-border;
+    background: transparent;
+    color: @text-secondary;
+    font-size: 1em;
+    cursor: pointer;
+    line-height: 1;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+.save-file-modal__tree,
+.save-file-modal__file-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+// Tree node
+.save-file-modal__tree-node {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: 5px @spacing-sm;
+    cursor: pointer;
+    font-size: 0.88em;
+    color: @text-primary;
+    user-select: none;
+    .text-truncate();
+    transition: background @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+}
+
+.save-file-modal__tree-node--selected {
+    background: @bg-modifier-active;
+    color: @text-primary;
+}
+
+.save-file-modal__tree-arrow {
+    flex-shrink: 0;
+    width: 14px;
+    text-align: center;
+    font-size: 0.85em;
+    color: @text-faint;
+}
+
+.save-file-modal__tree-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: @text-secondary;
+}
+
+.save-file-modal__tree-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+// File item
+.save-file-modal__file-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px @spacing-lg;
+    cursor: pointer;
+    font-size: 0.88em;
+    color: @text-primary;
+    user-select: none;
+    .text-truncate();
+    transition: background @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+}
+
+.save-file-modal__file-item--selected {
+    background: @bg-modifier-active;
+}
+
+.save-file-modal__file-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: @text-secondary;
+}
+
+.save-file-modal__file-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.save-file-modal__empty {
+    padding: 20px @spacing-lg;
+    color: @text-faint;
+    font-size: 0.85em;
+    text-align: center;
+}
+
+// Bottom bar
+.save-file-modal__bottom {
+    padding: @spacing-lg 20px @spacing-xl;
+    .flex-column();
+    gap: @spacing-md;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.save-file-modal__path-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82em;
+}
+
+.save-file-modal__path-label {
+    color: @text-faint;
+    flex-shrink: 0;
+}
+
+.save-file-modal__path-value {
+    color: @text-secondary;
+    font-family: var(--font-monospace);
+    .text-truncate();
+}
+
+.save-file-modal__filename-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.save-file-modal__filename-label {
+    flex-shrink: 0;
+    font-size: 0.88em;
+    color: @text-primary;
+}
+
+.save-file-modal__filename-input {
+    flex: 1;
+    padding: 5px @spacing-md;
+    border-radius: @radius-sm;
+    border: 1px solid @bg-modifier-border;
+    background: transparent;
+    color: @text-primary;
+    font-size: 0.88em;
+    outline: none;
+
+    &:focus {
+        border-color: @text-accent;
+    }
+}
+
+.save-file-modal__overwrite-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    color: @text-warning;
+    cursor: help;
+    margin-left: @spacing-sm;
+}
+
+.save-file-modal__btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: @spacing-md;
+}
+
+.save-file-modal__btn {
+    padding: 6px @spacing-xl;
+    border-radius: @radius-md;
+    font-size: 0.88em;
+    cursor: pointer;
+    border: none;
+    transition: background @duration-fast;
+}
+
+.save-file-modal__btn--save {
+    background: @text-accent;
+    color: var(--text-on-accent);
+
+    &:hover {
+        background: var(--interactive-accent-hover);
+    }
+}
+
+.save-file-modal__btn--overwrite {
+    background: @text-warning !important;
+}
+
+// Mobile: stack panels vertically
+.mobile({
+    .save-file-modal.modal-content {
+        height: 85vh;
+    }
+
+    .save-file-modal__main {
+        flex-direction: column;
+        overflow: hidden;
+    }
+
+    .save-file-modal__tree-panel {
+        width: 100%;
+        flex: 2 1 0;
+        min-height: 0;
+        border-right: none;
+        border-bottom: 1px solid @bg-modifier-border;
+    }
+
+    .save-file-modal__tree {
+        min-height: 0;
+    }
+
+    .save-file-modal__file-panel {
+        flex: 3 1 0;
+        min-height: 0;
+    }
+});
+
+/* ─────────────────────────────────────────────
+   New Folder Prompt Modal
+   ───────────────────────────────────────────── */
+
+.new-folder-prompt {
+    .flex-column();
+    gap: @spacing-lg;
+    padding-top: @spacing-md;
+}
+
+.new-folder-prompt__path {
+    font-size: 0.82em;
+    color: @text-secondary;
+    font-family: var(--font-monospace);
+    word-break: break-all;
+}
+
+.new-folder-prompt__input {
+    padding: 6px @spacing-lg;
+    border-radius: @radius-sm;
+    border: 1px solid @bg-modifier-border;
+    background: transparent;
+    color: @text-primary;
+    font-size: 0.95em;
+    outline: none;
+
+    &:focus {
+        border-color: @text-accent;
+    }
+}
+
+.new-folder-prompt__btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: @spacing-md;
+}
+
+.new-folder-prompt__btn {
+    padding: 5px 14px;
+    border-radius: @radius-md;
+    font-size: 0.85em;
+    cursor: pointer;
+    border: none;
+    transition: background @duration-fast;
+}
+
+.new-folder-prompt__btn--cancel {
+    background: @bg-modifier-hover;
+    color: @text-primary;
+
+    &:hover {
+        background: @bg-secondary;
+    }
+}
+
+.new-folder-prompt__btn--confirm {
+    background: @text-accent;
+    color: var(--text-on-accent);
+
+    &:hover {
+        background: var(--interactive-accent-hover);
+    }
+}

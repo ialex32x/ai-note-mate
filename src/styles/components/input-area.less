@@ -1,0 +1,300 @@
+/* ─────────────────────────────────────────────
+   Input Area (container, file refs, input row, send button, selectors)
+   ───────────────────────────────────────────── */
+
+// Unified input container (file ref + thinking + input)
+.session-input-container {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: @spacing-sm 6px @spacing-sm;
+    padding: 6px @spacing-lg @spacing-md;
+    border-radius: @radius-lg;
+    border: 1px solid #666;
+    background: @bg-secondary-alt;
+
+    // Reset theme-level border on buttons inside input container
+    button {
+        border: none;
+    }
+}
+
+// File reference area
+.session-file-ref-area {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+    padding: @spacing-xs 0;
+}
+
+.session-file-ref__add-btn {
+    flex: 0 0 auto;
+    .flex-center();
+    width: auto;
+    height: auto;
+    padding: @spacing-xs @spacing-md;
+    border-radius: @radius-sm;
+    cursor: pointer;
+    background: transparent !important;
+    color: @text-secondary;
+    border: none;
+    font-size: 0.9em;
+    font-weight: 600;
+    line-height: 1.4;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+.session-file-ref__list {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: @spacing-xs 0;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+        height: 4px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: @bg-modifier-border;
+        border-radius: 2px;
+    }
+}
+
+.session-file-ref__chip {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: @spacing-xs @spacing-md @spacing-xs @spacing-lg;
+    border-radius: 12px;
+    background: @bg-modifier-hover;
+    border: 1px solid #666;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 180px;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: var(--interactive-hover);
+    }
+}
+
+.session-file-ref__chip-label {
+    font-size: 0.82em;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+.session-file-ref__chip--auto {
+    border-color: @text-accent;
+    background: @text-accent;
+    color: var(--text-on-accent);
+    opacity: 0.85;
+
+    .session-file-ref__chip-label {
+        color: var(--text-on-accent);
+        font-style: italic;
+    }
+
+    .session-file-ref__chip-remove {
+        color: var(--text-on-accent);
+
+        &:hover {
+            background: @text-error;
+            color: var(--text-on-accent);
+        }
+    }
+}
+
+.session-file-ref__chip--folder {
+    border-color: @text-faint;
+    border-style: dashed;
+}
+
+.session-file-ref__chip-icon {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    color: @text-secondary;
+    margin-right: @spacing-xs;
+}
+
+.session-file-ref__chip-remove {
+    flex: 0 0 auto;
+    .flex-center();
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: @text-secondary;
+    font-size: 0.7em;
+    cursor: pointer;
+    line-height: 1;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @text-error;
+        color: var(--text-on-accent);
+    }
+}
+
+// Input row (bottom, inside unified container)
+.session-input-row {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-end;
+    gap: @spacing-md;
+    padding: @spacing-sm 0 0;
+}
+
+.session-input {
+    flex: 1 1 auto;
+    resize: none;
+    min-height: @input-min-height;
+    max-height: 200px;
+    cursor: text;
+    padding: 6px @spacing-lg;
+    border-radius: @radius-md;
+    border: none;
+    background: transparent;
+    color: @text-primary;
+    font-size: 0.95em;
+    line-height: 1.4;
+    overflow-y: auto;
+    field-sizing: content;
+
+    &::placeholder {
+        color: @text-faint;
+        opacity: 0.6;
+        font-size: 0.85em;
+    }
+}
+
+.session-send-btn {
+    flex: 0 0 auto;
+    .flex-center();
+    width: @input-min-height;
+    height: @input-min-height;
+    padding: 0;
+    border-radius: @radius-md;
+    cursor: pointer;
+    background: @text-accent;
+    color: var(--text-on-accent);
+    border: none;
+    transition: background @duration-fast;
+
+    svg {
+        .icon-size(18px);
+    }
+
+    &:hover:not(:disabled) {
+        background: var(--interactive-accent-hover);
+    }
+
+    &:disabled {
+        opacity: 1;
+        cursor: pointer;
+        background: @text-error;
+        color: var(--text-on-accent);
+
+        &:hover {
+            background: @text-error;
+            opacity: 0.85;
+        }
+    }
+}
+
+// Thinking level selector row (below input)
+.session-thinking-row {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    padding: @spacing-sm 0 0;
+    margin-top: @spacing-sm;
+    flex-wrap: wrap;
+
+    // Compact icon-only buttons living directly on the row
+    // (e.g. the add-file-reference shortcut placed before selectors).
+    // Sized to align with adjacent `.session-dropdown-btn` height.
+    &__icon-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        // Match selector button vertical footprint
+        padding: @spacing-sm;
+        line-height: 1;
+        border-radius: @radius-sm;
+        cursor: pointer;
+        color: @text-secondary;
+        background: transparent;
+        // Neutralise Obsidian theme defaults on <button>
+        box-shadow: none;
+        width: auto;
+        height: auto;
+
+        svg {
+            .icon-size(14px);
+        }
+
+        &:hover {
+            color: @text-primary;
+            background: @bg-modifier-hover;
+        }
+    }
+}
+
+// Profile selector
+.session-profile-selector {
+    .session-dropdown-btn {
+        width: 8em;
+    }
+
+    .session-dropdown-menu {
+        min-width: 200px;
+    }
+
+    .session-dropdown-item {
+        .text-truncate();
+
+        > .session-dropdown-item__model {
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+}
+
+// Allowed capabilities selector
+.session-capabilities {
+    .session-dropdown-btn {
+        min-width: 6.5em;
+    }
+
+    .session-dropdown-item {
+        gap: 6px;
+
+        input[type="checkbox"] {
+            width: 14px;
+            height: 14px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: @text-accent;
+        }
+    }
+}

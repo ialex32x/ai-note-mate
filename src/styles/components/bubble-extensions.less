@@ -1,0 +1,561 @@
+/* ─────────────────────────────────────────────
+   Bubble Extensions (tool details, thinking, refs, cursor, highlight, typing indicator)
+   ───────────────────────────────────────────── */
+
+// Inline tool confirmation
+.session-bubble__tool-confirm {
+    display: inline-flex;
+    align-items: stretch;
+    gap: 0;
+    margin-top: @spacing-sm;
+    border-radius: @radius-sm;
+    border: 1px solid @bg-modifier-border;
+    overflow: hidden;
+}
+
+.session-bubble__tool-confirm-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0 @spacing-md;
+    border-radius: 0;
+    border: none;
+    background: transparent;
+    color: @text-secondary;
+    font-size: 0.75em;
+    cursor: pointer;
+    line-height: 1.6;
+    white-space: nowrap;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+.session-bubble__tool-confirm-arrow-wrap {
+    display: inline-flex;
+    border-left: 1px solid @bg-modifier-border;
+}
+
+.session-bubble__tool-confirm-arrow {
+    padding: 0 @spacing-sm;
+    width: auto;
+    min-width: auto;
+}
+
+.session-bubble__tool-confirm-btn--result {
+    cursor: default;
+    pointer-events: none;
+    opacity: 0.8;
+}
+
+.session-bubble__tool-confirm-btn--allowed {
+    color: @text-success;
+    border-color: color-mix(in srgb, @text-success 30%, transparent);
+}
+
+.session-bubble__tool-confirm-btn--rejected {
+    color: @text-error;
+    border-color: color-mix(in srgb, @text-error 30%, transparent);
+}
+
+.session-bubble__tool-confirm-reject-icon {
+    display: inline-flex;
+    align-items: center;
+    color: @text-warning;
+    font-size: 1em;
+}
+
+.session-bubble__tool-confirm-dropdown {
+    min-width: 80px;
+}
+
+// Tool call collapsible detail
+.session-bubble__tool-header {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    line-height: 1.5;
+
+    &:hover {
+        opacity: 0.85;
+    }
+}
+
+.session-bubble__tool-arrow {
+    font-size: 0.85em;
+    flex-shrink: 0;
+    width: 1em;
+    text-align: center;
+}
+
+.session-bubble__tool-label {
+    flex: 1;
+}
+
+.session-bubble__tool-status {
+    font-size: 0.85em;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.session-bubble__tool-status--success {
+    color: @text-success;
+}
+
+.session-bubble__tool-status--warning {
+    color: @text-warning;
+}
+
+.session-bubble__tool-status--error {
+    color: @text-error;
+}
+
+.session-bubble__tool-detail-body {
+    display: none;
+    margin-top: 6px;
+    border-top: 1px solid @bg-modifier-border;
+    padding-top: 6px;
+}
+
+.session-bubble__tool-detail-body--expanded {
+    display: block;
+}
+
+.session-bubble__tool-section {
+    margin-bottom: @spacing-sm;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+}
+
+.session-bubble__tool-section-label {
+    display: block;
+    font-size: 0.75em;
+    font-weight: 600;
+    color: @text-faint;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: @spacing-xs;
+}
+
+.session-bubble__tool-code {
+    margin: 0;
+    padding: @spacing-sm 6px;
+    border-radius: @radius-sm;
+    background: @bg-modifier-hover;
+    font-size: 0.78em;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    color: @text-secondary;
+}
+
+// Thinking section in assistant bubbles
+.session-bubble__thinking {
+    margin-bottom: @spacing-sm;
+}
+
+.session-bubble__thinking--streaming .session-bubble__thinking-summary {
+    animation: thinking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+.session-bubble__thinking-header {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: @text-faint;
+    font-size: 0.78em;
+    line-height: 1.6;
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+
+    &:hover {
+        color: @text-secondary;
+    }
+
+    &:focus-visible {
+        color: @text-secondary;
+        text-decoration: underline;
+    }
+}
+
+.session-bubble__thinking-arrow {
+    font-size: 0.9em;
+    flex-shrink: 0;
+}
+
+.session-bubble__thinking-summary {
+    font-style: italic;
+}
+
+.session-bubble__thinking-body {
+    display: none;
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 6px @spacing-md;
+    margin-top: @spacing-sm;
+    border-radius: @radius-sm;
+    background: @bg-modifier-hover;
+    font-size: 0.78em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: @text-faint;
+    scrollbar-width: thin;
+}
+
+.session-bubble__thinking-body--expanded {
+    display: block;
+}
+
+// Cursor animation
+.session-bubble__cursor {
+    display: inline-block;
+    animation: blink 0.8s step-end infinite;
+    margin-left: 1px;
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+}
+
+// Bubble file references (user messages)
+.session-bubble__refs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: @spacing-sm;
+    margin-top: 6px;
+}
+
+.session-bubble__ref {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: 1px @spacing-md 1px @spacing-lg;
+    border-radius: 12px;
+    background: @bg-modifier-hover;
+    border: 1px solid #666;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 220px;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: var(--interactive-hover);
+    }
+}
+
+.session-bubble__ref--folder {
+    border-color: @text-faint;
+    border-style: dashed;
+}
+
+.session-bubble__ref-icon {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    color: @text-secondary;
+    margin-right: @spacing-xs;
+}
+
+.session-bubble__ref-label {
+    font-size: 0.8em;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-bubble__refs-toggle {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px @spacing-md;
+    border-radius: 12px;
+    border: none;
+    background: transparent;
+    color: @text-secondary;
+    font-size: 0.78em;
+    cursor: pointer;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+// Inline file reference in user message bubbles
+.bubble-file-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px @spacing-md 1px @spacing-lg;
+    border-radius: 12px;
+    background: @bg-modifier-hover;
+    border: 1px solid @bg-modifier-border;
+    cursor: pointer;
+    white-space: nowrap;
+    vertical-align: baseline;
+    margin: 0 1px;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: var(--interactive-hover);
+    }
+}
+
+.bubble-file-ref__icon {
+    display: inline-flex;
+    align-items: center;
+    color: @text-secondary;
+
+    svg {
+        .icon-size(12px);
+    }
+}
+
+.bubble-file-ref__name {
+    font-size: 0.88em;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+// Missing file reference state
+.bubble-file-ref--missing {
+    .bubble-file-ref__icon {
+        color: @text-error;
+    }
+
+    .bubble-file-ref__name {
+        color: @text-error;
+        text-decoration: line-through;
+        text-decoration-color: @text-error;
+    }
+}
+
+// Typing indicator (shown while waiting for AI response).
+// This node is a singleton created once in SessionView#onOpen and lives
+// permanently as the last child of `.session-messages`. Visibility is
+// toggled via the `--hidden` modifier; the node is never removed/recreated
+// during a session's lifetime, which prevents stale indicators from getting
+// stranded between bubbles when callback paths forget to hide it.
+.session-typing-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: @spacing-md @spacing-lg;
+    margin-bottom: @spacing-sm;
+}
+
+.session-typing-indicator--hidden {
+    display: none;
+}
+
+.session-typing-indicator__dots {
+    display: flex;
+    align-items: center;
+    gap: @spacing-xs;
+    font-size: 1.5em;
+    line-height: 1;
+    color: @text-secondary;
+}
+
+.session-typing-indicator__dot {
+    animation: typing-bounce 1.4s ease-in-out infinite;
+    animation-delay: calc(var(--i, 0) * 0.16s);
+
+    &:nth-child(1) { --i: 0; }
+    &:nth-child(2) { --i: 1; }
+    &:nth-child(3) { --i: 2; }
+}
+
+@keyframes typing-bounce {
+    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+    30% { transform: translateY(-4px); opacity: 1; }
+}
+
+// Clickable images in message bubbles
+.session-image-clickable {
+    cursor: pointer;
+    transition: opacity @duration-normal ease;
+
+    &:hover {
+        opacity: 0.85;
+    }
+}
+
+// Message highlight effect
+.session-bubble--highlight {
+    animation: highlight-pulse 2s ease-out;
+}
+
+@keyframes highlight-pulse {
+    0% {
+        background: color-mix(in srgb, @text-accent 30%, transparent);
+    }
+    100% {
+        background: inherit;
+    }
+}
+
+// ── Sub-agent delegate_task styles ──────────────────────
+//
+// The delegate_task bubble is now rendered as a plain conversational
+// message (agent badge + task text), not as a collapsible tool bubble.
+// All the old nested "tool call progress / result" styles were removed;
+// the only delegate-specific style left is the task text block below.
+
+.session-bubble__delegate-task-text {
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.5;
+    color: @text-primary;
+}
+
+// ── Sub-agent final assistant reply (collapsible) ───────
+// The sub-agent's final assistant reply is wrapped in a collapsible
+// section; it defaults to collapsed (both during streaming and after
+// completion) because its content typically overlaps with the main
+// agent's summary reply. An empty-content bubble is hidden entirely.
+
+.session-bubble--hidden {
+    display: none !important;
+}
+
+.session-bubble__subagent-reply {
+    margin-top: @spacing-sm;
+}
+
+.session-bubble__subagent-reply-header {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: @text-faint;
+    font-size: 0.85em;
+    line-height: 1.6;
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+
+    &:hover {
+        color: @text-secondary;
+    }
+
+    &:focus-visible {
+        color: @text-secondary;
+        text-decoration: underline;
+    }
+}
+
+.session-bubble__subagent-reply-arrow {
+    font-size: 0.9em;
+    flex-shrink: 0;
+}
+
+.session-bubble__subagent-reply-summary {
+    font-style: italic;
+}
+
+// Body (reuses .session-bubble__content class, so all markdown rendering
+// targeting that class still works). Hide by default, show when expanded.
+.session-bubble__subagent-reply-body {
+    display: none;
+    margin-top: @spacing-sm;
+}
+
+.session-bubble__subagent-reply-body--expanded {
+    display: block;
+}
+
+// Override Obsidian's markdown preview styles
+.session-bubble__content {
+    .markdown-preview-view,
+    .markdown-preview-sizer,
+    .markdown-renderer {
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+}
+
+// ── Inline sub-agent bubble styles ──────────────────────
+// Messages produced by a sub-agent (e.g. vault / web / code) are rendered
+// inline in the main conversation with a colored left side bar and a small
+// badge in the header so users can visually distinguish them from the
+// main agent's own turns.
+
+.session-bubble--subagent {
+    position: relative;
+    border-left: 3px solid var(--interactive-accent);
+    padding-left: @spacing-md;
+
+    &.session-bubble--subagent-vault {
+        border-left-color: var(--color-purple, @text-accent);
+    }
+
+    &.session-bubble--subagent-web {
+        border-left-color: var(--color-blue, @text-accent);
+    }
+
+    &.session-bubble--subagent-code {
+        border-left-color: var(--color-green, @text-accent);
+    }
+}
+
+.session-bubble__subagent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px @spacing-sm;
+    margin-right: @spacing-sm;
+    background: @bg-modifier-hover;
+    border-radius: @radius-sm;
+    font-size: 0.72em;
+    color: @text-secondary;
+    line-height: 1.4;
+    vertical-align: middle;
+
+    .session-bubble__subagent-badge-icon {
+        display: inline-flex;
+        align-items: center;
+
+        svg {
+            .icon-size(11px);
+        }
+    }
+}
+
+.session-bubble__subagent-badge--vault {
+    color: var(--color-purple, @text-accent);
+}
+
+.session-bubble__subagent-badge--web {
+    color: var(--color-blue, @text-accent);
+}
+
+.session-bubble__subagent-badge--code {
+    color: var(--color-green, @text-accent);
+}

@@ -1,0 +1,381 @@
+/* ─────────────────────────────────────────────
+   Message Bubbles
+   ───────────────────────────────────────────── */
+
+// Base bubble styles
+.session-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+    max-width: @bubble-max-width;
+    padding: @spacing-md @spacing-lg;
+    border-radius: @radius-lg;
+    font-size: 0.9em;
+    word-break: break-word;
+    
+    // Allow text selection in message bubbles
+    &, & * {
+        user-select: text !important;
+        -webkit-user-select: text !important;
+    }
+}
+
+// User message bubble (right aligned)
+.session-bubble--user {
+    align-self: flex-end;
+    background: @bg-modifier-hover;
+    color: @text-primary;
+}
+
+// Assistant message bubble (full width)
+.session-bubble--assistant {
+    align-self: stretch;
+    max-width: 100%;
+    background: @bg-secondary;
+    color: @text-primary;
+}
+
+// Tool call/result bubbles (left aligned)
+.session-bubble--tool_call,
+.session-bubble--tool_result {
+    align-self: flex-start;
+    background: @bg-secondary-alt;
+    color: @text-secondary;
+    font-size: 0.82em;
+}
+
+// Tool call status variants
+.session-bubble--tool-error {
+    background: color-mix(in srgb, @text-error 8%, @bg-secondary-alt);
+    border-left: 3px solid @text-error;
+}
+
+.session-bubble--tool-warning {
+    background: color-mix(in srgb, @text-warning 8%, @bg-secondary-alt);
+    border-left: 3px solid @text-warning;
+}
+
+.session-bubble--tool-success {
+    background: @bg-secondary-alt;
+}
+
+// System message bubble
+.session-bubble--system {
+    align-self: stretch;
+    background: @bg-secondary;
+    color: @text-primary;
+}
+
+// Abort system message - centered divider indicator
+.session-bubble--system:has(.session-bubble__abort-divider) {
+    background: transparent;
+    max-width: 80%;
+    margin: @spacing-sm auto;
+    padding: @spacing-xs 0;
+}
+
+.session-bubble__abort-divider {
+    display: flex;
+    align-items: center;
+    gap: @spacing-lg;
+    padding: 0;
+    
+    &::before,
+    &::after {
+        content: '';
+        flex: 1;
+        height: 1px;
+        background: @bg-modifier-border;
+    }
+}
+
+.session-bubble__abort-text {
+    font-size: 0.8em;
+    color: @text-secondary;
+    user-select: none;
+    white-space: nowrap;
+}
+
+// Error message bubble
+.session-bubble--error {
+    align-self: stretch;
+    background: color-mix(in srgb, @text-error 8%, @bg-secondary);
+    color: @text-primary;
+    border-left: 3px solid @text-error;
+    position: relative;
+
+    .session-bubble__role {
+        display: flex;
+        align-items: center;
+        gap: @spacing-xs;
+        color: @text-error;
+        margin-bottom: @spacing-xs;
+    }
+
+    .session-bubble__error-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: @text-error;
+
+        svg {
+            .icon-size(14px);
+        }
+    }
+
+    .session-bubble__error-text {
+        margin: 0 !important;
+        padding: @spacing-sm @spacing-md !important;
+        background: transparent !important;
+        color: @text-error;
+        font-size: 0.85em;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-x: auto;
+    }
+}
+
+// Bubble role label
+.session-bubble__role {
+    font-size: 0.75em;
+    font-weight: 600;
+    opacity: 0.7;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: @spacing-sm;
+}
+
+// Bubble content area
+.session-bubble__content {
+    line-height: 1.5;
+    width: 100%;
+    
+    // Reset margins for markdown-rendered elements
+    p, ul, ol, blockquote, pre, div:not(.session-bubble__tool-confirm):not(.table-container) {
+        margin: 0 !important;
+        margin-top: 0 !important;
+        margin-bottom: 0 !important;
+        max-width: 100% !important;
+    }
+    
+    // Headings spacing
+    h1, h2, h3, h4, h5, h6 {
+        margin: 0 !important;
+        margin-top: 12px !important;
+        margin-bottom: 6px !important;
+    }
+    
+    // Add spacing between block elements
+    p + p,
+    p + ul,
+    p + ol,
+    ul + p,
+    ol + p,
+    ul + ul,
+    ol + ol,
+    pre + p,
+    p + pre {
+        margin-top: 0.5em !important;
+    }
+    
+    // Tighter list spacing
+    ul, ol {
+        padding-left: 1.5em !important;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    
+    li {
+        margin: 0 !important;
+        padding: 0 !important;
+        
+        p {
+            margin: 0 !important;
+        }
+    }
+    
+    // Code blocks
+    pre {
+        padding: 0.5em !important;
+        border-radius: @radius-sm;
+        overflow-x: auto;
+        position: relative;
+    }
+    
+    code {
+        font-size: 0.9em;
+    }
+    
+    // Table styles — match Obsidian editor appearance
+    .table-container {
+        overflow-x: auto;
+        margin: 0.5em 0 !important;
+        max-width: 100%;
+        scrollbar-width: thin;
+    }
+    
+    table {
+        border-collapse: collapse;
+        width: auto;
+        min-width: 50%;
+        margin: 0;
+        font-size: 0.95em;
+        line-height: 1.4;
+    }
+    
+    th, td {
+        border: 1px solid @bg-modifier-border;
+        padding: 6px 12px;
+        text-align: left;
+        vertical-align: top;
+    }
+    
+    th {
+        font-weight: 600;
+        background: @bg-modifier-hover;
+    }
+    
+    tr:nth-child(even) {
+        background: color-mix(in srgb, @bg-modifier-hover 50%, transparent);
+    }
+    
+    // Code block copy button
+    .copy-code-button {
+        width: 20px !important;
+        height: 20px !important;
+        padding: 0 !important;
+        margin: @spacing-sm !important;
+        border-radius: @radius-sm !important;
+        background: transparent !important;
+        color: @text-secondary !important;
+        opacity: 0;
+        visibility: hidden;
+        transition: background @duration-normal, color @duration-normal, opacity @duration-slow ease !important;
+        
+        &:hover {
+            background: @bg-modifier-hover !important;
+            color: @text-primary !important;
+        }
+        
+        svg {
+            .icon-size(14px);
+        }
+    }
+    
+    pre:hover .copy-code-button {
+        opacity: 1;
+        visibility: visible;
+    }
+}
+
+// Bubble action bar
+.session-bubble__actions {
+    display: flex;
+    gap: @spacing-sm;
+    margin-top: @spacing-md;
+    opacity: 0;
+    transition: opacity @duration-normal ease;
+}
+
+.session-bubble:hover .session-bubble__actions {
+    opacity: 1;
+}
+
+// Keep actions visible while an associated floating popup (e.g. the voice
+// dropdown) is open, even when the pointer leaves the bubble — otherwise the
+// hover-driven fade would hide the picker button and make the dropdown appear
+// impossible to reopen.
+.session-bubble--actions-pinned .session-bubble__actions {
+    opacity: 1;
+}
+
+.session-bubble__action-btn {
+    .button-small();
+    
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.session-bubble__action-btn--speaking {
+    color: @text-accent;
+    
+    &:hover {
+        color: color-mix(in srgb, @text-accent 80%, transparent);
+    }
+}
+
+// Speak button group
+.session-bubble__speak-group {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+}
+
+.session-bubble__speak-btn {
+    border-radius: @radius-sm 0 0 @radius-sm !important;
+}
+
+.session-bubble__voice-picker-btn {
+    border-radius: 0 @radius-sm @radius-sm 0 !important;
+    width: 14px !important;
+    min-width: 14px;
+    padding: 0 3px !important;
+    opacity: 0.7;
+    
+    &:hover {
+        opacity: 1;
+    }
+}
+
+// Voice dropdown
+.session-bubble__voice-dropdown {
+    min-width: 200px;
+    max-height: 240px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.session-bubble__voice-item--active {
+    color: @text-accent;
+}
+
+.session-bubble__voice-item-check {
+    .flex-center();
+    width: 16px;
+    height: 16px;
+    color: @text-accent;
+}
+
+.session-bubble__voice-item-label {
+    .text-truncate();
+}
+
+// Abort label
+.session-bubble__abort-label {
+    display: flex;
+    align-items: center;
+    font-size: 0.78em;
+    color: @text-error;
+    opacity: 0.85;
+    user-select: none;
+    padding: @spacing-xs @spacing-sm;
+    border-radius: @radius-sm;
+    background: color-mix(in srgb, @text-error 10%, transparent);
+}
+
+// Mobile responsive adjustments
+.mobile({
+    .session-bubble {
+        max-width: 90%;
+        padding: @spacing-sm @spacing-md;
+    }
+    
+    .session-bubble--assistant {
+        max-width: 95%;
+    }
+    
+    .session-bubble__actions {
+        opacity: 1; // Always show actions on mobile for better UX
+    }
+});

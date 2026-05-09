@@ -1,0 +1,255 @@
+import { Setting, setTooltip } from "obsidian";
+import { t } from "../../i18n";
+import { SystemPromptModal } from "../../modals/system-prompt-modal";
+import {
+	createDropdownField,
+	createTextField,
+	createToggleField,
+	markSettingRequiresSessionRestart,
+} from "../settings-components";
+import { ALL_TOOL_CAPABILITIES, type ToolCapability } from "../../services/llm-provider";
+import type { SectionContext, SettingsSection } from "./types";
+
+/**
+ * Label / description i18n keys for each capability in the global settings UI.
+ * Reuses the existing `view.cap*` / `view.cap*Tip` keys used by the toolbar
+ * selector so the two surfaces stay consistent.
+ */
+const CAPABILITY_I18N: Record<ToolCapability, { label: string; desc: string }> = {
+	read_file: { label: 'view.capReadFile', desc: 'view.capReadFileTip' },
+	write_file: { label: 'view.capWriteFile', desc: 'view.capWriteFileTip' },
+	create_file: { label: 'view.capCreateFile', desc: 'view.capCreateFileTip' },
+	delete_file: { label: 'view.capDeleteFile', desc: 'view.capDeleteFileTip' },
+	network: { label: 'view.capNetwork', desc: 'view.capNetworkTip' },
+	multimodal_generate: { label: 'view.capMultimodalGenerate', desc: 'view.capMultimodalGenerateTip' },
+	execute: { label: 'view.capExecute', desc: 'view.capExecuteTip' },
+};
+
+export class GlobalSettingsSection implements SettingsSection {
+	readonly titleKey = 'settings.globalSettings';
+
+	constructor(private readonly ctx: SectionContext) {}
+
+	render(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+
+		// System prompt (display-only with edit button)
+		this.renderSystemPromptField(container);
+
+		// Enter to send toggle
+		createToggleField({
+			container,
+			name: t('settings.enterToSend'),
+			desc: t('settings.enterToSendDesc'),
+			value: plugin.settings.enterToSend,
+			onChange: async (value) => {
+				plugin.settings.enterToSend = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Built-in web search tool toggle
+		createToggleField({
+			container,
+			name: t('settings.builtinWebSearch'),
+			desc: t('settings.builtinWebSearchDesc'),
+			value: plugin.settings.builtinWebSearchEnabled,
+			onChange: async (value) => {
+				plugin.settings.builtinWebSearchEnabled = value;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		// Built-in web fetch tool toggle
+		createToggleField({
+			container,
+			name: t('settings.builtinWebFetch'),
+			desc: t('settings.builtinWebFetchDesc'),
+			value: plugin.settings.builtinWebFetchEnabled,
+			onChange: async (value) => {
+				plugin.settings.builtinWebFetchEnabled = value;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		// Built-in RSS fetch tool toggle
+		createToggleField({
+			container,
+			name: t('settings.builtinRSSFetch'),
+			desc: t('settings.builtinRSSFetchDesc'),
+			value: plugin.settings.builtinRSSFetchEnabled,
+			onChange: async (value) => {
+				plugin.settings.builtinRSSFetchEnabled = value;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		// Built-in JavaScript tool toggle
+		createToggleField({
+			container,
+			name: t('settings.builtinJavaScript'),
+			desc: t('settings.builtinJavaScriptDesc'),
+			value: plugin.settings.builtinJavaScriptEnabled,
+			onChange: async (value) => {
+				plugin.settings.builtinJavaScriptEnabled = value;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		// Follow-up suggestions master toggle
+		createToggleField({
+			container,
+			name: t('settings.followUpSuggestions'),
+			desc: t('settings.followUpSuggestionsDesc'),
+			value: plugin.settings.followUpSuggestionsEnabled,
+			onChange: async (value) => {
+				plugin.settings.followUpSuggestionsEnabled = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Follow-up suggestions: structured-block mode
+		createToggleField({
+			container,
+			name: t('settings.followUpSuggestionsStructured'),
+			desc: t('settings.followUpSuggestionsStructuredDesc'),
+			value: plugin.settings.followUpSuggestionsStructured,
+			onChange: async (value) => {
+				plugin.settings.followUpSuggestionsStructured = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Follow-up suggestions: auto-send on click
+		createToggleField({
+			container,
+			name: t('settings.followUpSuggestionsAutoSend'),
+			desc: t('settings.followUpSuggestionsAutoSendDesc'),
+			value: plugin.settings.followUpSuggestionsAutoSend,
+			onChange: async (value) => {
+				plugin.settings.followUpSuggestionsAutoSend = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Insight extraction master toggle (uses summarizer profile)
+		createToggleField({
+			container,
+			name: t('settings.insightExtraction'),
+			desc: t('settings.insightExtractionDesc'),
+			value: plugin.settings.insightExtractionEnabled,
+			onChange: async (value) => {
+				plugin.settings.insightExtractionEnabled = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Insight extraction: minimum reply length (chars) before running
+		createTextField({
+			container,
+			name: t('settings.insightExtractionMinReplyChars'),
+			desc: t('settings.insightExtractionMinReplyCharsDesc'),
+			placeholder: '400',
+			value: String(plugin.settings.insightExtractionMinReplyChars),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.insightExtractionMinReplyChars =
+					isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Tool confirm mode dropdown
+		createDropdownField({
+			container,
+			name: t('settings.toolConfirmMode'),
+			desc: t('settings.toolConfirmModeDesc'),
+			options: {
+				'auto': t('settings.toolConfirmModeAuto'),
+				'always': t('settings.toolConfirmModeAlways'),
+			},
+			value: plugin.settings.toolConfirmMode,
+			onChange: async (value) => {
+				plugin.settings.toolConfirmMode = value as 'auto' | 'always';
+				await plugin.saveSettings();
+			},
+		});
+
+		// Allowed tool capabilities (flat list of checkboxes).
+		// Mirrors the capabilities selector in the session toolbar; both
+		// surfaces read/write the same persisted list.
+		this.renderCapabilityToggles(container);
+	}
+
+	private renderCapabilityToggles(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+
+		// Title + description on their own Setting row, then a separate row
+		// below containing label-only checkboxes distributed evenly across
+		// the full width. Descriptions are surfaced via Obsidian's tooltip.
+		new Setting(container)
+			.setName(t('settings.allowedCapabilities'))
+			.setDesc(t('settings.allowedCapabilitiesDesc'));
+
+		const row = container.createDiv({ cls: 'oap-capabilities-row' });
+
+		for (const cap of ALL_TOOL_CAPABILITIES) {
+			const keys = CAPABILITY_I18N[cap];
+			const label = row.createEl('label', { cls: 'oap-capability-item' });
+			setTooltip(label, t(keys.desc), { placement: 'top' });
+
+			const input = label.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			input.checked = plugin.settings.allowedCapabilities.includes(cap);
+
+			label.createSpan({ cls: 'oap-capability-label', text: t(keys.label) });
+
+			input.addEventListener('change', async () => {
+				const current = new Set(plugin.settings.allowedCapabilities);
+				if (input.checked) {
+					current.add(cap);
+				} else {
+					current.delete(cap);
+				}
+				// Preserve canonical order.
+				plugin.settings.allowedCapabilities = ALL_TOOL_CAPABILITIES.filter(c => current.has(c));
+				await plugin.saveSettings();
+			});
+		}
+	}
+
+	private renderSystemPromptField(container: HTMLElement): void {
+		const { app, plugin, refreshSection } = this.ctx;
+		const systemPrompt = plugin.settings.systemPrompt;
+
+		// Build tooltip with truncated prompt preview (max 100 chars)
+		let tooltip = t('settings.editInitialPrompt');
+		if (systemPrompt && systemPrompt.trim()) {
+			const truncated = systemPrompt.length > 100
+				? systemPrompt.substring(0, 100) + '…'
+				: systemPrompt;
+			tooltip = truncated;
+		}
+
+		const setting = new Setting(container)
+			.setName(t('settings.initialPrompt'))
+			.setDesc(t('settings.initialPromptDesc'))
+			.addButton(btn => btn
+				.setIcon('pencil')
+				.setTooltip(tooltip)
+				.onClick(() => {
+					const modal = new SystemPromptModal(app, plugin.settings.systemPrompt);
+					modal.onSave = async (value: string) => {
+						plugin.settings.systemPrompt = value;
+						await plugin.saveSettings();
+						refreshSection(this); // Refresh to update tooltip
+					};
+					modal.open();
+				}));
+
+		markSettingRequiresSessionRestart(setting);
+	}
+}

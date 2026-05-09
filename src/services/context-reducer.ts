@@ -1,0 +1,1065 @@
+import { LLMProviderType } from "./providers";
+import { createOpenAICompletion } from "./providers/openai-provider";
+import { createGeminiCompletion } from "./providers/gemini-provider";
+import { ChatMessageRole, MinimalModelConfig } from "./llm-provider";
+
+// ─────────────────────────────────────────────
+// Constants (TODO: migrate to settings later)
+// ─────────────────────────────────────────────
+
+/**
+ * Token threshold that triggers context compression.
+ * When the estimated token count of non-system messages exceeds this value,
+ * the reducer will summarize older messages and keep recent ones.
+ */
+const CONTEXT_COMPRESSION_THRESHOLD = 8000;
+
+/**
+ * Minimum number of most recent messages to retain after compression
+ * (sliding window).
+ *
+ * Semantics: this is a **lower bound**, not an exact count. The real number
+ * of retained messages can be larger because the split point is always
+ * snapped backward to the nearest turn boundary (start of a `user` message),
+ * so the entire final turn — including its tool_call / tool_result chain —
+ * stays intact.
+ *
+ * Default of 10 is chosen to comfortably cover one typical tool-using turn
+ * (user → assistant → tool_call → tool_result → …), which empirically runs
+ * 3–10 messages. A smaller value risks "nothing to snap to" inside the
+ * window and degenerates into no-compression.
+ *
+ * Only applies to non-system messages.
+ */
+const SLIDING_WINDOW_SIZE = 10;
+
+/**
+ * Maximum number of summaries to retain before triggering second-level compression.
+ * When total summaries exceed this value, all summaries are re-summarized into
+ * a single higher-level summary.
+ */
+const MAX_SUMMARIES_THRESHOLD = 5;
+
+interface PromptConfig {
+    content: string;
+}
+
+export interface HistroyMessage {
+    role: ChatMessageRole;
+    content: string;
+    turn?: number;
+    media?: any;
+    /** Optional message ID for tracking purposes (e.g., debugging summaries) */
+    id?: string;
+    /**
+     * Thinking/reasoning text produced by the model on a previous turn.
+     * Preserved through context reduction so that thinking-mode APIs
+     * (e.g. DeepSeek, Qwen) receive the `reasoning_content` they require.
+     */
+    thinkingContent?: string;
+}
+
+/**
+ * Represents a conversation summary with its metadata.
+ * These are stored separately from the original messages to keep the UI clean.
+ */
+export interface ConversationSummary {
+    content: string;
+    /** Summary level: 1 = first-level summary, 2 = summary of summaries, etc. */
+    level: number;
+    /** Timestamp when this summary was created */
+    createdAt: number;
+    /**
+     * The index of the first message that was NOT summarized by this summary.
+     * E.g., if lastMessageIndex = 20, this summary covers messages from 0 to 19.
+     * Used to determine which messages are still raw (not yet summarized).
+     */
+    lastMessageIndex: number;
+    /**
+     * Redundant field: the message ID of the last message that was summarized.
+     * Useful for manual debugging and tracing.
+     */
+    messageId?: string;
+}
+
+// ─────────────────────────────────────────────
+// Token estimation
+// ─────────────────────────────────────────────
+
+/** Token threshold for collapsing a single tool result in historical messages. */
+const TOOL_RESULT_COLLAPSE_THRESHOLD = 500;
+
+/**
+ * Rough token count estimation.
+ * Uses a simple heuristic: ~4 characters per token for Latin text,
+ * ~1.5 characters per token for CJK (Chinese/Japanese/Korean).
+ * This is intentionally conservative — actual token counts may vary
+ * by tokenizer, but the estimate is good enough for threshold comparison.
+ */
+export function estimateTokens(text: string): number {
+    const cjkMatches = text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g);
+    const cjkCount = cjkMatches ? cjkMatches.length : 0;
+    const nonCjkCount = Math.max(0, text.length - cjkCount);
+    return Math.ceil(cjkCount / 1.5 + nonCjkCount / 4);
+}
+
+/** Estimate total tokens for an array of messages. */
+function estimateMessagesTokens(messages: HistroyMessage[]): number {
+    let total = 0;
+    for (const msg of messages) {
+        total += estimateTokens(msg.content);
+        if (msg.media?.length) {
+            // Rough flat estimate per attachment. Image budget per OpenAI's
+            // tile model averages ~170; audio/video/pdf vary widely so we use
+            // the same flat factor as a placeholder until per-kind estimates
+            // become a measurable problem.
+            total += msg.media.length * 170;
+        }
+    }
+    return total;
+}
+
+// ─────────────────────────────────────────────
+// Tool result collapsing
+// ─────────────────────────────────────────────
+
+/**
+ * Collapse a single tool call + result into a concise one-line summary.
+ *
+ * Strategy:
+ * 1. Error results: kept as-is (usually short and important for reasoning).
+ * 2. Structured JSON: extract key statistics (item count, field names).
+ * 3. Plain text: keep first 200 chars + truncation note.
+ *
+ * Only triggers when the result exceeds `TOOL_RESULT_COLLAPSE_THRESHOLD` tokens.
+ * Below the threshold the original result is returned verbatim inside the summary line.
+ *
+ * @param toolName  Name of the tool that was called
+ * @param rawArgs   Raw JSON string of the tool arguments
+ * @param result    The full tool result string
+ * @returns A concise summary string like `[Tool: search_notes({query:"x"}) → 3 results, 1234 chars]`
+ */
+function collapseToolResult(toolName: string, rawArgs: string, result: string): string {
+    const tokens = estimateTokens(result);
+
+    // Parse args for display (show abbreviated version)
+    let argsDisplay: string;
+    try {
+        const parsed = JSON.parse(rawArgs);
+        // Show only the first 2 keys to keep it short
+        const keys = Object.keys(parsed);
+        const entries = keys.slice(0, 2).map(k => {
+            const v = parsed[k];
+            const vs = typeof v === 'string'
+                ? (v.length > 30 ? `"${v.slice(0, 30)}..."` : `"${v}"`)
+                : JSON.stringify(v);
+            return `${k}: ${vs}`;
+        });
+        argsDisplay = entries.join(', ') + (keys.length > 2 ? ', ...' : '');
+    } catch {
+        argsDisplay = rawArgs.length > 60 ? rawArgs.slice(0, 60) + '...' : rawArgs;
+    }
+
+    // Error results: always keep full text (usually short)
+    if (result.startsWith('Error:')) {
+        return `[Tool: ${toolName}({${argsDisplay}}) → ${result}]`;
+    }
+
+    // Below threshold: include full result in the summary
+    if (tokens <= TOOL_RESULT_COLLAPSE_THRESHOLD) {
+        return `[Tool: ${toolName}({${argsDisplay}}) → ${result}]`;
+    }
+
+    // Try to parse as JSON for structured summary
+    try {
+        const parsed = JSON.parse(result);
+        if (Array.isArray(parsed)) {
+            return `[Tool: ${toolName}({${argsDisplay}}) → JSON array with ${parsed.length} items, ${result.length} chars]`;
+        } else if (typeof parsed === 'object' && parsed !== null) {
+            const keys = Object.keys(parsed);
+            const keyPreview = keys.slice(0, 5).join(', ') + (keys.length > 5 ? ', ...' : '');
+            return `[Tool: ${toolName}({${argsDisplay}}) → JSON object {${keyPreview}}, ${result.length} chars]`;
+        }
+    } catch {
+        // Not JSON, fall through to plain text handling
+    }
+
+    // Plain text: keep first 200 chars
+    const preview = result.slice(0, 200).replace(/\n/g, ' ');
+    return `[Tool: ${toolName}({${argsDisplay}}) → ${preview}... (truncated, original ${result.length} chars)]`;
+}
+
+// ─────────────────────────────────────────────
+// ContextReducer
+// ─────────────────────────────────────────────
+
+/**
+ * Result of context reduction.
+ * - messagesToSend: The message list to send to the LLM (may include summaries)
+ * - newSummary: If compression happened, this contains the new summary to persist externally
+ * - compressed: Whether any compression was performed
+ * - lastMessageIndex: The index in rawMessages up to which has been summarized.
+ *                     Only meaningful when compressed is true.
+ */
+export interface ContextReduceResult<T extends HistroyMessage> {
+    messagesToSend: T[];
+    newSummary: ConversationSummary | null;
+    compressed: boolean;
+    /** Index of the last message in rawMessages that is now covered by summaries */
+    lastMessageIndex: number;
+}
+
+export class ContextReducer {
+    /**
+     * Build the message list to send to the LLM with hierarchical context compression.
+     *
+     * Key design:
+     * - The original `rawMessages` is NEVER modified. It's used for UI display only.
+     * - Summaries are stored separately and passed in via `existingSummaries`.
+     * - Each summary tracks `lastMessageIndex` — the position in rawMessages where
+     *   summarization stopped. Only messages AFTER this index are eligible for new summaries.
+     *
+     * @param rawMessages - Complete original messages (for UI display, not modified)
+     * @param existingSummaries - Previously generated summaries (stored externally)
+     * @returns Messages to send to LLM, plus any new summary that should be persisted
+     */
+    static async reduce<T extends HistroyMessage>(
+        modelConfig: MinimalModelConfig,
+        prompt: PromptConfig,
+        rawMessages: T[],
+        existingSummaries: ConversationSummary[] = []
+    ): Promise<ContextReduceResult<T>> {
+        // ── 1. Separate system messages (always preserved) ────────────────
+        const systemMessages = rawMessages.filter(msg => msg.role === "system");
+        const nonSystemMessages = rawMessages.filter(msg => msg.role !== "system");
+
+        // ── 2. Find the starting point for new summarization ────────────
+        // Only summarize messages that haven't been summarized yet.
+        //
+        // Primary anchor: the `messageId` recorded on the most-recent summary.
+        // This is stable even if the message array is rebuilt (e.g. after a
+        // session reload with newly-materialized tool_result messages that
+        // shift positional indices). The old `lastMessageIndex` is kept as a
+        // fallback for (a) summaries produced before `messageId` was
+        // populated, and (b) defensive recovery when the id can no longer be
+        // located (user deleted messages mid-conversation, etc.).
+        let cutoffIndex = 0;
+        if (existingSummaries.length > 0) {
+            const lastSummary = existingSummaries.reduce(
+                (a, b) => (a.lastMessageIndex >= b.lastMessageIndex ? a : b),
+            );
+            const anchorId = lastSummary.messageId;
+            let resolvedByID = -1;
+            if (anchorId) {
+                const idx = nonSystemMessages.findIndex(m => m.id === anchorId);
+                if (idx >= 0) {
+                    // `lastMessageIndex` represents the first UN-summarized
+                    // position; the anchor message IS summarized, so the new
+                    // cutoff is one past it.
+                    resolvedByID = idx + 1;
+                }
+            }
+            if (resolvedByID >= 0) {
+                cutoffIndex = resolvedByID;
+                if (resolvedByID !== lastSummary.lastMessageIndex) {
+                    console.debug("[ContextReducer] cutoff anchored by id (", anchorId,
+                        ") →", resolvedByID, "(recorded index was", lastSummary.lastMessageIndex, ")");
+                }
+            } else {
+                cutoffIndex = Math.max(...existingSummaries.map(s => s.lastMessageIndex));
+                if (anchorId) {
+                    console.warn("[ContextReducer] cutoff anchor id", anchorId,
+                        "not found; falling back to recorded index", cutoffIndex);
+                }
+            }
+            // Defensive clamp: the recorded index may point past the current
+            // array length if messages were pruned externally.
+            if (cutoffIndex > nonSystemMessages.length) cutoffIndex = nonSystemMessages.length;
+            if (cutoffIndex < 0) cutoffIndex = 0;
+        }
+
+        // Get only the non-system messages that are AFTER the cutoff
+        const unsummarizedMessages = nonSystemMessages.slice(cutoffIndex);
+        const summarizedMessages = nonSystemMessages.slice(0, cutoffIndex);
+
+        // ── 3. Estimate tokens ─────────────────────────────────────────────
+        const unsummarizedTokens = estimateMessagesTokens(unsummarizedMessages);
+        const summarizedTokens = estimateMessagesTokens(summarizedMessages);
+        const summaryTokens = existingSummaries.reduce((sum, s) => sum + estimateTokens(s.content), 0);
+        const totalTokens = unsummarizedTokens + summarizedTokens + summaryTokens;
+
+        // ── 4. Check if compression is needed ─────────────────────
+        // Only consider unsummarized messages + summaries for threshold check
+        const effectiveTokens = unsummarizedTokens + summaryTokens;
+        if (effectiveTokens <= CONTEXT_COMPRESSION_THRESHOLD) {
+            // console.log(`ContextReducer: No compression needed (effective tokens: ${effectiveTokens}, threshold: ${CONTEXT_COMPRESSION_THRESHOLD})`);
+            // No new compression needed - send summaries + unsummarized messages
+            // (skip the raw messages that are already covered by existing summaries)
+            const summaryMessages: HistroyMessage[] = existingSummaries.map(s => ({
+                role: "assistant" as ChatMessageRole,
+                content: s.content,
+            }));
+
+            // Build archive note if there are summaries (meaning some messages are archived)
+            const archiveNoteMessages: HistroyMessage[] = existingSummaries.length > 0 ? [{
+                role: "assistant" as ChatMessageRole,
+                content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
+            }] : [];
+
+            // When we have existing summaries, the "unsummarized" slice may
+            // start mid-turn (e.g. on a tool_result) because the cutoff was
+            // anchored on an arbitrary message. Snap it forward to the next
+            // turn boundary so the LLM always sees complete turns.
+            const snapped = existingSummaries.length > 0
+                ? this.sliceFromNextTurnBoundary(unsummarizedMessages)
+                : unsummarizedMessages;
+
+            // No compression needed - but if there are existing summaries, context IS compressed
+            // Collapse historical tool messages before ensuring integrity
+            const collapsedUnsummarized = this.collapseToolMessages(snapped);
+            // Ensure tool message sequence integrity in the final messagesToSend
+            const finalMessagesToSend = [
+                ...systemMessages,
+                ...summaryMessages,
+                ...archiveNoteMessages,
+                ...this.ensureToolSequenceIntegrity(collapsedUnsummarized),
+            ] as T[];
+
+            return {
+                messagesToSend: this.validateAndSanitizeForLLM(finalMessagesToSend) as T[],
+                newSummary: null,
+                compressed: existingSummaries.length > 0,
+                lastMessageIndex: cutoffIndex,
+            };
+        }
+
+        // ── 5. Determine what to compress ──────────────────────────────────
+        let messagesToSummarize: HistroyMessage[];
+        let newSummaryLevel: number;
+
+        if (existingSummaries.length >= MAX_SUMMARIES_THRESHOLD) {
+            // ── Level 2+: Summarize the existing summaries ─────────────────
+            messagesToSummarize = existingSummaries.map(s => ({
+                role: "assistant" as ChatMessageRole,
+                content: s.content,
+            }));
+            newSummaryLevel = (existingSummaries[0]?.level ?? 1) + 1;
+        } else {
+            // ── Level 1: Summarize unsummarized messages ────────────────────
+            messagesToSummarize = unsummarizedMessages;
+            newSummaryLevel = 1;
+        }
+
+        // ── 6. Split into old (to summarize) and recent (sliding window) ─
+        // Two strategies depending on which level we are producing:
+        //   * Level 1: the input is the raw conversation — we snap backward
+        //     to a turn boundary so the recent window always starts at a
+        //     `user` message and the final turn (with its tool chain) is
+        //     preserved intact.
+        //   * Level 2+: the input is entirely synthetic assistant messages
+        //     (previous summaries). There are no "turns" or tool chains, so
+        //     we simply summarize ALL of them into one higher-level summary
+        //     and keep nothing in the recent window.
+        let splitIndex: number;
+        if (newSummaryLevel === 1) {
+            const turnBoundaries = this.findTurnBoundaries(messagesToSummarize);
+            splitIndex = Math.max(0, messagesToSummarize.length - SLIDING_WINDOW_SIZE);
+            if (splitIndex > 0) {
+                let snappedIndex = 0;
+                for (const boundary of turnBoundaries) {
+                    if (boundary <= splitIndex) snappedIndex = boundary;
+                    else break;
+                }
+                splitIndex = snappedIndex;
+            }
+        } else {
+            // Level 2+ — summarize all existing summaries.
+            splitIndex = messagesToSummarize.length;
+        }
+
+        // Edge case: if all messages fit in the window, no need to summarize
+        if (splitIndex === 0) {
+            // console.log("ContextReducer: All messages fit within sliding window, no compression needed");
+            // Convert existingSummaries to message format for LLM
+            const summaryMessages: HistroyMessage[] = existingSummaries.map(s => ({
+                role: "assistant" as ChatMessageRole,
+                content: s.content,
+            }));
+            // All messages fit in window - but if there are existing summaries, context IS compressed
+            const assembled = [
+                ...systemMessages,
+                ...summaryMessages,
+                ...messagesToSummarize,
+            ] as T[];
+            return {
+                messagesToSend: this.validateAndSanitizeForLLM(assembled) as T[],
+                newSummary: null,
+                compressed: existingSummaries.length > 0,
+                lastMessageIndex: cutoffIndex,
+            };
+        }
+
+        // Collapse tool messages in the old portion before summarization
+        const oldMessagesRaw = messagesToSummarize.slice(0, splitIndex);
+        const oldMessages = this.collapseToolMessages(oldMessagesRaw);
+        const recentMessages = messagesToSummarize.slice(splitIndex);
+
+        // ── 7. Calculate the message index for the new summary ─────────────
+        // For Level 1: the new summary covers up to (cutoffIndex + splitIndex)
+        // For Level 2+: the new summary covers all existing summaries
+        const newSummaryLastIndex = newSummaryLevel === 1
+            ? cutoffIndex + splitIndex
+            : nonSystemMessages.length; // Level 2+ means we're summarizing summaries
+
+        // ── 8. Get the message ID of the last summarized message ──────────
+        // For Level 1: last message in oldMessages (before split)
+        // For Level 2+: last existing summary's messageId
+        let lastSummarizedMessageId: string | undefined;
+        if (newSummaryLevel === 1) {
+            const lastMsg = oldMessages[oldMessages.length - 1];
+            lastSummarizedMessageId = lastMsg?.id;
+        } else {
+            // For Level 2+, use the last existing summary's messageId
+            const lastSummary = existingSummaries[existingSummaries.length - 1];
+            lastSummarizedMessageId = lastSummary?.messageId;
+        }
+
+        // ── 9. Generate summary via LLM ─────────────────────────────────────
+        // ── 9a. Determine prefix based on summary level ───────────────────
+        const summaryPrefix = newSummaryLevel === 1
+            ? "[Conversation Summary]\n"
+            : `[Summary of Previous Summaries (Level ${newSummaryLevel})]\n`;
+
+        const summaryContent = await summarizeConversation(modelConfig, prompt, oldMessages, newSummaryLevel);
+
+        // ── 9b. Summary generation failed — degrade to "no compression" ───
+        // A null return means the summarizer threw; inserting an empty assistant
+        // message would be rejected by some OpenAI-compatible gateways. We fall
+        // back to sending the raw (non-compressed) context this turn and let the
+        // next turn try again.
+        if (summaryContent === null) {
+            console.warn("[ContextReducer] summarizeConversation returned null; degrading to no-compression for this turn");
+            const fallbackSummaryMessages: HistroyMessage[] = existingSummaries.map(s => ({
+                role: "assistant" as ChatMessageRole,
+                content: s.content,
+            }));
+            const fallbackArchiveNote: HistroyMessage[] = existingSummaries.length > 0 ? [{
+                role: "assistant" as ChatMessageRole,
+                content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
+            }] : [];
+            const fallbackCollapsed = this.collapseToolMessages(unsummarizedMessages);
+            const fallbackAssembled = [
+                ...systemMessages,
+                ...fallbackSummaryMessages,
+                ...fallbackArchiveNote,
+                ...this.ensureToolSequenceIntegrity(fallbackCollapsed),
+            ] as T[];
+            return {
+                messagesToSend: this.validateAndSanitizeForLLM(fallbackAssembled) as T[],
+                newSummary: null,
+                compressed: existingSummaries.length > 0,
+                lastMessageIndex: cutoffIndex,
+            };
+        }
+
+        // ── 10. Create new summary to persist ──────────────────────────────
+        // Store content WITH prefix so future reduces get it automatically
+        const newSummary: ConversationSummary = {
+            content: summaryPrefix + summaryContent,
+            level: newSummaryLevel,
+            createdAt: Date.now(),
+            lastMessageIndex: newSummaryLastIndex,
+            messageId: lastSummarizedMessageId,
+        };
+
+        // ── 11. Build messages to send to LLM ────────────────────────────────
+        // existingSummaries already contain prefix in their content
+        const summaryMessages: HistroyMessage[] = existingSummaries.map(s => ({
+            role: "assistant" as ChatMessageRole,
+            content: s.content,
+        }));
+
+        const latestSummaryMessage: HistroyMessage = {
+            role: "assistant",
+            content: newSummary.content, // already has prefix
+        };
+
+        // Determine what "recent" messages to keep
+        // For Level 1: keep the messages after splitIndex (relative to unsummarizedMessages)
+        // For Level 2+: recentMessages are from summaries, keep all
+        const keptRecentMessages = newSummaryLevel === 1
+            ? recentMessages
+            : recentMessages;
+
+        // Build archive note: inform LLM about archived messages before summaries
+        const archiveNoteMessage: HistroyMessage = {
+            role: "assistant" as ChatMessageRole,
+            content: `[Note: previous turns are archived. Use \`retrieve_chat_history\` tool for details.]`,
+        };
+
+        // Ensure tool message sequence integrity in the final messagesToSend
+        const finalMessagesToSend = [
+            ...systemMessages,
+            ...summaryMessages,
+            latestSummaryMessage as T,
+            archiveNoteMessage,
+            ...this.ensureToolSequenceIntegrity(keptRecentMessages),
+        ] as T[];
+
+        return {
+            messagesToSend: this.validateAndSanitizeForLLM(finalMessagesToSend) as T[],
+            newSummary,
+            compressed: true,
+            lastMessageIndex: newSummaryLastIndex,
+        };
+        }
+
+    /**
+     * End-to-end validation & sanitization of the final messages list sent to the LLM.
+     *
+     * Unlike `ensureToolSequenceIntegrity` which only inspects a local slice before
+     * concatenation, this runs on the fully-assembled message array (system messages,
+     * historical summaries, archive notes, and recent messages all combined) so it
+     * can catch orphan tool_results that were introduced by the assembly itself
+     * (e.g. a synthetic summary `assistant` message sitting immediately before a
+     * `tool_result`).
+     *
+     * Rules enforced (see docs/context-compression-fix-plan.md §4.1):
+     *  1. Tool pairing: each `assistant(toolCalls)` must be followed by N matching
+     *     `tool_result` messages. Trailing missing results cause the assistant to
+     *     degrade to content-only (or be dropped if it would be empty). Middle
+     *     missing results get a synthetic placeholder tool_result.
+     *  2. Every `tool_result` must have a directly-preceding `assistant(toolCalls)`
+     *     (separated only by other tool_results). Otherwise it is an orphan and
+     *     dropped.
+     *  3. `assistant` messages with empty content, no toolCalls and no
+     *     thinkingContent are dropped (some gateways reject them outright).
+     *  4. The first non-system message may not be a `tool_result`.
+     *
+     * The method returns a new array; the input is never mutated.
+     */
+    private static validateAndSanitizeForLLM<T extends HistroyMessage>(messages: T[]): T[] {
+        if (messages.length === 0) return messages;
+
+        // Debug: dump the assembled sequence before sanitization so any
+        // subsequent 400 can be correlated with the exact layout we produced.
+        try {
+            const summary = messages.map((m, idx) => {
+                const tc = (m as any).toolCalls as any[] | undefined;
+                const tcIds = tc && tc.length > 0 ? tc.map((c) => c.id).join(",") : "";
+                const tcId = (m as any).toolCallId as string | undefined;
+                const len = typeof m.content === "string" ? m.content.length : 0;
+                return `[${idx}] ${m.role}${tcIds ? ` toolCalls=${tcIds}` : ""}${tcId ? ` toolCallId=${tcId}` : ""} len=${len}`;
+            }).join("\n");
+            console.debug("[ContextReducer] validate: pre-sanitize sequence\n" + summary);
+        } catch { /* noop */ }
+
+        // Pass 1 \u2014 drop empty assistant messages & leading orphan tool_results,        // and drop any tool_result whose owning assistant(toolCalls) is not the
+        // nearest non-tool_result predecessor.
+        const pass1: T[] = [];
+        let sawNonSystem = false;
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i]!;
+
+            if (msg.role === "system") {
+                pass1.push(msg);
+                continue;
+            }
+
+            // Drop empty assistant messages that carry no useful payload.
+            if (msg.role === "assistant") {
+                const toolCalls = (msg as any).toolCalls as any[] | undefined;
+                const hasContent = typeof msg.content === "string" && msg.content.length > 0;
+                const hasThinking = typeof msg.thinkingContent === "string" && msg.thinkingContent.length > 0;
+                const hasToolCalls = !!(toolCalls && toolCalls.length > 0);
+                if (!hasContent && !hasThinking && !hasToolCalls) {
+                    console.warn("[ContextReducer] validate: dropping empty assistant message at index", i);
+                    continue;
+                }
+            }
+
+            if (msg.role === "tool_result") {
+                // First non-system message must not be a tool_result.
+                if (!sawNonSystem) {
+                    console.warn("[ContextReducer] validate: dropping leading orphan tool_result");
+                    continue;
+                }
+                // Find the nearest non-tool_result predecessor already accepted.
+                let ownerIdx = pass1.length - 1;
+                while (ownerIdx >= 0 && pass1[ownerIdx]!.role === "tool_result") {
+                    ownerIdx--;
+                }
+                const owner = ownerIdx >= 0 ? pass1[ownerIdx] : undefined;
+                const ownerToolCalls = owner && owner.role === "assistant"
+                    ? ((owner as any).toolCalls as any[] | undefined)
+                    : undefined;
+                const tcId = (msg as any).toolCallId as string | undefined;
+                if (!owner || owner.role !== "assistant" || !ownerToolCalls || ownerToolCalls.length === 0
+                    || !tcId || !ownerToolCalls.some((tc) => tc.id === tcId)) {
+                    console.warn("[ContextReducer] validate: dropping orphan tool_result (toolCallId=", tcId, ")");
+                    continue;
+                }
+            }
+
+            pass1.push(msg);
+            sawNonSystem = true;
+        }
+
+        // Pass 2 — for each assistant(toolCalls), verify all required tool_results
+        // are present. Fill missing middle ones with a placeholder; trim a trailing
+        // assistant(toolCalls) that has NO results at all (or degrade it to
+        // content-only if it has usable content).
+        const pass2: T[] = [];
+        for (let i = 0; i < pass1.length; i++) {
+            const msg = pass1[i]!;
+            pass2.push(msg);
+
+            if (msg.role !== "assistant") continue;
+            const toolCalls = (msg as any).toolCalls as { id: string }[] | undefined;
+            if (!toolCalls || toolCalls.length === 0) continue;
+
+            // Collect immediately-following tool_results.
+            const gathered = new Map<string, T>();
+            let j = i + 1;
+            while (j < pass1.length && pass1[j]!.role === "tool_result") {
+                const tcId = (pass1[j] as any).toolCallId as string | undefined;
+                if (tcId) gathered.set(tcId, pass1[j]!);
+                j++;
+            }
+
+            const missing = toolCalls.filter((tc) => !gathered.has(tc.id));
+            const isTrailing = j >= pass1.length; // no message follows the (incomplete) sequence
+
+            if (missing.length === 0) continue;
+
+            if (isTrailing) {
+                // Trailing assistant(toolCalls) without results → degrade to content-only or drop.
+                const hasContent = typeof msg.content === "string" && msg.content.length > 0;
+                const hasThinking = typeof msg.thinkingContent === "string" && msg.thinkingContent.length > 0;
+                // Drop the already-pushed message; we will re-push the degraded form if useful.
+                pass2.pop();
+                // Also drop any partial tool_results we just gathered — they are orphans now.
+                for (let k = i + 1; k < j; k++) {
+                    // Nothing to drop from pass2 (we only pushed `msg`). Skip in the outer loop below.
+                }
+                if (hasContent || hasThinking) {
+                    const degraded = {
+                        ...msg,
+                        // Strip toolCalls so downstream providers don't try to pair them.
+                    } as any;
+                    delete degraded.toolCalls;
+                    pass2.push(degraded as T);
+                    console.warn("[ContextReducer] validate: trailing assistant(toolCalls) missing results — degraded to content-only");
+                } else {
+                    console.warn("[ContextReducer] validate: trailing assistant(toolCalls) missing results and no content — dropped");
+                }
+                // Skip over the partial tool_results we already consumed.
+                i = j - 1;
+                continue;
+            }
+
+            // Middle gap → insert placeholder tool_results for each missing id,
+            // ordered after the present ones to preserve a stable layout.
+            for (let k = i + 1; k < j; k++) {
+                pass2.push(pass1[k]!);
+            }
+            for (const mc of missing) {
+                const placeholder = {
+                    role: "tool_result",
+                    content: "[Error: tool result missing after context compression]",
+                    toolCallId: mc.id,
+                } as unknown as T;
+                pass2.push(placeholder);
+                console.warn("[ContextReducer] validate: inserted placeholder tool_result for missing id=", mc.id);
+            }
+            i = j - 1; // skip consumed results
+        }
+
+        return pass2;
+    }
+
+    /**
+     * Collapse tool call sequences in a message array.
+     *
+     * Scans for assistant messages with `toolCalls` followed by their corresponding
+     * `tool_result` messages. Replaces each such sequence with a single assistant
+     * message containing a concise summary of what tools were called and what they
+     * returned.
+     *
+     * **Important**: Only collapses sequences that are NOT in the most recent turn
+     * (i.e., the last user→assistant exchange). The most recent turn's tool results
+     * must remain intact so the LLM can reference them.
+     *
+     * This method does NOT modify the input array; it returns a new array.
+     */
+    private static collapseToolMessages<T extends HistroyMessage>(messages: T[]): T[] {
+        if (messages.length === 0) return messages;
+
+        // If the slice we were handed begins with orphan tool_result(s)
+        // (because the owning assistant was already folded into a summary on
+        // a previous turn), drop that leading orphan run so the sequence we
+        // return can be joined without introducing a 400 later.
+        let leadingDrop = 0;
+        while (leadingDrop < messages.length && messages[leadingDrop]!.role === 'tool_result') {
+            console.warn("[ContextReducer] collapseToolMessages: dropping leading orphan tool_result at index",
+                leadingDrop);
+            leadingDrop++;
+        }
+        if (leadingDrop > 0) {
+            messages = messages.slice(leadingDrop) as T[];
+            if (messages.length === 0) return messages;
+        }
+
+        // Find the start of the last turn (last user message index)
+        let lastTurnStart = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i]!.role === 'user') {
+                lastTurnStart = i;
+                break;
+            }
+        }
+
+        const result: T[] = [];
+        let i = 0;
+
+        while (i < messages.length) {
+            const msg = messages[i]!;
+
+            // If we're in the last turn, keep everything intact
+            if (lastTurnStart >= 0 && i >= lastTurnStart) {
+                result.push(msg);
+                i++;
+                continue;
+            }
+
+            // Check if this is an assistant message with tool calls
+            const toolCalls = (msg as any).toolCalls as { id: string; type: string; function: { name: string; arguments: string } }[] | undefined;
+            if (msg.role === 'assistant' && toolCalls && toolCalls.length > 0) {
+                // Collect all tool_result messages that follow
+                const toolCallIds = new Set(toolCalls.map(tc => tc.id));
+                const collapsedParts: string[] = [];
+
+                // If the assistant message has text content, preserve it
+                if (msg.content && msg.content.trim()) {
+                    collapsedParts.push(msg.content.trim());
+                }
+
+                let j = i + 1;
+                while (j < messages.length && messages[j]!.role === 'tool_result') {
+                    const resultMsg = messages[j]!;
+                    const resultToolCallId = (resultMsg as any).toolCallId as string | undefined;
+
+                    if (resultToolCallId && toolCallIds.has(resultToolCallId)) {
+                        // Find the matching tool call to get name and args
+                        const matchingCall = toolCalls.find(tc => tc.id === resultToolCallId);
+                        if (matchingCall) {
+                            const summary = collapseToolResult(
+                                matchingCall.function.name,
+                                matchingCall.function.arguments,
+                                resultMsg.content,
+                            );
+                            collapsedParts.push(summary);
+                        }
+                        toolCallIds.delete(resultToolCallId!);
+                    }
+                    j++;
+                }
+
+                // Create a collapsed assistant message replacing the entire sequence
+                const collapsedContent = collapsedParts.join('\n');
+                const collapsedMsg = {
+                    role: 'assistant' as ChatMessageRole,
+                    content: collapsedContent,
+                    id: msg.id,
+                    // Preserve thinkingContent so thinking-mode APIs receive
+                    // the reasoning_content they require on replay.
+                    ...(msg.thinkingContent ? { thinkingContent: msg.thinkingContent } : {}),
+                } as T;
+                result.push(collapsedMsg);
+                i = j; // Skip past all consumed tool_result messages
+            } else {
+                result.push(msg);
+                i++;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Collapse ALL tool call sequences in a message array (no protected window).
+     *
+     * Unlike `collapseToolMessages()` which protects the most recent turn,
+     * this method collapses every tool call sequence unconditionally.
+     * It is designed for use by `summarizeConversation()` where all messages
+     * are historical and should be collapsed before being sent to the summarizer.
+     *
+     * This ensures that tool_call/tool_result messages (which would otherwise
+     * be filtered out by the `role === 'user' || role === 'assistant'` check)
+     * are preserved as collapsed assistant messages in the summary input.
+     */
+    static collapseToolMessagesForSummary<T extends HistroyMessage>(messages: T[]): T[] {
+        if (messages.length === 0) return messages;
+
+        const result: T[] = [];
+        let i = 0;
+
+        while (i < messages.length) {
+            const msg = messages[i]!;
+
+            // Check if this is an assistant message with tool calls
+            const toolCalls = (msg as any).toolCalls as { id: string; type: string; function: { name: string; arguments: string } }[] | undefined;
+            if (msg.role === 'assistant' && toolCalls && toolCalls.length > 0) {
+                // Collect all tool_result messages that follow
+                const toolCallIds = new Set(toolCalls.map(tc => tc.id));
+                const collapsedParts: string[] = [];
+
+                // If the assistant message has text content, preserve it
+                if (msg.content && msg.content.trim()) {
+                    collapsedParts.push(msg.content.trim());
+                }
+
+                let j = i + 1;
+                while (j < messages.length && messages[j]!.role === 'tool_result') {
+                    const resultMsg = messages[j]!;
+                    const resultToolCallId = (resultMsg as any).toolCallId as string | undefined;
+
+                    if (resultToolCallId && toolCallIds.has(resultToolCallId)) {
+                        // Find the matching tool call to get name and args
+                        const matchingCall = toolCalls.find(tc => tc.id === resultToolCallId);
+                        if (matchingCall) {
+                            const summary = collapseToolResult(
+                                matchingCall.function.name,
+                                matchingCall.function.arguments,
+                                resultMsg.content,
+                            );
+                            collapsedParts.push(summary);
+                        }
+                        toolCallIds.delete(resultToolCallId!);
+                    }
+                    j++;
+                }
+
+                // Create a collapsed assistant message replacing the entire sequence
+                const collapsedContent = collapsedParts.join('\n');
+                const collapsedMsg = {
+                    role: 'assistant' as ChatMessageRole,
+                    content: collapsedContent,
+                    id: msg.id,
+                    // Preserve thinkingContent so thinking-mode APIs receive
+                    // the reasoning_content they require on replay.
+                    ...(msg.thinkingContent ? { thinkingContent: msg.thinkingContent } : {}),
+                } as T;
+                result.push(collapsedMsg);
+                i = j; // Skip past all consumed tool_result messages
+            } else {
+                result.push(msg);
+                i++;
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Find turn boundaries in a message array.
+     * A turn starts at a "user" message and includes all subsequent
+     * assistant/tool_call/tool_result messages until the next "user" message.
+     * Returns an array of indices where each turn starts.
+     */
+    private static findTurnBoundaries(messages: HistroyMessage[]): number[] {
+        const boundaries: number[] = [0]; // First message is always a boundary
+        for (let i = 1; i < messages.length; i++) {
+            if (messages[i]!.role === 'user') {
+                boundaries.push(i);
+            }
+        }
+        return boundaries;
+    }
+
+    /**
+     * Return the slice of `messages` starting at the first `user` message.
+     *
+     * Used by the "have-summaries-but-no-compression-needed" branch so the
+     * messages sent to the LLM after the summary blocks always begin at a
+     * turn boundary. Falls back to the original array when no `user`
+     * message is present (rare, but e.g. if the anchor shifted past the end).
+     */
+    private static sliceFromNextTurnBoundary<T extends HistroyMessage>(messages: T[]): T[] {
+        for (let i = 0; i < messages.length; i++) {
+            if (messages[i]!.role === "user") {
+                if (i > 0) {
+                    console.debug("[ContextReducer] sliceFromNextTurnBoundary: dropped", i,
+                        "leading non-user messages to align with turn boundary");
+                }
+                return messages.slice(i);
+            }
+        }
+        return messages;
+    }
+
+    /**
+     * Ensures that tool message sequences remain intact in the message list.
+     * 
+     * Rules enforced:
+     * 1. A tool_result message must have a preceding assistant message with toolCalls
+     *    (or a tool_call message in the internal format)
+     * 2. An assistant message with toolCalls must be followed by corresponding tool_result messages
+     * 
+     * If the sequence is broken at the beginning of the list (due to sliding window),
+     * the orphaned messages are dropped to prevent API validation errors.
+     */
+    private static ensureToolSequenceIntegrity<T extends HistroyMessage>(messages: T[]): T[] {
+        if (messages.length === 0) return messages;
+
+        // Find the first valid starting point:
+        // Skip any leading messages that are part of an incomplete turn
+        let startIndex = 0;
+        for (let i = 0; i < messages.length; i++) {
+            const msg = messages[i]!;
+            if (msg.role === 'user') {
+                // A user message is always a valid starting point
+                startIndex = i;
+                break;
+            } else if (msg.role === 'assistant' && !(msg as any).toolCalls?.length) {
+                // A plain assistant message (no tool calls) is also valid
+                startIndex = i;
+                break;
+            } else if (msg.role === 'tool_result' || msg.role === 'tool_call') {
+                // Orphaned tool messages at the start - skip them
+                console.warn(`ContextReducer: Dropping orphaned ${msg.role} message at index ${i}`);
+                continue;
+            } else if (msg.role === 'assistant' && (msg as any).toolCalls?.length) {
+                // An assistant message with tool_calls at the very start:
+                // Check if all required tool_results follow
+                const toolCalls = (msg as any).toolCalls as any[];
+                const requiredIds = new Set(toolCalls.map((tc: any) => tc.id));
+                for (let j = i + 1; j < messages.length && j <= i + toolCalls.length; j++) {
+                    if (messages[j]?.role === 'tool_result' && (messages[j] as any).toolCallId) {
+                        requiredIds.delete((messages[j] as any).toolCallId);
+                    }
+                }
+                if (requiredIds.size === 0) {
+                    // All tool results are present, this is a valid start
+                    startIndex = i;
+                    break;
+                } else {
+                    // Missing tool results - skip this assistant message and its partial results
+                    console.warn('ContextReducer: Dropping assistant message with incomplete tool_results');
+                    continue;
+                }
+            } else {
+                startIndex = i;
+                break;
+            }
+        }
+
+        // Now validate from startIndex forward:
+        // Check for trailing assistant messages with toolCalls that lack their tool_results
+        const result = messages.slice(startIndex);
+        
+        // Validate from the end: if the last assistant message has toolCalls,
+        // ensure all tool_results are present
+        for (let i = result.length - 1; i >= 0; i--) {
+            const msg = result[i]!;
+            if (msg.role === 'assistant' && (msg as any).toolCalls?.length) {
+                const toolCalls = (msg as any).toolCalls as any[];
+                const requiredIds = new Set(toolCalls.map((tc: any) => tc.id));
+                // Check subsequent messages for matching tool_results
+                for (let j = i + 1; j < result.length; j++) {
+                    if (result[j]?.role === 'tool_result' && (result[j] as any).toolCallId) {
+                        requiredIds.delete((result[j] as any).toolCallId);
+                    } else {
+                        break; // Stop at first non-tool_result message
+                    }
+                }
+                if (requiredIds.size > 0) {
+                    // Incomplete tool_results - truncate from this point
+                    console.warn('ContextReducer: Truncating incomplete tool call sequence at end');
+                    return result.slice(0, i);
+                }
+                break; // Only need to check the last assistant-with-toolCalls
+            }
+        }
+
+        return result;
+    }
+    }
+
+/**
+ * Simple single-turn non-streaming chat completion.
+ * Used for lightweight tasks like context summarization where streaming is unnecessary.
+ *
+ * @param modelConfig API config including provider type
+ * @param inputMessages Messages to send to the LLM
+ * @returns The assistant's reply content
+ */export async function createChatCompletion(modelConfig: MinimalModelConfig, inputMessages: { role: string, content: string }[]): Promise<string> {
+    switch (modelConfig.type) {
+        case "openai":
+            return createOpenAICompletion(
+                { baseURL: modelConfig.baseURL, apiKey: modelConfig.apiKey, model: modelConfig.model },
+                inputMessages,
+            );
+        case "gemini":
+            return createGeminiCompletion(
+                { apiKey: modelConfig.apiKey, model: modelConfig.model },
+                inputMessages,
+            );
+        default:
+            throw new Error(`Unknown provider type: ${(modelConfig as any).type}`);
+    }
+}
+
+/**
+ * Send old messages to the summarizer and return a concise summary string.
+ *
+ * @param modelConfig API config including provider type
+ * @param prompt System prompt for the summarizer
+ * @param messages Messages to summarize (can be raw messages or existing summaries)
+ * @param level Summary level (1 = first-level summary of raw messages,
+ *              2+ = summary of summaries)
+ */
+export async function summarizeConversation(
+    modelConfig: MinimalModelConfig,
+    prompt: PromptConfig,
+    messages: HistroyMessage[],
+    level: number = 1
+): Promise<string | null> {
+    let userInstruction: string;
+
+    if (level === 1) {
+        userInstruction = "Please summarize the conversation above, preserving key information, decisions, and important context. Output ONLY the summary content itself — do NOT include any prefix, label, heading, or meta-commentary such as 'Conversation summary:', 'Summary:', or similar.";
+    } else {
+        userInstruction = `These are ${level - 1 > 1 ? `Level ${level - 1} summaries` : 'summaries'} of previous conversations. Please create a higher-level summary that consolidates the key themes and information across all summaries. Preserve all important details, decisions, and context. Output ONLY the summary content itself — do NOT include any prefix, label, heading, or meta-commentary such as 'Summary of summaries:' or similar.`;
+    }
+
+    // Collapse tool call sequences into assistant messages BEFORE filtering,
+    // so that tool call information is preserved in the summary.
+    // Without this, the filter below would discard all tool_call/tool_result messages,
+    // causing the summary to lose all tool interaction context.
+    const collapsedMessages = ContextReducer.collapseToolMessagesForSummary(messages);
+
+    // Build the summarizer request: system prompt + conversation to summarize
+    const summarizerMessages = [
+        { role: "system", content: prompt.content },
+        ...(collapsedMessages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))),
+        { role: "user", content: userInstruction },
+    ];
+
+    try {
+        // console.log(`[ContextReducer] Generating summary (level ${level}) for ${messages.length} messages...`);
+        const summary = await createChatCompletion(modelConfig, summarizerMessages);
+
+        // console.log(`[ContextReducer] Generated summary (level ${level}):`, summary);
+        const trimmed = summary.trim();
+        if (!trimmed) {
+            console.warn("[ContextReducer] Summarizer returned empty content; treating as failure");
+            return null;
+        }
+        return trimmed;
+    } catch (e) {
+        console.error("[ContextReducer] Summarization failed:", e);
+        console.warn("[ContextReducer] Returning null to signal fallback (no-compression) to the caller");
+        return null;
+    }
+}

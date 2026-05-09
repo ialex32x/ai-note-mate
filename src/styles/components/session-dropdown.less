@@ -1,0 +1,152 @@
+/* ─────────────────────────────────────────────
+   Session Dropdown (session list popup)
+   ───────────────────────────────────────────── */
+
+// Let .session-dropdown position relative to .session-toolbar instead of .session-selector
+.session-session-selector {
+    position: static;
+}
+
+.session-dropdown {
+    display: none;
+    position: absolute;
+    left: @spacing-lg;
+    top: 100%;
+    margin-top: @spacing-xs;
+    background: @bg-primary;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-md;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    padding: @spacing-sm;
+    min-width: 180px;
+    max-width: calc(100% - @spacing-lg * 2);
+    width: 340px;
+    max-height: 320px;
+    overflow-y: auto;
+    z-index: var(--layer-popover);
+}
+
+.session-dropdown--open {
+    display: block;
+}
+
+.session-dropdown__empty {
+    padding: @spacing-lg @spacing-xl;
+    font-size: 0.85em;
+    color: @text-secondary;
+    text-align: center;
+}
+
+.session-dropdown__item {
+    display: flex;
+    align-items: flex-start;
+    gap: @spacing-md;
+    padding: 6px @spacing-md;
+    border-radius: @radius-sm;
+    cursor: pointer;
+    font-size: 0.85em;
+    color: @text-primary;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+}
+
+.session-dropdown__item--active {
+    background: @bg-modifier-hover;
+    color: @text-primary;
+    font-weight: 600;
+}
+
+.session-dropdown__item-check {
+    flex: 0 0 16px;
+    .flex-center();
+    color: @text-accent;
+    font-size: 14px;
+}
+
+.session-dropdown__item-text {
+    display: block;
+    min-width: 0;
+    .text-truncate();
+}
+
+.session-dropdown__item-time {
+    display: block;
+    font-size: 0.78em;
+    color: @text-secondary;
+    opacity: 0.7;
+}
+
+.session-dropdown__item-meta {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    flex-wrap: wrap;
+}
+
+.session-dropdown__item-tokens {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78em;
+    color: @text-secondary;
+    opacity: 0.7;
+    font-variant-numeric: tabular-nums;
+}
+
+.session-dropdown__item-token {
+    white-space: nowrap;
+}
+
+.session-dropdown__item-body {
+    flex: 1;
+    min-width: 0;
+    .flex-column();
+    gap: 1px;
+}
+
+.session-dropdown__item-delete {
+    flex: 0 0 auto;
+    .flex-center();
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: @radius-sm;
+    background: transparent;
+    color: @text-secondary;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity @duration-normal, background @duration-normal, color @duration-normal;
+
+    &:hover {
+        background: var(--background-modifier-error);
+        color: @text-error;
+    }
+
+    &:active {
+        transform: scale(0.95);
+    }
+}
+
+.session-dropdown__item:hover .session-dropdown__item-delete {
+    opacity: 1;
+    color: @text-primary;
+}
+
+.session-dropdown__item--deleting {
+    animation: session-dropdown-item-delete 0.2s ease-out forwards;
+}
+
+@keyframes session-dropdown-item-delete {
+    0% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    100% {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+}

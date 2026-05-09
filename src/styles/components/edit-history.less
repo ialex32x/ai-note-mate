@@ -1,0 +1,226 @@
+/*
+ * AI Edit History view styles.
+ * Used by `EditHistoryView` to render the per-task list and details.
+ *
+ * Conventions:
+ * - Uses Obsidian theme variables (var(--text-*) / var(--background-*)) so
+ *   the view adapts to light/dark themes without overrides.
+ * - Status-dependent left border colour acts as the at-a-glance state cue.
+ * - Before/After previews are always stacked vertically for readability,
+ *   matching diff-style review UX on both desktop and mobile.
+ */
+
+.ai-edit-history-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: @spacing-md;
+    gap: @spacing-md;
+    overflow: hidden;
+}
+
+.ai-edit-history-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: @spacing-md;
+    flex-shrink: 0;
+}
+
+.ai-edit-history-title {
+    font-size: var(--font-ui-medium);
+    font-weight: 600;
+    color: @text-primary;
+}
+
+.ai-edit-history-header-actions {
+    display: flex;
+    gap: @spacing-sm;
+}
+
+.ai-edit-history-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-sm;
+    padding-right: @spacing-xs;
+}
+
+.ai-edit-history-empty {
+    color: @text-secondary;
+    font-size: var(--font-ui-small);
+    text-align: center;
+    padding: @spacing-xl @spacing-md;
+}
+
+// ── Item ─────────────────────────────────────────────────────────────────
+
+.ai-edit-history-item {
+    border: 1px solid @bg-modifier-border;
+    border-left-width: 3px;
+    border-radius: @radius-md;
+    padding: @spacing-sm @spacing-md;
+    background: @bg-secondary;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+
+    // Status-dependent left border tint.
+    &--pending   { border-left-color: @text-secondary; }
+    &--running   { border-left-color: @text-accent; }
+    &--applied   { border-left-color: @text-success; }
+    &--cancelled { border-left-color: @text-secondary; }
+    &--failed    { border-left-color: @text-error; }
+    &--stale     { border-left-color: @text-warning; }
+
+    // Details panel collapsed by default.
+    .ai-edit-history-details {
+        display: none;
+        margin-top: @spacing-md;
+        padding-top: @spacing-md;
+        border-top: 1px solid @bg-modifier-border;
+    }
+    &.is-expanded .ai-edit-history-details {
+        display: block;
+    }
+}
+
+.ai-edit-history-item-head {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    cursor: pointer;
+    user-select: none;
+}
+
+.ai-edit-history-status-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--icon-size, 16px);
+    height: var(--icon-size, 16px);
+    color: @text-secondary;
+    margin-right: @spacing-xs;        // visual separator from action buttons
+
+    &--running {
+        color: @text-accent;
+        animation: ai-edit-history-spin 1s linear infinite;
+    }
+    &--applied   { color: @text-success; }
+    &--failed    { color: @text-error; }
+    &--stale     { color: @text-warning; }
+    &--cancelled { color: @text-faint; }
+}
+
+@keyframes ai-edit-history-spin {
+    to { transform: rotate(360deg); }
+}
+
+.ai-edit-history-action-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: @text-secondary;
+}
+
+.ai-edit-history-file {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: @text-accent;
+    text-decoration: none;
+    font-size: var(--font-ui-smaller);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+    direction: rtl;        // keep the file name (tail) visible when truncated
+    text-align: left;
+    unicode-bidi: plaintext;
+
+    &:hover { text-decoration: underline; }
+}
+
+.ai-edit-history-bytes {
+    flex-shrink: 0;
+    white-space: nowrap;
+    color: @text-secondary;
+    font-size: var(--font-ui-smaller);
+}
+
+.ai-edit-history-buttons {
+    display: flex;
+    align-items: center;
+    gap: @spacing-xs;
+    flex-shrink: 0;
+}
+
+.ai-edit-history-icon-btn {
+    padding: 2px;
+}
+
+.ai-edit-history-preview-line {
+    margin-top: @spacing-xs;
+    color: @text-secondary;
+    font-size: var(--font-ui-smaller);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// ── Details panel ───────────────────────────────────────────────────────
+
+.ai-edit-history-error {
+    margin-bottom: @spacing-sm;
+    padding: @spacing-sm;
+    border-radius: @radius-sm;
+    background: var(--background-modifier-error);
+    color: @text-error;
+    font-size: var(--font-ui-smaller);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.ai-edit-history-preview-grid {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-md;
+}
+
+.ai-edit-history-preview-col {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+    min-width: 0;
+}
+
+.ai-edit-history-preview-title {
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+    color: @text-secondary;
+}
+
+.ai-edit-history-preview-text {
+    margin: 0;
+    padding: @spacing-sm;
+    background: @bg-primary;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-sm;
+    font-size: var(--font-ui-smaller);
+    font-family: var(--font-text);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow-y: auto;
+    color: @text-primary;
+}
+
+.ai-edit-history-meta {
+    margin-top: @spacing-md;
+    color: @text-faint;
+    font-size: var(--font-ui-smaller);
+}

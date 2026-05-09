@@ -1,0 +1,847 @@
+/* ─────────────────────────────────────────────
+   Settings Tab sections
+   ───────────────────────────────────────────── */
+
+// Sticky dot-anchor navigation bar for the settings tab.
+// See docs/settings-navigation-refactor-plan.md for the design.
+.oap-settings-anchor-host {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    // Extend horizontally a bit so the bar covers the full width of the
+    // scroll container, including its horizontal padding.
+    margin-left: -@spacing-md;
+    margin-right: -@spacing-md;
+    padding: @spacing-sm @spacing-md @spacing-md;
+    margin-bottom: @spacing-lg;
+    background: @bg-primary;
+    border-bottom: 1px solid @bg-modifier-border;
+
+    // Infinite upward background shield. When the bar is stuck to the top
+    // of the scroll container, Obsidian's `.vertical-tab-content` still has
+    // its own `padding-top`; this pseudo-element paints a solid background
+    // that extends infinitely upward so nothing from the scrolling content
+    // can show through the strip between the container's real top edge and
+    // the bar. Container's `overflow: auto` clips the overflow cleanly.
+    &::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 100%;
+        height: 9999px;
+        background: @bg-primary;
+        pointer-events: none;
+    }
+}
+
+.oap-settings-anchor-bar {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    position: relative;
+
+    // Continuous baseline connecting all dots; subtle so it doesn't dominate.
+    // Positioned to pass through the vertical center of the dots (which sit
+    // on the first row of each item): item padding-top (2px) + dot radius
+    // (3px) = 5px from the bar's top.
+    &::before {
+        content: '';
+        position: absolute;
+        left: @spacing-xs;
+        right: @spacing-xs;
+        top: 5px;
+        height: 1px;
+        background: @bg-modifier-border;
+        opacity: 0.6;
+        transform: translateY(-0.5px);
+        pointer-events: none;
+    }
+}
+
+.oap-settings-anchor-item {
+    box-sizing: border-box;
+    flex: 1 1 0;
+    min-width: 0;
+
+    // Two-row layout: dot on top, label below, both left-aligned within
+    // their equally sized segment.
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: @spacing-md;
+    cursor: pointer;
+    padding: 2px @spacing-xs;
+    color: @text-faint;
+    font-size: 0.78em;
+    line-height: 1.2;
+    position: relative;
+    z-index: 1;
+    user-select: none;
+    transition: color @duration-fast ease;
+
+    &:hover {
+        color: @text-secondary;
+
+        .oap-settings-anchor-dot {
+            background: @text-secondary;
+            transform: scale(1.2);
+        }
+    }
+
+    &:focus-visible {
+        outline: none;
+
+        .oap-settings-anchor-dot {
+            box-shadow:
+                0 0 0 3px @bg-primary,
+                0 0 0 5px ~"color-mix(in srgb, var(--interactive-accent) 40%, transparent)";
+        }
+    }
+}
+
+.oap-settings-anchor-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: @bg-modifier-border;
+    flex-shrink: 0;
+    // Isolate the dot visually from the baseline (3px background ring).
+    box-shadow: 0 0 0 3px @bg-primary;
+    transition:
+        background @duration-fast ease,
+        transform @duration-fast ease,
+        box-shadow @duration-fast ease;
+}
+
+.oap-settings-anchor-label {
+    // Always visible; color follows the item state (faint by default,
+    // text-secondary on hover, accent when active).
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oap-settings-anchor-item--active {
+    color: @text-accent;
+    font-weight: var(--font-semibold);
+
+    .oap-settings-anchor-dot {
+        background: @text-accent;
+        transform: scale(1.15);
+        // Soft accent halo around the active dot.
+        box-shadow:
+            0 0 0 3px @bg-primary,
+            0 0 0 5px ~"color-mix(in srgb, var(--interactive-accent) 25%, transparent)";
+    }
+
+    // Keep color steady (don't let :hover darken the active item).
+    &:hover {
+        color: @text-accent;
+
+        .oap-settings-anchor-dot {
+            background: @text-accent;
+            transform: scale(1.25);
+        }
+    }
+}
+
+// Invisible filler appended to the end of the scroll container so every
+// section — including very short trailing ones — can have its top scrolled
+// up to the sticky nav's baseline. Its height is set in JS based on the
+// container and last section dimensions; it has no visual presence.
+.oap-settings-anchor-spacer {
+    width: 100%;
+    pointer-events: none;
+    // Some Obsidian themes apply a bottom margin to `.vertical-tab-content
+    // > :last-child`. Zero it out so the spacer's height is exactly what
+    // we compute.
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.oap-settings-section {
+    position: relative;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-lg;
+    padding: @spacing-lg @spacing-xl;
+    margin-bottom: @spacing-xl;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+
+    h5 {
+        margin-top: 0;
+        margin-bottom: @spacing-md;
+        padding-bottom: 6px;
+        border-bottom: 1px solid @bg-modifier-border;
+    }
+}
+
+// Settings section header with actions on the right
+.oap-settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: @spacing-md;
+    padding-bottom: @spacing-md;
+    border-bottom: 1px solid @bg-modifier-border;
+
+    h5 {
+        margin: 0;
+        padding: 0;
+        border: none;
+    }
+}
+
+.oap-settings-header-actions {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+}
+
+// Header action button (icon-only, compact)
+.oap-settings-header-action-btn {
+    width: auto;
+    height: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: var(--radius-s, 4px);
+    color: var(--text-muted);
+    cursor: pointer;
+
+    &:hover {
+        color: var(--text-normal);
+        background: var(--background-modifier-hover);
+    }
+
+    &.is-loading svg {
+        animation: oap-spin 0.8s linear infinite;
+    }
+}
+
+@keyframes oap-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+// Inline button styling for settings header
+.oap-settings-inline-button {
+    margin: 0;
+    padding: 0;
+
+    .setting-item {
+        padding: 0;
+        margin: 0;
+    }
+
+    .setting-item-control {
+        display: flex;
+        gap: @spacing-md;
+    }
+
+    .setting-item-info {
+        display: none;
+    }
+}
+
+// Common settings styles
+.oap-settings-empty {
+    font-size: 0.85em;
+    color: @text-secondary;
+    padding: @spacing-md 0;
+}
+
+.oap-settings-status {
+    font-size: 0.82em;
+    color: @text-success;
+    padding: @spacing-sm 0 @spacing-md;
+}
+
+.oap-settings-skill-list {
+    padding: 0 0 @spacing-md;
+}
+
+.oap-settings-skill-item {
+    padding: @spacing-xs 0;
+    font-size: 0.82em;
+    line-height: 1.4;
+}
+
+.oap-settings-skill-name-row {
+    display: flex;
+    align-items: baseline;
+    gap: @spacing-md;
+}
+
+.oap-settings-skill-name {
+    color: @text-accent;
+    font-weight: 500;
+}
+
+.oap-settings-skill-location {
+    color: @text-faint;
+    opacity: 0.75;
+    font-size: 0.88em;
+    word-break: break-all;
+}
+
+.oap-settings-skill-desc {
+    color: @text-faint;
+    word-break: break-word;
+}
+
+.oap-settings-chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 0 0 @spacing-md;
+}
+
+.oap-settings-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: @spacing-xs @spacing-md @spacing-xs @spacing-lg;
+    border-radius: 12px;
+    background: @bg-modifier-hover;
+    border: 1px solid @bg-modifier-border;
+    max-width: 220px;
+    transition: background @duration-fast;
+}
+
+// Chip with a non-existent directory — warning style
+// Use a subtle error tint (15% of error color mixed into the normal
+// background) so the background stays light enough for --text-error
+// text to remain readable.  A bold red border provides the primary
+// visual cue that something is wrong.
+.oap-settings-chip--invalid {
+    background: color-mix(in srgb, var(--background-modifier-error) 15%, var(--background-secondary));
+    border: 1.5px solid var(--text-error);
+    opacity: 0.9;
+
+    .oap-settings-chip-label {
+        color: var(--text-error);
+    }
+}
+
+.oap-settings-chip-label {
+    font-size: 0.82em;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oap-settings-chip-remove {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: @text-secondary;
+    cursor: pointer;
+    line-height: 1;
+    transition: background @duration-fast, color @duration-fast;
+
+    svg {
+        width: 12px;
+        height: 12px;
+    }
+
+    &:hover {
+        background: @text-error;
+        color: var(--text-on-accent);
+    }
+}
+
+.oap-settings-chip-input-row {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+}
+
+.oap-settings-chip-input {
+    flex: 1;
+    padding: @spacing-sm @spacing-md;
+    border-radius: 12px;
+    border: 1px solid @bg-modifier-border;
+    background: @bg-secondary;
+    color: @text-primary;
+    font-size: 0.85em;
+    outline: none;
+    transition: border-color @duration-fast;
+
+    &:focus {
+        border-color: @text-accent;
+    }
+
+    &::placeholder {
+        color: @text-faint;
+    }
+}
+
+.oap-settings-chip-add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid @bg-modifier-border;
+    border-radius: 12px;
+    background: @bg-modifier-hover;
+    color: @text-secondary;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background @duration-fast, color @duration-fast;
+
+    svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    &:hover {
+        background: @text-accent;
+        color: var(--text-on-accent);
+        border-color: @text-accent;
+    }
+}
+
+.oap-settings-field {
+    .setting-item-name {
+        font-size: 0.85em;
+        color: @text-secondary;
+    }
+
+    .setting-item-control {
+        flex: 1;
+
+        input {
+            flex: 1;
+        }
+    }
+}
+
+// MCP Server settings
+.oap-settings-mcp-header {
+    background: @bg-modifier-hover;
+    border-radius: @radius-md;
+    padding: @spacing-sm @spacing-lg;
+    margin-top: @spacing-lg;
+    border-top: none;
+
+    &:first-of-type {
+        margin-top: 0;
+    }
+}
+
+.oap-settings-mcp-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin-left: @spacing-sm;
+    padding: 0;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: color 0.2s ease;
+    color: @text-faint;
+
+    &:hover {
+        color: @text-primary;
+    }
+
+    svg {
+        .icon-size(16px);
+    }
+}
+
+.oap-settings-mcp-status--connected {
+    color: @text-success;
+
+    &:hover {
+        color: var(--interactive-accent-hover);
+    }
+}
+
+.oap-settings-mcp-status--error {
+    color: @text-error;
+}
+
+.oap-settings-mcp-status--connecting {
+    color: @text-secondary;
+    animation: spin 1s linear infinite;
+
+    &.clickable-icon:hover {
+        background-color: transparent;
+    }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.oap-spin svg {
+    animation: spin 1s linear infinite;
+}
+
+// Model selector modal
+.oap-model-selector-modal {
+    // Remove default modal padding/title chrome
+    .modal-title { display: none; }
+    .modal-close-button { display: none; }
+    .modal-content {
+        padding: 0;
+        margin: 0;
+    }
+    width: 400px;
+    max-height: 420px;
+    .flex-column();
+    overflow: hidden;
+}
+
+.oap-model-suggester__search {
+    width: 100%;
+    padding: 8px @spacing-md;
+    border: none;
+    border-bottom: 1px solid @bg-modifier-border;
+    background: @bg-primary;
+    color: @text-primary;
+    font-size: var(--font-ui-small);
+    outline: none;
+}
+
+.oap-model-suggester__list {
+    overflow-y: auto;
+    max-height: 360px;
+}
+
+.oap-model-suggester__item {
+    padding: 6px @spacing-lg;
+    cursor: pointer;
+    font-size: var(--font-ui-small);
+    color: @text-primary;
+    .text-truncate();
+
+    &:hover,
+    &.is-active {
+        background: @bg-modifier-hover;
+    }
+
+    &.is-active {
+        color: @text-accent;
+        font-weight: var(--font-semibold);
+    }
+}
+
+.oap-model-suggester__empty {
+    padding: @spacing-lg @spacing-lg;
+    color: @text-secondary;
+    font-size: var(--font-ui-small);
+    text-align: center;
+}
+
+// Profile tabs
+.oap-profile-tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    margin-bottom: @spacing-lg;
+    border-bottom: 1px solid @bg-modifier-border;
+    min-height: 30px;
+}
+
+.oap-profile-tabs__scroll {
+    display: flex;
+    align-items: stretch;
+    gap: @spacing-xs;
+    flex: 1 1 auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+    min-width: 0;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+.oap-profile-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px @spacing-lg @spacing-sm;
+    background: transparent;
+    color: @text-faint;
+    font-size: 0.85em;
+    font-weight: 400;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color @duration-normal, font-weight @duration-normal;
+    user-select: none;
+    line-height: 1.4;
+    position: relative;
+    flex-shrink: 0;
+    border: none;
+    outline: none;
+    border-bottom: 2px solid transparent;
+
+    &:hover {
+        color: @text-primary;
+        background: @bg-modifier-hover;
+        border-radius: @radius-sm @radius-sm 0 0;
+    }
+}
+
+.oap-profile-tab--active {
+    color: @text-primary;
+    font-weight: 600;
+    border-bottom: 2px solid @text-accent;
+    background: transparent;
+}
+
+.oap-profile-tab__active-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: @text-accent;
+    flex-shrink: 0;
+}
+
+.oap-profile-tab__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+}
+
+.oap-profile-tabs__actions {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    margin-left: auto;
+    flex-shrink: 0;
+    align-self: center;
+}
+
+.oap-profile-tabs__action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: @radius-sm;
+    background: transparent;
+    border: none;
+    color: @text-secondary;
+    cursor: pointer;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+
+    &.is-disabled {
+        opacity: 0.35;
+        cursor: default;
+        pointer-events: none;
+    }
+}
+
+.oap-profile-tabs__action-btn--warning {
+    &:hover {
+        color: @text-error;
+    }
+}
+
+// Memory settings
+.oap-settings-memory-list {
+    .flex-column();
+    gap: @spacing-md;
+    margin-top: @spacing-md;
+    max-height: 300px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+
+.oap-settings-memory-item {
+    position: relative;
+    padding: @spacing-md @spacing-lg;
+    border-radius: @radius-md;
+    background: @bg-secondary;
+    border: 1px solid @bg-modifier-border;
+
+    &:hover {
+        .oap-settings-memory-delete-btn {
+            opacity: 1;
+            pointer-events: auto;
+        }
+    }
+}
+
+.oap-settings-memory-delete-btn {
+    position: absolute;
+    top: @spacing-sm;
+    right: @spacing-sm;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: @radius-sm;
+    background: transparent;
+    color: @text-faint;
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity @duration-fast ease, color @duration-fast ease, background @duration-fast ease;
+
+    svg {
+        .icon-size(14px);
+    }
+
+    &:hover {
+        color: @text-error;
+    }
+}
+
+.oap-settings-memory-item-header {
+    .flex-between();
+    gap: @spacing-md;
+    margin-bottom: @spacing-sm;
+}
+
+.oap-settings-memory-key {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: @text-primary;
+    .text-truncate();
+}
+
+.oap-settings-memory-timestamp {
+    font-size: 0.75em;
+    color: @text-faint;
+    flex-shrink: 0;
+}
+
+.oap-settings-memory-value {
+    font-size: 0.82em;
+    color: @text-secondary;
+    line-height: 1.4;
+    word-break: break-word;
+    .text-multiline-truncate(3);
+}
+
+// Settings warning icon
+.oap-settings-warning-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: @spacing-md;
+    color: @text-warning;
+    cursor: help;
+}
+
+/* ── Session restart required indicator ──────────────── */
+// Layer 1: Icon badge next to setting name
+.oap-session-restart-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    color: @text-warning;
+    opacity: 0.7;
+    cursor: help;
+    vertical-align: middle;
+    flex-shrink: 0;
+
+    svg {
+        .icon-size(12px);
+    }
+
+    &:hover {
+        opacity: 1;
+    }
+}
+
+// Layer 2: Text hint tag in description
+.oap-session-restart-hint {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: @text-warning;
+    border: 1px solid ~"color-mix(in srgb, var(--text-warning) 30%, transparent)";
+    border-radius: @radius-sm;
+    opacity: 0.85;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+/* Allowed capabilities: rendered as its own row directly below the matching
+   Setting (name + desc). Each capability is a label-only checkbox; the full
+   description is shown via the native title tooltip. Items are laid out
+   horizontally and distributed evenly across the full container width. */
+.oap-capabilities-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: @spacing-xs @spacing-sm;
+    width: 100%;
+    padding: @spacing-xs @spacing-md @spacing-sm;
+    margin-top: -@spacing-sm; // pull closer to the Setting row above
+    border-bottom: 1px solid @bg-modifier-border;
+
+    .oap-capability-item {
+        flex: 1 1 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: @spacing-xs;
+        padding: 2px 4px;
+        margin: 0;
+        font-size: 0.9em;
+        color: @text-primary;
+        cursor: pointer;
+        user-select: none;
+        border-radius: @radius-sm;
+        white-space: nowrap;
+
+        &:hover {
+            background: @bg-modifier-hover;
+        }
+
+        input[type="checkbox"] {
+            margin: 0;
+            cursor: pointer;
+        }
+
+        .oap-capability-label {
+            white-space: nowrap;
+        }
+    }
+}

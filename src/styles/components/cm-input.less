@@ -1,0 +1,186 @@
+/* ─────────────────────────────────────────────
+   CodeMirror 6 Input Editor
+   ───────────────────────────────────────────── */
+
+// CM input container
+.session-cm-input {
+    flex: 1 1 auto;
+    min-height: @input-min-height;
+    max-height: 200px;
+    overflow-y: auto;
+    cursor: text;
+    border-radius: @radius-md;
+    background: transparent;
+
+    .cm-editor {
+        height: 100%;
+        font-family: inherit;
+    }
+
+    .cm-scroller {
+        overflow: auto;
+        font-family: inherit;
+    }
+
+    .cm-content {
+        padding: 6px 0;
+        min-height: @input-min-height;
+    }
+
+    .cm-line {
+        padding: 0 @spacing-lg;
+        line-height: 1.4;
+    }
+
+    .cm-cursor {
+        border-left-color: @text-secondary;
+    }
+
+    .cm-selectionBackground {
+        background: var(--text-selection) !important;
+    }
+
+    .cm-focused {
+        outline: none;
+    }
+}
+
+// Disabled state
+.session-cm-input.cm-disabled .cm-content {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+// File Reference Widget
+.cm-file-ref {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px @spacing-md 1px @spacing-lg;
+    border-radius: 12px;
+    background: @bg-modifier-hover;
+    border: 1px solid @bg-modifier-border;
+    cursor: pointer;
+    white-space: nowrap;
+    vertical-align: baseline;
+    margin: 0 1px;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: var(--interactive-hover);
+    }
+}
+
+.cm-file-ref__icon {
+    display: inline-flex;
+    align-items: center;
+    color: @text-secondary;
+
+    svg {
+        .icon-size(12px);
+    }
+}
+
+.cm-file-ref__name {
+    font-size: 0.88em;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+// Delete button on file ref chip - always visible for mobile UX
+.cm-file-ref__delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    margin-left: @spacing-xs;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: @text-secondary;
+    cursor: pointer;
+    opacity: 0.5;
+    transition: background @duration-fast, color @duration-fast, opacity @duration-fast;
+
+    &:hover {
+        opacity: 1;
+        background: @text-error;
+        color: var(--text-on-accent);
+    }
+
+    svg {
+        .icon-size(10px);
+    }
+}
+
+// Missing file reference state
+.cm-file-ref--missing {
+    .cm-file-ref__icon {
+        color: @text-error;
+    }
+
+    .cm-file-ref__name {
+        color: @text-error;
+        text-decoration: line-through;
+        text-decoration-color: @text-error;
+    }
+}
+
+// Completion dropdown for file references
+.cm-tooltip {
+    z-index: @z-tooltip !important;
+}
+
+.cm-tooltip-autocomplete {
+    border-radius: @radius-md !important;
+    border: 1px solid @bg-modifier-border !important;
+    background: @bg-primary !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+    font-family: inherit !important;
+    z-index: @z-tooltip !important;
+    max-height: 250px !important;
+    overflow-y: auto !important;
+
+    ul {
+        font-family: inherit !important;
+        font-size: 0.85em !important;
+    }
+
+    li {
+        padding: @spacing-sm @spacing-lg !important;
+        display: flex !important;
+        align-items: center;
+        gap: @spacing-md;
+    }
+
+    li[aria-selected] {
+        background: @bg-modifier-hover !important;
+        color: @text-primary !important;
+    }
+
+    .cm-completionLabel {
+        flex: 1;
+    }
+
+    .cm-completionDetail {
+        color: @text-faint;
+        font-size: 0.85em;
+    }
+
+    .cm-completion-icon {
+        .flex-center();
+        width: 16px;
+        height: 16px;
+        flex-shrink: 0;
+        color: @text-secondary;
+
+        svg {
+            width: 14px;
+            height: 14px;
+        }
+    }
+}

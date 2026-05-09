@@ -1,0 +1,432 @@
+/* ─────────────────────────────────────────────
+   Session Search Modal
+   ───────────────────────────────────────────── */
+
+.session-search-modal.modal-content {
+    padding: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column;
+    max-height: 70vh;
+    min-height: 300px;
+
+    .modal-title {
+        padding: @spacing-xl 20px 0;
+        flex-shrink: 0;
+    }
+}
+
+.session-search-modal__input-row {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+    padding: @spacing-lg 20px;
+    border-bottom: 1px solid @bg-modifier-border;
+    flex-shrink: 0;
+}
+
+.session-search-modal__search-icon {
+    .flex-center();
+    color: @text-secondary;
+    flex-shrink: 0;
+
+    svg {
+        .icon-size(18px);
+    }
+}
+
+.session-search-modal__input {
+    flex: 1;
+    padding: @spacing-md @spacing-lg;
+    border-radius: @radius-md;
+    border: 1px solid @bg-modifier-border;
+    background: transparent;
+    color: @text-primary;
+    font-size: 0.95em;
+    outline: none;
+
+    &:focus {
+        border-color: @text-accent;
+    }
+
+    &::placeholder {
+        color: @text-faint;
+    }
+}
+
+.session-search-modal__loading {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+    padding: @spacing-md 20px;
+    font-size: 0.85em;
+    color: @text-secondary;
+    border-bottom: 1px solid @bg-modifier-border;
+    flex-shrink: 0;
+}
+
+.session-search-modal__loading-spinner {
+    display: flex;
+    align-items: center;
+    animation: spin 1s linear infinite;
+
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.session-search-modal__results {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    min-height: 0;
+}
+
+.session-search-modal__empty {
+    .flex-center();
+    padding: 40px 20px;
+    color: @text-secondary;
+    font-size: 0.9em;
+    text-align: center;
+}
+
+.session-search-modal__result-item {
+    .flex-column();
+    gap: @spacing-sm;
+    padding: @spacing-lg 20px;
+    cursor: pointer;
+    border-bottom: 1px solid @bg-modifier-border;
+    transition: background @duration-fast;
+    position: relative;
+
+    &:last-child {
+        border-bottom: none;
+    }
+
+    &:hover,
+    &--selected {
+        background: @bg-modifier-hover;
+    }
+}
+
+.session-search-modal__result-header {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+}
+
+.session-search-modal__result-title {
+    flex: 1;
+    font-size: 0.88em;
+    font-weight: 500;
+    color: @text-primary;
+    .text-truncate();
+}
+
+.session-search-modal__result-role {
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: @radius-sm;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.session-search-modal__result-role--user {
+    background: @bg-modifier-hover;
+    color: @text-secondary;
+}
+
+.session-search-modal__result-role--assistant {
+    background: color-mix(in srgb, @text-accent 15%, transparent);
+    color: @text-accent;
+}
+
+.session-search-modal__result-content {
+    font-size: 0.82em;
+    color: @text-secondary;
+    line-height: 1.4;
+    word-break: break-word;
+    .text-multiline-truncate(2);
+}
+
+.session-search-modal__result-badge {
+    position: absolute;
+    top: @spacing-md;
+    right: @spacing-xl;
+    font-size: 0.68em;
+    color: @text-faint;
+    background: @bg-secondary;
+    padding: 1px 6px;
+    border-radius: @radius-sm;
+}
+
+.session-search-modal__status {
+    padding: @spacing-md 20px;
+    font-size: 0.78em;
+    color: @text-faint;
+    border-top: 1px solid @bg-modifier-border;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.session-search-modal__status-loading {
+    color: @text-warning;
+    font-style: italic;
+}
+
+/* ─────────────────────────────────────────────
+   System Prompt Modal
+   ───────────────────────────────────────────── */
+
+.system-prompt-modal {
+    padding: 0;
+}
+
+.system-prompt-modal__textarea-container {
+    padding: @spacing-xl 20px;
+}
+
+.system-prompt-modal__textarea {
+    width: 100%;
+    min-height: 200px;
+    max-height: 400px;
+    padding: @spacing-lg;
+    font-family: var(--font-text);
+    font-size: 0.9em;
+    line-height: 1.5;
+    color: @text-primary;
+    background: @bg-secondary;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-md;
+    resize: vertical;
+    box-sizing: border-box;
+
+    &:focus {
+        outline: none;
+        border-color: @text-accent;
+        box-shadow: 0 0 0 2px color-mix(in srgb, @text-accent 20%, transparent);
+    }
+
+    &::placeholder {
+        color: @text-faint;
+    }
+}
+
+.system-prompt-modal__btn-row {
+    display: flex;
+    justify-content: flex-end;
+    gap: @spacing-md;
+    padding: @spacing-xl 20px;
+    border-top: 1px solid @bg-modifier-border;
+    background: @bg-secondary;
+}
+
+.system-prompt-modal__btn {
+    padding: 6px @spacing-xl;
+    font-size: 0.88em;
+    font-weight: 500;
+    border-radius: @radius-md;
+    cursor: pointer;
+    transition: background @duration-normal, box-shadow @duration-normal;
+}
+
+.system-prompt-modal__btn--cancel {
+    background: transparent;
+    border: 1px solid @bg-modifier-border;
+    color: @text-primary;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+}
+
+.system-prompt-modal__btn--save {
+    background: @text-accent;
+    border: none;
+    color: var(--text-on-accent);
+
+    &:hover {
+        background: var(--interactive-accent-hover);
+    }
+}
+
+/* ─────────────────────────────────────────────
+   Initialization Error Display
+   ───────────────────────────────────────────── */
+
+.session-error-container {
+    .flex-column();
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 20px;
+    text-align: center;
+}
+
+.session-error-title {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: @text-error;
+    margin-bottom: @spacing-xl;
+}
+
+.session-error-message {
+    width: 100%;
+    max-width: 600px;
+    margin-bottom: @spacing-xl;
+}
+
+.session-error-stack {
+    background: var(--background-primary-alt);
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-md;
+    padding: @spacing-lg;
+    font-size: 0.85em;
+    text-align: left;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.session-error-copy-btn,
+.session-error-retry-btn {
+    margin: 0 @spacing-md;
+    padding: @spacing-md @spacing-xl;
+    border-radius: @radius-md;
+    cursor: pointer;
+}
+
+.session-error-copy-btn {
+    background: @text-accent;
+    color: var(--text-on-accent);
+    border: none;
+}
+
+.session-error-retry-btn {
+    background: @bg-modifier-border;
+    color: @text-primary;
+    border: 1px solid @bg-modifier-border;
+}
+
+/* ─────────────────────────────────────────────
+   MCP Tools Dropdown (session view)
+   ───────────────────────────────────────────── */
+
+.session-mcp-tools {
+    .session-dropdown-btn {
+        min-width: 7em;
+    }
+
+    .session-dropdown-menu {
+        min-width: 180px;
+        max-width: 280px;
+        max-height: 360px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        // Right-align: MCP selector sits at the end of the thinking-row;
+        // left-aligned dropdown would overflow the right edge.
+        left: auto;
+        right: 0;
+    }
+}
+
+.session-mcp-tools__server-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: @spacing-sm @spacing-md;
+    border-radius: @radius-sm;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+}
+
+.session-mcp-tools__server-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: @text-primary;
+    cursor: pointer;
+    user-select: none;
+    flex: 1;
+    min-width: 0;
+    .text-truncate();
+
+    input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        margin: 0;
+        cursor: pointer;
+        accent-color: @text-accent;
+        flex-shrink: 0;
+    }
+}
+
+.session-mcp-tools__status-icon {
+    flex-shrink: 0;
+    .flex-center();
+    width: 14px;
+    height: 14px;
+
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.session-mcp-tools__count {
+    font-size: 0.7em;
+    color: @text-faint;
+    flex-shrink: 0;
+    padding: 0 @spacing-sm;
+    border-radius: @spacing-md;
+    background: @bg-modifier-hover;
+}
+
+.session-mcp-tools__collapse-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+    color: @text-faint;
+    transition: transform 0.15s ease;
+    transform: rotate(-90deg);
+
+    svg {
+        .icon-size(14px);
+    }
+
+    &:hover {
+        color: @text-primary;
+    }
+
+    &.session-mcp-tools__collapse-btn--expanded {
+        transform: rotate(0deg);
+    }
+}
+
+.session-mcp-tools__tool-list {
+    display: none;
+
+    &.session-mcp-tools__tool-list--expanded {
+        display: block;
+    }
+}
+
+.session-mcp-tools__tool-item {
+    padding: @spacing-xs @spacing-md @spacing-xs 28px;
+}
+
+.session-mcp-tools__tool-label {
+    font-size: 0.72em;
+    color: @text-secondary;
+    .text-truncate();
+}

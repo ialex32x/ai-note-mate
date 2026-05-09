@@ -1,0 +1,116 @@
+/*
+ * Follow-up suggestion bar — one-shot quick-pick buttons appended after
+ * the most recent assistant reply. Mounted in `.session-messages`.
+ */
+
+.session-followup-bar {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-sm;
+    margin: @spacing-sm 0 @spacing-md;
+    padding: @spacing-sm @spacing-md;
+    animation: session-followup-fade-in @duration-slow ease-out;
+}
+
+.session-followup-bar__title {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    font-size: 0.8em;
+    color: @text-secondary;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.session-followup-bar__title-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: @text-accent;
+    .svg-icon {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-followup-bar__list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: @spacing-sm;
+}
+
+.session-followup-bar__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    padding: 6px 10px;
+    min-height: 32px;
+    max-width: 100%;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-md;
+    background-color: @bg-secondary;
+    color: @text-primary;
+    font-size: 0.9em;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background-color @duration-normal ease, border-color @duration-normal ease, color @duration-normal ease;
+
+    &:hover {
+        background-color: @bg-modifier-hover;
+        border-color: @text-accent;
+        color: @text-accent;
+    }
+
+    &:active {
+        background-color: @bg-modifier-active;
+    }
+
+    &:focus-visible {
+        outline: 2px solid @text-accent;
+        outline-offset: 1px;
+    }
+}
+
+.session-followup-bar__btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: @text-accent;
+    flex-shrink: 0;
+    .svg-icon {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-followup-bar__btn-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 280px;
+}
+
+@keyframes session-followup-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(-4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+// Mobile: make buttons more touch-friendly and allow labels to wrap.
+@media (max-width: @breakpoint-mobile) {
+    .session-followup-bar__btn {
+        min-height: 36px;
+        padding: 8px 12px;
+    }
+
+    .session-followup-bar__btn-label {
+        white-space: normal;
+        word-break: break-word;
+        max-width: none;
+    }
+}

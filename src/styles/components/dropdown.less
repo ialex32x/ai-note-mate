@@ -1,0 +1,226 @@
+/* ─────────────────────────────────────────────
+   Abstract Base Classes (reused across components)
+   ───────────────────────────────────────────── */
+
+// Base dropdown button
+.session-dropdown-btn {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.8em;
+    padding: @spacing-sm 20px @spacing-sm @spacing-sm;
+    border: 1px solid @bg-modifier-border !important;
+    border-radius: @radius-sm;
+    background: transparent !important;
+    color: @text-secondary;
+    cursor: pointer;
+    user-select: none;
+    height: auto;
+    line-height: 1.2;
+    transition: color @duration-fast, border-color @duration-fast;
+    position: relative;
+
+    &:hover {
+        color: @text-primary;
+        border-color: @text-secondary;
+    }
+}
+
+.session-dropdown-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    margin-right: @spacing-xs;
+    flex-shrink: 0;
+
+    svg {
+        .icon-size(12px);
+    }
+}
+
+.session-dropdown-btn-text {
+    flex: 1;
+    min-width: 0;
+    .text-truncate();
+}
+
+.session-dropdown-btn-arrow {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.6;
+    flex-shrink: 0;
+    position: absolute;
+    right: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+
+    svg {
+        .icon-size(12px);
+    }
+}
+
+// Base dropdown menu
+.session-dropdown-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: @spacing-sm;
+    display: none;
+    flex-direction: column;
+    gap: @spacing-xs;
+    padding: @spacing-sm;
+    border-radius: @radius-md;
+    border: 1px solid @bg-modifier-border;
+    background: @bg-primary;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: @z-dropdown;
+    min-width: @dropdown-min-width;
+}
+
+.session-dropdown-menu--open {
+    display: flex;
+}
+
+.session-dropdown-menu--fixed {
+    position: fixed;
+}
+
+// Base dropdown item
+.session-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: @spacing-sm @spacing-md;
+    border-radius: @radius-sm;
+    cursor: pointer;
+    user-select: none;
+    font-size: 0.78em;
+    color: @text-primary;
+    white-space: nowrap;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
+}
+
+.session-dropdown-item--active {
+    font-weight: 600;
+}
+
+.session-dropdown-item--disabled {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+
+    &:hover {
+        background: transparent;
+    }
+}
+
+// Check icon in dropdown items
+.session-dropdown-item__check {
+    flex-shrink: 0;
+    .flex-center();
+    width: 16px;
+    height: 16px;
+    color: @text-accent;
+    border: 1.5px solid @text-faint;
+    border-radius: 2px;
+}
+
+.session-dropdown-item--active .session-dropdown-item__check {
+    border-color: transparent;
+}
+
+// Dropdown item icon
+.session-dropdown-item__icon {
+    .flex-center();
+    width: 16px;
+    height: 16px;
+    color: @text-secondary;
+
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.session-dropdown-item__model {
+    color: @text-faint;
+    font-size: 0.85em;
+    opacity: 0.65;
+}
+
+// Badge marker shown on dropdown items to indicate special roles
+// (e.g. profile currently used as the context summarizer).
+.session-dropdown-item__badge {
+    .flex-center();
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: @text-faint;
+    opacity: 0.85;
+
+    svg {
+        .icon-size(12px);
+    }
+}
+
+.session-dropdown-item__badge--summarizer {
+    color: @text-accent;
+    opacity: 0.9;
+}
+
+// Section header within dropdown
+.session-dropdown-section-header {
+    padding: @spacing-sm @spacing-md @spacing-xs;
+    margin-top: @spacing-sm;
+
+    &:first-child {
+        margin-top: 0;
+    }
+}
+
+.session-dropdown-section-header__text {
+    font-size: 0.7em;
+    font-weight: 600;
+    color: @text-faint;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+// Base selector wrapper
+.session-selector {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+}
+
+// Small icon button (20x20)
+.session-icon-btn {
+    .button-small();
+    color: @text-secondary;
+    background: transparent;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+
+    &:disabled {
+        opacity: 0.35;
+        cursor: default;
+        pointer-events: none;
+    }
+
+    svg {
+        .icon-size(14px);
+    }
+}
+
+// Empty state message
+.session-empty-state {
+    padding: @spacing-md @spacing-lg;
+    font-size: 0.78em;
+    color: @text-secondary;
+    text-align: center;
+}
