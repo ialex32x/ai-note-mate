@@ -69,34 +69,42 @@ export class SaveFileModal extends Modal {
         this.fileListContainer = filePanel.createDiv({ cls: 'save-file-modal__file-list' });
 
         // ── Resizable divider ─────────────────────────────────────────────
-        let isDragging = false;
-        const onMove = (e: MouseEvent) => {
-            if (!isDragging) return;
+        // Uses Pointer Events + setPointerCapture so that move/up events are
+        // guaranteed to be delivered to the divider element — no document-wide
+        // listeners, no mutation of document.body style.
+        let activePointerId: number | null = null;
+        const endDrag = () => {
+            if (activePointerId === null) return;
+            if (divider.hasPointerCapture(activePointerId)) {
+                divider.releasePointerCapture(activePointerId);
+            }
+            activePointerId = null;
+            mainArea.removeClass('save-file-modal__main--resizing');
+            divider.removeClass('save-file-modal__divider--active');
+        };
+        divider.addEventListener('pointerdown', (e) => {
+            // Only react to primary button / primary touch-pen contact.
+            if (e.button !== 0) return;
+            e.preventDefault();
+            activePointerId = e.pointerId;
+            divider.setPointerCapture(e.pointerId);
+            mainArea.addClass('save-file-modal__main--resizing');
+            divider.addClass('save-file-modal__divider--active');
+        });
+        divider.addEventListener('pointermove', (e) => {
+            if (activePointerId === null || e.pointerId !== activePointerId) return;
             const rect = mainArea.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const min = 120;
             const max = rect.width - 120;
             const clamped = Math.max(min, Math.min(max, x));
             treePanel.style.width = `${clamped}px`;
-        };
-        const onUp = () => {
-            if (!isDragging) return;
-            isDragging = false;
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-            document.removeEventListener('mousemove', onMove);
-            document.removeEventListener('mouseup', onUp);
-            divider.removeClass('save-file-modal__divider--active');
-        };
-        divider.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            isDragging = true;
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none';
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-            divider.addClass('save-file-modal__divider--active');
         });
+        divider.addEventListener('pointerup', endDrag);
+        divider.addEventListener('pointercancel', endDrag);
+        // Safety net: if capture is lost for any reason (e.g. focus change),
+        // clear our state so we don't leave the modal in a stuck state.
+        divider.addEventListener('lostpointercapture', endDrag);
 
         // ── Bottom bar ─────────────────────────────────────────────────────
         const bottomBar = contentEl.createDiv({ cls: 'save-file-modal__bottom' });

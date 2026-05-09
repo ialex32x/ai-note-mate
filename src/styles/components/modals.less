@@ -24,6 +24,15 @@
     border-top: 1px solid @bg-modifier-border;
     border-bottom: 1px solid @bg-modifier-border;
     overflow: hidden;
+
+    // While the divider is being dragged, force the col-resize cursor
+    // across the whole main area and suppress text selection — all scoped
+    // inside the modal, no pollution of document.body.
+    &--resizing,
+    &--resizing * {
+        cursor: col-resize !important;
+        user-select: none;
+    }
 }
 
 // Tree panel
