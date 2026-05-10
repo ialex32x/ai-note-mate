@@ -99,6 +99,47 @@ export class ScrollController {
         }
     }
 
+    /**
+     * Run a DOM-mutating callback while preserving "auto-follow" semantics.
+     *
+     * The default {@link maybeScrollToBottom} only inspects the *post*-mutation
+     * scroll state, which breaks for any single mutation that grows the
+     * scrollable content by more than {@link SCROLL_THRESHOLD} pixels at
+     * once — typical examples being tool-call bubbles being created with
+     * their (often tall) confirmation/detail UI, or sub-agent bubbles
+     * appearing with collapsibles + badges. In those cases, even if the
+     * user *was* pinned to the bottom right before the mutation, the new
+     * scrollHeight delta pushes `isNearBottom()` over the threshold, and
+     * the auto-scroll branch is silently skipped.
+     *
+     * This helper captures the "was near bottom" intent *before* the
+     * mutation runs, then unconditionally re-pins to the bottom afterwards
+     * (assuming the user has not manually scrolled away). Programmatic
+     * scrollTop writes do not flip `userScrolledUp` (it is only set by
+     * wheel/touch/keyboard handlers), so this is safe.
+     */
+    runWithAutoFollow<T>(fn: () => T): T {
+        const wasNearBottom = !this.userScrolledUp && this.isNearBottom();
+        const result = fn();
+        if (this.userScrolledUp) {
+            if (this.isStreamingProvider()) {
+                this.scrollToBottomBtn.show();
+            }
+            return result;
+        }
+        if (wasNearBottom) {
+            // Pre-mutation snapshot said we were pinned — re-pin regardless
+            // of how much the content grew during fn().
+            this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+            this.scrollToBottomBtn.hide();
+        } else if (this.isNearBottom()) {
+            this.scrollToBottomBtn.hide();
+        } else if (this.isStreamingProvider()) {
+            this.scrollToBottomBtn.show();
+        }
+        return result;
+    }
+
     forceScrollToBottom(): void {
         this.userScrolledUp = false;
         this.messagesEl.scrollTop = this.messagesEl.scrollHeight;

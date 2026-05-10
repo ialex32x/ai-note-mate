@@ -880,24 +880,32 @@ export class SessionView extends ItemView {
         if (msg.subAgent) {
             subAgentCls = ` session-bubble--subagent session-bubble--subagent-${msg.subAgent.agentName}`;
         }
-        // Create bubble element directly on messagesEl
-        const bubble = this.messagesEl.createEl('div', {
-            cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
-        });
 
-        // Render content into the bubble
-        this.bubbleRenderer.renderInto(bubble, msg, {
-            abortedMessageIds: this.abortedMessageIds,
-            pendingConfirmations: this.pendingConfirmations,
-        });
+        // Wrap the entire append-and-render path in an auto-follow snapshot
+        // so a single tall mutation (e.g. a tool-call bubble that ships with
+        // its detail / confirmation UI in one shot, or a sub-agent bubble
+        // with badge + collapsible wrapper) doesn't push `isNearBottom()`
+        // past the 100px threshold and silently break auto-scroll. See
+        // ScrollController.runWithAutoFollow for rationale.
+        return this.scroller.runWithAutoFollow(() => {
+            // Create bubble element directly on messagesEl
+            const bubble = this.messagesEl.createEl('div', {
+                cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
+            });
 
-        this.messageBubbles.set(msg.id, bubble);
-        // Keep the singleton typing indicator pinned to the tail of messagesEl
-        // so it never ends up visually stranded between bubbles.
-        this.typingIndicator.pinToEnd();
-        this.maybeScrollToBottom();
-        this.updateNewChatBtnState();
-        return bubble;
+            // Render content into the bubble
+            this.bubbleRenderer.renderInto(bubble, msg, {
+                abortedMessageIds: this.abortedMessageIds,
+                pendingConfirmations: this.pendingConfirmations,
+            });
+
+            this.messageBubbles.set(msg.id, bubble);
+            // Keep the singleton typing indicator pinned to the tail of messagesEl
+            // so it never ends up visually stranded between bubbles.
+            this.typingIndicator.pinToEnd();
+            this.updateNewChatBtnState();
+            return bubble;
+        });
     }
 
     private updateBubbleContent(bubble: HTMLElement, msg: ChatMessage) {
@@ -907,15 +915,20 @@ export class SessionView extends ItemView {
         const toolDetailBody = bubble.querySelector('.session-bubble__tool-detail-body') as HTMLElement | null;
         const wasToolDetailExpanded = toolDetailBody?.classList.contains('session-bubble__tool-detail-body--expanded') ?? false;
 
-        // Use BubbleRenderer.renderInto to update existing bubble
-        this.bubbleRenderer.renderInto(bubble, msg, {
-            wasThinkingExpanded,
-            wasToolDetailExpanded,
-            abortedMessageIds: this.abortedMessageIds,
-            pendingConfirmations: this.pendingConfirmations,
+        // Same auto-follow snapshot rationale as appendBubble: a single
+        // re-render can grow the bubble by hundreds of pixels (e.g. a
+        // tool_call gaining its result detail body, or a thinking section
+        // collapsing into a finalised assistant reply), so we must capture
+        // the "was at bottom" intent before the synchronous DOM mutation.
+        this.scroller.runWithAutoFollow(() => {
+            // Use BubbleRenderer.renderInto to update existing bubble
+            this.bubbleRenderer.renderInto(bubble, msg, {
+                wasThinkingExpanded,
+                wasToolDetailExpanded,
+                abortedMessageIds: this.abortedMessageIds,
+                pendingConfirmations: this.pendingConfirmations,
+            });
         });
-
-        this.maybeScrollToBottom();
     }
 
     /**
