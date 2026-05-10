@@ -20,7 +20,7 @@ import {
 import type { SectionContext, SettingsSection } from "./types";
 
 export class ProfileSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.profileSettings';
+	readonly titleKey = 'settings.profileSection';
 
 	private editingProfileId: string | null = null;
 

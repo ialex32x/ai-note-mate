@@ -26,7 +26,7 @@ const CAPABILITY_I18N: Record<ToolCapability, { label: string; desc: string }> =
 };
 
 export class GlobalSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.globalSettings';
+	readonly titleKey = 'settings.globalSection';
 
 	constructor(private readonly ctx: SectionContext) {}
 

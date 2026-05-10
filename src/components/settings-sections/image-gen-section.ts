@@ -14,7 +14,7 @@ import {
 import type { SectionContext, SettingsSection } from "./types";
 
 export class ImageGenSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.imageGenSettings';
+	readonly titleKey = 'settings.imageGenSection';
 
 	private editingImageGenId: string | null = null;
 

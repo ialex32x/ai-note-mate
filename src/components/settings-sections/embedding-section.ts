@@ -15,7 +15,7 @@ import {
 import type { SectionContext, SettingsSection } from "./types";
 
 export class EmbeddingSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.embeddingSettings';
+	readonly titleKey = 'settings.embeddingSection';
 
 	private editingEmbeddingId: string | null = null;
 
