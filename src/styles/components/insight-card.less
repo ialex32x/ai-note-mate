@@ -129,12 +129,36 @@
 }
 
 .session-insight-card__link {
-    color: @text-faint;
+    color: @text-accent;
     background-color: transparent;
     border: 1px solid @bg-modifier-border;
     border-radius: @radius-sm;
     padding: 1px 6px;
     line-height: 1.4;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color @duration-normal ease,
+                color @duration-normal ease,
+                border-color @duration-normal ease;
+
+    &:hover {
+        background-color: @bg-modifier-hover;
+        border-color: @text-accent;
+        text-decoration: none;
+    }
+
+    &:focus-visible {
+        outline: 2px solid @text-accent;
+        outline-offset: 1px;
+    }
+
+    // Target does not currently resolve to a vault file — Obsidian will
+    // offer to create it on click. Mirror the dashed-border convention
+    // used by Obsidian's own "new link" affordance.
+    &.is-unresolved {
+        color: @text-faint;
+        border-style: dashed;
+    }
 }
 
 .session-insight-card__item-actions {

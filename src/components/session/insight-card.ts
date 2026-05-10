@@ -1,4 +1,4 @@
-import { setIcon, setTooltip } from 'obsidian';
+import { App, setIcon, setTooltip, TFile } from 'obsidian';
 import type { ConversationInsight } from '../../services/insights';
 import { t } from '../../i18n';
 
@@ -31,6 +31,12 @@ export class InsightCard {
 
     constructor(
         private parent: HTMLElement,
+        /**
+         * Obsidian app handle. Used to open wiki-link targets (via
+         * `workspace.openLinkText`) and to drive native hover-previews
+         * when the user mouses over a linked note chip.
+         */
+        private app: App,
         /**
          * Invoked when the user clicks the per-item "Deepen" button. The
          * host (session view) is expected to send a follow-up user message
@@ -193,10 +199,7 @@ export class InsightCard {
                 });
             }
             for (const note of item.linkedNotes) {
-                meta.createEl('span', {
-                    cls: 'session-insight-card__link',
-                    text: '[[' + note + ']]',
-                });
+                this.renderLinkedNote(meta, note);
             }
         }
 
@@ -231,5 +234,86 @@ export class InsightCard {
 
             this.deepenBtns.push(deepenBtn);
         }
+    }
+
+    /**
+     * Render a single linked-note chip as a clickable anchor.
+     *
+     * The extractor emits raw wiki-link *targets* (the text between the
+     * `[[...]]`), which may carry an Obsidian-style display alias
+     * (`Target|Alias`) and/or a sub-heading (`Target#Heading`). We show
+     * the alias (falling back to the bare target) while still routing
+     * clicks to the full link text so Obsidian can resolve headings.
+     *
+     * Behaviour is aligned with chat bubbles' internal-link handling:
+     *   - Left-click  → open in the current (or existing) leaf.
+     *   - Cmd/Ctrl-click or middle-click → open in a new tab.
+     *   - Hover       → trigger Obsidian's native link preview.
+     *   - Unresolved targets are rendered with a muted "is-unresolved"
+     *     style and still navigate (Obsidian will offer to create).
+     */
+    private renderLinkedNote(parent: HTMLElement, rawNote: string): void {
+        // Strip surrounding `[[ ]]` if the extractor accidentally kept them.
+        let target = rawNote.trim();
+        if (target.startsWith('[[') && target.endsWith(']]')) {
+            target = target.slice(2, -2).trim();
+        }
+        if (!target) return;
+
+        // Split off display alias (`Target|Alias`).
+        let linkText = target;
+        let displayText = target;
+        const pipeIdx = target.indexOf('|');
+        if (pipeIdx >= 0) {
+            linkText = target.slice(0, pipeIdx).trim();
+            displayText = target.slice(pipeIdx + 1).trim() || linkText;
+        }
+
+        const link = parent.createEl('a', {
+            cls: 'session-insight-card__link',
+            text: '[[' + displayText + ']]',
+            attr: {
+                href: linkText,
+                // Prevent Obsidian from treating us as an external link.
+                'data-href': linkText,
+                'aria-label': linkText,
+            },
+        });
+
+        // Mark unresolved targets so styling can distinguish them. We use
+        // the link text with any `#heading` suffix stripped for lookup.
+        const hashIdx = linkText.indexOf('#');
+        const pathOnly = hashIdx >= 0 ? linkText.slice(0, hashIdx) : linkText;
+        const resolved = this.app.metadataCache.getFirstLinkpathDest(pathOnly, '');
+        if (!(resolved instanceof TFile)) {
+            link.addClass('is-unresolved');
+        }
+
+        link.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            const inNewTab = evt.metaKey || evt.ctrlKey || evt.button === 1;
+            this.app.workspace.openLinkText(linkText, '', inNewTab);
+        });
+
+        // Middle-click also opens in a new tab (covered above via `button === 1`
+        // on `click`, but some environments only emit `auxclick` for button 1).
+        link.addEventListener('auxclick', (evt) => {
+            if (evt.button !== 1) return;
+            evt.preventDefault();
+            evt.stopPropagation();
+            this.app.workspace.openLinkText(linkText, '', true);
+        });
+
+        // Native hover-preview, same source tag used by chat bubbles.
+        link.addEventListener('mouseover', (evt) => {
+            this.app.workspace.trigger('hover-link', {
+                event: evt,
+                source: 'ai-assistant',
+                hoverParent: parent,
+                targetEl: link,
+                linktext: linkText,
+            });
+        });
     }
 }

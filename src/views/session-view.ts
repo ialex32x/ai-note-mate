@@ -361,6 +361,7 @@ export class SessionView extends ItemView {
             // Initialize conversation-insight preview card.
             this.insightCard = new InsightCard(
                 this.messagesEl,
+                this.app,
                 (insight) => this.insightCoordinator.handleDeepen(insight),
             );
 
