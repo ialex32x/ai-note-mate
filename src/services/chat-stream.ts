@@ -576,10 +576,14 @@ export class ChatStream implements IChatAgent {
 
     /**
      * Clear all message history and reset state to idle.
+     * Also clears accumulated conversation summaries, so the instance
+     * behaves as if freshly constructed (modulo registered tools,
+     * config, and callbacks, which are preserved by design).
      * Safe to call at any time (even during streaming, though not recommended).
      */
     clearHistory(): void {
         this._messages = [];
+        this._summaries = [];
         this._state = "idle";
         this._abortController = null;
         this._sessionTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };

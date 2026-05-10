@@ -105,21 +105,31 @@ export class SubAgent {
     private _toolCallSummaries: ToolCallSummary[] = [];
 
     /**
-     * Reusable ChatStream instance for session-level context reuse.
-     * When enabled, the same ChatStream is reused across multiple
-     * execute() calls within the same session, preserving summaries
-     * and reducing redundant context.
+     * Reusable ChatStream instance.
+     *
+     * We keep the ChatStream (the "shell") across execute() calls so we
+     * avoid reconstructing the provider client, re-registering tools, and
+     * re-wiring callbacks on every invocation. However we do **not**
+     * preserve its conversation state: each execute() starts with a fully
+     * cleared message history and summary list (see `_getOrCreateChatStream`).
+     *
+     * Rationale: a sub-agent call is an isolated, single-purpose task
+     * (compress / summarize / route / etc.). Carrying over prior messages
+     * or summaries lets stale tool_result content bleed into a new task's
+     * context, which the model may treat as "already-known" facts and
+     * hallucinate against. Clearing per-execute gives us:
+     *   - strict task isolation (no cross-task leakage)
+     *   - reproducible behaviour (Nth call behaves like the 1st)
+     *   - constant token footprint (no history growth)
+     * while still avoiding the cost of rebuilding the ChatStream itself.
      */
     private _reusableChatStream: ChatStream | null = null;
-    private _executionCount = 0;
-
-    /** Maximum number of executions before resetting the reusable context */
-    private static readonly MAX_REUSE_COUNT = 10;
 
     /**
      * IDs of messages produced during the current execute() call.
-     * Used to filter out stale messages from `_reusableChatStream` when
-     * the same ChatStream instance is reused across multiple invocations.
+     * Also acts as an "inside-execute()" sentinel: the ChatStream's
+     * onMessageUpdate callback early-returns when this is null, so late
+     * async emissions outside an active execute() are dropped.
      */
     private _currentExecIds: Set<string> | null = null;
     /** parentToolCallId of the in-flight execute() call (for tagging sub-agent messages) */
@@ -293,7 +303,6 @@ export class SubAgent {
         this._currentExecMessageHandler = undefined;
         this._currentExecConfirmToolCall = undefined;
         this._currentExecToolCallEndHandler = undefined;
-        this._executionCount++;
 
         return {
             summary,
@@ -311,12 +320,18 @@ export class SubAgent {
 
     /**
      * Reset the reusable context.
-     * Call this when the conversation topic changes significantly
-     * or when you want to start fresh.
+     *
+     * Drops the cached ChatStream entirely, forcing the next execute()
+     * to rebuild it (including re-registering tools and re-wiring
+     * callbacks). Use this when tool/provider configuration changes
+     * materially and the existing shell can no longer be trusted.
+     *
+     * Note: you normally do NOT need to call this just to "forget"
+     * prior conversation — execute() already clears the ChatStream's
+     * message history and summaries on every invocation.
      */
     resetContext(): void {
         this._reusableChatStream = null;
-        this._executionCount = 0;
     }
 
     /** Get the execution log from the last execution */
@@ -411,26 +426,31 @@ export class SubAgent {
 
     /**
      * Get or create a ChatStream for this execution.
-     * Implements session-level context reuse: the same ChatStream is reused
-     * across multiple execute() calls, preserving summaries and reducing
-     * redundant context. Resets after MAX_REUSE_COUNT executions.
      *
-     * All callbacks wired on the ChatStream read from `this._currentExec*`
-     * fields, which are refreshed at the start of each execute() call.
-     * This ensures that when the ChatStream is reused, the latest callbacks
-     * take effect without needing to rewire.
+     * We reuse the ChatStream **shell** (provider client, registered tools,
+     * callbacks wired to `_currentExec*` fields) across execute() calls,
+     * but always start with a fully cleared conversation state:
+     *
+     *   - message history is emptied via `clearHistory()` so no prior
+     *     user / assistant / tool messages leak into this task's context.
+     *   - accumulated summaries are dropped for the same reason.
+     *   - token usage is reset so `sessionTokenUsage` deltas measured by
+     *     `execute()` correspond exactly to this single invocation.
+     *
+     * Rationale: a sub-agent call is semantically an isolated task, not
+     * a continuation of a chat. Carrying prior tool_result content into a
+     * new task encourages the model to treat stale data as authoritative
+     * (e.g. "file X still contains Y") and hallucinate from it.
+     *
+     * Callbacks are bound to `this` (SubAgent) via closures, so the latest
+     * `_currentExec*` fields — refreshed at the start of each execute() —
+     * take effect automatically on the next turn without any rewiring.
      */
     private _getOrCreateChatStream(): ChatStream {
-        // Reset if we've exceeded the reuse limit
-        if (this._executionCount >= SubAgent.MAX_REUSE_COUNT) {
-            this.resetContext();
-        }
-
         if (this._reusableChatStream) {
-            // Reuse existing ChatStream — callbacks are bound to `this` (SubAgent)
-            // via closures, so they automatically pick up the latest state
-            // (e.g., _toolCallSummaries is re-assigned each execute() call).
-            // The ChatStream retains its summaries but we start a fresh prompt cycle.
+            // Reuse the existing shell but wipe its conversation state so
+            // this execute() starts from a clean slate.
+            this._reusableChatStream.clearHistory();
             return this._reusableChatStream;
         }
 
@@ -448,9 +468,10 @@ export class SubAgent {
             // and sub-agents during a single session.
             compressionOptions: this._config.compressionOptions,
             onMessageUpdate: (msg) => {
-                // Track and tag messages belonging to the current execute() call.
-                // When the same ChatStream is reused, older messages from previous
-                // invocations must NOT be forwarded to the UI again.
+                // Track messages belonging to the current execute() call.
+                // `_currentExecIds` also acts as an "inside-execute()" sentinel:
+                // if execute() is not currently active (e.g. a late async
+                // emission after cleanup), drop the update.
                 const execIds = this._currentExecIds;
                 if (!execIds) {
                     return;
