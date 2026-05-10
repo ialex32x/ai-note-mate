@@ -253,7 +253,7 @@ export class GeminiProvider implements LLMProvider {
                         const tc = msg.toolCalls[i]!;
                         let args: Record<string, unknown> = {};
                         try {
-                            args = JSON.parse(tc.function.arguments);
+                            args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
                         } catch { /* keep empty args */ }
                         const fcPart: Record<string, unknown> = {
                             functionCall: { name: tc.function.name, args },
@@ -272,10 +272,10 @@ export class GeminiProvider implements LLMProvider {
                 // Tool result → functionResponse
                 let response: Record<string, unknown> = { result: msg.content };
                 try {
-                    const parsed = JSON.parse(msg.content);
+                    const parsed = JSON.parse(msg.content) as unknown;
                     if (typeof parsed === "object" && parsed !== null) {
                         // Gemini requires function_response.response to be an object, not an array
-                        response = Array.isArray(parsed) ? { result: parsed } : parsed;
+                        response = Array.isArray(parsed) ? { result: parsed } : (parsed as Record<string, unknown>);
                     }
                 } catch { /* keep string as result */ }
 

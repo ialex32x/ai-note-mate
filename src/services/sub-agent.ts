@@ -407,8 +407,7 @@ export class SubAgent {
                 const llmSummary = await createChatCompletion(summarizer, messages);
 
                 if (llmSummary && llmSummary.trim().length > 0) {
-                    const summaryTokens = estimateTokens(llmSummary);
-                    // console.log(`[SubAgent:${this.name}] LLM summarization complete: ${estimateTokens(fullContent)} → ${summaryTokens} tokens (${((1 - summaryTokens / estimateTokens(fullContent)) * 100).toFixed(1)}% reduction)`);
+                    // console.log(`[SubAgent:${this.name}] LLM summarization complete: ${estimateTokens(fullContent)} → ${estimateTokens(llmSummary)} tokens`);
                     return llmSummary.trim();
                 }
 

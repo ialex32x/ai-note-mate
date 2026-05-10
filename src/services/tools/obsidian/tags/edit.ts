@@ -243,7 +243,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
                                 if (fm) {
                                     for (const key of ["tags", "tag"]) {
                                         const v = (fm as Record<string, unknown>)[key];
-                                        if (Array.isArray(v)) fmClone[key] = [...v];
+                                        if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                                     }
                                 }
                                 frontmatterChanges = addTagsToFrontmatter(fmClone, tagsToAdd);
@@ -291,7 +291,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
                                 const fmClone: Record<string, unknown> = { ...fm };
                                 for (const key of ["tags", "tag"]) {
                                     const v = (fm as Record<string, unknown>)[key];
-                                    if (Array.isArray(v)) fmClone[key] = [...v];
+                                    if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                                 }
                                 frontmatterChanges = rewriteFrontmatterTags(fmClone, removeOp!);
                             }
@@ -321,7 +321,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
                         if (fm) {
                             for (const key of ["tags", "tag"]) {
                                 const v = fm[key];
-                                if (Array.isArray(v)) fmClone[key] = [...v];
+                                if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                             }
                         }
                         frontmatterChanges = setFrontmatterTags(fmClone, uniqueBareTags);

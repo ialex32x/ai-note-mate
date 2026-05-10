@@ -186,7 +186,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             }
             const queries: string[] = [];
             for (let i = 0; i < rawQueries.length; i++) {
-                const q = rawQueries[i];
+                const q: unknown = rawQueries[i];
                 if (typeof q !== "string" || q.length === 0) {
                     return {
                         success: false,

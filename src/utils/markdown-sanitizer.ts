@@ -145,12 +145,6 @@ function closeBoldItalic(content: string): string {
 
 // ── P1: Incomplete table ─────────────────────────────────────────────────────
 
-/** A complete table row starts and ends with `|`. */
-function isCompleteTableRow(line: string): boolean {
-    const trimmed = line.trimEnd();
-    return trimmed.startsWith('|') && trimmed.endsWith('|');
-}
-
 /** A table separator row matches `| --- | --- | ...` pattern. */
 function isTableSeparatorRow(line: string): boolean {
     const trimmed = line.trim();

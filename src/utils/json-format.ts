@@ -31,7 +31,7 @@ export function prettifyIfJson(text: string): string {
     const first = trimmed[0];
     if (first !== '{' && first !== '[') return text;
     try {
-        const parsed = JSON.parse(trimmed);
+        const parsed = JSON.parse(trimmed) as unknown;
         if (parsed !== null && typeof parsed === 'object') {
             return JSON.stringify(parsed, null, 2);
         }

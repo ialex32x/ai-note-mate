@@ -103,7 +103,7 @@ export class ImageWebSearcher {
             headers,
         }));
 
-        const data: { results?: { image?: string }[] } = JSON.parse(resp.text);
+        const data = JSON.parse(resp.text) as { results?: { image?: string }[] };
         if (data && data.results) {
             for (const item of data.results) {
                 if (item.image) {
@@ -132,7 +132,7 @@ export class ImageWebSearcher {
         while ((match = regex.exec(content)) !== null) {
             let url = match[1]!;
             try {
-                url = JSON.parse(`"${url}"`);
+                url = JSON.parse(`"${url}"`) as string;
             } catch {
                 // Ignore decoding errors, use raw url
             }

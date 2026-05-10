@@ -129,7 +129,7 @@ function parseInsightJson(raw: string): unknown[] | null {
 
 function tryParseArray(s: string): unknown[] | null {
     try {
-        const v = JSON.parse(s);
+        const v = JSON.parse(s) as unknown;
         return Array.isArray(v) ? v : null;
     } catch {
         return null;

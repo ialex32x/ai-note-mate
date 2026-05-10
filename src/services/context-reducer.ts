@@ -1,4 +1,3 @@
-import { LLMProviderType } from "./providers";
 import { createOpenAICompletion } from "./providers/openai-provider";
 import { createGeminiCompletion } from "./providers/gemini-provider";
 import { ChatMessageRole, CompleteToolCall, MediaAttachment, MinimalModelConfig } from "./llm-provider";
@@ -230,11 +229,11 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
     // Parse args for display (show abbreviated version)
     let argsDisplay: string;
     try {
-        const parsed = JSON.parse(rawArgs);
+        const parsed = JSON.parse(rawArgs) as unknown;
         // Show only the first 2 keys to keep it short
-        const keys = Object.keys(parsed);
+        const keys = Object.keys(parsed as object);
         const entries = keys.slice(0, 2).map(k => {
-            const v = parsed[k];
+            const v = (parsed as Record<string, unknown>)[k];
             const vs = typeof v === 'string'
                 ? (v.length > 30 ? `"${safeSliceHead(v, 30)}..."` : `"${v}"`)
                 : JSON.stringify(v);
@@ -261,11 +260,11 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
 
     // Try to parse as JSON for structured summary
     try {
-        const parsed = JSON.parse(result);
+        const parsed = JSON.parse(result) as unknown;
         if (Array.isArray(parsed)) {
             return `${head}; it returned a JSON array of ${parsed.length} items (${result.length} chars total, omitted here).`;
         } else if (typeof parsed === 'object' && parsed !== null) {
-            const keys = Object.keys(parsed);
+            const keys = Object.keys(parsed as object);
             const keyPreview = keys.slice(0, 5).join(', ') + (keys.length > 5 ? ', ...' : '');
             return `${head}; it returned a JSON object with keys {${keyPreview}} (${result.length} chars total, omitted here).`;
         }
@@ -386,14 +385,11 @@ export class ContextReducer {
 
         // Get only the non-system messages that are AFTER the cutoff
         const unsummarizedMessages = nonSystemMessages.slice(cutoffIndex);
-        const summarizedMessages = nonSystemMessages.slice(0, cutoffIndex);
 
         // ── 3. Estimate tokens ─────────────────────────────────────────────
         const systemTokens = estimateMessagesTokens(systemMessages);
         const unsummarizedTokens = estimateMessagesTokens(unsummarizedMessages);
-        const summarizedTokens = estimateMessagesTokens(summarizedMessages);
         const summaryTokens = existingSummaries.reduce((sum, s) => sum + estimateTokens(s.content), 0);
-        const totalTokens = unsummarizedTokens + summarizedTokens + summaryTokens;
 
         // ── 4. Decide whether compression is needed ───────────────────────
         // The threshold is checked against an **approximation of the real

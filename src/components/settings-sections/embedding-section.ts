@@ -22,7 +22,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { app, plugin, refreshSection, containerEl } = this.ctx;
+		const { plugin, refreshSection, containerEl } = this.ctx;
 		const embeddingConfigs = plugin.settings.embeddingConfigs;
 
 		// Embedding enabled toggle
@@ -40,7 +40,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		// ── Active embedding selector ──
 		let activeEmbeddingDropdown: DropdownComponent;
 		{
-			const setting = new Setting(container)
+			new Setting(container)
 				.setName(t('settings.embeddingConfig'))
 				.setDesc(t('settings.embeddingConfigDesc'))
 				.addDropdown((dropdown: DropdownComponent) => {

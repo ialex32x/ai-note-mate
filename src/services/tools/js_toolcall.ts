@@ -73,7 +73,7 @@ function evaluateJavaScript(plugin: NoteAssistantPlugin): RegisteredTool {
             try {
                 // Create a sandboxed async function with `app` as the only parameter
                 // Using AsyncFunction constructor to support await expressions
-                const AsyncFunction = Object.getPrototypeOf(async function () { }).constructor;
+                const AsyncFunction = (Object.getPrototypeOf(async function () { /* probe */ }) as { constructor: new (...args: string[]) => unknown }).constructor;
                 const fn = new AsyncFunction("app", "console", code) as (app: unknown, console: unknown) => Promise<unknown>;
 
                 const result: { return: unknown, output: string[] } = {

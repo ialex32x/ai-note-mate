@@ -8,10 +8,10 @@
  * - Extract file references from content
  */
 
-import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightSpecialChars, Decoration, DecorationSet, tooltips } from '@codemirror/view';
-import { EditorState, StateEffect, StateField, RangeSetBuilder, Prec, RangeSet } from '@codemirror/state';
+import { EditorView, keymap, drawSelection, dropCursor, highlightSpecialChars, Decoration, DecorationSet, tooltips } from '@codemirror/view';
+import { EditorState, StateField, RangeSetBuilder, Prec, RangeSet } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { closeBrackets, closeBracketsKeymap, autocompletion, startCompletion, completionKeymap, completionStatus } from '@codemirror/autocomplete';
+import { autocompletion, startCompletion, completionKeymap, completionStatus } from '@codemirror/autocomplete';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
 import { setIcon } from 'obsidian';
 import type { App, TAbstractFile } from 'obsidian';
@@ -40,7 +40,7 @@ export function extractFileRefs(content: string): Array<{ start: number; end: nu
     const refs: Array<{ start: number; end: number; path: string }> = [];
     // Use non-greedy quantifier (+? instead of +) to find the nearest closing ]]
     // Path can contain any character except ], |, and [ (to avoid matching nested [[)
-    const regex = /\[\[([^\[\]\|]+?)(?:\|[^\]]+?)?\]\]/g;
+    const regex = /\[\[([^[\]|]+?)(?:\|[^\]]+?)?\]\]/g;
     let match;
     while ((match = regex.exec(content)) !== null) {
         refs.push({
@@ -156,7 +156,7 @@ export class CMInput {
             key: 'Tab',
             run: (view) => {
                 // Accept completion if visible, otherwise do nothing
-                const result = startCompletion(view);
+                startCompletion(view);
                 return true;
             },
         }]);
@@ -328,7 +328,6 @@ export class CMInput {
 
         if (!hasContent && placeholder && !this.placeholderEl) {
             // Add placeholder
-            const contentEl = view.contentDOM;
             this.placeholderEl = document.createElement('div');
             this.placeholderEl.className = 'cm-placeholder';
             this.placeholderEl.textContent = placeholder;

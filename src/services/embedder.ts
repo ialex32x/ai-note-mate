@@ -157,7 +157,7 @@ export class Embedder {
         // Resolve per-text keys in parallel.
         const keys = await Promise.all(texts.map(t => sha256(t)));
 
-        const result: (number[] | null)[] = new Array(texts.length).fill(null);
+        const result: (number[] | null)[] = new Array<number[] | null>(texts.length).fill(null);
         const missIndices: number[] = [];
         const missTexts: string[] = [];
 
@@ -337,9 +337,9 @@ export class Embedder {
     private evictIfNeeded(): void {
         if (this.maxEntries <= 0) return;
         while (this.entries.size > this.maxEntries) {
-            const oldestKey = this.entries.keys().next().value;
-            if (oldestKey === undefined) break;
-            this.entries.delete(oldestKey);
+            const next = this.entries.keys().next();
+            if (next.done) break;
+            this.entries.delete(next.value);
         }
     }
 

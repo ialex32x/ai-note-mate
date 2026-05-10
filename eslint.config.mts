@@ -8,6 +8,14 @@ export default tseslint.config(
 		languageOptions: {
 			globals: {
 				...globals.browser,
+				// Obsidian-injected DOM helpers (augmented on HTMLElement/Document/global)
+				createEl: "readonly",
+				createDiv: "readonly",
+				createSpan: "readonly",
+				createFragment: "readonly",
+				// TS lib built-ins not in older "browser" globals set
+				AsyncIterable: "readonly",
+				AsyncIterableIterator: "readonly",
 			},
 			parserOptions: {
 				projectService: {

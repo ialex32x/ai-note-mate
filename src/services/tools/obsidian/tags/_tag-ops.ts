@@ -33,7 +33,7 @@ export function normaliseTagName(raw: string): string | null {
     if (t.startsWith("#")) t = t.substring(1);
     if (t.length === 0) return null;
     // Reject obvious whitespace / quote / yaml special chars
-    if (/[\s"'`,\[\]{}]/.test(t)) return null;
+    if (/[\s"'`,[\]{}]/.test(t)) return null;
     // Strip any leading or trailing slashes (nesting separator should not be at the edges)
     if (t.startsWith("/") || t.endsWith("/")) return null;
     return t;
@@ -146,7 +146,7 @@ export function rewriteFrontmatterTags(fm: Record<string, unknown>, op: TagOp): 
         } else if (Array.isArray(cur)) {
             const next: unknown[] = [];
             for (let i = 0; i < cur.length; i++) {
-                const item = cur[i];
+                const item: unknown = cur[i];
                 if (typeof item !== "string") {
                     next.push(item);
                     continue;

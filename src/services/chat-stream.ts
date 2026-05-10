@@ -896,7 +896,7 @@ export class ChatStream implements IChatAgent {
                         let toolArgs: Record<string, unknown>;
 
                         try {
-                            toolArgs = JSON.parse(toolCall.function.arguments);
+                            toolArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
                         } catch {
                             throw new Error(`Failed to parse arguments for tool "${toolName}": ${toolCall.function.arguments}`);
                         }
@@ -1172,12 +1172,9 @@ export class ChatStream implements IChatAgent {
                 similarity: Number(s.similarity.toFixed(4)),
                 passed: s.similarity >= SIMILARITY_THRESHOLD,
             }));
-            const userInputPreview = userInput.length > 120
-                ? userInput.slice(0, 120) + "..."
-                : userInput;
             // console.log(
             //     '[embedding tool filter]',
-            //     `userInput="${userInputPreview}"`,
+            //     `userInput="${userInput.length > 120 ? userInput.slice(0, 120) + '...' : userInput}"`,
             //     `threshold=${SIMILARITY_THRESHOLD}`,
             //     `always=[${always.map(t => t.schema.function.name).join(', ')}]`,
             //     `passed=${similarities.length}/${ondemand.length}`,

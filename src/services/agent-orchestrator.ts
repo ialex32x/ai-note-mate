@@ -22,7 +22,6 @@ import {
     ToolCallResult,
     IChatAgent,
     AgentTokenBreakdown,
-    SUMMARIZER_SYSTEM_PROMPT,
 } from "./chat-stream";
 import type { ConversationSummary } from "./context-reducer";
 import type {
@@ -31,7 +30,6 @@ import type {
     ThinkingLevel,
     ToolCapability,
     MinimalModelConfig,
-    ToolDefinition,
 } from "./llm-provider";
 import { SubAgent, SubAgentConfig, SubAgentResult, SubAgentExecutionLog } from "./sub-agent";
 import { type ExchangeStore, estimateValueSize, validateSerializable } from "./tools/exchange-toolcall";
@@ -191,7 +189,7 @@ export function buildInitialStore(inputs?: Record<string, unknown> | null): Exch
             `inputs must be a plain object mapping string keys to JSON-serializable values; got ${Array.isArray(inputs) ? "array" : typeof inputs}.`
         );
     }
-    const proto = Object.getPrototypeOf(inputs);
+    const proto: object | null = Object.getPrototypeOf(inputs) as object | null;
     if (proto !== null && proto !== Object.prototype) {
         throw new InvalidDelegateInputError(
             `inputs must be a plain object (Object.prototype or null prototype); got an instance of ${proto?.constructor?.name ?? "<unknown>"}.`

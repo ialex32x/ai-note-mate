@@ -1,4 +1,4 @@
-import { TFile, arrayBufferToBase64 } from "obsidian";
+import { arrayBufferToBase64 } from "obsidian";
 import type NoteAssistantPlugin from "../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";

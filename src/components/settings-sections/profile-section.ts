@@ -40,7 +40,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		// ── Active profile selector ──
 		let activeProfileDropdown: DropdownComponent;
 		{
-			const setting = new Setting(container)
+			new Setting(container)
 				.setName(t('settings.profile'))
 				.setDesc(t('settings.profileDesc'))
 				.addDropdown((dropdown: DropdownComponent) => {
@@ -61,7 +61,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		// ── Summarizer profile selector (shares profile list, kept together with active selector) ──
 		let summarizerDropdown: DropdownComponent;
 		{
-			const setting = new Setting(container)
+			new Setting(container)
 				.setName(t('settings.summarizer'))
 				.setDesc(t('settings.summarizerDesc'))
 				.addDropdown((dropdown: DropdownComponent) => {

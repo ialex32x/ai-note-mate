@@ -112,7 +112,7 @@ export function validateSerializable(value: unknown): string | null {
         // Plain objects only. Reject anything with a non-trivial prototype
         // (class instances etc.), since their non-enumerable properties /
         // methods will silently disappear after JSON round-trip.
-        const proto = Object.getPrototypeOf(v);
+        const proto: object | null = Object.getPrototypeOf(v) as object | null;
         if (proto !== null && proto !== Object.prototype) {
             return `non-plain object at ${path}`;
         }

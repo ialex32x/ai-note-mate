@@ -4,7 +4,6 @@ import { MCPManager } from "../../services/mcp/mcp-manager";
 import type { MCPServerConfig, MCPServerState } from "../../services/mcp/mcp-types";
 import { copyToClipboard } from "../../utils/clipboard";
 import {
-	createApiKeyField,
 	createTabBar,
 	createTextField,
 	createToggleField,

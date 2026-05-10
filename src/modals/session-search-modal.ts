@@ -1,7 +1,6 @@
 import { App, Modal, setIcon, debounce } from 'obsidian';
 import { t } from '../i18n';
 import { SessionManager, SessionSnapshot } from '../session-manager';
-import type { ChatMessage } from '../services/chat-stream';
 
 export interface SessionSearchResult {
     sessionId: string;
@@ -189,7 +188,6 @@ export class SessionSearchModal extends Modal {
         const lowerQuery = query.toLowerCase();
         const sessions = this.sessionManager.getAllSessions();
         let totalSearched = 0;
-        let resultsFound = 0;
 
         // Track sessions that need to be loaded
         const sessionsToLoad: string[] = [];
@@ -214,7 +212,6 @@ export class SessionSearchModal extends Modal {
 
             // Show initial results from already loaded sessions
             this.updateResults(loadedResults, totalSearched, sessionsToLoad.length);
-            resultsFound = loadedResults.length;
 
             // Second pass: load and search remaining sessions asynchronously
             for (const sessionId of sessionsToLoad) {
@@ -229,7 +226,6 @@ export class SessionSearchModal extends Modal {
                     if (fullSession && fullSession.messages.length > 0) {
                         const results = this.searchSessionMessages(fullSession, lowerQuery, true);
                         loadedResults.push(...results);
-                        resultsFound += results.length;
                     }
                 } catch (err) {
                     console.warn(`[SessionSearch] Failed to load session ${sessionId}:`, err);

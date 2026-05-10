@@ -154,13 +154,13 @@ function extractListItems(tail: string): string[] {
             continue;
         }
         // numbered list: 1. / 1) / 1、 / 一. (skip CJK ordinals for simplicity)
-        m = /^(?:\d{1,2})[.\)、]\s+(.+)$/.exec(line);
+        m = /^(?:\d{1,2})[.)、]\s+(.+)$/.exec(line);
         if (m) {
             results.push((m[1] ?? '').trim());
             continue;
         }
         // A) / A. / Option 1: / 选项 1: / 選項 1:
-        m = /^(?:[A-Za-z][.\)]|选项\s*\d+[：:]|選項\s*\d+[：:]|option\s*\d+[：:])\s+(.+)$/i.exec(line);
+        m = /^(?:[A-Za-z][.)]|选项\s*\d+[：:]|選項\s*\d+[：:]|option\s*\d+[：:])\s+(.+)$/i.exec(line);
         if (m) {
             results.push((m[1] ?? '').trim());
             continue;
@@ -175,7 +175,7 @@ function tailBeforeList(tail: string): string {
     const buf: string[] = [];
     for (const raw of lines) {
         const line = raw.trim();
-        if (/^[-*+•]\s+/.test(line) || /^\d{1,2}[.\)、]\s+/.test(line)) break;
+        if (/^[-*+•]\s+/.test(line) || /^\d{1,2}[.)、]\s+/.test(line)) break;
         buf.push(raw);
     }
     return buf.join('\n');
@@ -206,7 +206,7 @@ function extractSingleQuestion(tail: string, _lowerTail: string): string | null 
     // (Chinese/Japanese full stop, period, exclamation) but keep '?'/'？'
     // because we need it on the candidate.
     const sentences = last
-        .split(/(?<=[。．\.!！\n])\s*/)
+        .split(/(?<=[。．.!！\n])\s*/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
     const candidate = sentences[sentences.length - 1] ?? last;

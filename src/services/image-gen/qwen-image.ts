@@ -15,6 +15,34 @@ export interface QwenImageGenParams {
 }
 
 /**
+ * Shape of relevant fields in the DashScope multimodal-generation response.
+ * Only the fields we read are typed; everything else is allowed but ignored.
+ */
+interface QwenErrorBody {
+    code?: string;
+    message?: string;
+}
+
+interface QwenImagePart {
+    image?: string;
+    text?: string;
+}
+
+interface QwenChoice {
+    message?: {
+        content?: QwenImagePart[];
+    };
+}
+
+interface QwenSuccessBody {
+    code?: string;
+    message?: string;
+    output?: {
+        choices?: QwenChoice[];
+    };
+}
+
+/**
  * Generate an image using Qwen API via DashScope.
  * If reference images are provided, they are attached to the multimodal
  * content array as data-URI image parts (image-to-image). Whether this
@@ -86,7 +114,7 @@ export async function generateImageWithQwen(
 
         // Handle HTTP error responses with detailed error extraction
         if (response.status >= 400) {
-            const errorBody = response.json;
+            const errorBody = response.json as QwenErrorBody | undefined;
             const detail = errorBody?.message
                 ? `${errorBody.code ? `[${errorBody.code}] ` : ""}${errorBody.message}`
                 : response.text || `Request failed with status ${response.status}`;
@@ -94,10 +122,10 @@ export async function generateImageWithQwen(
             return { success: false, error: detail };
         }
 
-        const result = response.json;
+        const result = response.json as QwenSuccessBody | undefined;
 
         // Check for application-level error in response body
-        if (result.code && result.message) {
+        if (result?.code && result.message) {
             return {
                 success: false,
                 error: `[${result.code}] ${result.message}`,
@@ -105,7 +133,7 @@ export async function generateImageWithQwen(
         }
 
         // Parse successful response
-        const choices = result.output?.choices;
+        const choices = result?.output?.choices;
         if (!choices || !Array.isArray(choices) || choices.length === 0) {
             return {
                 success: false,
@@ -130,7 +158,7 @@ export async function generateImageWithQwen(
         }
 
         // Fetch the image from URL
-        const imageUrl = imageData.image;
+        const imageUrl: string = imageData.image;
         const imageResponse = await requestUrl({
             url: imageUrl,
             method: "GET",

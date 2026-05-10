@@ -1,4 +1,3 @@
-import type { LLMProviderType } from "./providers";
 import { createOpenAIEmbeddings } from "./providers/openai-provider";
 import { createGeminiEmbeddings } from "./providers/gemini-provider";
 import { MinimalModelConfig } from "./llm-provider";

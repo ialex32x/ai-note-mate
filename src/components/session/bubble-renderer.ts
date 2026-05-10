@@ -1,7 +1,5 @@
 import {
     MarkdownRenderer,
-    setIcon,
-    TFile,
     App,
     Component,
 } from 'obsidian';
@@ -314,8 +312,8 @@ export class BubbleRenderer extends Component {
         const {
             wasThinkingExpanded = false,
             wasToolDetailExpanded = false,
-            abortedMessageIds = new Set(),
-            pendingConfirmations = new Map(),
+            abortedMessageIds = new Set<string>(),
+            pendingConfirmations = new Map<string, (approved: boolean) => void>(),
         } = options;
 
         // System messages: special handling
