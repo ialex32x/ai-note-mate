@@ -2,6 +2,7 @@ import { LLMProviderType } from "./providers";
 import { createOpenAICompletion } from "./providers/openai-provider";
 import { createGeminiCompletion } from "./providers/gemini-provider";
 import { ChatMessageRole, CompleteToolCall, MediaAttachment, MinimalModelConfig } from "./llm-provider";
+import { safeSliceHead } from "../utils/string-safe";
 
 // ─────────────────────────────────────────────
 // Constants (TODO: migrate to settings later)
@@ -167,13 +168,13 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
         const entries = keys.slice(0, 2).map(k => {
             const v = parsed[k];
             const vs = typeof v === 'string'
-                ? (v.length > 30 ? `"${v.slice(0, 30)}..."` : `"${v}"`)
+                ? (v.length > 30 ? `"${safeSliceHead(v, 30)}..."` : `"${v}"`)
                 : JSON.stringify(v);
             return `${k}: ${vs}`;
         });
         argsDisplay = entries.join(', ') + (keys.length > 2 ? ', ...' : '');
     } catch {
-        argsDisplay = rawArgs.length > 60 ? rawArgs.slice(0, 60) + '...' : rawArgs;
+        argsDisplay = rawArgs.length > 60 ? safeSliceHead(rawArgs, 60) + '...' : rawArgs;
     }
 
     // Error results: always keep full text (usually short)
@@ -201,7 +202,7 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
     }
 
     // Plain text: keep first 200 chars
-    const preview = result.slice(0, 200).replace(/\n/g, ' ');
+    const preview = safeSliceHead(result, 200).replace(/\n/g, ' ');
     return `[Tool: ${toolName}({${argsDisplay}}) → ${preview}... (truncated, original ${result.length} chars)]`;
 }
 

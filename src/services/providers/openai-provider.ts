@@ -171,6 +171,7 @@ export class OpenAIProvider implements LLMProvider {
                 content: m.content,
             };
         });
+
         // Convert our tools to OpenAI format (they are already compatible)
         const openaiTools: OpenAI.Chat.ChatCompletionTool[] | undefined =
             tools && tools.length > 0

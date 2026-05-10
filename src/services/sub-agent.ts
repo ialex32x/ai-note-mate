@@ -11,6 +11,7 @@
 import { ChatStream, ChatMessage, RegisteredTool } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
 import { estimateTokens, createChatCompletion } from "./context-reducer";
+import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
 
 // ─────────────────────────────────────────────
 // Types
@@ -256,7 +257,7 @@ export class SubAgent {
 
         if (aborted) {
             // console.log(`[SubAgent:${this.name}] Aborted after ${endTime - startTime}ms, partial content: ${fullContent.length} chars`);
-            summary = `[Sub-agent "${this.name}" was aborted. Partial result: ${fullContent.slice(0, 200)}...]`;
+            summary = `[Sub-agent "${this.name}" was aborted. Partial result: ${safeSliceHead(fullContent, 200)}...]`;
         } else if (estimatedTokens > resultMaxTokens) {
             // Result is too large — summarize via LLM if summarizer is available
             // console.log(`[SubAgent:${this.name}] Result exceeds threshold (${estimatedTokens} tokens > ${resultMaxTokens}), attempting LLM summarization...`);
@@ -265,6 +266,14 @@ export class SubAgent {
             // console.log(`[SubAgent:${this.name}] Result within threshold (${estimatedTokens} tokens <= ${resultMaxTokens}), returning as-is`);
             summary = fullContent;
         }
+
+        // Defensive sanitization: the summary will be embedded as a tool_result
+        // content string in the main agent's request body. Some OpenAI-compatible
+        // gateways reject lone UTF-16 surrogates with errors like
+        // "unexpected end of hex escape". Strip any here as a final guard,
+        // regardless of where they came from (streaming chunk splits, upstream
+        // truncation, etc.).
+        summary = stripLoneSurrogates(summary);
 
         // Clean up active references (but keep _reusableChatStream for reuse)
         this._chatStream = null;
@@ -320,7 +329,7 @@ export class SubAgent {
                 const toolContext = toolCalls.length > 0
                     ? `\n\nTools executed during this task:\n${toolCalls.map(tc => {
                         const status = tc.success ? '✓' : '✗';
-                        return `  ${status} ${tc.toolName}(${JSON.stringify(tc.args).slice(0, 120)})`;
+                        return `  ${status} ${tc.toolName}(${safeSliceHead(JSON.stringify(tc.args), 120)})`;
                     }).join('\n')}\n\n`
                     : '';
 
@@ -367,7 +376,7 @@ export class SubAgent {
         if (toolCalls.length > 0) {
             const toolSummary = toolCalls.map(tc => {
                 const status = tc.success ? '✓' : '✗';
-                return `  ${status} ${tc.toolName}: ${tc.resultPreview.slice(0, 150)}`;
+                return `  ${status} ${tc.toolName}: ${safeSliceHead(tc.resultPreview, 150)}`;
             }).join('\n');
             parts.push(`Tools executed:\n${toolSummary}`);
         }
@@ -379,9 +388,9 @@ export class SubAgent {
             const tailSize = Math.floor(maxChars * 0.3);
             parts.push(
                 `Result (truncated, original ${fullContent.length} chars):\n` +
-                `${fullContent.slice(0, headSize)}\n` +
+                `${safeSliceHead(fullContent, headSize)}\n` +
                 `\n... [${fullContent.length - headSize - tailSize} chars omitted] ...\n\n` +
-                `${fullContent.slice(-tailSize)}`
+                `${safeSliceTail(fullContent, tailSize)}`
             );
         } else {
             parts.push(`Result:\n${fullContent}`);
@@ -449,7 +458,7 @@ export class SubAgent {
                     toolName: args.toolName,
                     args: args.toolArgs,
                     resultPreview: args.result.length > 200
-                        ? args.result.slice(0, 200) + '...'
+                        ? safeSliceHead(args.result, 200) + '...'
                         : args.result,
                     success: !args.isError,
                     elapsed: 0,
