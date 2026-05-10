@@ -15,10 +15,9 @@ import {
     vaultCreateFile,
     vaultDeleteFiles,
     vaultDeleteFolder,
-    vaultInsertLines,
     vaultPrependFile,
     vaultRenameFile,
-    vaultReplaceLines,
+    vaultEditLines,
     vaultReplaceText,
 } from "./write";
 import { vaultGetOverview, vaultListFilesSorted } from "./overview";
@@ -46,9 +45,9 @@ import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
  *     → main") instead of nuanced ("only delegate writes that don't
  *     have a content body").
  *  2. Removes the prompt-injection seam for content-bearing writes
- *     (`vault_create_file` / `vault_append_file` / `vault_replace_*` /
- *     `vault_insert_lines`): the literal file body rides as a JSON
- *     `content` field, never as prose inside `delegate_task.task`.
+ *     (`vault_create_file` / `vault_append_file` / `vault_replace_*`):
+ *     the literal file body rides as a JSON `content` field, never as
+ *     prose inside `delegate_task.task`.
  *  3. Keeps the related hard rules (e.g. "tag edits MUST use
  *     `vault_edit_file_tags`, not `vault_replace_text`"; "moves MUST
  *     use `vault_rename_or_move_file`, not delete+create") on the
@@ -72,7 +71,8 @@ import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
  *
  * Includes (so a future "what's a mutation tool?" check is unambiguous):
  *  - Content-writes: create / append / prepend / replace_text /
- *    replace_lines / insert_lines
+ *    edit_lines (edit_lines also handles inserts/deletes via its
+ *    `edits` array — there is no separate insert_lines tool)
  *  - Structural: delete_files / delete_folder / rename_or_move_file
  *  - Tag edits:   edit_file_tags / rename_tag (vault-wide)
  */
@@ -83,8 +83,7 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultAppendFile(plugin),
         vaultPrependFile(plugin),
         vaultReplaceText(plugin),
-        vaultReplaceLines(plugin),
-        vaultInsertLines(plugin),
+        vaultEditLines(plugin),
         // Structural writes (no content body)
         vaultDeleteFiles(plugin),
         vaultDeleteFolder(plugin),

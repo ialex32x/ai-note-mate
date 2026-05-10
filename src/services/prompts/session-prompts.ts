@@ -117,7 +117,9 @@ When delegating, provide a clear and complete task description. After receiving 
 **Section / partial edits — locate first, then read the narrow range.** When the user asks to modify a *part* of a file (a heading section, a paragraph identified by a keyword, a code block, a specific list item), do NOT reflexively delegate "read the whole file". The default SOP is:
 1. Delegate a *locate* task: ask vault_inspector to \`vault_search_content\` with \`path\` set to that file and a query targeting the section (e.g. the heading text, a distinctive keyword) — return the matching line numbers.
 2. Delegate a *narrow read*: ask vault_inspector to \`vault_read_file\` with \`start_line\`/\`end_line\` covering just that section (plus a few lines of context if needed for boundary detection).
-3. Apply the edit yourself with \`vault_replace_lines\` (or the appropriate write tool) using those line numbers.
+3. Apply the edit yourself with \`vault_edit_lines\` (or the appropriate write tool) using those line numbers.
+
+When you have **multiple line-based edits to the same file** (e.g. fix a typo on line 12 AND rewrite a section on lines 40-50 AND insert a new paragraph before line 80), submit them ALL in a single \`vault_edit_lines\` call via its \`edits\` array. Do NOT call the tool multiple times — every edit's line numbers refer to the pre-edit file, and the tool applies them back-to-front so they don't interfere. Splitting into sequential calls uses stale line numbers and corrupts the file. Inserts and deletes are also expressed as entries in the same \`edits\` array (\`op: "insert"\` and \`op: "replace"\` with empty content respectively).
 
 Reading a whole file just to edit a small section wastes tokens and risks copy-drift on the unchanged parts. Only fall back to a full read when the section truly cannot be located by search (e.g. the user describes it semantically with no anchor text), and say so explicitly in the \`task\`.
 
@@ -140,7 +142,7 @@ Prefer the structured \`result\` field for any downstream tool call or programma
 ${vaultTips}
 
 ## Vault hard rules (apply to your own vault tool calls)
-- Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`vault_edit_file_tags\`. Never simulate this via \`vault_replace_text\` / \`vault_replace_lines\` / \`vault_append_file\` / \`vault_prepend_file\` / \`vault_insert_lines\` against tag text, and never via read → \`vault_create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`vault_edit_file_tags\` preserves.
+- Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`vault_edit_file_tags\`. Never simulate this via \`vault_replace_text\` / \`vault_edit_lines\` / \`vault_append_file\` / \`vault_prepend_file\` against tag text, and never via read → \`vault_create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`vault_edit_file_tags\` preserves.
 - Vault-wide tag rename → \`vault_rename_tag\`.
 - Move / rename / relocate / archive a file or folder → \`vault_rename_or_move_file\` is the ONLY correct tool. Never simulate via \`vault_create_file\` at a new path + \`vault_delete_files\` on the old path; that route silently breaks every incoming wikilink.
 - After any tag tool runs, the file is in its final state. Do NOT follow up with another write tool to "clean up", "fix formatting", or "beautify" unless the user explicitly asked. When an inline \`#tag\` was on its own line, removing it leaves a blank line behind — by design, do not "fix" it.

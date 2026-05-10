@@ -2,7 +2,7 @@ import { TFile, TFolder } from "obsidian";
 import type NoteAssistantPlugin from "../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";
-import { ensureParentFolder, isFailure, requireFile, requireFileExtension, requireFolder, validateLineRange } from "./_shared";
+import { ensureParentFolder, isFailure, requireFile, requireFileExtension, requireFolder } from "./_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: vault_create_file
@@ -587,125 +587,171 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_replace_lines
+// Tool: vault_edit_lines
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultReplaceLines(plugin: NoteAssistantPlugin): RegisteredTool {
-    return {
-        ondemand: true,
+/**
+ * A single line-based edit operation. Two shapes:
+ *   - { op: "replace", start_line, end_line, content }
+ *       Replace inclusive 1-based range [start_line, end_line] with `content`.
+ *       To delete a range, pass content: "".
+ *   - { op: "insert",  line, content }
+ *       Insert `content` BEFORE the 1-based `line`. Use line = totalLines + 1
+ *       to append at end of file.
+ *
+ * All edits in one call refer to line numbers in the SAME pre-edit snapshot
+ * of the file. The tool sorts by start position descending and applies them
+ * back-to-front so earlier edits never invalidate later ones' line numbers.
+ */
+interface ReplaceEdit {
+    op: "replace";
+    start_line: number;
+    end_line: number;
+    content: string;
+}
+interface InsertEdit {
+    op: "insert";
+    line: number;
+    content: string;
+}
+type LineEdit = ReplaceEdit | InsertEdit;
 
-        schema: {
-            type: "function",
-            function: {
-                name: "vault_replace_lines",
-                description:
-                    "Replace a specific line range in a file with new content. " +
-                    "Lines are 1-based and inclusive on both ends. " +
-                    "The new_content can be more or fewer lines than the original range. " +
-                    "Combine with vault_read_file's line range reading for efficient partial edits: " +
-                    "first read the target range, then replace it with updated content. " +
-                    "Set dry_run to true to preview the changes without modifying the file. " +
-                    "Use this when rewriting a section, paragraph, or block of a note.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        path: {
-                            type: "string",
-                            description: "Vault-relative path to the file, e.g. 'Notes/MyNote.md'.",
-                        },
-                        start_line: {
-                            type: "number",
-                            description: "1-based starting line number of the range to replace.",
-                        },
-                        end_line: {
-                            type: "number",
-                            description: "1-based ending line number (inclusive) of the range to replace.",
-                        },
-                        new_content: {
-                            type: "string",
-                            description:
-                                "New content to replace the specified line range with. " +
-                                "Can be more or fewer lines than the original range.",
-                        },
-                        dry_run: {
-                            type: "boolean",
-                            description:
-                                "If true, return a preview of the changes without actually modifying the file. " +
-                                "Defaults to false.",
-                        },
-                    },
-                    required: ["path", "start_line", "end_line", "new_content"],
-                },
-            },
-        },
-        capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const path = args["path"] as string;
-            const startLine = args["start_line"] as number;
-            const endLine = args["end_line"] as number;
-            const newContent = args["new_content"] as string;
-            const dryRun = (args["dry_run"] as boolean) ?? false;
-
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const content = await plugin.app.vault.read(file);
-            const lines = content.split("\n");
-            const totalLines = lines.length;
-
-            const rangeErr = validateLineRange(startLine, endLine, totalLines);
-            if (rangeErr) return rangeErr;
-
-            const before = lines.slice(0, startLine - 1);
-            const after = lines.slice(endLine);
-            const replacedLines = lines.slice(startLine - 1, endLine);
-            const resultContent = [...before, newContent, ...after].join("\n");
-            const newTotalLines = resultContent.split("\n").length;
-
-            if (!dryRun) {
-                await plugin.app.vault.modify(file, resultContent);
-            }
-
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_lines_replace" : "lines_replaced",
-                    path,
-                    replaced_range: [startLine, endLine],
-                    original_lines_count: replacedLines.length,
-                    new_total_lines: newTotalLines,
-                    previous_total_lines: totalLines,
-                    dry_run: dryRun,
-                    ...(dryRun ? { preview_replaced_content: replacedLines.join("\n") } : {}),
-                },
-            };
-        },
-        requiresConfirmation: true,
-    };
+/**
+ * Normalise an edit into a half-open zero-based slice [from, to) on the
+ * original `lines` array, plus the replacement string.
+ *
+ *   replace [a, b]       → from = a-1, to = b
+ *   insert  before line L → from = L-1, to = L-1   (zero-length slice)
+ *
+ * This unification lets overlap detection and back-to-front application
+ * treat both ops with identical logic.
+ */
+interface NormalisedEdit {
+    /** Index into `args.edits`, used purely for error reporting. */
+    index: number;
+    /** Original edit, kept for the result payload. */
+    raw: LineEdit;
+    /** Zero-based, inclusive start of the slice to replace. */
+    from: number;
+    /** Zero-based, exclusive end of the slice to replace. */
+    to: number;
+    /** Replacement content (may be empty for deletions; insert always has content). */
+    content: string;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_insert_lines
-// ─────────────────────────────────────────────────────────────────────────────
+function normaliseEdit(edit: unknown, index: number, totalLines: number): NormalisedEdit | string {
+    if (!edit || typeof edit !== "object") {
+        return `edits[${index}] must be an object.`;
+    }
+    const e = edit as Record<string, unknown>;
+    const op = e["op"];
 
-export function vaultInsertLines(plugin: NoteAssistantPlugin): RegisteredTool {
+    if (op === "replace") {
+        const start = e["start_line"];
+        const end = e["end_line"];
+        const content = e["content"];
+        if (typeof content !== "string") {
+            return `edits[${index}] (replace): content must be a string.`;
+        }
+        if (!Number.isInteger(start) || !Number.isInteger(end)) {
+            return `edits[${index}] (replace): start_line and end_line must be integers.`;
+        }
+        const s = start as number;
+        const en = end as number;
+        if (s < 1 || en < 1) {
+            return `edits[${index}] (replace): start_line and end_line must be >= 1 (got ${s}, ${en}).`;
+        }
+        if (s > en) {
+            return `edits[${index}] (replace): start_line (${s}) must not exceed end_line (${en}).`;
+        }
+        if (en > totalLines) {
+            return `edits[${index}] (replace): end_line (${en}) exceeds file length (${totalLines}).`;
+        }
+        return {
+            index,
+            raw: { op: "replace", start_line: s, end_line: en, content },
+            from: s - 1,
+            to: en,
+            content,
+        };
+    }
+
+    if (op === "insert") {
+        const line = e["line"];
+        const content = e["content"];
+        if (typeof content !== "string") {
+            return `edits[${index}] (insert): content must be a string.`;
+        }
+        if (!Number.isInteger(line)) {
+            return `edits[${index}] (insert): line must be an integer.`;
+        }
+        const l = line as number;
+        if (l < 1 || l > totalLines + 1) {
+            return `edits[${index}] (insert): line (${l}) must be in [1, ${totalLines + 1}] (use ${totalLines + 1} to append).`;
+        }
+        return {
+            index,
+            raw: { op: "insert", line: l, content },
+            from: l - 1,
+            to: l - 1,
+            content,
+        };
+    }
+
+    return `edits[${index}] has unknown op '${String(op)}'. Expected 'replace' or 'insert'.`;
+}
+
+/**
+ * Detect overlapping/conflicting edits.
+ *
+ * Edits are sorted by `from` ascending; we then walk and ensure each next
+ * edit starts at or after the previous one's `to`. Two edge cases on
+ * zero-length (insert) slices:
+ *
+ *   - Two inserts AT THE SAME POSITION are ambiguous in ordering and we
+ *     reject them. The model should merge them into one insert.
+ *   - An insert exactly at the boundary of a replace (e.g. insert before
+ *     line 5, replace [5, 7]) is allowed: `prev.to === next.from` is fine.
+ */
+function detectOverlap(edits: NormalisedEdit[]): string | null {
+    const sorted = [...edits].sort((a, b) => a.from - b.from || a.to - b.to);
+    for (let i = 1; i < sorted.length; i++) {
+        const prev = sorted[i - 1]!;
+        const cur = sorted[i]!;
+        // Two inserts at the same anchor: ambiguous order, reject.
+        if (prev.from === prev.to && cur.from === cur.to && prev.from === cur.from) {
+            return `edits[${prev.index}] and edits[${cur.index}] both insert at the same position; merge them into a single insert.`;
+        }
+        if (cur.from < prev.to) {
+            return `edits[${prev.index}] and edits[${cur.index}] overlap. All edits must reference disjoint ranges of the original file.`;
+        }
+    }
+    return null;
+}
+
+export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "vault_insert_lines",
+                name: "vault_edit_lines",
                 description:
-                    "Insert new content at a specific line position in a file without replacing any existing content. " +
-                    "The position is 1-based: content is inserted BEFORE the specified line number. " +
-                    "Use position 1 to insert at the very beginning of the file. " +
-                    "Use a position greater than the total number of lines to append at the end. " +
-                    "Set dry_run to true to preview the insertion without modifying the file. " +
-                    "Use this when you need to add new paragraphs, list items, or sections in the middle of a note " +
-                    "without altering any existing content.",
+                    "Apply one or more line-based edits to a file in a single atomic operation. " +
+                    "Supports replacing a line range, deleting a range (replace with empty content), " +
+                    "and inserting new content before a given line — all in the same call. " +
+                    "Lines are 1-based. " +
+                    "\n\n" +
+                    "IMPORTANT: When you need multiple edits in the same file, you MUST submit them ALL " +
+                    "in a single call via the `edits` array. Do NOT split them across multiple calls — " +
+                    "every edit's line numbers refer to the file BEFORE any edit is applied, and the tool " +
+                    "applies them back-to-front so earlier edits never shift later edits' line numbers. " +
+                    "Splitting into multiple calls will use stale line numbers and corrupt the file. " +
+                    "\n\n" +
+                    "All edits must reference disjoint ranges; overlapping edits are rejected. " +
+                    "If validation fails, the file is not modified at all (atomic). " +
+                    "Set dry_run to true to preview without modifying the file.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -713,76 +759,151 @@ export function vaultInsertLines(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "string",
                             description: "Vault-relative path to the file, e.g. 'Notes/MyNote.md'.",
                         },
-                        position: {
-                            type: "number",
+                        edits: {
+                            type: "array",
+                            minItems: 1,
                             description:
-                                "1-based line number indicating where to insert. " +
-                                "Content is inserted BEFORE this line. " +
-                                "Use 1 to insert at the beginning. " +
-                                "Use a value greater than total lines to append at the end.",
-                        },
-                        content: {
-                            type: "string",
-                            description: "The content to insert.",
+                                "List of edits to apply atomically. Each edit's line numbers refer to the " +
+                                "file BEFORE any edit is applied. Edits must not overlap.",
+                            items: {
+                                type: "object",
+                                oneOf: [
+                                    {
+                                        type: "object",
+                                        properties: {
+                                            op: { type: "string", enum: ["replace"] },
+                                            start_line: {
+                                                type: "number",
+                                                description: "1-based inclusive start of the range to replace.",
+                                            },
+                                            end_line: {
+                                                type: "number",
+                                                description: "1-based inclusive end of the range to replace.",
+                                            },
+                                            content: {
+                                                type: "string",
+                                                description:
+                                                    "Replacement content. Can be more or fewer lines than the " +
+                                                    "original range. Use an empty string to delete the range.",
+                                            },
+                                        },
+                                        required: ["op", "start_line", "end_line", "content"],
+                                    },
+                                    {
+                                        type: "object",
+                                        properties: {
+                                            op: { type: "string", enum: ["insert"] },
+                                            line: {
+                                                type: "number",
+                                                description:
+                                                    "1-based line number; content is inserted BEFORE this line. " +
+                                                    "Use line = totalLines + 1 to append at end of file.",
+                                            },
+                                            content: {
+                                                type: "string",
+                                                description: "Content to insert (may be one or many lines).",
+                                            },
+                                        },
+                                        required: ["op", "line", "content"],
+                                    },
+                                ],
+                            },
                         },
                         dry_run: {
                             type: "boolean",
                             description:
-                                "If true, return a preview of the changes without actually modifying the file. " +
+                                "If true, validate and preview the result without modifying the file. " +
                                 "Defaults to false.",
                         },
                     },
-                    required: ["path", "position", "content"],
+                    required: ["path", "edits"],
                 },
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            const position = args["position"] as number;
-            const contentToInsert = args["content"] as string;
+            const rawEdits = args["edits"];
             const dryRun = (args["dry_run"] as boolean) ?? false;
+
+            if (!Array.isArray(rawEdits) || rawEdits.length === 0) {
+                return { success: false, type: "text", content: "`edits` must be a non-empty array." };
+            }
 
             const fileOrErr = requireFile(plugin.app, path);
             if (isFailure(fileOrErr)) return fileOrErr;
             const file = fileOrErr;
 
-            if (!Number.isInteger(position) || position < 1) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `Invalid position: must be a positive integer (1-based). Got position=${position}.`,
-                };
-            }
-
-            const existing = await plugin.app.vault.read(file);
-            const lines = existing.split("\n");
+            const original = await plugin.app.vault.read(file);
+            const lines = original.split("\n");
             const totalLines = lines.length;
 
-            // Clamp position: if beyond end, insert at end
-            const insertIndex = Math.min(position - 1, totalLines);
-            const newLines = contentToInsert.split("\n");
+            // Validate every edit against the SAME pre-edit snapshot.
+            const normalised: NormalisedEdit[] = [];
+            for (let i = 0; i < rawEdits.length; i++) {
+                const result = normaliseEdit(rawEdits[i], i, totalLines);
+                if (typeof result === "string") {
+                    return { success: false, type: "text", content: result };
+                }
+                normalised.push(result);
+            }
 
-            // Splice in the new lines without removing any existing lines
-            const resultLines = [...lines.slice(0, insertIndex), ...newLines, ...lines.slice(insertIndex)];
-            const resultContent = resultLines.join("\n");
-            const newTotalLines = resultLines.length;
+            const overlapErr = detectOverlap(normalised);
+            if (overlapErr) {
+                return { success: false, type: "text", content: overlapErr };
+            }
+
+            // Apply back-to-front so each splice doesn't shift earlier indices.
+            const sortedDesc = [...normalised].sort((a, b) => b.from - a.from || b.to - a.to);
+            const working = lines.slice();
+            for (const ed of sortedDesc) {
+                const replacementLines = ed.content === "" && ed.from < ed.to
+                    ? [] // pure deletion of a range
+                    : ed.content.split("\n");
+                // For pure inserts with empty content the model is asking for a no-op;
+                // splicing in [""] would inject a blank line, which is almost certainly
+                // not what was intended. Treat as no-op.
+                if (ed.from === ed.to && ed.content === "") {
+                    continue;
+                }
+                working.splice(ed.from, ed.to - ed.from, ...replacementLines);
+            }
+
+            const resultContent = working.join("\n");
+            const newTotalLines = working.length;
 
             if (!dryRun) {
                 await plugin.app.vault.modify(file, resultContent);
             }
 
+            // Summarise applied edits in input order for clarity.
+            const applied = normalised.map((ed) => {
+                if (ed.raw.op === "replace") {
+                    return {
+                        op: "replace",
+                        range: [ed.raw.start_line, ed.raw.end_line],
+                        replaced_lines_count: ed.to - ed.from,
+                        new_lines_count: ed.content === "" ? 0 : ed.content.split("\n").length,
+                    };
+                }
+                return {
+                    op: "insert",
+                    before_line: ed.raw.line,
+                    inserted_lines_count: ed.content === "" ? 0 : ed.content.split("\n").length,
+                };
+            });
+
             return {
                 success: true,
                 type: "object",
                 content: {
-                    action: dryRun ? "dry_run_lines_insert" : "lines_inserted",
+                    action: dryRun ? "dry_run_lines_edit" : "lines_edited",
                     path,
-                    inserted_before_line: insertIndex + 1,
-                    inserted_lines_count: newLines.length,
-                    new_total_lines: newTotalLines,
+                    edits_applied: applied,
                     previous_total_lines: totalLines,
+                    new_total_lines: newTotalLines,
                     dry_run: dryRun,
+                    ...(dryRun ? { preview: resultContent } : {}),
                 },
             };
         },
