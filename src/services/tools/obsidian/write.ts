@@ -452,8 +452,10 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                     "By default only the first occurrence is replaced; set replace_all to true to replace every occurrence. " +
                     "Set dry_run to true to preview the changes without modifying the file. " +
                     "Use this for small precise edits such as fixing typos, renaming terms, or deleting specific text. " +
-                    "Do NOT use this to edit tags — '#X' would partial-match '#XYZ' and YAML frontmatter cannot be edited safely as text. " +
-                    "Use vault_edit_file_tags (per-file add/remove/set) or vault_rename_tag (vault-wide rename) instead.",
+                    "Tag editing caveat: when search_text looks like a single tag token (e.g. '#foo'), this tool will refuse " +
+                    "by default because it can partial-match (e.g. '#foo' inside '#foobar') and may corrupt YAML frontmatter. " +
+                    "Prefer vault_edit_file_tags (per-file add/remove/set) or vault_rename_tag (vault-wide rename). " +
+                    "If you intentionally want to do a raw text replace on a tag token, set force=true (a dry_run first is recommended).",
                 parameters: {
                     type: "object",
                     properties: {
@@ -483,6 +485,12 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "If true, return a preview of the changes without actually modifying the file. " +
                                 "Defaults to false.",
                         },
+                        force: {
+                            type: "boolean",
+                            description:
+                                "If true, bypass the safety guard that refuses tag-shaped search_text. " +
+                                "Defaults to false. Use only when you have verified the impact (e.g. via dry_run).",
+                        },
                     },
                     required: ["path", "search_text", "replace_text"],
                 },
@@ -495,6 +503,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const replaceText = args["replace_text"] as string;
             const replaceAll = (args["replace_all"] as boolean) ?? false;
             const dryRun = (args["dry_run"] as boolean) ?? false;
+            const force = (args["force"] as boolean) ?? false;
 
             const fileOrErr = requireFile(plugin.app, path);
             if (isFailure(fileOrErr)) return fileOrErr;
@@ -504,22 +513,25 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                 return { success: false, type: "text", content: "search_text must not be empty." };
             }
 
-            // Hard guard: refuse tag-shaped search_text. tags can live in YAML
-            // frontmatter or inline as `#tag`; text replacement is unsafe (partial
-            // matches like `#foo` hitting `#foobar`, frontmatter corruption).
-            // Strict pattern: trimmed search_text is exactly one tag token.
-            const trimmed = searchText.trim();
-            if (/^#[\p{L}\p{N}_][\p{L}\p{N}_\-/]*$/u.test(trimmed)) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        `Refusing to use vault_replace_text on a tag token (${trimmed}). ` +
-                        `Tags may appear in YAML frontmatter or as inline #tag, and text replacement ` +
-                        `can partial-match (e.g. '#foo' inside '#foobar') or corrupt frontmatter. ` +
-                        `Use vault_edit_file_tags to add/remove/set tags on a specific file, ` +
-                        `or vault_rename_tag to rename a tag across the entire vault.`,
-                };
+            // Soft guard: warn (and refuse unless force=true) when search_text is a
+            // single tag token. Tags can live in YAML frontmatter or inline as
+            // `#tag`, and raw text replacement may partial-match (e.g. `#foo`
+            // inside `#foobar`) or corrupt frontmatter.
+            if (!force) {
+                const trimmed = searchText.trim();
+                if (/^#[\p{L}\p{N}_][\p{L}\p{N}_\-/]*$/u.test(trimmed)) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content:
+                            `Refusing to use vault_replace_text on a tag token (${trimmed}). ` +
+                            `Tags may appear in YAML frontmatter or as inline #tag, and text replacement ` +
+                            `can partial-match (e.g. '#foo' inside '#foobar') or corrupt frontmatter. ` +
+                            `Prefer vault_edit_file_tags (per-file) or vault_rename_tag (vault-wide). ` +
+                            `If you really intend a raw text replace, retry with force=true ` +
+                            `(running dry_run=true first is recommended).`,
+                    };
+                }
             }
 
             const content = await plugin.app.vault.read(file);
