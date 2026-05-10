@@ -207,7 +207,7 @@ export class GlobalSettingsSection implements SettingsSection {
 
 			label.createSpan({ cls: 'oap-capability-label', text: t(keys.label) });
 
-			input.addEventListener('change', async () => {
+			input.addEventListener('change', () => {
 				const current = new Set(plugin.settings.allowedCapabilities);
 				if (input.checked) {
 					current.add(cap);
@@ -216,7 +216,7 @@ export class GlobalSettingsSection implements SettingsSection {
 				}
 				// Preserve canonical order.
 				plugin.settings.allowedCapabilities = ALL_TOOL_CAPABILITIES.filter(c => current.has(c));
-				await plugin.saveSettings();
+				void plugin.saveSettings();
 			});
 		}
 	}

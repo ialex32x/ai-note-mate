@@ -40,7 +40,7 @@ export function attachImageContextMenu(
                 const file = app.vault.getAbstractFileByPath(vaultPath);
                 if (file instanceof TFile) {
                     const leaf = app.workspace.getLeaf(false);
-                    leaf.openFile(file);
+                    void leaf.openFile(file);
                 }
             }
         });
@@ -165,14 +165,14 @@ export function attachLinkContextMenu(
                     item.setTitle(t('view.openNoteInNewTab'));
                     item.onClick(() => {
                         const leaf = app.workspace.getLeaf('tab');
-                        leaf.openFile(vaultFile);
+                        void leaf.openFile(vaultFile);
                     });
                 });
             } else if (isExternalLink) {
                 menu.addItem((item) => {
                     item.setTitle(t('view.openInBrowser'));
                     item.onClick(() => {
-                        app.workspace.openLinkText(hrefAttr, '', false);
+                        void app.workspace.openLinkText(hrefAttr, '', false);
                     });
                 });
 

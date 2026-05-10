@@ -131,7 +131,7 @@ function renderToolDetail(
         headerRow.toggleClass('session-bubble__tool-header--expanded', toolDetailExpanded);
     };
     headerRow.addEventListener('click', toggleToolDetail);
-    headerRow.style.cursor = 'pointer';
+    headerRow.addClass('session-bubble__tool-header--clickable');
     if (wasToolDetailExpanded) {
         headerRow.addClass('session-bubble__tool-header--expanded');
     }

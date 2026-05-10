@@ -1179,7 +1179,7 @@ export class ChatStream implements IChatAgent {
             //     `always=[${always.map(t => t.schema.function.name).join(', ')}]`,
             //     `passed=${similarities.length}/${ondemand.length}`,
             // );
-            console.table(scoreTable);
+            console.debug(scoreTable);
             return [...always, ...results];
         } catch (err) {
             // The embedder tracks its own status (see Embedder.status); we just

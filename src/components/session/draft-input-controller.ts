@@ -21,7 +21,7 @@ export class DraftInputController {
     scheduleSave(): void {
         this.clearTimer();
         this.timer = window.setTimeout(() => {
-            this.save();
+            void this.save();
         }, this.delayMs);
     }
 

@@ -244,7 +244,6 @@ export class MCPManager {
 	private _toRegisteredTool(serverId: string, serverName: string, tool: MCPToolInfo): RegisteredTool {
 		const slug = sanitizeForToolName(serverName);
 		const schemaName = `mcp_${slug}_${tool.name}`.slice(0, 64);
-		const manager = this;
 
 		return {
 			ondemand: true,
@@ -260,9 +259,9 @@ export class MCPManager {
 				},
 			},
 			capabilities: ['network'],
-			async exec(_chatStream, args, signal?: AbortSignal): Promise<ToolCallResult> {
+			exec: async (_chatStream, args, signal?: AbortSignal): Promise<ToolCallResult> => {
 				try {
-					const result = await manager.callTool(serverId, tool.name, args, signal);
+					const result = await this.callTool(serverId, tool.name, args, signal);
 					return { success: true, type: 'text', content: result };
 				} catch (err) {
 					const msg = err instanceof Error ? err.message : String(err);

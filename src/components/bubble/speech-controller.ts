@@ -168,7 +168,7 @@ export class SpeechController {
             const btnRect = voicePickerBtn.getBoundingClientRect();
             const layerRect = layer.getBoundingClientRect();
             voiceDropdown.style.left = `${btnRect.left - layerRect.left}px`;
-            voiceDropdown.style.right = '';
+            voiceDropdown.style.removeProperty('right');
             // Position the popup above the button: its `bottom` (in
             // layer space) sits 4px above the button's top edge.
             voiceDropdown.style.bottom = `${layerRect.bottom - btnRect.top + 4}px`;

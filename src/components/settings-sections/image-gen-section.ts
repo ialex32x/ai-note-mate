@@ -93,7 +93,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 
 			// Helper: refresh active image gen dropdown
 			const refreshActiveImageGenDropdown = () => {
-				if (!activeImageGenDropdown) return;
+				if (activeImageGenDropdown == null) return;
 				refreshDropdownOptions(activeImageGenDropdown, imageGenConfigs);
 			};
 

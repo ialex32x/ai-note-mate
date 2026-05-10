@@ -47,12 +47,13 @@ export class MemorySettingsSection implements SettingsSection {
 				});
 				setIcon(deleteBtn, 'x');
 				setTooltip(deleteBtn, t('settings.deleteMemory'));
-				deleteBtn.addEventListener('click', async () => {
+				deleteBtn.addEventListener('click', () => {
 					const idx = plugin.settings.memories.findIndex((m) => m.key === memory.key);
 					if (idx >= 0) {
 						plugin.settings.memories.splice(idx, 1);
-						await plugin.saveSettings();
-						refreshSection(this);
+						void plugin.saveSettings().then(() => {
+							refreshSection(this);
+						});
 					}
 				});
 			}

@@ -56,11 +56,11 @@ export async function exportSessionToVault(app: App, messages: ChatMessage[]): P
         const file = app.vault.getAbstractFileByPath(filePath);
         if (file instanceof TFile) {
             const leaf = app.workspace.getLeaf('tab');
-            leaf.openFile(file);
+            void leaf.openFile(file);
         }
         new Notice('Session exported successfully');
     } catch (err) {
         console.error('Export failed:', err);
-        new Notice('Export failed' + err);
+        new Notice('Export failed' + String(err));
     }
 }

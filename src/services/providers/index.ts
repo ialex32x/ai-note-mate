@@ -46,6 +46,6 @@ export function createLLMProvider(
         case "gemini":
             return new GeminiProvider(config);
         default:
-            throw new Error(`Unknown LLM provider type: ${type}`);
+            throw new Error(`Unknown LLM provider type: ${String(type)}`);
     }
 }

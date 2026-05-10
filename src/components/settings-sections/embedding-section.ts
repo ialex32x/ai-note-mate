@@ -108,7 +108,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 
 			// Helper: refresh active embedding dropdown
 			const refreshActiveEmbeddingDropdown = () => {
-				if (!activeEmbeddingDropdown) return;
+				if (activeEmbeddingDropdown == null) return;
 				refreshDropdownOptions(activeEmbeddingDropdown, embeddingConfigs);
 			};
 

@@ -20,7 +20,7 @@ export function showInitializationError(
 
     errorContainer.createEl('div', {
         cls: 'session-error-title',
-        text: '⚠️ Session View Initialization Error',
+        text: 'Session view initialization error',
     });
 
     const errorMessage = errorContainer.createEl('div', { cls: 'session-error-message' });
@@ -30,12 +30,14 @@ export function showInitializationError(
 
     errorMessage.createEl('pre', { cls: 'session-error-stack', text: errorText });
 
-    const copyBtn = errorContainer.createEl('button', { cls: 'session-error-copy-btn', text: 'Copy Error' });
-    copyBtn.addEventListener('click', async () => {
-        const ok = await copyToClipboard(errorText, { showNotice: false });
-        if (!ok) return;
-        copyBtn.setText('Copied!');
-        setTimeout(() => copyBtn.setText('Copy Error'), 2000);
+    const copyBtn = errorContainer.createEl('button', { cls: 'session-error-copy-btn', text: 'Copy error' });
+    copyBtn.addEventListener('click', () => {
+        void (async () => {
+            const ok = await copyToClipboard(errorText, { showNotice: false });
+            if (!ok) return;
+            copyBtn.setText('Copied!');
+            setTimeout(() => copyBtn.setText('Copy error'), 2000);
+        })();
     });
 
     const retryBtn = errorContainer.createEl('button', { cls: 'session-error-retry-btn', text: 'Retry' });

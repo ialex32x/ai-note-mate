@@ -117,7 +117,7 @@ export class MCPSettingsSection implements SettingsSection {
 				mcpServers.unshift(config);
 				this.editingServerId = config.id;
 				await plugin.saveSettings();
-				plugin.mcpManager?.addServer(config);
+				void plugin.mcpManager?.addServer(config);
 				refreshSection(this);
 			},
 			addTooltip: t('settings.addMcpServer'),
@@ -195,7 +195,7 @@ export class MCPSettingsSection implements SettingsSection {
 	private scheduleStatusUpdate(): void {
 		if (this.updateScheduled) return;
 		this.updateScheduled = true;
-		Promise.resolve().then(() => {
+		void Promise.resolve().then(() => {
 			this.updateScheduled = false;
 			this.applyStatusUpdates();
 		});
@@ -278,9 +278,9 @@ export class MCPSettingsSection implements SettingsSection {
 			cls: 'oap-settings-mcp-status clickable-icon',
 		});
 		applyStatusToButton(statusBtn, state);
-		statusBtn.addEventListener('click', async () => {
+		statusBtn.addEventListener('click', () => {
 			const currentState = plugin.mcpManager?.getServerState(server.id);
-			await copyToClipboard(resolveStatusTooltip(currentState));
+			void copyToClipboard(resolveStatusTooltip(currentState));
 		});
 		this.editorStatusBtn = statusBtn;
 		this.editorStatusServerId = server.id;

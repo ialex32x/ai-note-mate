@@ -162,7 +162,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["read_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            const rawQueries = args["queries"] as unknown;
+            const rawQueries = args["queries"];
             const useRegex = (args["use_regex"] as boolean) ?? false;
             const caseSensitive = (args["case_sensitive"] as boolean) ?? false;
             const sectionName = args["section"] as string | undefined;

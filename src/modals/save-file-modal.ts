@@ -186,7 +186,7 @@ export class SaveFileModal extends Modal {
             const hasSubFolders = folder.children.some((c): c is TFolder => c instanceof TFolder);
             const arrow = node.createEl('span', { cls: 'save-file-modal__tree-arrow' });
             arrow.setText(isExpanded ? '▾' : '▸');
-            if (!hasSubFolders) arrow.style.visibility = 'hidden';
+            if (!hasSubFolders) arrow.classList.add('is-invisible');
         }
 
         // Folder icon
@@ -291,7 +291,7 @@ export class SaveFileModal extends Modal {
 
     private showNewFolderPrompt() {
         const prompt = new NewFolderPromptModal(this.app, this.selectedFolder.path);
-        prompt.waitForResult().then(async (name) => {
+        void prompt.waitForResult().then(async (name) => {
             if (!name) return;
             const fullPath = this.selectedFolder.path === '/'
                 ? name

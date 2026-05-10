@@ -14,7 +14,7 @@ export interface TabItem {
 }
 
 /** Callback when a tab is clicked */
-export type TabClickCallback = (id: string) => void;
+export type TabClickCallback = (id: string) => void | Promise<void>;
 
 /** Options for creating a tab bar */
 export interface TabBarOptions<T extends TabItem> {
@@ -33,15 +33,15 @@ export interface TabBarOptions<T extends TabItem> {
 	/** Additional CSS class for the tab bar container */
 	extraClass?: string;
 	/** Callback to add item button */
-	onAdd?: () => void;
+	onAdd?: () => void | Promise<void>;
 	/** Tooltip for add button */
 	addTooltip?: string;
 	/** Callback to duplicate the current item; if provided, duplicate button is shown */
-	onDuplicate?: () => void;
+	onDuplicate?: () => void | Promise<void>;
 	/** Tooltip for duplicate button */
 	duplicateTooltip?: string;
 	/** Callback to delete item button; if provided, delete button is shown */
-	onDelete?: () => void;
+	onDelete?: () => void | Promise<void>;
 	/** Tooltip for delete button */
 	deleteTooltip?: string;
 	/** Whether to disable delete button (e.g., when only one item) */
@@ -200,7 +200,7 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 		}
 
 		tab.addEventListener('click', () => {
-			onTabClick(item.id);
+			void onTabClick(item.id);
 			tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 		});
 
@@ -247,7 +247,7 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 		if (addTooltip) {
 			setTooltip(addBtn, addTooltip);
 		}
-		addBtn.addEventListener('click', () => onAdd());
+		addBtn.addEventListener('click', () => void onAdd());
 	}
 
 	// Duplicate button
@@ -257,7 +257,7 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 		if (duplicateTooltip) {
 			setTooltip(duplicateBtn, duplicateTooltip);
 		}
-		duplicateBtn.addEventListener('click', () => onDuplicate());
+		duplicateBtn.addEventListener('click', () => void onDuplicate());
 	}
 
 	// Delete button
@@ -272,7 +272,7 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 		}
 		deleteBtn.addEventListener('click', () => {
 			if (!disableDelete) {
-				onDelete();
+				void onDelete();
 			}
 		});
 	}

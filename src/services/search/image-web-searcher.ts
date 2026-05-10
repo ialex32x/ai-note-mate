@@ -66,7 +66,7 @@ export class ImageWebSearcher {
                 return vqdMatch[1]!;
             }
         } catch (e) {
-            console.error(`Error getting VQD: ${e}`);
+            console.error(`Error getting VQD: ${String(e)}`);
         }
         return null;
     }

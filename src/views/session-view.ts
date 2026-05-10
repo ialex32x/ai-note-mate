@@ -129,7 +129,7 @@ export class SessionView extends ItemView {
     /**
      * Populates the pane menu when user clicks "More options" or right-clicks tab header.
      */
-    onPaneMenu(menu: Menu, _source: 'more-options' | 'tab-header' | string): void {
+    onPaneMenu(menu: Menu, _source: string): void {
         menu.addItem((item) => {
             item
                 .setTitle(t('view.exportSession'))
@@ -425,7 +425,7 @@ export class SessionView extends ItemView {
                     // Open file on click
                     const file = this.app.vault.getAbstractFileByPath(path);
                     if (file instanceof TFile) {
-                        this.app.workspace.getLeaf().openFile(file);
+                        void this.app.workspace.getLeaf().openFile(file);
                     }
                 },
                 onChange: () => {
@@ -470,7 +470,7 @@ export class SessionView extends ItemView {
             // ── Capabilities selector (using DropdownManager) ────────────────────────
             this.capabilitiesSelector = createCapabilitiesSelector(thinkingRow, this.dropdownManager, {
                 initial: this.plugin.settings.allowedCapabilities,
-                onChange: async (allowed) => {
+                onChange: (allowed) => {
                     // Only persist when actually different to avoid feedback
                     // loops with the settings-change listener below.
                     const current = this.plugin.settings.allowedCapabilities ?? [];
@@ -481,7 +481,7 @@ export class SessionView extends ItemView {
                         return;
                     }
                     this.plugin.settings.allowedCapabilities = allowed;
-                    await this.plugin.saveSettings();
+                    void this.plugin.saveSettings();
                 },
             });
             // Keep the toolbar selector in sync with external settings changes
@@ -497,7 +497,7 @@ export class SessionView extends ItemView {
             // ── Restore session UI from cache ────────────────────────────────
             await this.restoreSessionUI();
         } catch (error) {
-            showInitializationError(this.contentEl, error, () => this.onOpen());
+            showInitializationError(this.contentEl, error, () => { void this.onOpen(); });
         }
     }
 

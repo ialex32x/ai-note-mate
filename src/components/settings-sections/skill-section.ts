@@ -14,12 +14,13 @@ export class SkillSettingsSection implements SettingsSection {
 		});
 		setIcon(reloadBtn, 'refresh-cw');
 		setTooltip(reloadBtn, t('settings.reloadSkills'));
-		reloadBtn.addEventListener('click', async () => {
+		reloadBtn.addEventListener('click', () => {
 			reloadBtn.classList.add('is-loading');
-			await plugin.reloadSkills();
-			reloadBtn.classList.remove('is-loading');
-			refreshSection(this);
-			new Notice(t('settings.skillsReloaded'));
+			void plugin.reloadSkills().then(() => {
+				reloadBtn.classList.remove('is-loading');
+				refreshSection(this);
+				new Notice(t('settings.skillsReloaded'));
+			});
 		});
 	}
 
@@ -57,15 +58,17 @@ export class SkillSettingsSection implements SettingsSection {
 				});
 				setIcon(removeBtn, 'x');
 				setTooltip(removeBtn, t('settings.removeSkillPath'));
-				removeBtn.addEventListener('click', async () => {
+				removeBtn.addEventListener('click', () => {
 					skillPaths.splice(idx, 1);
-					await plugin.saveSettings();
-					await plugin.reloadSkills();
-					refreshSection(this);
+					void (async () => {
+						await plugin.saveSettings();
+						await plugin.reloadSkills();
+						refreshSection(this);
+					})();
 				});
 			}
 		// Async: check directory existence and mark invalid chips
-			(async () => {
+			void (async () => {
 				for (let idx = 0; idx < skillPaths.length; idx++) {
 					const path = skillPaths[idx]!;
 					const exists = await app.vault.adapter.exists(path);
@@ -105,11 +108,11 @@ export class SkillSettingsSection implements SettingsSection {
 			refreshSection(this);
 		};
 
-		addBtn.addEventListener('click', () => commitPath());
+		addBtn.addEventListener('click', () => { void commitPath(); });
 		input.addEventListener('keydown', (e) => {
 			if (e.key === 'Enter') {
 				e.preventDefault();
-				commitPath();
+				void commitPath();
 			}
 		});
 

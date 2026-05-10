@@ -345,7 +345,7 @@ export class InsightCard {
             evt.preventDefault();
             evt.stopPropagation();
             const inNewTab = evt.metaKey || evt.ctrlKey || evt.button === 1;
-            this.app.workspace.openLinkText(linkText, '', inNewTab);
+            void this.app.workspace.openLinkText(linkText, '', inNewTab);
         });
 
         // Middle-click also opens in a new tab (covered above via `button === 1`
@@ -354,7 +354,7 @@ export class InsightCard {
             if (evt.button !== 1) return;
             evt.preventDefault();
             evt.stopPropagation();
-            this.app.workspace.openLinkText(linkText, '', true);
+            void this.app.workspace.openLinkText(linkText, '', true);
         });
 
         // Native hover-preview, same source tag used by chat bubbles.

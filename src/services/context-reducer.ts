@@ -264,7 +264,7 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
         if (Array.isArray(parsed)) {
             return `${head}; it returned a JSON array of ${parsed.length} items (${result.length} chars total, omitted here).`;
         } else if (typeof parsed === 'object' && parsed !== null) {
-            const keys = Object.keys(parsed as object);
+            const keys = Object.keys(parsed);
             const keyPreview = keys.slice(0, 5).join(', ') + (keys.length > 5 ? ', ...' : '');
             return `${head}; it returned a JSON object with keys {${keyPreview}} (${result.length} chars total, omitted here).`;
         }

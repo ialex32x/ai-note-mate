@@ -118,7 +118,7 @@ export function openFileInWorkspace(app: App, file: TFile): void {
     if (existingLeaf) {
         app.workspace.setActiveLeaf(existingLeaf);
     } else {
-        app.workspace.getLeaf('tab').openFile(file);
+        void app.workspace.getLeaf('tab').openFile(file);
     }
 }
 

@@ -139,10 +139,10 @@ export class ProfileSettingsSection implements SettingsSection {
 
 		// Helper: refresh both profile-list dropdowns in-place (active + summarizer)
 		const refreshProfileDropdowns = () => {
-			if (activeProfileDropdown) {
+			if (activeProfileDropdown != null) {
 				refreshDropdownOptions(activeProfileDropdown, profiles, getProfileLabel);
 			}
-			if (summarizerDropdown) {
+			if (summarizerDropdown != null) {
 				refreshDropdownOptions(summarizerDropdown, profiles, getProfileLabel);
 			}
 		};
@@ -240,12 +240,12 @@ export class ProfileSettingsSection implements SettingsSection {
 			const input = label.createEl('input', { type: 'checkbox' });
 			input.checked = profile.modalities?.includes(cap) ?? false;
 			label.createSpan({ cls: 'oap-capability-label', text: modalityLabels[cap] });
-			input.addEventListener('change', async () => {
+			input.addEventListener('change', () => {
 				const set = new Set(profile.modalities ?? []);
 				if (input.checked) set.add(cap); else set.delete(cap);
 				// Preserve canonical ordering for stable diffs in data.json
 				profile.modalities = ALL_MODALITY_CAPABILITIES.filter(c => set.has(c));
-				await plugin.saveSettings();
+				void plugin.saveSettings();
 			});
 		}
 

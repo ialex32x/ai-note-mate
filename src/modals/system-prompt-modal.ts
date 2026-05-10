@@ -10,7 +10,7 @@ export class SystemPromptModal extends Modal {
 	private cancelled = false;
 	
 	/** Callback when user saves the prompt */
-	onSave: ((value: string) => void) | null = null;
+	onSave: ((value: string) => void | Promise<void>) | null = null;
 
 	constructor(
 		app: App,
@@ -37,12 +37,13 @@ export class SystemPromptModal extends Modal {
 		this.textarea.value = this.currentValue;
 
 		// Auto-resize textarea
-		this.textarea.style.height = 'auto';
-		this.textarea.style.height = `${Math.min(400, this.textarea.scrollHeight)}px`;
-		this.textarea.addEventListener('input', () => {
-			this.textarea.style.height = 'auto';
+		const resizeTextarea = () => {
+			// Reset to CSS default so scrollHeight reflects intrinsic content height.
+			this.textarea.style.removeProperty('height');
 			this.textarea.style.height = `${Math.min(400, this.textarea.scrollHeight)}px`;
-		});
+		};
+		resizeTextarea();
+		this.textarea.addEventListener('input', resizeTextarea);
 
 		// Button row
 		const btnRow = contentEl.createDiv({ cls: 'system-prompt-modal__btn-row' });
@@ -86,14 +87,14 @@ export class SystemPromptModal extends Modal {
 		
 		// Save on close if not already saved and not cancelled (handles click-outside)
 		if (!this.saved && !this.cancelled && this.onSave) {
-			this.onSave(this.textarea.value);
+			void this.onSave(this.textarea.value);
 		}
 	}
 
 	private handleSave() {
 		this.saved = true;
 		if (this.onSave) {
-			this.onSave(this.textarea.value);
+			void this.onSave(this.textarea.value);
 		}
 		this.close();
 	}

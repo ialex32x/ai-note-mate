@@ -141,7 +141,7 @@ export default class NoteAssistantPlugin extends Plugin {
 						.setIcon('send')
 						.setSection('action')
 						.onClick(() => {
-							this.sendFileToSession(file);
+							void this.sendFileToSession(file);
 						});
 				});
 			})
@@ -174,7 +174,7 @@ export default class NoteAssistantPlugin extends Plugin {
 
 		// "Reveal" the leaf in case it is in a collapsed sidebar
 		if (activate) {
-			workspace.revealLeaf(leaf);
+			void workspace.revealLeaf(leaf);
 		}
 		await this.mcpManager.initialize();
 		await this.reloadSkills();
@@ -194,7 +194,7 @@ export default class NoteAssistantPlugin extends Plugin {
 			if (!leaf) return;
 			await leaf.setViewState({ type: EditHistoryView.VIEW_TYPE, active: true });
 		}
-		workspace.revealLeaf(leaf);
+		void workspace.revealLeaf(leaf);
 	}
 
 	async loadSettings() {

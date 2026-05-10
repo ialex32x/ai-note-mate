@@ -49,7 +49,7 @@ export function handleTitleClick(opts: TitleClickOptions): void {
     const currentTitle = session?.title || session?.firstUserMessage || '';
 
     // Hide the title element
-    sessionTitleEl.style.display = 'none';
+    sessionTitleEl.addClass('is-hidden');
 
     // Create input element for editing
     const input = container.createEl('input', {
@@ -66,7 +66,7 @@ export function handleTitleClick(opts: TitleClickOptions): void {
 
     const cleanup = () => {
         input.remove();
-        sessionTitleEl.style.display = '';
+        sessionTitleEl.removeClass('is-hidden');
     };
 
     const commit = async () => {

@@ -360,7 +360,7 @@ export function stripMarkdownToPlainText(text: string): string {
     // Reference-style links: [text][ref] -> text
     result = result.replace(/\[([^\]]+)\]\[[^\]]*\]/g, '$1');
     // Obsidian wiki-links: [[path|alias]] or [[path]]
-    result = result.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, path, alias) => alias || path);
+    result = result.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m: string, path: string, alias?: string) => alias || path);
 
     // Inline code: `code`
     result = result.replace(/`+([^`]+)`+/g, '$1');
