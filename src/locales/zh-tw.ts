@@ -54,6 +54,7 @@ export const zhTW: Record<string, string> = {
 	'view.insightCardError': '萃取失敗',
 	'view.insightCardEmpty': '沒有可萃取的見解',
 	'view.insightCardDeepen': '進一步深入',
+	'view.insightCardSearchTag': '搜尋帶有 #{tag} 的筆記',
 	'view.extractInsights': '從此回覆萃取見解',
 	'view.insightExtractionUnavailable': '萃取見解前，請先於設定中配置上下文摘要器方案。',
 	'view.permissions': '權限',

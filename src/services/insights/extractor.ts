@@ -3,7 +3,9 @@ import { createChatCompletion } from '../context-reducer';
 import { stripStructuredBlock } from '../suggestions';
 import {
     INSIGHT_EXTRACTION_SYSTEM_PROMPT,
+    FREEFORM_TAG_SECTION,
     buildInsightUserPrompt,
+    buildRestrictedTagSection,
 } from './prompts';
 import type {
     ConversationInsight,
@@ -17,6 +19,13 @@ const MAX_TITLE_LEN = 60;
 const MAX_SUMMARY_LEN = 400;
 const MAX_TAGS = 5;
 const MAX_LINKED_NOTES = 5;
+/**
+ * Cap the number of tags we actually quote into the system prompt. Vaults
+ * with thousands of tags would otherwise blow the context window; we still
+ * use the *full* vocabulary for post-filtering so rarely-used tags stay
+ * reachable if the model happens to guess them correctly.
+ */
+const MAX_TAGS_IN_PROMPT = 200;
 
 /**
  * One-shot, stateless LLM call that extracts candidate knowledge
@@ -44,7 +53,20 @@ export async function extractInsights(
 
     if (!assistantText.trim()) return [];
 
-    const system = INSIGHT_EXTRACTION_SYSTEM_PROMPT.replace('{limit}', String(limit));
+    // Tag vocabulary: when the host provides the vault's existing tags,
+    // we restrict the model to pick from them (see prompts.ts). Otherwise
+    // fall back to the legacy free-form mode.
+    const availableTags = normalizeAvailableTags(options.availableTags);
+    const tagSection =
+        availableTags.length > 0
+            ? buildRestrictedTagSection(availableTags.slice(0, MAX_TAGS_IN_PROMPT))
+            : FREEFORM_TAG_SECTION;
+    const allowedTagLookup = availableTags.length > 0 ? buildTagLookup(availableTags) : null;
+
+    const system = INSIGHT_EXTRACTION_SYSTEM_PROMPT.replace('{limit}', String(limit)).replace(
+        '{tagSection}',
+        tagSection,
+    );
     const userPrompt = buildInsightUserPrompt(userText, assistantText);
 
     let raw: string;
@@ -62,7 +84,7 @@ export async function extractInsights(
     const parsed = parseInsightJson(raw);
     if (!parsed) return [];
 
-    return normalize(parsed, limit);
+    return normalize(parsed, limit, allowedTagLookup);
 }
 
 // ─── Parsing ───────────────────────────────────────────────────────────
@@ -116,7 +138,11 @@ function tryParseArray(s: string): unknown[] | null {
 
 // ─── Normalization ─────────────────────────────────────────────────────
 
-function normalize(raw: unknown[], limit: number): ConversationInsight[] {
+function normalize(
+    raw: unknown[],
+    limit: number,
+    allowedTagLookup: Map<string, string> | null,
+): ConversationInsight[] {
     const out: ConversationInsight[] = [];
     const seenTitles = new Set<string>();
 
@@ -132,9 +158,7 @@ function normalize(raw: unknown[], limit: number): ConversationInsight[] {
         if (seenTitles.has(key)) continue;
         seenTitles.add(key);
 
-        const tags = toStringArray(obj.tags, MAX_TAGS, 24)
-            .map((t) => t.toLowerCase().replace(/^#+/, '').replace(/\s+/g, '-'))
-            .filter((t) => t.length > 0);
+        const tags = normalizeTagList(obj.tags, allowedTagLookup);
 
         const linkedNotes = toStringArray(obj.linkedNotes, MAX_LINKED_NOTES, 120)
             // Strip any stray wiki-link wrappers.
@@ -145,6 +169,81 @@ function normalize(raw: unknown[], limit: number): ConversationInsight[] {
         if (out.length >= limit) break;
     }
     return out;
+}
+
+/**
+ * Normalise + optionally whitelist-filter the `tags` field on a raw
+ * insight entry.
+ *
+ * When `allowedTagLookup` is non-null, we:
+ *   - drop any tag that isn't in the vault's existing vocabulary
+ *   - rewrite survivors to the canonical form recorded in the lookup
+ *     (so we don't accidentally invent casing variants like `Project`
+ *     vs `project`)
+ *
+ * When it's null, we fall back to the legacy free-form cleanup:
+ * lowercase, strip leading '#', collapse whitespace to '-'.
+ */
+function normalizeTagList(
+    raw: unknown,
+    allowedTagLookup: Map<string, string> | null,
+): string[] {
+    const items = toStringArray(raw, MAX_TAGS, 64)
+        .map((t) => t.replace(/^#+/, '').trim())
+        .filter((t) => t.length > 0);
+
+    if (allowedTagLookup) {
+        const out: string[] = [];
+        const seen = new Set<string>();
+        for (const t of items) {
+            const canonical = allowedTagLookup.get(t.toLowerCase());
+            if (!canonical) continue; // not in vocabulary — drop
+            if (seen.has(canonical)) continue;
+            seen.add(canonical);
+            out.push(canonical);
+            if (out.length >= MAX_TAGS) break;
+        }
+        return out;
+    }
+
+    // Free-form path (legacy behaviour).
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const t of items) {
+        const normalised = t.toLowerCase().replace(/\s+/g, '-');
+        if (!normalised || seen.has(normalised)) continue;
+        seen.add(normalised);
+        out.push(normalised);
+        if (out.length >= MAX_TAGS) break;
+    }
+    return out;
+}
+
+function normalizeAvailableTags(raw: ReadonlyArray<string> | undefined): string[] {
+    if (!raw || raw.length === 0) return [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const item of raw) {
+        if (typeof item !== 'string') continue;
+        // Accept both "#tag" and "tag"; store as bare.
+        const bare = item.trim().replace(/^#+/, '').trim();
+        if (!bare) continue;
+        const key = bare.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(bare);
+    }
+    return out;
+}
+
+/** Build a case-insensitive lookup from normalised tag → canonical form. */
+function buildTagLookup(tags: ReadonlyArray<string>): Map<string, string> {
+    const map = new Map<string, string>();
+    for (const t of tags) {
+        const key = t.toLowerCase();
+        if (!map.has(key)) map.set(key, t);
+    }
+    return map;
 }
 
 function cleanString(v: unknown, max: number): string {

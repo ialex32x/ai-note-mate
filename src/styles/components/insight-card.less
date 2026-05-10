@@ -121,11 +121,32 @@
 }
 
 .session-insight-card__tag {
+    // Rendered as a <button> so clicks trigger the global-search pop-up,
+    // matching the behaviour of inline `#tag` clicks in the editor.
+    // Override the default button chrome so the chip reads as a tag, not
+    // a toolbar button.
+    display: inline-flex;
+    align-items: center;
     color: @text-accent;
     background-color: @bg-modifier-hover;
+    border: 1px solid transparent;
     border-radius: @radius-sm;
     padding: 1px 6px;
     line-height: 1.4;
+    font: inherit;
+    cursor: pointer;
+    transition: background-color @duration-normal ease,
+                border-color @duration-normal ease;
+
+    &:hover {
+        background-color: @bg-modifier-hover;
+        border-color: @text-accent;
+    }
+
+    &:focus-visible {
+        outline: 2px solid @text-accent;
+        outline-offset: 1px;
+    }
 }
 
 .session-insight-card__link {

@@ -54,6 +54,7 @@ export const zhCN: Record<string, string> = {
 	'view.insightCardError': '提炼失败',
 	'view.insightCardEmpty': '没有可提炼的见解',
 	'view.insightCardDeepen': '进一步深入',
+	'view.insightCardSearchTag': '搜索带有 #{tag} 的笔记',
 	'view.extractInsights': '从该回复提炼见解',
 	'view.insightExtractionUnavailable': '提炼见解前，请先在设置中配置上下文摘要器方案。',
 	'view.permissions': '权限',

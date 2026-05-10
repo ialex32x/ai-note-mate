@@ -54,6 +54,7 @@ export const ja: Record<string, string> = {
 	'view.insightCardError': '抽出に失敗しました',
 	'view.insightCardEmpty': 'インサイトはありません',
 	'view.insightCardDeepen': 'さらに深掘りする',
+	'view.insightCardSearchTag': '#{tag} のタグが付いたノートを検索',
 	'view.extractInsights': 'この返信からインサイトを抽出',
 	'view.insightExtractionUnavailable': 'インサイトを抽出する前に、設定でコンテキスト要約器プロファイルを構成してください。',
 	'view.permissions': '権限',

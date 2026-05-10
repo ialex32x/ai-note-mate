@@ -52,4 +52,12 @@ export interface ExtractInsightsOptions {
     limit?: number;
     /** Hard ceiling on characters fed to the extractor. Defaults to 8000. */
     maxInputChars?: number;
+    /**
+     * Optional whitelist of tags that already exist in the user's vault
+     * (bare form, without a leading '#'). When provided the extractor
+     * instructs the model to pick tags EXCLUSIVELY from this list and
+     * post-filters any stray invention. When omitted, tagging falls back
+     * to free-form generation.
+     */
+    availableTags?: ReadonlyArray<string>;
 }

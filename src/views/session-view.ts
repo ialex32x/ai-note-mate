@@ -26,6 +26,7 @@ import {
     InsightCard,
 } from '../components/session';
 import { extractSuggestions } from '../services/suggestions';
+import { collectVaultTags } from '../services/insights';
 import {
     createProfileSelector, type ProfileSelectorHandle,
     createCapabilitiesSelector, type CapabilitiesSelectorHandle,
@@ -373,6 +374,7 @@ export class SessionView extends ItemView {
                 isAborted: (id) => this.abortedMessageIds.has(id),
                 getMessages: () => this.chat?.messages ?? [],
                 getSummarizerConfig: () => createSummarizerConfig(this.plugin),
+                getVaultTags: () => collectVaultTags(this.app),
                 insightExtractionEnabled: () => this.plugin.settings.insightExtractionEnabled === true,
                 insightExtractionMinReplyChars: () => this.plugin.settings.insightExtractionMinReplyChars,
                 forceScrollToBottom: () => this.forceScrollToBottom(),

@@ -193,10 +193,7 @@ export class InsightCard {
         if (item.tags.length > 0 || item.linkedNotes.length > 0) {
             const meta = main.createEl('div', { cls: 'session-insight-card__item-meta' });
             for (const tag of item.tags) {
-                meta.createEl('span', {
-                    cls: 'session-insight-card__tag',
-                    text: '#' + tag,
-                });
+                this.renderTag(meta, tag);
             }
             for (const note of item.linkedNotes) {
                 this.renderLinkedNote(meta, note);
@@ -237,6 +234,58 @@ export class InsightCard {
     }
 
     /**
+     * Render a single tag chip as a clickable button that opens
+     * Obsidian's global search pre-filled with `tag:#<tag>` — the same
+     * behaviour as clicking an inline `#tag` in the editor.
+     *
+     * We use a `<button>` (not `<a href>`) because the action is an
+     * in-app command, not a navigable URL; this also gives us keyboard
+     * activation for free and keeps Obsidian's link-click pipeline from
+     * treating the chip as an external link.
+     */
+    private renderTag(parent: HTMLElement, tag: string): void {
+        const bare = tag.replace(/^#+/, '').trim();
+        if (!bare) return;
+
+        const btn = parent.createEl('button', {
+            cls: 'session-insight-card__tag',
+            text: '#' + bare,
+            attr: { type: 'button' },
+        });
+        const label = t('view.insightCardSearchTag').replace('{tag}', bare);
+        setTooltip(btn, label);
+        btn.setAttr('aria-label', label);
+
+        btn.addEventListener('click', (evt) => {
+            evt.preventDefault();
+            evt.stopPropagation();
+            this.openTagSearch(bare);
+        });
+    }
+
+    /**
+     * Open the global search view pre-populated with `tag:#<tag>`.
+     *
+     * Uses Obsidian's `global-search` internal plugin, the same backdoor
+     * the core app uses when the user clicks a `#tag` in the editor.
+     * It is technically untyped / unofficial, but has been stable across
+     * desktop and mobile for years and is the established pattern in the
+     * plugin ecosystem. If for any reason the plugin is unavailable we
+     * silently no-op rather than throwing.
+     */
+    private openTagSearch(tag: string): void {
+        const app = this.app as unknown as {
+            internalPlugins?: {
+                getPluginById(id: string): {
+                    instance?: { openGlobalSearch?: (query: string) => void };
+                } | null;
+            };
+        };
+        const search = app.internalPlugins?.getPluginById('global-search');
+        search?.instance?.openGlobalSearch?.('tag:#' + tag);
+    }
+
+    /**
      * Render a single linked-note chip as a clickable anchor.
      *
      * The extractor emits raw wiki-link *targets* (the text between the
@@ -271,7 +320,7 @@ export class InsightCard {
 
         const link = parent.createEl('a', {
             cls: 'session-insight-card__link',
-            text: '[[' + displayText + ']]',
+            text: displayText,
             attr: {
                 href: linkText,
                 // Prevent Obsidian from treating us as an external link.

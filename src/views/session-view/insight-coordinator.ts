@@ -24,6 +24,12 @@ export interface InsightDeps {
     getMessages(): ReadonlyArray<ChatMessage>;
     /** Returns the summarizer config, or undefined when not available. */
     getSummarizerConfig(): MinimalModelConfig | undefined;
+    /**
+     * Returns the vault's existing tag vocabulary (bare strings, no '#').
+     * When provided and non-empty, the extractor is restricted to this
+     * list; when omitted or empty, tagging falls back to free-form.
+     */
+    getVaultTags?(): ReadonlyArray<string>;
     /** Insight extraction is toggled by settings + a min reply length. */
     insightExtractionEnabled(): boolean;
     insightExtractionMinReplyChars(): number;
@@ -216,10 +222,15 @@ export class InsightCoordinator {
         let insights: ConversationInsight[] = [];
         let failed = false;
         try {
-            insights = await extractInsights(summarizerConfig, {
-                userMessage: user?.content ?? '',
-                assistantMessage: assistant.content ?? '',
-            });
+            const availableTags = this.deps.getVaultTags?.();
+            insights = await extractInsights(
+                summarizerConfig,
+                {
+                    userMessage: user?.content ?? '',
+                    assistantMessage: assistant.content ?? '',
+                },
+                availableTags && availableTags.length > 0 ? { availableTags } : undefined,
+            );
         } catch (err) {
             console.warn('[Insights] extraction failed:', err);
             failed = true;

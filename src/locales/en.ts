@@ -54,6 +54,7 @@ export const en: Record<string, string> = {
 	'view.insightCardError': 'Could not extract insights',
 	'view.insightCardEmpty': 'No insights',
 	'view.insightCardDeepen': 'Expand into a fuller note',
+	'view.insightCardSearchTag': 'Search notes tagged with #{tag}',
 	'view.extractInsights': 'Extract insights from this reply',
 	'view.insightExtractionUnavailable': 'Configure a context summarizer profile in settings before extracting insights.',
 	'view.permissions': 'Permissions',

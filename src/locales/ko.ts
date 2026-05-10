@@ -54,6 +54,7 @@ export const ko: Record<string, string> = {
 	'view.insightCardError': '인사이트를 추출하지 못했습니다',
 	'view.insightCardEmpty': '인사이트가 없습니다',
 	'view.insightCardDeepen': '더 깊이 파고들기',
+	'view.insightCardSearchTag': '#{tag} 태그가 있는 노트 검색',
 	'view.extractInsights': '이 응답에서 인사이트 추출',
 	'view.insightExtractionUnavailable': '인사이트를 추출하기 전에 설정에서 컨텍스트 요약 프로필을 구성하세요.',
 	'view.permissions': '권한',
