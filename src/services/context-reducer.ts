@@ -156,6 +156,17 @@ export interface ConversationSummary {
 const TOOL_RESULT_COLLAPSE_THRESHOLD = 500;
 
 /**
+ * Disclaimer prepended to every collapsed (assistant + tool_results) block in
+ * the replayed conversation history. The wording is deliberately conversational
+ * and explicit so the model understands the following lines are a recap of
+ * earlier actions, not a syntax it should imitate when it wants to call a tool
+ * itself. The real tool calls must always go through the function-calling
+ * channel, never as plain text.
+ */
+const COLLAPSED_TOOL_SECTION_PREFIX =
+    "(Note to myself: the lines below are just a brief recap of tool calls I made earlier in this conversation, written out in plain language because the original tool messages have been compacted. They are NOT a template for invoking tools — to actually call a tool I must use the proper function-calling channel, never write a tool call out as text.)";
+
+/**
  * Rough token count estimation.
  * Uses a simple heuristic: ~4 characters per token for Latin text,
  * ~1.5 characters per token for CJK (Chinese/Japanese/Korean).
@@ -190,20 +201,28 @@ function estimateMessagesTokens(messages: HistoryMessage[]): number {
 // ─────────────────────────────────────────────
 
 /**
- * Collapse a single tool call + result into a concise one-line summary.
+ * Collapse a single tool call + result into a concise narrative summary line.
+ *
+ * The output is intentionally written as a human-readable, past-tense
+ * narrative rather than anything that resembles a tool-call syntax. This
+ * matters because long conversations may include many of these collapsed
+ * lines in the assistant's chat history, and if they look like a callable
+ * syntax (e.g. `[Tool: foo({...})]`) the model tends to imitate the style
+ * and emit fake "tool calls" as plain text instead of using the real
+ * function-calling channel. Phrasing them as past events of "what the
+ * assistant previously did" makes it clear they are archival notes, not
+ * a format to mimic.
  *
  * Strategy:
- * 1. Error results: kept as-is (usually short and important for reasoning).
- * 2. Structured JSON: extract key statistics (item count, field names).
- * 3. Plain text: keep first 200 chars + truncation note.
- *
- * Only triggers when the result exceeds `TOOL_RESULT_COLLAPSE_THRESHOLD` tokens.
- * Below the threshold the original result is returned verbatim inside the summary line.
+ * 1. Error results: kept verbatim (usually short and important for reasoning).
+ * 2. Below threshold: full result is included.
+ * 3. Structured JSON above threshold: extract key statistics.
+ * 4. Plain text above threshold: keep first 200 chars + truncation note.
  *
  * @param toolName  Name of the tool that was called
  * @param rawArgs   Raw JSON string of the tool arguments
  * @param result    The full tool result string
- * @returns A concise summary string like `[Tool: search_notes({query:"x"}) → 3 results, 1234 chars]`
+ * @returns A narrative summary line describing the past tool invocation.
  */
 function collapseToolResult(toolName: string, rawArgs: string, result: string): string {
     const tokens = estimateTokens(result);
@@ -219,32 +238,36 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
             const vs = typeof v === 'string'
                 ? (v.length > 30 ? `"${safeSliceHead(v, 30)}..."` : `"${v}"`)
                 : JSON.stringify(v);
-            return `${k}: ${vs}`;
+            return `${k}=${vs}`;
         });
         argsDisplay = entries.join(', ') + (keys.length > 2 ? ', ...' : '');
     } catch {
         argsDisplay = rawArgs.length > 60 ? safeSliceHead(rawArgs, 60) + '...' : rawArgs;
     }
 
+    const head = argsDisplay
+        ? `Earlier I called the \`${toolName}\` tool (with ${argsDisplay})`
+        : `Earlier I called the \`${toolName}\` tool`;
+
     // Error results: always keep full text (usually short)
     if (result.startsWith('Error:')) {
-        return `[Tool: ${toolName}({${argsDisplay}}) → ${result}]`;
+        return `${head} and it returned an error: ${result}`;
     }
 
     // Below threshold: include full result in the summary
     if (tokens <= TOOL_RESULT_COLLAPSE_THRESHOLD) {
-        return `[Tool: ${toolName}({${argsDisplay}}) → ${result}]`;
+        return `${head} and it returned: ${result}`;
     }
 
     // Try to parse as JSON for structured summary
     try {
         const parsed = JSON.parse(result);
         if (Array.isArray(parsed)) {
-            return `[Tool: ${toolName}({${argsDisplay}}) → JSON array with ${parsed.length} items, ${result.length} chars]`;
+            return `${head}; it returned a JSON array of ${parsed.length} items (${result.length} chars total, omitted here).`;
         } else if (typeof parsed === 'object' && parsed !== null) {
             const keys = Object.keys(parsed);
             const keyPreview = keys.slice(0, 5).join(', ') + (keys.length > 5 ? ', ...' : '');
-            return `[Tool: ${toolName}({${argsDisplay}}) → JSON object {${keyPreview}}, ${result.length} chars]`;
+            return `${head}; it returned a JSON object with keys {${keyPreview}} (${result.length} chars total, omitted here).`;
         }
     } catch {
         // Not JSON, fall through to plain text handling
@@ -252,7 +275,7 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
 
     // Plain text: keep first 200 chars
     const preview = safeSliceHead(result, 200).replace(/\n/g, ' ');
-    return `[Tool: ${toolName}({${argsDisplay}}) → ${preview}... (truncated, original ${result.length} chars)]`;
+    return `${head}; it returned (truncated, original ${result.length} chars): ${preview}...`;
 }
 
 // ─────────────────────────────────────────────
@@ -912,8 +935,14 @@ export class ContextReducer {
                     j++;
                 }
 
-                // Create a collapsed assistant message replacing the entire sequence
-                const collapsedContent = collapsedParts.join('\n');
+                // Create a collapsed assistant message replacing the entire sequence.
+                //
+                // We prepend a short disclaimer so the model treats these lines
+                // as a recap of past actions rather than a format to mimic.
+                // Without it, models tend to copy the textual style and emit
+                // fake tool calls as plain text instead of using the real
+                // function-calling channel.
+                const collapsedContent = COLLAPSED_TOOL_SECTION_PREFIX + '\n' + collapsedParts.join('\n');
                 const collapsedMsg = {
                     role: 'assistant' as ChatMessageRole,
                     content: collapsedContent,
