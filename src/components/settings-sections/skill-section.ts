@@ -16,11 +16,16 @@ export class SkillSettingsSection implements SettingsSection {
 		setTooltip(reloadBtn, t('settings.reloadSkills'));
 		reloadBtn.addEventListener('click', () => {
 			reloadBtn.classList.add('is-loading');
-			void plugin.reloadSkills().then(() => {
-				reloadBtn.classList.remove('is-loading');
-				refreshSection(this);
-				new Notice(t('settings.skillsReloaded'));
-			});
+			// Use `.finally` so the spinner is always cleared even if the
+			// reload rejects; otherwise the button would be stuck spinning.
+			void plugin.reloadSkills()
+				.then(() => {
+					refreshSection(this);
+					new Notice(t('settings.skillsReloaded'));
+				})
+				.finally(() => {
+					reloadBtn.classList.remove('is-loading');
+				});
 		});
 	}
 

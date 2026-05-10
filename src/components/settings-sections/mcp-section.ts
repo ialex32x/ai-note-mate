@@ -117,6 +117,11 @@ export class MCPSettingsSection implements SettingsSection {
 				mcpServers.unshift(config);
 				this.editingServerId = config.id;
 				await plugin.saveSettings();
+				// Intentionally not awaited: addServer() performs a
+				// network handshake that can take seconds. The UI shows
+				// the new server immediately and the status dot will
+				// update via the onChange listener once connection
+				// settles (or fails).
 				void plugin.mcpManager?.addServer(config);
 				refreshSection(this);
 			},
