@@ -1,5 +1,7 @@
-import { Menu, Notice, setIcon, setTooltip } from 'obsidian';
+import { Menu, setIcon, setTooltip } from 'obsidian';
 import { t } from '../../i18n';
+import { prettifyIfJson } from '../../utils/json-format';
+import { copyToClipboard } from '../../utils/clipboard';
 
 export interface AppendErrorBubbleOptions {
     messagesEl: HTMLElement;
@@ -13,7 +15,7 @@ export interface AppendErrorBubbleOptions {
  * Append an error bubble to the message list. Extracted from SessionView.
  */
 export function appendErrorBubble(message: string, opts: AppendErrorBubbleOptions): void {
-    const errorText = formatErrorMessage(message);
+    const errorText = prettifyIfJson(message);
 
     const bubble = opts.messagesEl.createEl('div', {
         cls: 'session-bubble session-bubble--error',
@@ -62,31 +64,6 @@ export function appendErrorBubble(message: string, opts: AppendErrorBubbleOption
     console.error('Error:', message);
 }
 
-/**
- * Best-effort prettify error messages so JSON payloads embedded in the
- * message are easier to read inside the bubble. Falls back to the original
- * string when the input is not a recognisable JSON object.
- */
-export function formatErrorMessage(message: string): string {
-    if (!message) return '';
-    const trimmed = message.trim();
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
-        (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-        try {
-            const parsed = JSON.parse(trimmed);
-            return JSON.stringify(parsed, null, 2);
-        } catch {
-            /* not valid JSON — fall through */
-        }
-    }
-    return message;
-}
-
 export async function copyErrorToClipboard(text: string): Promise<void> {
-    try {
-        await navigator.clipboard.writeText(text);
-        new Notice(t('view.copied'));
-    } catch (err) {
-        console.warn('Failed to copy error message:', err);
-    }
+    await copyToClipboard(text, { logLevel: 'warn' });
 }

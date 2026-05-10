@@ -2,6 +2,7 @@ import type { DataAdapter } from "obsidian";
 import type { MinimalModelConfig } from "./llm-provider";
 import { createEmbeddings } from "./text-embedding";
 import { sha256 } from "../utils/hash";
+import { truncate } from "../utils/string-truncate";
 
 // ─────────────────────────────────────────────
 // Types
@@ -285,8 +286,7 @@ export class Embedder {
         const raw = err instanceof Error ? err.message : String(err);
         const trimmed = raw.replace(/\s+/g, ' ').trim();
         if (!trimmed) return 'Unknown error';
-        const MAX = 200;
-        return trimmed.length > MAX ? `${trimmed.slice(0, MAX - 1)}…` : trimmed;
+        return truncate(trimmed, 200);
     }
 
     private async getSignature(): Promise<string> {

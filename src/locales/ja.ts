@@ -88,6 +88,7 @@ export const ja: Record<string, string> = {
 	'view.imageGen': '画像生成',
 	'view.sessionTitlePlaceholder': 'セッション名を入力',
 	'view.sendToSession': 'AIセッションに送信',
+	'view.sendToNewSession': '新しいAIセッションに送信',
 	'view.explainSelection': '説明',
 	'view.deleteHistorySessions': '履歴セッションを削除',
 	'view.deleteHistorySessionsConfirmTitle': '履歴セッションの削除',

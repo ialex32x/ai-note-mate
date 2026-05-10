@@ -184,11 +184,23 @@ export function isFailure(value: unknown): value is ToolCallResult {
  *
  * - When `totalLines` is provided, range upper bounds are also checked.
  * - Returns `null` if the range is valid, otherwise a failure `ToolCallResult`.
+ *
+ * Options:
+ * - `clampEndLine`: When true, an `endLine` equal to `totalLines + 1` is
+ *   silently accepted and treated as `totalLines`. This is a pragmatic
+ *   concession for read-only callers: LLMs frequently emit an
+ *   exclusive-style upper bound (off-by-one), and slicing past the end is
+ *   harmless for reads. **Never enable this for write/replace tools** —
+ *   a one-line overshoot there would change which lines get replaced and
+ *   silently corrupt user data. Only clamps by exactly 1 line; larger
+ *   overshoots still fail, since those likely indicate a real
+ *   misunderstanding of the file's size rather than an off-by-one slip.
  */
 export function validateLineRange(
     startLine: number,
     endLine: number,
     totalLines?: number,
+    options?: { clampEndLine?: boolean },
 ): ToolCallResult | null {
     if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < 1) {
         return {
@@ -214,7 +226,10 @@ export function validateLineRange(
                 content: `Invalid line range: start_line (${startLine}) exceeds total number of lines in the file (${totalLines}).`,
             };
         }
-        if (endLine > totalLines) {
+        // Allow end_line === totalLines + 1 as a forgiving off-by-one (exclusive-style upper bound)
+        // when the caller opts in. Anything further still fails loudly.
+        const endLimit = options?.clampEndLine ? totalLines + 1 : totalLines;
+        if (endLine > endLimit) {
             return {
                 success: false,
                 type: "text",

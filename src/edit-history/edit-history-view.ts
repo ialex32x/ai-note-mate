@@ -12,6 +12,7 @@
 import { ItemView, WorkspaceLeaf, IconName, Menu, Notice, MarkdownView, TFile, setIcon, setTooltip } from "obsidian";
 import type NoteAssistantPlugin from "../main";
 import { t } from "../i18n";
+import { copyToClipboard } from "../utils/clipboard";
 import type { EditHistoryStore } from "./edit-history-store";
 import type { EditTask, EditTaskStatus, EditAction } from "./edit-history-types";
 import { runEditTask } from "./edit-history-runner";
@@ -335,7 +336,7 @@ export class EditHistoryView extends ItemView {
                 item.setTitle(t("editHistory.menu.copyOriginal"));
                 item.setIcon("clipboard");
                 item.onClick(async () => {
-                    await this.copyToClipboard(latest.originalText);
+                    await copyToClipboard(latest.originalText);
                 });
             });
 
@@ -344,22 +345,13 @@ export class EditHistoryView extends ItemView {
                     item.setTitle(t("editHistory.menu.copyResult"));
                     item.setIcon("clipboard-copy");
                     item.onClick(async () => {
-                        await this.copyToClipboard(latest.rewrittenText);
+                        await copyToClipboard(latest.rewrittenText);
                     });
                 });
             }
 
             menu.showAtPosition({ x: ev.clientX, y: ev.clientY });
         });
-    }
-
-    private async copyToClipboard(text: string): Promise<void> {
-        try {
-            await navigator.clipboard.writeText(text);
-            new Notice(t("view.copied"));
-        } catch (err) {
-            console.error("Failed to copy to clipboard:", err);
-        }
     }
 
     private renderDetails(host: HTMLElement, task: EditTask): void {

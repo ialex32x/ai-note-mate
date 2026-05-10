@@ -6,6 +6,8 @@
  * Extracted from SessionView to keep the view file focused on lifecycle
  * and coordination.
  */
+import { copyToClipboard } from '../../utils/clipboard';
+
 export function showInitializationError(
     contentEl: HTMLElement,
     error: unknown,
@@ -29,11 +31,11 @@ export function showInitializationError(
     errorMessage.createEl('pre', { cls: 'session-error-stack', text: errorText });
 
     const copyBtn = errorContainer.createEl('button', { cls: 'session-error-copy-btn', text: 'Copy Error' });
-    copyBtn.addEventListener('click', () => {
-        navigator.clipboard.writeText(errorText).then(() => {
-            copyBtn.setText('Copied!');
-            setTimeout(() => copyBtn.setText('Copy Error'), 2000);
-        });
+    copyBtn.addEventListener('click', async () => {
+        const ok = await copyToClipboard(errorText, { showNotice: false });
+        if (!ok) return;
+        copyBtn.setText('Copied!');
+        setTimeout(() => copyBtn.setText('Copy Error'), 2000);
     });
 
     const retryBtn = errorContainer.createEl('button', { cls: 'session-error-retry-btn', text: 'Retry' });

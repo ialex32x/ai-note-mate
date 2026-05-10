@@ -191,10 +191,14 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const lines = content.split("\n");
             const totalLines = lines.length;
 
-            const rangeErr = validateLineRange(startLine, endLine, totalLines);
+            // Read path is forgiving about a one-line overshoot on end_line:
+            // LLMs routinely emit an exclusive-style upper bound (totalLines + 1).
+            // Slicing past the end is harmless for reads.
+            const rangeErr = validateLineRange(startLine, endLine, totalLines, { clampEndLine: true });
             if (rangeErr) return rangeErr;
 
-            const selectedContent = lines.slice(startLine - 1, endLine).join("\n");
+            const effectiveEndLine = Math.min(endLine, totalLines);
+            const selectedContent = lines.slice(startLine - 1, effectiveEndLine).join("\n");
 
             return {
                 success: true,
@@ -203,7 +207,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     path,
                     content: selectedContent,
                     start_line: startLine,
-                    end_line: endLine,
+                    end_line: effectiveEndLine,
                     total_lines: totalLines,
                 },
             };

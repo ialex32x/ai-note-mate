@@ -1,6 +1,7 @@
 import { Menu, TFile } from 'obsidian';
 import { t } from '../../i18n';
 import { resolveAppUrlToVaultPath } from '../../utils/path-helper';
+import { copyToClipboard } from '../../utils/clipboard';
 import {
     openFileInWorkspace,
     revealInNavigation,
@@ -54,7 +55,7 @@ export function attachImageContextMenu(
                 item.setTitle(t('view.copyLink'));
                 item.onClick(async () => {
                     const textToCopy = vaultPath || srcAttr;
-                    await navigator.clipboard.writeText(textToCopy);
+                    await copyToClipboard(textToCopy);
                 });
             });
 
@@ -186,7 +187,7 @@ export function attachLinkContextMenu(
             menu.addItem((item) => {
                 item.setTitle(t('view.copyLink'));
                 item.onClick(async () => {
-                    await navigator.clipboard.writeText(hrefAttr);
+                    await copyToClipboard(hrefAttr);
                 });
             });
 

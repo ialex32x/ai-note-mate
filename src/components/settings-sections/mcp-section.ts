@@ -2,6 +2,7 @@ import { SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { MCPManager } from "../../services/mcp/mcp-manager";
 import type { MCPServerConfig, MCPServerState } from "../../services/mcp/mcp-types";
+import { copyToClipboard } from "../../utils/clipboard";
 import type { SectionContext, SettingsSection } from "./types";
 
 /** CSS classes applied to the status button, keyed by status. */
@@ -201,7 +202,7 @@ export class MCPSettingsSection implements SettingsSection {
 		applyStatusToButton(statusBtn, state);
 		statusBtn.addEventListener('click', async () => {
 			const currentState = plugin.mcpManager?.getServerState(server.id);
-			await navigator.clipboard.writeText(resolveStatusTooltip(currentState));
+			await copyToClipboard(resolveStatusTooltip(currentState));
 		});
 		this.statusButtons.set(server.id, statusBtn);
 

@@ -518,16 +518,50 @@ export class SessionView extends ItemView {
         this.typingIndicator?.dispose();
     }
 
-    private async handleNewChat() {
-        // Prevent concurrent session operations
+    /**
+     * Whether a session switch / new-session operation is currently allowed.
+     * When `false`, callers should typically surface a Notice explaining why
+     * (use {@link guardSwitchSession} for the standard behaviour).
+     */
+    canSwitchSession(): boolean {
+        return !this.isSwitchingSession && !this.isStreaming;
+    }
+
+    /**
+     * Convenience guard for external callers: returns `true` if a session
+     * switch is currently possible, otherwise emits the same Notice that
+     * the in-view controls would and returns `false`.
+     */
+    guardSwitchSession(): boolean {
         if (this.isSwitchingSession) {
             new Notice(t('view.sessionSwitchInProgress'));
-            return;
+            return false;
         }
         if (this.isStreaming) {
             new Notice(t('view.cannotSwitchWhileStreaming'));
-            return;
+            return false;
         }
+        return true;
+    }
+
+    /**
+     * Create a new session, persisting the current one and switching the
+     * view to a fresh, empty chat. Public so callers (e.g. editor menu
+     * actions) can chain "create new session → drop a snippet into the
+     * input" without re-implementing the save/switch dance.
+     *
+     * Returns `false` if the operation could not run because another
+     * switch is in progress or the AI is still streaming; in that case a
+     * Notice has already been shown to the user. Returns `true` after a
+     * successful switch.
+     *
+     * NOTE: when the caller already pre-checked via {@link canSwitchSession},
+     * the second guard inside this method is still cheap and protects
+     * against races (e.g. an answer streaming in between the check and the
+     * call).
+     */
+    async startNewSession(): Promise<boolean> {
+        if (!this.guardSwitchSession()) return false;
 
         this.isSwitchingSession = true;
         try {
@@ -540,9 +574,14 @@ export class SessionView extends ItemView {
             await this.sessionManager.saveAndSwitch(messages, usage, summaries);
             this.clearViewForSessionSwitch();
             new Notice(t('view.newSessionCreated'));
+            return true;
         } finally {
             this.isSwitchingSession = false;
         }
+    }
+
+    private async handleNewChat() {
+        await this.startNewSession();
     }
 
     private async handleSwitchSession(targetId: string) {

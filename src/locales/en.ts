@@ -88,6 +88,7 @@ export const en: Record<string, string> = {
 	'view.imageGen': 'Image Generation',
 	'view.sessionTitlePlaceholder': 'Enter session name',
 	'view.sendToSession': 'Send to AI Session',
+	'view.sendToNewSession': 'Send to New AI Session',
 	'view.explainSelection': 'Explain',
 	'view.deleteHistorySessions': 'Delete history sessions',
 	'view.deleteHistorySessionsConfirmTitle': 'Delete History Sessions',

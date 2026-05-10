@@ -88,6 +88,7 @@ export const ko: Record<string, string> = {
 	'view.imageGen': '이미지 생성',
 	'view.sessionTitlePlaceholder': '세션 이름 입력',
 	'view.sendToSession': 'AI 세션으로 전송',
+	'view.sendToNewSession': '새 AI 세션으로 전송',
 	'view.explainSelection': '설명',
 	'view.deleteHistorySessions': '히스토리 세션 삭제',
 	'view.deleteHistorySessionsConfirmTitle': '히스토리 세션 삭제',

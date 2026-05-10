@@ -88,6 +88,7 @@ export const zhTW: Record<string, string> = {
 	'view.imageGen': '圖片生成',
 	'view.sessionTitlePlaceholder': '輸入會話名稱',
 	'view.sendToSession': '傳送到 AI 對話',
+	'view.sendToNewSession': '傳送到新 AI 對話',
 	'view.explainSelection': '解釋',
 	'view.deleteHistorySessions': '刪除歷史對話',
 	'view.deleteHistorySessionsConfirmTitle': '刪除歷史對話',

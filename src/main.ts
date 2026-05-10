@@ -87,6 +87,21 @@ export default class NoteAssistantPlugin extends Plugin {
 				void this.sendEditorContextToSession(editor, info);
 			},
 		};
+		// "Send to New AI Session" mirrors the entry above, but creates a
+		// fresh session first. If the current session can't be switched
+		// (mid-stream or another switch in flight) the action surfaces a
+		// Notice and is a no-op — we never silently replace the active
+		// chat under the user's feet.
+		const sendToNewSessionItem: AISubmenuItem = {
+			title: t('view.sendToNewSession'),
+			icon: 'message-square-plus',
+			isAvailable: (_editor, info) => {
+				return !!(info as { file?: { path?: string } } | undefined)?.file?.path;
+			},
+			onClick: (editor, info) => {
+				void this.sendEditorContextToNewSession(editor, info);
+			},
+		};
 		// "Explain" turns the current selection into a ready-made prompt and
 		// either sends it directly or — when the AI is mid-turn — drops it
 		// into the input for the user to send manually. Selection is required;
@@ -107,7 +122,7 @@ export default class NoteAssistantPlugin extends Plugin {
 			this,
 			this.editHistory,
 			() => this.revealEditHistoryView(),
-			[sendToSessionItem, explainSelectionItem],
+			[sendToSessionItem, sendToNewSessionItem, explainSelectionItem],
 		);
 		this.addCommand({
 			id: 'open-ai-edit-history',
@@ -306,6 +321,40 @@ export default class NoteAssistantPlugin extends Plugin {
 		await this.createSessionView(true);
 		const view = this.getActiveSessionView();
 		if (!view || !view.cmInput) return;
+
+		view.cmInput.insertText(`${ctx.snippet} `);
+		view.cmInput.focus();
+	}
+
+	/**
+	 * Like {@link sendEditorContextToSession}, but starts a brand-new
+	 * session before dropping the snippet into the input.
+	 *
+	 * If the current view cannot switch sessions right now (an answer is
+	 * streaming, or another switch is already underway), the SessionView
+	 * surfaces a Notice and we abort without touching the editor or the
+	 * existing chat. This avoids quietly clobbering an in-progress turn
+	 * just because the user picked the wrong menu entry.
+	 */
+	private async sendEditorContextToNewSession(
+		editor: Editor,
+		info?: MarkdownView | MarkdownFileInfo,
+	): Promise<void> {
+		const ctx = this.formatEditorContextSnippet(editor, info);
+		if (!ctx) return;
+
+		// Ensure the session view exists and is revealed first; otherwise
+		// there is no view instance to inspect for switch-eligibility.
+		await this.createSessionView(true);
+		const view = this.getActiveSessionView();
+		if (!view || !view.cmInput) return;
+
+		// Bail out — with the user-visible Notice already shown by the
+		// view — when the active session is busy. We deliberately do NOT
+		// fall back to the existing session here: the user's intent was
+		// "new session", and silently degrading would be confusing.
+		const ok = await view.startNewSession();
+		if (!ok) return;
 
 		view.cmInput.insertText(`${ctx.snippet} `);
 		view.cmInput.focus();

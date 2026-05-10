@@ -1,6 +1,7 @@
 import { setIcon, setTooltip } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
+import { copyToClipboard } from '../../utils/clipboard';
 import type { BubbleContext } from './bubble-context';
 import { SpeechController } from './speech-controller';
 
@@ -93,9 +94,14 @@ export function renderActionBar(
  * Write the bubble's content to the clipboard and flash a check-mark on
  * the copy button as confirmation. The original `copy` icon is restored
  * after a short delay so a subsequent copy still reads as a fresh action.
+ *
+ * No success Notice is shown — the icon flip is the feedback. Failures
+ * are logged by `copyToClipboard` and swallowed so we don't tear down the
+ * bubble if clipboard access is denied.
  */
 async function onCopy(copyBtn: HTMLButtonElement, content: string): Promise<void> {
-    await navigator.clipboard.writeText(content);
+    const ok = await copyToClipboard(content, { showNotice: false });
+    if (!ok) return;
     setIcon(copyBtn, 'check');
     setTimeout(() => {
         setIcon(copyBtn, 'copy');

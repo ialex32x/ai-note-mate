@@ -88,6 +88,7 @@ export const zhCN: Record<string, string> = {
 	'view.imageGen': '图片生成',
 	'view.sessionTitlePlaceholder': '输入会话名称',
 	'view.sendToSession': '发送到 AI 会话',
+	'view.sendToNewSession': '发送到新 AI 会话',
 	'view.explainSelection': '解释',
 	'view.deleteHistorySessions': '删除历史会话',
 	'view.deleteHistorySessionsConfirmTitle': '删除历史会话',

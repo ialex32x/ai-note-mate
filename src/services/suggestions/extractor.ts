@@ -1,6 +1,7 @@
 import { FOLLOWUP_HEADERS, SINGLE_QUESTION_HINTS } from './triggers';
 import type { ExtractOptions, SuggestedAction } from './types';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
+import { truncate } from '../../utils/string-truncate';
 
 const DEFAULT_LIMIT = 4;
 const DEFAULT_LABEL_MAX = 40;
@@ -257,9 +258,4 @@ function cleanupText(s: string): string {
         .replace(/^[*_`]+|[*_`]+$/g, '') // strip surrounding markdown emphasis
         .replace(/\s+/g, ' ')
         .trim();
-}
-
-function truncate(s: string, max: number): string {
-    if (s.length <= max) return s;
-    return s.slice(0, max - 1).trimEnd() + '…';
 }

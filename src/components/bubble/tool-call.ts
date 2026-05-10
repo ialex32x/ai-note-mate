@@ -1,6 +1,8 @@
-import { Menu, Notice, setIcon } from 'obsidian';
+import { Menu, setIcon } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
+import { prettifyIfJson } from '../../utils/json-format';
+import { copyToClipboard } from '../../utils/clipboard';
 import type { BubbleContext } from './bubble-context';
 
 /**
@@ -171,23 +173,14 @@ function attachToolCallContextMenu(rootEl: HTMLElement, msg: ChatMessage): void 
                 item.setTitle(t('view.copyToolResult'));
                 item.setIcon('clipboard-copy');
                 item.onClick(async () => {
-                    const text = msg.toolCallResult?.result ?? '';
-                    await copyToClipboard(text);
+                    const raw = msg.toolCallResult?.result ?? '';
+                    await copyToClipboard(prettifyIfJson(raw));
                 });
             });
         }
 
         menu.showAtPosition({ x: e.clientX, y: e.clientY });
     });
-}
-
-async function copyToClipboard(text: string): Promise<void> {
-    try {
-        await navigator.clipboard.writeText(text);
-        new Notice(t('view.copied'));
-    } catch (err) {
-        console.error('Failed to copy to clipboard:', err);
-    }
 }
 
 /**
