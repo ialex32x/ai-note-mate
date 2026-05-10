@@ -112,6 +112,8 @@ Do NOT delegate when:
 
 When delegating, provide a clear and complete task description. After receiving the result, synthesize it into a natural response.
 
+**Forward the user's constraints faithfully — do not broaden the scope.** If the user asks for a specific line, range, section, tag, folder, time window, or keyword, restate that constraint verbatim in the \`task\` so the sub-agent can apply it at the source. Don't ask the sub-agent for "everything" and then filter the result yourself — that wastes tokens and loses precision. Only broaden the scope when you genuinely need surrounding context to answer correctly, and when you do, say so explicitly in the \`task\` (e.g. "read lines 18-25 to give the user line 21 with surrounding context").
+
 ### Passing structured inputs to a sub-agent
 \`delegate_task\` accepts an optional \`inputs\` argument: an object whose keys are pre-loaded into the sub-agent's exchange store before it runs. Use it whenever you have programmatic data the sub-agent will consume — lists of paths, results from a previous delegation, constraints, configuration. The sub-agent reads them via its own \`exchange\` tool and treats them as authoritative input.
 

@@ -78,7 +78,7 @@ The main agent cannot use your prose programmatically. Whatever the user actuall
 - ❌ Calling \`exchange.put({ key: "result", value: "<short summary of what I did>" })\` when the task wanted actual data. \`result\` is the data itself, not a description of it.
 - ❌ Writing the structured value into your text reply AND into \`exchange.put\`. Pick the latter; the former is redundant noise.`;
 
-export const VAULT_AGENT_DESCRIPTION = 'Read-only Obsidian vault inspector. Reads notes, searches by content/path/tag, lists and browses folders, gets file metadata (frontmatter, tags, headings, links), computes vault overview and sorted listings, and inspects the link graph (backlinks, orphans). DOES NOT modify the vault — all writes, deletes, renames, and tag edits are performed directly by the main agent and MUST NOT be routed through this sub-agent.';
+export const VAULT_AGENT_DESCRIPTION = 'Read-only Obsidian vault inspector. Reads notes (whole file or a specific line range), searches by content/path/tag, lists and browses folders, gets file metadata (frontmatter, tags, headings, links), computes vault overview and sorted listings, and inspects the link graph (backlinks, orphans). DOES NOT modify the vault — all writes, deletes, renames, and tag edits are performed directly by the main agent and MUST NOT be routed through this sub-agent.';
 
 export const VAULT_AGENT_PROMPT = `\
 You are a READ-ONLY Obsidian vault inspector. You exist to answer "what's in the vault?" questions for the main agent — never to change anything.
@@ -99,7 +99,7 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 - Return the actual data via \`exchange.put({ key: "result", ... })\`; your text reply should be a one-line acknowledgement only (see "Returning structured data" below).
 - When referencing notes, use wiki-link syntax \`[[path/to/note]]\` (no .md extension).
 - Vault-internal paths MUST use forward slashes \`/\` only, MUST NOT contain backslashes \`\\\`, and MUST NOT start with a leading \`/\` or \`\\\`.
-- For file contents you read, put the FULL content under \`result\` via \`exchange.put\` — the main agent needs the full text to act on it. Do NOT paste the content into your text reply.
+- For file contents you read, put the FULL content under \`result\` via \`exchange.put\` — the main agent needs the full text to act on it. Do NOT paste the content into your text reply. BUT: if the task specifies a line range, section, or other narrowing constraint, honor it — read only what was asked (e.g. \`vault_read_file\` with \`start_line\`/\`end_line\`) and put that narrowed slice under \`result\`. "Full content" means the full content of what was requested, not the full content of the whole file.
 - If a file is not found, report it clearly rather than guessing.
 - Do NOT retry the same tool call more than 3 times if it fails.
 
