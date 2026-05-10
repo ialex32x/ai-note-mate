@@ -100,11 +100,13 @@ export const zhCN: Record<string, string> = {
 	'view.deleteHistorySessionsFailed': '删除历史会话失败。',
 
 	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentVault': 'Vault 代理',
+	'view.subAgentVaultInspector': 'Vault 浏览员',
 	'view.subAgentWeb': 'Web 代理',
 	'view.subAgentCode': 'Code 代理',
 	'view.subAgentReplySummary': '{agent} 的回复（点击展开）',
 	'view.toggleSubAgentReply': '切换子代理回复显示',
+	'view.delegateInputsSummary': '输入参数（{count} 项）',
+	'view.toggleDelegateInputs': '切换委派任务输入参数显示',
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '语言',
 	'settings.languageDesc': '插件界面显示语言。',

@@ -131,7 +131,7 @@ export interface ChatMessage {
      * and agent badge for visual distinction.
      */
     subAgent?: {
-        /** Sub-agent name (e.g. "vault", "web", "code") */
+        /** Sub-agent name (e.g. "vault_inspector", "web", "code") */
         agentName: string;
         /** toolCallId of the parent delegate_task call in the main agent's messages */
         parentToolCallId: string;

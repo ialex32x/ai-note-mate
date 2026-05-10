@@ -100,11 +100,13 @@ export const ko: Record<string, string> = {
 	'view.deleteHistorySessionsFailed': '히스토리 세션 삭제에 실패했습니다.',
 
 	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentVault': 'Vault 에이전트',
+	'view.subAgentVaultInspector': 'Vault 인스펙터',
 	'view.subAgentWeb': '웹 에이전트',
 	'view.subAgentCode': '코드 에이전트',
 	'view.subAgentReplySummary': '{agent}의 답변 (클릭하여 펼치기)',
 	'view.toggleSubAgentReply': '하위 에이전트 답변 토글',
+	'view.delegateInputsSummary': '입력 ({count}개)',
+	'view.toggleDelegateInputs': '위임 작업 입력 토글',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '언어',

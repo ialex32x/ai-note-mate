@@ -115,32 +115,38 @@
 .session-insight-card__item-meta {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: @spacing-xs;
     margin-top: 2px;
     font-size: 0.75em;
 }
 
-.session-insight-card__tag {
-    // Rendered as a <button> so clicks trigger the global-search pop-up,
-    // matching the behaviour of inline `#tag` clicks in the editor.
-    // Override the default button chrome so the chip reads as a tag, not
-    // a toolbar button.
+// Higher-specificity selector (`a.tag.session-insight-card__tag`) to
+// beat Obsidian core's default `.tag` chrome (chip background, padding,
+// border-radius), which would otherwise still apply because of stylesheet
+// load order. We want a plain inline `#tag` look, vertically centred
+// next to the bordered linked-note chips in the meta row.
+a.tag.session-insight-card__tag {
     display: inline-flex;
     align-items: center;
     color: @text-accent;
-    background-color: @bg-modifier-hover;
-    border: 1px solid transparent;
-    border-radius: @radius-sm;
+    background: none;
+    border: none;
+    border-radius: 0;
     padding: 1px 6px;
+    margin: 0;
     line-height: 1.4;
     font: inherit;
+    font-size: inherit;
+    text-decoration: none;
     cursor: pointer;
-    transition: background-color @duration-normal ease,
-                border-color @duration-normal ease;
+    transition: color @duration-normal ease;
 
     &:hover {
-        background-color: @bg-modifier-hover;
-        border-color: @text-accent;
+        background: none;
+        border: none;
+        color: @text-accent;
+        text-decoration: underline;
     }
 
     &:focus-visible {

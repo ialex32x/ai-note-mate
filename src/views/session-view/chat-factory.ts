@@ -6,7 +6,7 @@ import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provide
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
 import { buildSubAgentConfigs } from '../../services/sub-agent-registry';
-import { createObsidianTools } from '../../services/tools/obsidian';
+import { createObsidianTools, createObsidianMutationTools } from '../../services/tools/obsidian';
 import { createWebSearchTools } from '../../services/tools/web-search-toolcall';
 import { createWebFetchTools } from '../../services/tools/web-fetch-toolcall';
 import { createRSSFetchTools } from '../../services/tools/rss-fetch-toolcall';
@@ -201,9 +201,22 @@ export function createChatAgent(
             },
         });
 
-        // Register main-agent tools (memory, conversation, builtin, skill)
+        // Register main-agent tools.
+        //
+        // The main agent owns:
+        //   - generic builtins (memory, conversation, builtin, skill)
+        //   - ALL vault MUTATION tools (writes, deletes, renames, tag edits)
+        //
+        // The vault sub-agent only holds read-only inspection tools. This
+        // strict read/write split (see `createObsidianMutationTools`)
+        // gives the routing LLM a trivial rule — "looking → delegate;
+        // doing → call directly" — and removes the prompt-injection seam
+        // for content-bearing writes by letting the tool's native (path,
+        // content) JSON schema carry the body instead of `delegate_task`
+        // prose.
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
+        createObsidianMutationTools(plugin).forEach(tool => chat.registerTool(tool));
     } else {
         // Fallback: single-agent mode (all tools on one ChatStream)
         chat = new ChatStream(chatStreamConfig);

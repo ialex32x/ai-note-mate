@@ -489,6 +489,74 @@
     display: block;
 }
 
+// ── delegate_task `inputs` panel (collapsible) ──────────
+// Structured `inputs` passed to delegate_task are rendered as a
+// collapsible JSON block beneath the task text. Visually mirrors the
+// sub-agent reply collapsible (same header / arrow / italic summary)
+// so multiple collapsibles in one bubble feel consistent. Defaults to
+// collapsed because `inputs` is supplementary; the task prose is the
+// primary information.
+
+.session-bubble__delegate-inputs {
+    margin-top: @spacing-sm;
+}
+
+.session-bubble__delegate-inputs-header {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: @text-faint;
+    font-size: 0.85em;
+    line-height: 1.6;
+    cursor: pointer;
+    user-select: none;
+    outline: none;
+
+    &:hover {
+        color: @text-secondary;
+    }
+
+    &:focus-visible {
+        color: @text-secondary;
+        text-decoration: underline;
+    }
+}
+
+.session-bubble__delegate-inputs-arrow {
+    font-size: 0.9em;
+    flex-shrink: 0;
+}
+
+.session-bubble__delegate-inputs-summary {
+    font-style: italic;
+}
+
+// Body: pretty-printed JSON. Monospaced + scrollable on overflow so a
+// large `inputs.source` array doesn't blow out the bubble width. Sized
+// down slightly to keep it visually subordinate to the main task text.
+.session-bubble__delegate-inputs-body {
+    display: none;
+    margin: @spacing-sm 0 0 0;
+    padding: @spacing-sm;
+    background: var(--background-secondary);
+    border-radius: 4px;
+    font-family: var(--font-monospace, monospace);
+    font-size: 0.8em;
+    line-height: 1.4;
+    color: @text-secondary;
+    white-space: pre;
+    overflow-x: auto;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.session-bubble__delegate-inputs-body--expanded {
+    display: block;
+}
+
 // Override Obsidian's markdown preview styles
 .session-bubble__content {
     .markdown-preview-view,

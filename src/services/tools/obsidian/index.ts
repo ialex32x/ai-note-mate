@@ -26,18 +26,84 @@ import { vaultEditFileTags, vaultListTags, vaultRenameTag, vaultSearchByTag } fr
 import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
 
 /**
- * Build all Obsidian Vault tool definitions for use with ChatStream.registerTool().
+ * Tool partitioning rationale
+ * ───────────────────────────
+ * In multi-agent mode the Obsidian vault tool surface is split along a
+ * single, easy-to-explain axis: **does the tool mutate the vault?**
  *
- * @param plugin - The NoteAssistantPlugin instance (plugin.app provides the Obsidian App)
- * @returns An array of RegisteredTool objects ready to be registered.
+ *   - Read-only tools (read / search / list / metadata / graph queries
+ *     and tag listings) → registered on the vault sub-agent. They can
+ *     run multi-step explorations (e.g. read N files to compare them)
+ *     without that intermediate content polluting the main thread's
+ *     context window.
  *
- * @example
- * ```ts
- * const tools = createObsidianTools(plugin);
- * tools.forEach(t => chat.registerTool(t));
- * ```
+ *   - Mutation tools (anything that writes, deletes, renames, or
+ *     edits tags) → registered DIRECTLY on the main agent.
+ *
+ * Why all mutations go to main, not just content-writes:
+ *  1. Eliminates a routing decision the LLM gets wrong: with a strict
+ *     read/write split the rule is trivial ("looking → delegate, doing
+ *     → main") instead of nuanced ("only delegate writes that don't
+ *     have a content body").
+ *  2. Removes the prompt-injection seam for content-bearing writes
+ *     (`vault_create_file` / `vault_append_file` / `vault_replace_*` /
+ *     `vault_insert_lines`): the literal file body rides as a JSON
+ *     `content` field, never as prose inside `delegate_task.task`.
+ *  3. Keeps the related hard rules (e.g. "tag edits MUST use
+ *     `vault_edit_file_tags`, not `vault_replace_text`"; "moves MUST
+ *     use `vault_rename_or_move_file`, not delete+create") on the
+ *     same agent that owns the tools they constrain — the rules and
+ *     the tools live together.
+ *
+ * The vault sub-agent is therefore a pure inspection/query agent. Its
+ * description, system prompt, and (display) label all reinforce that
+ * read-only character so the routing LLM defaults to "inspect via
+ * delegation, mutate directly".
+ *
+ * Single-agent fallback (no sub-agents configured) still uses the
+ * union via `createObsidianTools()` — there's exactly one source of
+ * truth for "every vault tool".
  */
-export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
+
+/**
+ * Vault tools that MUTATE the vault in any way: writing file bodies,
+ * deleting, renaming/moving, or editing tags. Registered directly on
+ * the main agent in multi-agent mode.
+ *
+ * Includes (so a future "what's a mutation tool?" check is unambiguous):
+ *  - Content-writes: create / append / prepend / replace_text /
+ *    replace_lines / insert_lines
+ *  - Structural: delete_files / delete_folder / rename_or_move_file
+ *  - Tag edits:   edit_file_tags / rename_tag (vault-wide)
+ */
+export function createObsidianMutationTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
+    return [
+        // Content writes (path + literal body)
+        vaultCreateFile(plugin),
+        vaultAppendFile(plugin),
+        vaultPrependFile(plugin),
+        vaultReplaceText(plugin),
+        vaultReplaceLines(plugin),
+        vaultInsertLines(plugin),
+        // Structural writes (no content body)
+        vaultDeleteFiles(plugin),
+        vaultDeleteFolder(plugin),
+        vaultRenameFile(plugin),
+        // Tag edits
+        vaultEditFileTags(plugin),
+        vaultRenameTag(plugin),
+    ];
+}
+
+/**
+ * Vault tools that only INSPECT the vault — read, search, list,
+ * metadata, link graph, tag listings/searches. Registered on the vault
+ * sub-agent in multi-agent mode.
+ *
+ * The vault sub-agent's one job is to answer "what's in the vault?"
+ * questions. Anything that changes the vault belongs to the main agent.
+ */
+export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     return [
         // Read
         vaultReadFile(plugin),
@@ -46,31 +112,36 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
         vaultGetFileState(plugin),
         vaultIsDirectory(plugin),
         vaultResolveLink(plugin),
-        // List
+        // List / browse
         vaultBrowseDirectory(plugin),
         // Search
         vaultSearchFiles(plugin),
         vaultSearchContent(plugin),
-        // Write
-        vaultCreateFile(plugin),
-        vaultAppendFile(plugin),
-        vaultPrependFile(plugin),
-        vaultDeleteFiles(plugin),
-        vaultDeleteFolder(plugin),
-        vaultRenameFile(plugin),
-        vaultReplaceText(plugin),
-        vaultReplaceLines(plugin),
-        vaultInsertLines(plugin),
         // Overview
         vaultGetOverview(plugin),
         vaultListFilesSorted(plugin),
-        // Tags
+        // Tag queries (NOT tag edits — those are mutations)
         vaultListTags(plugin),
         vaultSearchByTag(plugin),
-        vaultRenameTag(plugin),
-        vaultEditFileTags(plugin),
-        // Graph
+        // Link graph
         vaultGetBacklinks(plugin),
         vaultFindOrphanFiles(plugin),
+    ];
+}
+
+/**
+ * Build all Obsidian Vault tool definitions for use with ChatStream.registerTool().
+ *
+ * Returns the union of read-only and mutation tools. Used by the
+ * single-agent fallback path; multi-agent mode partitions the two
+ * groups across vault sub-agent (read-only) and main (mutations).
+ *
+ * @param plugin - The NoteAssistantPlugin instance (plugin.app provides the Obsidian App)
+ * @returns An array of RegisteredTool objects ready to be registered.
+ */
+export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
+    return [
+        ...createObsidianReadOnlyTools(plugin),
+        ...createObsidianMutationTools(plugin),
     ];
 }

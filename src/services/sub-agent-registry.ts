@@ -6,7 +6,7 @@
  */
 import type { SubAgentConfig } from './sub-agent';
 import type NoteAssistantPlugin from 'main';
-import { createObsidianTools } from './tools/obsidian';
+import { createObsidianReadOnlyTools } from './tools/obsidian';
 import { createWebSearchTools } from './tools/web-search-toolcall';
 import { createWebFetchTools } from './tools/web-fetch-toolcall';
 import { createRSSFetchTools } from './tools/rss-fetch-toolcall';
@@ -21,11 +21,22 @@ import {
 export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfig[] {
     const configs: SubAgentConfig[] = [];
 
-    // Vault sub-agent: handles all Obsidian vault operations
-    const vaultTools = createObsidianTools(plugin);
+    // Vault inspector sub-agent: read-only inspection (read / search /
+    // list / metadata / link graph / tag queries). All vault MUTATIONS —
+    // writes, deletes, renames, tag edits — are registered directly on
+    // the main agent (see chat-factory.ts) so the routing rule is a
+    // clean binary: "looking → delegate to vault_inspector; doing → call
+    // directly". This both closes the prompt-injection seam for
+    // content-bearing writes and removes a routing decision the LLM
+    // kept getting wrong.
+    //
+    // The internal name `'vault_inspector'` is exactly what the routing
+    // LLM sees as the value of `delegate_task.agent`; the name itself
+    // is part of the "this is read-only" signal we want it to anchor to.
+    const vaultTools = createObsidianReadOnlyTools(plugin);
     if (vaultTools.length > 0) {
         configs.push({
-            name: 'vault',
+            name: 'vault_inspector',
             description: VAULT_AGENT_DESCRIPTION,
             systemPrompt: VAULT_AGENT_PROMPT,
             tools: [...vaultTools, ...createBuiltinTools(plugin)],

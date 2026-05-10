@@ -234,29 +234,32 @@ export class InsightCard {
     }
 
     /**
-     * Render a single tag chip as a clickable button that opens
-     * Obsidian's global search pre-filled with `tag:#<tag>` — the same
-     * behaviour as clicking an inline `#tag` in the editor.
+     * Render a single tag as plain clickable hashtag text (no chrome),
+     * mirroring how inline `#tag` is rendered in the Obsidian editor.
+     * Clicking opens the global search pre-filled with `tag:#<tag>`.
      *
-     * We use a `<button>` (not `<a href>`) because the action is an
-     * in-app command, not a navigable URL; this also gives us keyboard
-     * activation for free and keeps Obsidian's link-click pipeline from
-     * treating the chip as an external link.
+     * Implemented as an `<a class="tag">` so it picks up Obsidian's
+     * native tag styling automatically while still giving us keyboard
+     * focus and accessible labeling. We suppress default link
+     * navigation in the click handler.
      */
     private renderTag(parent: HTMLElement, tag: string): void {
         const bare = tag.replace(/^#+/, '').trim();
         if (!bare) return;
 
-        const btn = parent.createEl('button', {
-            cls: 'session-insight-card__tag',
+        const link = parent.createEl('a', {
+            cls: 'tag session-insight-card__tag',
             text: '#' + bare,
-            attr: { type: 'button' },
+            attr: {
+                href: '#' + bare,
+                role: 'link',
+            },
         });
         const label = t('view.insightCardSearchTag').replace('{tag}', bare);
-        setTooltip(btn, label);
-        btn.setAttr('aria-label', label);
+        setTooltip(link, label);
+        link.setAttr('aria-label', label);
 
-        btn.addEventListener('click', (evt) => {
+        link.addEventListener('click', (evt) => {
             evt.preventDefault();
             evt.stopPropagation();
             this.openTagSearch(bare);

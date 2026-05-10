@@ -100,11 +100,13 @@ export const en: Record<string, string> = {
 	'view.deleteHistorySessionsFailed': 'Failed to delete history sessions.',
 
 	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentVault': 'Vault Agent',
+	'view.subAgentVaultInspector': 'Vault Inspector',
 	'view.subAgentWeb': 'Web Agent',
 	'view.subAgentCode': 'Code Agent',
 	'view.subAgentReplySummary': 'Reply from {agent} (click to expand)',
 	'view.toggleSubAgentReply': 'Toggle sub-agent reply',
+	'view.delegateInputsSummary': 'Inputs ({count})',
+	'view.toggleDelegateInputs': 'Toggle delegate task inputs',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': 'Language',

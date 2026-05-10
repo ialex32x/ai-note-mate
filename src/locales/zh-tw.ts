@@ -100,11 +100,13 @@ export const zhTW: Record<string, string> = {
 	'view.deleteHistorySessionsFailed': '刪除歷史對話失敗。',
 
 	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentVault': 'Vault 代理',
+	'view.subAgentVaultInspector': 'Vault 瀏覽員',
 	'view.subAgentWeb': '網路代理',
 	'view.subAgentCode': '程式碼代理',
 	'view.subAgentReplySummary': '{agent} 的回覆（點擊展開）',
 	'view.toggleSubAgentReply': '切換子代理回覆顯示',
+	'view.delegateInputsSummary': '輸入參數（{count} 項）',
+	'view.toggleDelegateInputs': '切換委派任務輸入參數顯示',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '語言',

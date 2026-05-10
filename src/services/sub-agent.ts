@@ -12,6 +12,7 @@ import { ChatStream, ChatMessage, RegisteredTool } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
 import { estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
+import { createExchangeTool, type ExchangeStore } from "./tools/exchange-toolcall";
 
 // ─────────────────────────────────────────────
 // Types
@@ -19,7 +20,7 @@ import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/stri
 
 /** Configuration for a sub-agent */
 export interface SubAgentConfig {
-    /** Unique identifier for this sub-agent (e.g., "vault", "web", "code") */
+    /** Unique identifier for this sub-agent (e.g., "vault_inspector", "web", "code") */
     name: string;
     /** Human-readable description of this agent's capabilities (used for routing) */
     description: string;
@@ -141,6 +142,23 @@ export class SubAgent {
     /** onToolCallEnd handler forwarded from the current execute() call */
     private _currentExecToolCallEndHandler: ((agentName: string, toolName: string, args: Record<string, unknown>, result: string, isError: boolean) => void) | undefined;
 
+    /**
+     * Per-dispatch exchange store (key/value scratchpad shared with the
+     * orchestrator). Set at the start of `execute()` from
+     * `options.exchangeStore`, cleared in the cleanup block — including
+     * on abort / error paths.
+     *
+     * The exchange tool registered on the (reused) ChatStream resolves
+     * this field via a getter closure at call-time, so a single
+     * registration suffices across all dispatches and there is no risk
+     * of leaking one dispatch's store into the next.
+     *
+     * `null` means "no exchange store wired for the current call"; the
+     * tool reports a clear error to the model in that case (rather than
+     * crashing or silently no-op'ing).
+     */
+    private _currentExchangeStore: ExchangeStore | null = null;
+
     constructor(config: SubAgentConfig) {
         this.name = config.name;
         this.description = config.description;
@@ -194,6 +212,15 @@ export class SubAgent {
                 toolArgs: Record<string, unknown>;
                 messageId: string;
             }) => Promise<boolean>;
+            /**
+             * Per-dispatch exchange store. When provided, the sub-agent's
+             * built-in `exchange` tool will read/write into this map for
+             * the duration of this `execute()` call. The orchestrator
+             * owns the store: it creates it before calling `execute`,
+             * snapshots it after, and discards it. If omitted, `exchange`
+             * tool calls will report "no store available" to the model.
+             */
+            exchangeStore?: ExchangeStore;
         },
     ): Promise<SubAgentResult> {
         const startTime = Date.now();
@@ -209,6 +236,7 @@ export class SubAgent {
         this._currentExecMessageHandler = options.onMessageUpdate;
         this._currentExecConfirmToolCall = options.onConfirmToolCall;
         this._currentExecToolCallEndHandler = options.onToolCallEnd;
+        this._currentExchangeStore = options.exchangeStore ?? null;
 
         // Build the user message: task + optional context
         const userMessage = options.context
@@ -237,6 +265,11 @@ export class SubAgent {
             if (err instanceof Error && err.name === 'AbortError') {
                 aborted = true;
             } else {
+                // Re-throwing here skips the normal cleanup further down,
+                // but `_currentExchangeStore` MUST be cleared on every exit
+                // so the next dispatch's exchange tool calls don't see a
+                // stale store. Clear it before propagating.
+                this._currentExchangeStore = null;
                 throw err;
             }
         }
@@ -303,6 +336,7 @@ export class SubAgent {
         this._currentExecMessageHandler = undefined;
         this._currentExecConfirmToolCall = undefined;
         this._currentExecToolCallEndHandler = undefined;
+        this._currentExchangeStore = null;
 
         return {
             summary,
@@ -519,6 +553,17 @@ export class SubAgent {
         for (const tool of this._config.tools) {
             chatStream.registerTool(tool);
         }
+
+        // Register the built-in `exchange` tool. This is registered
+        // unconditionally on every sub-agent: when no exchange store is
+        // wired for the current execute() call, the tool reports a clear
+        // "no store available" error to the model rather than crashing.
+        //
+        // The handler resolves the *current* store at call-time via the
+        // getter closure below. This way a single registration on the
+        // reused ChatStream shell correctly tracks per-dispatch stores
+        // without re-registering tools on every execute() call.
+        chatStream.registerTool(createExchangeTool(() => this._currentExchangeStore));
 
         this._reusableChatStream = chatStream;
         return chatStream;
