@@ -262,6 +262,56 @@ export class ProfileSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
+
+		// ── Context compression (per-profile tuning) ──
+		// Section divider — same DOM shape as the modalities title above
+		// (a Setting row with name+desc only, no control), so the editor
+		// keeps a consistent rhythm.
+		new Setting(container)
+			.setName(t('settings.contextCompression'))
+			.setHeading();
+
+		// Compression threshold (0 = use plugin default)
+		createTextField({
+			container,
+			name: t('settings.contextCompressionThreshold'),
+			desc: t('settings.contextCompressionThresholdDesc'),
+			placeholder: '0',
+			value: String(profile.contextCompressionThreshold),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				profile.contextCompressionThreshold = isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Sliding window size (0 = use plugin default)
+		createTextField({
+			container,
+			name: t('settings.slidingWindowSize'),
+			desc: t('settings.slidingWindowSizeDesc'),
+			placeholder: '0',
+			value: String(profile.slidingWindowSize),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				profile.slidingWindowSize = isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Max summaries threshold (0 = use plugin default)
+		createTextField({
+			container,
+			name: t('settings.maxSummariesThreshold'),
+			desc: t('settings.maxSummariesThresholdDesc'),
+			placeholder: '0',
+			value: String(profile.maxSummariesThreshold),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				profile.maxSummariesThreshold = isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+		});
 	}
 
 	private renderOpenAIProfileFields(

@@ -10,7 +10,7 @@
 
 import { ChatStream, ChatMessage, RegisteredTool } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
-import { estimateTokens, createChatCompletion } from "./context-reducer";
+import { estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
 
 // ─────────────────────────────────────────────
@@ -39,6 +39,16 @@ export interface SubAgentConfig {
      * will be suggested as a candidate without needing LLM routing.
      */
     routingKeywords?: string[];
+    /**
+     * Per-profile context-compression overrides forwarded to the inner
+     * ChatStream. Sub-agents share the user's active profile (we don't
+     * expose a separate profile per sub-agent) so the orchestrator passes
+     * the same numbers it gives the main agent. `undefined` falls back to
+     * the reducer's built-in defaults.
+     */
+    compressionOptions?: Pick<ContextReduceOptions,
+        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
+    >;
 }
 
 /** Result returned by a sub-agent execution */
@@ -430,6 +440,13 @@ export class SubAgent {
         // `_currentExec*` fields refreshed at the start of each execute() call.
         const chatStream = new ChatStream({
             systemPrompt: this._config.systemPrompt,
+            // Inherit the same context-compression tuning as the main agent
+            // (set by the orchestrator from the active profile). Without this
+            // a long-running sub-agent would compress on the built-in
+            // defaults regardless of how the user has configured their
+            // profile, leading to inconsistent behaviour between main agent
+            // and sub-agents during a single session.
+            compressionOptions: this._config.compressionOptions,
             onMessageUpdate: (msg) => {
                 // Track and tag messages belonging to the current execute() call.
                 // When the same ChatStream is reused, older messages from previous

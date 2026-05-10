@@ -5,15 +5,31 @@ import { ChatMessageRole, CompleteToolCall, MediaAttachment, MinimalModelConfig 
 import { safeSliceHead } from "../utils/string-safe";
 
 // ─────────────────────────────────────────────
-// Constants (TODO: migrate to settings later)
+// Defaults
 // ─────────────────────────────────────────────
+//
+// Each of these can be overridden per call via `ContextReduceOptions`
+// (see below) which is the path used by ChatStream to honour the active
+// profile's `contextCompressionThreshold` / `slidingWindowSize` /
+// `maxSummariesThreshold` settings. Values <= 0 in the override fall back
+// to these built-in defaults — the same convention as `maxTokens: 0` on
+// the profile.
 
 /**
  * Token threshold that triggers context compression.
  * When the estimated token count of non-system messages exceeds this value,
  * the reducer will summarize older messages and keep recent ones.
+ *
+ * Sized for modern mainstream models (64k+ context windows). The actual
+ * payload sent to the provider is roughly:
+ *   threshold (history+summary) + ~2k (system prompt + tool schemas) + input
+ * Plus an estimation drift of ~20% from `estimateTokens` being a coarse
+ * char-based heuristic. So 32000 here corresponds to ~45k real tokens at the
+ * upper bound — well within the 128k window of current flagship models, while
+ * still leaving headroom for older 64k models. Profiles targeting 32k-or-less
+ * windows should override this via per-profile config.
  */
-const CONTEXT_COMPRESSION_THRESHOLD = 8000;
+const DEFAULT_CONTEXT_COMPRESSION_THRESHOLD = 32000;
 
 /**
  * Minimum number of most recent messages to retain after compression
@@ -32,17 +48,50 @@ const CONTEXT_COMPRESSION_THRESHOLD = 8000;
  *
  * Only applies to non-system messages.
  */
-const SLIDING_WINDOW_SIZE = 10;
+const DEFAULT_SLIDING_WINDOW_SIZE = 10;
 
 /**
  * Maximum number of summaries to retain before triggering second-level compression.
  * When total summaries exceed this value, all summaries are re-summarized into
  * a single higher-level summary.
+ *
+ * Raised in tandem with `DEFAULT_CONTEXT_COMPRESSION_THRESHOLD`: a larger
+ * primary threshold means each Level-1 summary covers more conversation, so
+ * triggering Level-2 ("summary of summaries", which is lossier) too eagerly
+ * hurts recall. 8 lets the conversation accumulate substantially before a
+ * second-order compression kicks in.
  */
-const MAX_SUMMARIES_THRESHOLD = 5;
+const DEFAULT_MAX_SUMMARIES_THRESHOLD = 8;
 
 interface PromptConfig {
     content: string;
+}
+
+/**
+ * Per-call overrides for the reducer's tunables.
+ *
+ * Each numeric override is interpreted with the "<= 0 means use default"
+ * convention used everywhere else in the plugin (see e.g. `maxTokens` on
+ * the provider profile). This keeps the wire format on disk simple — the
+ * settings UI persists `0` for "I don't care, follow the plugin default" so
+ * a future bump to the built-in defaults takes effect for every existing
+ * profile without forcing users to re-tune their numbers.
+ */
+export interface ContextReduceOptions {
+    /** Override DEFAULT_CONTEXT_COMPRESSION_THRESHOLD. <=0 falls back to built-in default. */
+    compressionThreshold?: number;
+    /** Override DEFAULT_SLIDING_WINDOW_SIZE. <=0 falls back to built-in default. */
+    slidingWindowSize?: number;
+    /** Override DEFAULT_MAX_SUMMARIES_THRESHOLD. <=0 falls back to built-in default. */
+    maxSummariesThreshold?: number;
+    /**
+     * Optional accessory token estimate to fold into the threshold check —
+     * typically the size of tool-schema JSON. System messages are already
+     * present in `rawMessages` (and counted into the threshold internally),
+     * so this option is mainly for tool schemas which never enter
+     * `rawMessages` but still consume the model's real prompt budget.
+     */
+    accessoryTokens?: number;
 }
 
 export interface HistoryMessage {
@@ -244,8 +293,25 @@ export class ContextReducer {
         modelConfig: MinimalModelConfig,
         prompt: PromptConfig,
         rawMessages: T[],
-        existingSummaries: ConversationSummary[] = []
+        existingSummaries: ConversationSummary[] = [],
+        options?: ContextReduceOptions,
     ): Promise<ContextReduceResult<T>> {
+        // ── 0. Resolve effective tunables ─────────────────────────────────
+        // Each option follows the "<=0 = use built-in default" convention so
+        // the on-disk profile shape stays trivial (0 means "I don't care").
+        const threshold = (options?.compressionThreshold && options.compressionThreshold > 0)
+            ? options.compressionThreshold
+            : DEFAULT_CONTEXT_COMPRESSION_THRESHOLD;
+        const windowSize = (options?.slidingWindowSize && options.slidingWindowSize > 0)
+            ? options.slidingWindowSize
+            : DEFAULT_SLIDING_WINDOW_SIZE;
+        const maxSummaries = (options?.maxSummariesThreshold && options.maxSummariesThreshold > 0)
+            ? options.maxSummariesThreshold
+            : DEFAULT_MAX_SUMMARIES_THRESHOLD;
+        const accessoryTokens = options?.accessoryTokens && options.accessoryTokens > 0
+            ? options.accessoryTokens
+            : 0;
+
         // ── 1. Separate system messages (always preserved) ────────────────
         const systemMessages = rawMessages.filter(msg => msg.role === "system");
         const nonSystemMessages = rawMessages.filter(msg => msg.role !== "system");
@@ -300,16 +366,44 @@ export class ContextReducer {
         const summarizedMessages = nonSystemMessages.slice(0, cutoffIndex);
 
         // ── 3. Estimate tokens ─────────────────────────────────────────────
+        const systemTokens = estimateMessagesTokens(systemMessages);
         const unsummarizedTokens = estimateMessagesTokens(unsummarizedMessages);
         const summarizedTokens = estimateMessagesTokens(summarizedMessages);
         const summaryTokens = existingSummaries.reduce((sum, s) => sum + estimateTokens(s.content), 0);
         const totalTokens = unsummarizedTokens + summarizedTokens + summaryTokens;
 
-        // ── 4. Check if compression is needed ─────────────────────
-        // Only consider unsummarized messages + summaries for threshold check
-        const effectiveTokens = unsummarizedTokens + summaryTokens;
-        if (effectiveTokens <= CONTEXT_COMPRESSION_THRESHOLD) {
-            // console.log(`ContextReducer: No compression needed (effective tokens: ${effectiveTokens}, threshold: ${CONTEXT_COMPRESSION_THRESHOLD})`);
+        // ── 4. Decide whether compression is needed ───────────────────────
+        // The threshold is checked against an **approximation of the real
+        // payload** sent to the LLM:
+        //   - system messages (prompt + skills, persistent overhead)
+        //   - the unsummarized tail (the actual conversation tail we will
+        //     forward verbatim)
+        //   - existing summaries (assistant messages we will replay)
+        //   - accessoryTokens supplied by the caller, typically the JSON
+        //     size of tool schemas which never enter `rawMessages`.
+        // Without `systemTokens + accessoryTokens` the threshold drifts
+        // from what the provider actually receives and we either compress
+        // way too late (small windows) or way too eagerly (large windows).
+        const effectiveTokens = systemTokens + unsummarizedTokens + summaryTokens + accessoryTokens;
+
+        // Two independent triggers:
+        //   - `overThreshold`  → the conversation is genuinely large enough
+        //                        that we should fold older history into a
+        //                        Level-1 summary;
+        //   - `needsLevel2`    → summaries themselves have piled up to the
+        //                        point that the next compression pass should
+        //                        merge them into a Level-2+ summary instead
+        //                        of producing yet another peer Level-1 entry.
+        // Previously `needsLevel2` was only inspected when `overThreshold`
+        // was already true, which meant a long-running session with a large
+        // threshold could accumulate dozens of Level-1 summaries forever
+        // without ever triggering Level-2. Splitting the two conditions
+        // here fixes that slow leak.
+        const overThreshold = effectiveTokens > threshold;
+        const needsLevel2 = existingSummaries.length >= maxSummaries;
+
+        if (!overThreshold && !needsLevel2) {
+            // console.log(`ContextReducer: No compression needed (effective tokens: ${effectiveTokens}, threshold: ${threshold})`);
             // No new compression needed - send summaries + unsummarized messages
             // (skip the raw messages that are already covered by existing summaries)
             const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
@@ -342,8 +436,10 @@ export class ContextReducer {
                 ...this.ensureToolSequenceIntegrity(collapsedUnsummarized),
             ] as T[];
 
+            const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend) as T[];
+            ContextReducer.checkFinalBudget(sanitizedNoCompress, accessoryTokens, threshold);
             return {
-                messagesToSend: this.validateAndSanitizeForLLM(finalMessagesToSend) as T[],
+                messagesToSend: sanitizedNoCompress,
                 newSummary: null,
                 compressed: existingSummaries.length > 0,
                 lastMessageIndex: cutoffIndex,
@@ -354,7 +450,7 @@ export class ContextReducer {
         let messagesToSummarize: HistoryMessage[];
         let newSummaryLevel: number;
 
-        if (existingSummaries.length >= MAX_SUMMARIES_THRESHOLD) {
+        if (existingSummaries.length >= maxSummaries) {
             // ── Level 2+: Summarize the existing summaries ─────────────────
             messagesToSummarize = existingSummaries.map(s => ({
                 role: "assistant" as ChatMessageRole,
@@ -380,7 +476,7 @@ export class ContextReducer {
         let splitIndex: number;
         if (newSummaryLevel === 1) {
             const turnBoundaries = this.findTurnBoundaries(messagesToSummarize);
-            splitIndex = Math.max(0, messagesToSummarize.length - SLIDING_WINDOW_SIZE);
+            splitIndex = Math.max(0, messagesToSummarize.length - windowSize);
             if (splitIndex > 0) {
                 let snappedIndex = 0;
                 for (const boundary of turnBoundaries) {
@@ -408,8 +504,10 @@ export class ContextReducer {
                 ...summaryMessages,
                 ...messagesToSummarize,
             ] as T[];
+            const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled) as T[];
+            ContextReducer.checkFinalBudget(sanitizedFitsWindow, accessoryTokens, threshold);
             return {
-                messagesToSend: this.validateAndSanitizeForLLM(assembled) as T[],
+                messagesToSend: sanitizedFitsWindow,
                 newSummary: null,
                 compressed: existingSummaries.length > 0,
                 lastMessageIndex: cutoffIndex,
@@ -471,8 +569,10 @@ export class ContextReducer {
                 ...fallbackArchiveNote,
                 ...this.ensureToolSequenceIntegrity(fallbackCollapsed),
             ] as T[];
+            const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled) as T[];
+            ContextReducer.checkFinalBudget(sanitizedFallback, accessoryTokens, threshold);
             return {
-                messagesToSend: this.validateAndSanitizeForLLM(fallbackAssembled) as T[],
+                messagesToSend: sanitizedFallback,
                 newSummary: null,
                 compressed: existingSummaries.length > 0,
                 lastMessageIndex: cutoffIndex,
@@ -523,13 +623,45 @@ export class ContextReducer {
             ...this.ensureToolSequenceIntegrity(keptRecentMessages),
         ] as T[];
 
+        const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend) as T[];
+        ContextReducer.checkFinalBudget(sanitizedCompressed, accessoryTokens, threshold);
         return {
-            messagesToSend: this.validateAndSanitizeForLLM(finalMessagesToSend) as T[],
+            messagesToSend: sanitizedCompressed,
             newSummary,
             compressed: true,
             lastMessageIndex: newSummaryLastIndex,
         };
         }
+
+    /**
+     * Observability hook — emit a `console.warn` when the assembled
+     * `messagesToSend` clearly exceeds the configured threshold even after
+     * compression. This is a soft signal: we deliberately do **not** retrigger
+     * a second summarization pass here because (a) it would double the
+     * latency of a turn that is already over budget, and (b) the provider
+     * already errors out cleanly when the prompt is too large for the model
+     * window. The warning is meant for the user / developer to notice that
+     * the configured threshold is too high for the model in use, and lower
+     * it (or upgrade the model) accordingly.
+     *
+     * Uses a 1.5× multiplier as the "obviously over" line so we don't spam
+     * warnings on the normal case where the post-compression payload sits
+     * just slightly above the threshold (which is expected — the threshold
+     * is the trigger point, not a hard budget).
+     */
+    private static checkFinalBudget<T extends HistoryMessage>(
+        messages: T[],
+        accessoryTokens: number,
+        threshold: number,
+    ): void {
+        const total = estimateMessagesTokens(messages) + accessoryTokens;
+        if (total > threshold * 1.5) {
+            console.warn(
+                `[ContextReducer] final messagesToSend estimate ${total} tokens exceeds 1.5x threshold ${threshold}. ` +
+                `Consider lowering the threshold or upgrading to a larger-context model.`,
+            );
+        }
+    }
 
     /**
      * End-to-end validation & sanitization of the final messages list sent to the LLM.

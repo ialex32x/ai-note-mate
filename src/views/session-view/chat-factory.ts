@@ -1,7 +1,7 @@
 import type NoteAssistantPlugin from 'main';
-import { ChatStream, IChatAgent, ChatMessage } from '../../services/chat-stream';
+import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions } from '../../services/chat-stream';
 import { AgentOrchestrator } from '../../services/agent-orchestrator';
-import { getSummarizerProfile, getActiveEmbeddingConfig } from '../../settings';
+import { getActiveProfile, getSummarizerProfile, getActiveEmbeddingConfig } from '../../settings';
 import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provider';
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
@@ -111,8 +111,27 @@ export function createChatAgent(
         (settings.systemPrompt || '') +
         (skillsPrompt ? '\n\n' + skillsPrompt : '');
 
+    // Resolve per-profile context-compression overrides from the active
+    // profile. Stored on disk as 0 = "use plugin default", which the
+    // ContextReducer interprets natively, so we just forward the raw
+    // numbers without translating sentinels.
+    //
+    // Sub-agents share these values (see plan §5.1 — we deliberately do
+    // not introduce per-sub-agent compression knobs so the surface area
+    // stays small) so the same struct is also injected into every
+    // SubAgentConfig below.
+    const activeProfile = getActiveProfile(settings);
+    const compressionOptions: Pick<ContextReduceOptions,
+        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
+    > = {
+        compressionThreshold: activeProfile.contextCompressionThreshold,
+        slidingWindowSize: activeProfile.slidingWindowSize,
+        maxSummariesThreshold: activeProfile.maxSummariesThreshold,
+    };
+
     const chatStreamConfig = {
         systemPrompt: fullSystemPrompt,
+        compressionOptions,
         dynamicTools: () => callbacks.getDynamicTools(),
         onStart: () => {
             if (!callbacks.generationMatches()) return;
@@ -162,6 +181,16 @@ export function createChatAgent(
 
     let chat: IChatAgent;
     if (subAgentConfigs.length > 0) {
+        // Mirror the main agent's compression tuning onto every sub-agent
+        // before handing them to the orchestrator. We mutate in place
+        // rather than re-mapping because SubAgentConfig has multiple
+        // closure-captured fields (e.g. tool callbacks) and a shallow
+        // re-spread would force reasoning about which fields are safe to
+        // copy.
+        for (const subConfig of subAgentConfigs) {
+            subConfig.compressionOptions = compressionOptions;
+        }
+
         // Multi-agent mode: use AgentOrchestrator
         chat = new AgentOrchestrator({
             ...chatStreamConfig,

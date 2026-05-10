@@ -21,6 +21,9 @@ export function createDefaultProfile(): ProviderProfile {
 		apiKey: '',
 		modalities: ['image'],
 		maxTokens: 0,
+		contextCompressionThreshold: 0,
+		slidingWindowSize: 0,
+		maxSummariesThreshold: 0,
 	};
 }
 

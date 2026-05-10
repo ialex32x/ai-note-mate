@@ -1,6 +1,9 @@
-import { ContextReducer, ConversationSummary } from "./context-reducer";
+import { ContextReducer, ConversationSummary, estimateTokens, type ContextReduceOptions } from "./context-reducer";
 // Re-export ConversationSummary for external consumers (e.g., SessionManager)
 export type { ConversationSummary } from "./context-reducer";
+// Re-export ContextReduceOptions so callers can construct the per-profile
+// override structure without reaching into the reducer module directly.
+export type { ContextReduceOptions } from "./context-reducer";
 import type { MinimalModelConfig } from "./llm-provider";
 import type {
     LLMProvider,
@@ -293,6 +296,25 @@ export interface ChatStreamConfig {
      * and older messages are summarized.
      */
     onContextCompressed?: () => void;
+
+    /**
+     * Per-profile overrides for the context reducer.
+     *
+     * Populated by the factory that constructs a ChatStream for a particular
+     * provider profile (see `chat-factory.ts`). When omitted, the reducer
+     * falls back to its built-in defaults — the same behaviour as before
+     * this option existed, so nothing breaks for callers that don't supply
+     * it (e.g. tests, ad-hoc usage).
+     *
+     * `accessoryTokens` is intentionally NOT consumed from this struct: it's
+     * recomputed per `prompt()` call from the live tool-schema list because
+     * that varies by turn (dynamic tools / capability filtering), whereas
+     * the threshold/window/maxSummaries values are fixed for the lifetime
+     * of the ChatStream.
+     */
+    compressionOptions?: Pick<ContextReduceOptions,
+        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
+    >;
 }
 
 // ─────────────────────────────────────────────
@@ -773,7 +795,27 @@ export class ChatStream implements IChatAgent {
                 // Note: summaries are stored separately from original messages to keep UI clean
                 let messagesToSend = rawMessages;
                 if (options.summarizer) {
-                    const reduceResult = await ContextReducer.reduce(options.summarizer, { content: SUMMARIZER_SYSTEM_PROMPT }, rawMessages, this._summaries);
+                    // Estimate the byte cost of the tool schemas — they get
+                    // serialised to JSON and shipped on every request, but
+                    // never enter `rawMessages`, so without this term the
+                    // reducer's threshold check would systematically
+                    // under-count the real prompt size by 1–3k+ tokens on
+                    // sessions with many tools attached. Use the same
+                    // heuristic estimator as the reducer itself for a
+                    // consistent budget unit.
+                    const accessoryTokens = toolSchemas.length > 0
+                        ? estimateTokens(JSON.stringify(toolSchemas))
+                        : 0;
+                    const reduceResult = await ContextReducer.reduce(
+                        options.summarizer,
+                        { content: SUMMARIZER_SYSTEM_PROMPT },
+                        rawMessages,
+                        this._summaries,
+                        {
+                            ...this._config.compressionOptions,
+                            accessoryTokens,
+                        },
+                    );
                     messagesToSend = reduceResult.messagesToSend;
                     // console.log("Context reduced", reduceResult.compressed);
                     // Persist new summary if compression occurred

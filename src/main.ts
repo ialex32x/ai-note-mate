@@ -215,6 +215,20 @@ export default class NoteAssistantPlugin extends Plugin {
 			if ('supportsVision' in p) {
 				delete p.supportsVision;
 			}
+			// Backfill context-compression tunables introduced after the
+			// initial release. `Object.assign(DEFAULT_SETTINGS, saved)` only
+			// merges top-level keys, not per-profile fields, so older
+			// data.json files would otherwise produce `undefined` here and
+			// trip the `typeof === 'number'` checks downstream.
+			if (typeof profile.contextCompressionThreshold !== 'number') {
+				profile.contextCompressionThreshold = 0;
+			}
+			if (typeof profile.slidingWindowSize !== 'number') {
+				profile.slidingWindowSize = 0;
+			}
+			if (typeof profile.maxSummariesThreshold !== 'number') {
+				profile.maxSummariesThreshold = 0;
+			}
 		}
 
 		// Ensure activeProfileId points to a valid profile

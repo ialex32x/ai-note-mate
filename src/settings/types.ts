@@ -35,6 +35,27 @@ export interface ProviderProfile {
 	modalities: ModalityCapability[];
 	/** Max token limit for session display. 0 means unlimited. */
 	maxTokens: number;
+
+	// ── Context compression (per-profile tuning) ───────────────────────────
+	/**
+	 * Token threshold that triggers context compression for this profile.
+	 * 0 = use built-in default (32000). Recommended: ~50–60% of the model's
+	 * context window — leaves room for the response, system prompt and tool
+	 * schemas without prematurely discarding history.
+	 */
+	contextCompressionThreshold: number;
+	/**
+	 * Minimum number of most recent messages to retain after compression.
+	 * The actual count may be larger because the split point snaps backward
+	 * to the nearest turn boundary so the final tool-using turn stays intact.
+	 * 0 = use built-in default (10).
+	 */
+	slidingWindowSize: number;
+	/**
+	 * Maximum number of first-level summaries before they get merged into a
+	 * higher-level summary. 0 = use built-in default (8).
+	 */
+	maxSummariesThreshold: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
