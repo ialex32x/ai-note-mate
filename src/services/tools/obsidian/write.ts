@@ -218,8 +218,8 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "vault_delete_files",
                 description:
-                    "Move one or more files to the system trash (safe delete). " +
-                    "Files can be recovered from the OS trash if needed. " +
+                    "Move one or more files to trash (safe delete). " +
+                    "Files are moved according to the user's Obsidian \"Files & Links → Deleted files\" preference (system trash, vault .trash, or permanent), and may be recoverable depending on that setting. " +
                     "Use this when the user wants to delete, remove, or trash files from the vault. " +
                     "To delete a folder and its contents, use `vault_delete_folder` instead; " +
                     "folder paths passed here will be reported as failures without affecting other entries.",
@@ -270,7 +270,7 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
                     continue;
                 }
                 try {
-                    await plugin.app.vault.trash(fileOrErr, true);
+                    await plugin.app.fileManager.trashFile(fileOrErr);
                     deleted.push(path);
                 } catch (e) {
                     failed.push({ path, error: e instanceof Error ? e.message : String(e) });
@@ -301,7 +301,7 @@ export function vaultDeleteFolder(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "vault_delete_folder",
                 description:
                     "Delete a folder and all of its contents (files and sub-folders) from the vault. " +
-                    "Files are moved to the system trash (recoverable). " +
+                    "Items are moved to trash according to the user's Obsidian \"Files & Links → Deleted files\" preference (system trash, vault .trash, or permanent). " +
                     "Use this when the user wants to delete or remove a folder and everything inside it.",
                 parameters: {
                     type: "object",
@@ -326,16 +326,16 @@ export function vaultDeleteFolder(plugin: NoteAssistantPlugin): RegisteredTool {
             const deleteRecursive = async (f: TFolder) => {
                 for (const child of [...f.children]) {
                     if (child instanceof TFile) {
-                        await plugin.app.vault.trash(child, true);
+                        await plugin.app.fileManager.trashFile(child);
                     } else if (child instanceof TFolder) {
                         await deleteRecursive(child);
-                        await plugin.app.vault.delete(child);
+                        await plugin.app.fileManager.trashFile(child);
                     }
                 }
             };
 
             await deleteRecursive(folder);
-            await plugin.app.vault.delete(folder);
+            await plugin.app.fileManager.trashFile(folder);
             return { success: true, type: "object", content: { path } };
         },
         requiresConfirmation: true,

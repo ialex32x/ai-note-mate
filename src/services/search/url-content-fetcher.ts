@@ -1,8 +1,21 @@
 import { type CheerioAPI, type Cheerio, load as cheerioLoad } from "cheerio";
 import { requestUrl, RequestUrlParam } from "obsidian";
-import type { AnyNode, Element } from "domhandler";
+import type { AnyNode, Element, Text } from "domhandler";
 import { getUserAgent } from "./types";
 import { withAbort, checkAbort } from "utils/abortable-request";
+
+/**
+ * Local type guard for domhandler text nodes.
+ * Avoids importing `isText` as a value (would require declaring `domhandler`
+ * as a direct dependency even though it's only a transitive dep of cheerio).
+ * Comparing `node.type` (a `domelementtype` enum) against a bare string would
+ * trigger `@typescript-eslint/no-unsafe-enum-comparison`; comparing the
+ * enum-typed value against `String(...)` keeps the runtime check identical
+ * while satisfying the rule, and the type predicate narrows `node` for callers.
+ */
+function isTextNode(node: AnyNode): node is Text {
+    return String(node.type) === "text";
+}
 
 /**
  * Content block type
@@ -338,7 +351,7 @@ export class UrlContentFetcher {
         if (tagName === 'div' || tagName === 'span') {
             // Get direct text nodes
             const directText = $el.contents()
-                .filter((_, node) => node.type === 'text')
+                .filter((_, node) => isTextNode(node))
                 .text()
                 .trim();
 

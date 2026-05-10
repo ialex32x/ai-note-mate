@@ -205,8 +205,15 @@ function extractSingleQuestion(tail: string, _lowerTail: string): string | null 
     // Pick the last sentence only. Split on common sentence terminators
     // (Chinese/Japanese full stop, period, exclamation) but keep '?'/'？'
     // because we need it on the candidate.
-    const sentences = last
-        .split(/(?<=[。．.!！\n])\s*/)
+    //
+    // Implementation note: previously written as `split(/(?<=[。．.!！\n])\s*/)`
+    // using a lookbehind so the terminator stayed attached to the left chunk.
+    // Lookbehind is unsupported on iOS Safari < 16.4, so we instead match each
+    // sentence (run of non-terminator chars + an optional trailing terminator)
+    // — plus a fallback branch that matches an isolated terminator (e.g. a
+    // bare '\n' between sentences). Whitespace-only / empty pieces are then
+    // filtered out, yielding the same result as the original split.
+    const sentences = (last.match(/[^。．.!！\n]+[。．.!！\n]?|[。．.!！\n]/g) ?? [])
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
     const candidate = sentences[sentences.length - 1] ?? last;

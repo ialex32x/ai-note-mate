@@ -1,8 +1,8 @@
-import { arrayBufferToBase64 } from "obsidian";
 import OpenAI, { toFile } from "openai";
 import type NoteAssistantPlugin from "../../main";
 import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
+import { downloadAsBase64 } from "../../utils/abortable-request";
 
 /**
  * Parameters for OpenAI-compatible image generation.
@@ -36,7 +36,7 @@ export async function generateImageWithOpenAI(
         };
     }
 
-    const storedKey = await plugin.app.secretStorage.getSecret(config.apiKey);
+    const storedKey = plugin.app.secretStorage.getSecret(config.apiKey);
     const apiKey = storedKey ?? config.apiKey;
     const model = config.model || "dall-e-3";
     const baseURL = config.baseUrl || "https://api.openai.com/v1";
@@ -111,25 +111,21 @@ export async function generateImageWithOpenAI(
             };
         }
 
-        // If URL is returned instead of b64_json, we need to fetch it
+        // If URL is returned instead of b64_json, we need to download it.
+        // Use Obsidian's requestUrl (via downloadAsBase64) to bypass CORS and
+        // stay mobile-safe. Note: `requestUrl` does not support mid-flight
+        // cancellation, so an aborted signal only discards the result; the
+        // download itself will still run to completion.
         if (data.url) {
-            const imageResponse = await fetch(data.url, { signal });
-            if (!imageResponse.ok) {
-                return {
-                    success: false,
-                    error: `Failed to fetch image from URL: ${imageResponse.status}`,
-                };
-            }
-
-            const arrayBuffer = await imageResponse.arrayBuffer();
-            const base64 = arrayBufferToBase64(arrayBuffer);
-
-            const contentType = imageResponse.headers.get("content-type") || "image/png";
+            const { base64, mimeType } = await downloadAsBase64(data.url, {
+                signal,
+                fallbackMimeType: "image/png",
+            });
 
             return {
                 success: true,
                 imageData: base64,
-                mimeType: contentType,
+                mimeType,
             };
         }
 

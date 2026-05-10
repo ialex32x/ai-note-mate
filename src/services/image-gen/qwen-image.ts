@@ -1,7 +1,7 @@
-import { requestUrl, arrayBufferToBase64 } from "obsidian";
 import type NoteAssistantPlugin from "../../main";
 import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
+import { downloadAsBase64, requestUrlWithAbort } from "../../utils/abortable-request";
 
 /**
  * Parameters for Qwen image generation.
@@ -64,7 +64,7 @@ export async function generateImageWithQwen(
         };
     }
 
-    const storedKey = await plugin.app.secretStorage.getSecret(config.apiKey);
+    const storedKey = plugin.app.secretStorage.getSecret(config.apiKey);
     const apiKey = storedKey ?? config.apiKey;
     const model = config.model || "qwen-image";
 
@@ -97,20 +97,21 @@ export async function generateImageWithQwen(
     };
 
     try {
-        const response = await requestUrl({
-            url,
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${apiKey}`,
+        // NOTE: requestUrl has no native cancellation; requestUrlWithAbort only
+        // discards the result if the signal fires mid-flight (throws AbortError).
+        const response = await requestUrlWithAbort(
+            {
+                url,
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify(requestBody),
+                throw: false,
             },
-            body: JSON.stringify(requestBody),
-            throw: false,
-        });
-
-        if (signal?.aborted) {
-            return { success: false, error: "Aborted" };
-        }
+            signal,
+        );
 
         // Handle HTTP error responses with detailed error extraction
         if (response.status >= 400) {
@@ -157,21 +158,17 @@ export async function generateImageWithQwen(
             };
         }
 
-        // Fetch the image from URL
+        // Download the generated image and inline it as base64.
         const imageUrl: string = imageData.image;
-        const imageResponse = await requestUrl({
-            url: imageUrl,
-            method: "GET",
+        const { base64, mimeType } = await downloadAsBase64(imageUrl, {
+            signal,
+            fallbackMimeType: "image/png",
         });
-
-        const arrayBuffer = imageResponse.arrayBuffer;
-        const base64 = arrayBufferToBase64(arrayBuffer);
-        const contentType = imageResponse.headers?.["content-type"] || "image/png";
 
         return {
             success: true,
             imageData: base64,
-            mimeType: contentType,
+            mimeType,
         };
     } catch (err) {
         if (signal?.aborted) {
