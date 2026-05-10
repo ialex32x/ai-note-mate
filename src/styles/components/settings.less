@@ -438,16 +438,29 @@
 }
 
 // MCP Server settings
-.oap-settings-mcp-header {
-    background: @bg-modifier-hover;
-    border-radius: @radius-md;
-    padding: @spacing-sm @spacing-lg;
-    margin-top: @spacing-lg;
-    border-top: none;
+// Status dot displayed at the start of each MCP tab (before the label) to
+// surface live connection state, mirroring `.oap-profile-tab__active-dot`'s
+// placement so MCP tabs visually match other tab groups.
+.oap-mcp-tab-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: @text-faint;
+    flex-shrink: 0;
+}
 
-    &:first-of-type {
-        margin-top: 0;
-    }
+.oap-mcp-tab-dot--connected {
+    background: @text-success;
+}
+
+.oap-mcp-tab-dot--error {
+    background: @text-error;
+}
+
+.oap-mcp-tab-dot--connecting {
+    background: @text-secondary;
+    animation: spin 1s linear infinite;
 }
 
 .oap-settings-mcp-status {
