@@ -146,7 +146,17 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 const totalLines = lines.length;
 
                 if (totalLines <= LARGE_FILE_LINE_THRESHOLD) {
-                    return { success: true, type: "object", content: { path, content } };
+                    return {
+                        success: true,
+                        type: "object",
+                        content: {
+                            path,
+                            content,
+                            start_line: 1,
+                            end_line: totalLines,
+                            total_lines: totalLines,
+                        },
+                    };
                 }
 
                 // ── Large file: return outline + preview instead of full content ──
