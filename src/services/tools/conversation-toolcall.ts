@@ -15,32 +15,34 @@ export function createConversationTools(): RegisteredTool[] {
 
 /**
  * Tool to retrieve chat history by turn offset.
- * This tool is designed for situations where the conversation context has been
- * compressed (summarized) and the AI needs to access specific historical content
- * that may no longer be available in the current context window.
  *
- * Use this tool ONLY when you cannot determine the user's intent from the
- * known context (e.g., when the conversation history has been compressed and
- * you need to reference specific earlier exchanges).
+ * This tool is a context-observability primitive: it lets the model fetch the
+ * original user/assistant turns when the visible conversation has been
+ * compressed into a summary, or when the model is otherwise uncertain about
+ * what was said earlier. It must always be visible to the model (not gated by
+ * embedding-based on-demand selection), because the decision to call it is a
+ * meta-cognitive signal ("I don't remember enough") that cannot be inferred
+ * from the user's current sentence via semantic similarity.
  *
- * Recommended usage: Retrieve small batches (< 3 turns) at a time to avoid
- * overwhelming the context with redundant information.
+ * Recommended usage: retrieve small batches (1-3 turns) at a time to avoid
+ * re-flooding the context with redundant material.
  */
 function createRetrieveChatHistoryTool(): RegisteredTool {
     return {
-        ondemand: true,
+        // Always exposed to the model. See the doc comment above for rationale.
+        ondemand: false,
 
         schema: {
             type: "function",
             function: {
                 name: "retrieve_chat_history",
                 description:
-                    "Retrieve historical conversation content by turn position. " +
-                    "Use this tool ONLY when the conversation history has been compressed (summarized) " +
-                    "and you need to access specific earlier exchanges to understand the user's intent " +
-                    "or reference previous context. " +
-                    "Recommended: retrieve fewer than 3 turns at a time to keep context concise. " +
-                    "Each 'turn' represents one complete exchange (user message + assistant response).",
+                    "Retrieve the original user/assistant messages for a given turn range. " +
+                    "Call this tool whenever the visible context contains a `[Conversation Summary]` " +
+                    "block, an archived-turns notice, or you are unsure about what the user or you " +
+                    "previously said and that uncertainty might affect your next answer. " +
+                    "Prefer fetching 1-3 turns at a time, starting near the area you need to clarify. " +
+                    "Each 'turn' is one complete exchange (user message + assistant response).",
                 parameters: {
                     type: "object",
                     properties: {
