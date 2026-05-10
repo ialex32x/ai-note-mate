@@ -103,7 +103,7 @@ export class SessionSearchModal extends Modal {
                     : -1;
 
                 if (selectedIndex >= 0 && this.currentResults[selectedIndex]) {
-                    this.selectResult(this.currentResults[selectedIndex]!);
+                    this.selectResult(this.currentResults[selectedIndex]);
                 } else if (this.currentResults.length > 0) {
                     this.selectResult(this.currentResults[0]!);
                 }
@@ -274,7 +274,7 @@ export class SessionSearchModal extends Modal {
                     sessionTitle: displayTitle,
                     messageId: msg.id,
                     messageIndex: i,
-                    messageRole: msg.role as 'user' | 'assistant',
+                    messageRole: msg.role,
                     matchedContent: this.extractMatchContext(content, lowerQuery),
                     loadedOnDemand,
                 });

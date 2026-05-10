@@ -322,7 +322,7 @@ export class Embedder {
             }
             for (const [key, vec] of Object.entries(parsed.entries)) {
                 if (Array.isArray(vec)) {
-                    this.entries.set(key, vec as number[]);
+                    this.entries.set(key, vec);
                 }
             }
             // Respect maxEntries even on load, in case the persisted file is larger

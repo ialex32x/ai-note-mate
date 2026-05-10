@@ -29,11 +29,11 @@ function createRequestUrlFetch(): NonNullable<StreamableHTTPClientTransportOptio
 			if (h instanceof Headers) {
 				h.forEach((v, k) => { headers[k] = v; });
 			} else if (Array.isArray(h)) {
-				for (const [k, v] of h as [string, string][]) {
+				for (const [k, v] of h) {
 					headers[k] = v;
 				}
 			} else {
-				Object.assign(headers, h as Record<string, string>);
+				Object.assign(headers, h);
 			}
 		}
 

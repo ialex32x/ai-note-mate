@@ -187,7 +187,7 @@ export function vaultFindOrphanFiles(plugin: NoteAssistantPlugin): RegisteredToo
                     content: `Invalid kind "${kindRaw}". Must be "all", "note", or "attachment".`,
                 };
             }
-            const kind = kindRaw as "all" | "note" | "attachment";
+            const kind = kindRaw;
 
             const folderPrefixRaw = args["folder_prefix"] as string | undefined;
             const normalizedPrefix = folderPrefixRaw
@@ -205,7 +205,7 @@ export function vaultFindOrphanFiles(plugin: NoteAssistantPlugin): RegisteredToo
                     content: `Invalid sort_by "${sortByRaw}". Must be "path", "size", or "mtime".`,
                 };
             }
-            const sortBy = sortByRaw as "path" | "size" | "mtime";
+            const sortBy = sortByRaw;
 
             const sortOrderRaw = args["sort_order"] as string | undefined;
             if (sortOrderRaw !== undefined && sortOrderRaw !== "asc" && sortOrderRaw !== "desc") {
@@ -216,7 +216,7 @@ export function vaultFindOrphanFiles(plugin: NoteAssistantPlugin): RegisteredToo
                 };
             }
             const sortOrder: "asc" | "desc" = sortOrderRaw
-                ? (sortOrderRaw as "asc" | "desc")
+                ? sortOrderRaw
                 : sortBy === "path" ? "asc" : "desc";
 
             const skip = Math.max(0, (args["skip"] as number) ?? 0);

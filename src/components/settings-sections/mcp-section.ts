@@ -183,7 +183,7 @@ export class MCPSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 		if (this.editingServerId) {
 			const exists = plugin.settings.mcpServers.some(s => s.id === this.editingServerId);
-			if (exists) return this.editingServerId!;
+			if (exists) return this.editingServerId;
 		}
 		return plugin.settings.mcpServers[0]?.id ?? '';
 	}

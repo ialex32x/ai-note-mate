@@ -161,7 +161,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 		if (this.editingProfileId) {
 			const exists = plugin.settings.profiles.some(p => p.id === this.editingProfileId);
-			if (exists) return this.editingProfileId!;
+			if (exists) return this.editingProfileId;
 		}
 		return plugin.settings.activeProfileId
 			|| plugin.settings.profiles[0]?.id
@@ -237,7 +237,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		const modalityRow = container.createDiv({ cls: 'oap-capabilities-row' });
 		for (const cap of ALL_MODALITY_CAPABILITIES) {
 			const label = modalityRow.createEl('label', { cls: 'oap-capability-item' });
-			const input = label.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			const input = label.createEl('input', { type: 'checkbox' });
 			input.checked = profile.modalities?.includes(cap) ?? false;
 			label.createSpan({ cls: 'oap-capability-label', text: modalityLabels[cap] });
 			input.addEventListener('change', async () => {

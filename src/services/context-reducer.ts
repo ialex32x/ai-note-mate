@@ -436,7 +436,7 @@ export class ContextReducer {
                 ...this.ensureToolSequenceIntegrity(collapsedUnsummarized),
             ] as T[];
 
-            const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend) as T[];
+            const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend);
             ContextReducer.checkFinalBudget(sanitizedNoCompress, accessoryTokens, threshold);
             return {
                 messagesToSend: sanitizedNoCompress,
@@ -504,7 +504,7 @@ export class ContextReducer {
                 ...summaryMessages,
                 ...messagesToSummarize,
             ] as T[];
-            const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled) as T[];
+            const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled);
             ContextReducer.checkFinalBudget(sanitizedFitsWindow, accessoryTokens, threshold);
             return {
                 messagesToSend: sanitizedFitsWindow,
@@ -569,7 +569,7 @@ export class ContextReducer {
                 ...fallbackArchiveNote,
                 ...this.ensureToolSequenceIntegrity(fallbackCollapsed),
             ] as T[];
-            const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled) as T[];
+            const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled);
             ContextReducer.checkFinalBudget(sanitizedFallback, accessoryTokens, threshold);
             return {
                 messagesToSend: sanitizedFallback,
@@ -623,7 +623,7 @@ export class ContextReducer {
             ...this.ensureToolSequenceIntegrity(keptRecentMessages),
         ] as T[];
 
-        const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend) as T[];
+        const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend);
         ContextReducer.checkFinalBudget(sanitizedCompressed, accessoryTokens, threshold);
         return {
             messagesToSend: sanitizedCompressed,
@@ -853,7 +853,7 @@ export class ContextReducer {
             leadingDrop++;
         }
         if (leadingDrop > 0) {
-            messages = messages.slice(leadingDrop) as T[];
+            messages = messages.slice(leadingDrop);
             if (messages.length === 0) return messages;
         }
 
@@ -907,7 +907,7 @@ export class ContextReducer {
                             );
                             collapsedParts.push(summary);
                         }
-                        toolCallIds.delete(resultToolCallId!);
+                        toolCallIds.delete(resultToolCallId);
                     }
                     j++;
                 }
@@ -982,7 +982,7 @@ export class ContextReducer {
                             );
                             collapsedParts.push(summary);
                         }
-                        toolCallIds.delete(resultToolCallId!);
+                        toolCallIds.delete(resultToolCallId);
                     }
                     j++;
                 }
@@ -1143,7 +1143,8 @@ export class ContextReducer {
  * @param inputMessages Messages to send to the LLM
  * @returns The assistant's reply content
  */export function createChatCompletion(modelConfig: MinimalModelConfig, inputMessages: { role: string, content: string }[]): Promise<string> {
-    switch (modelConfig.type) {
+    const providerType = modelConfig.type;
+    switch (providerType) {
         case "openai":
             return createOpenAICompletion(
                 { baseURL: modelConfig.baseURL, apiKey: modelConfig.apiKey, model: modelConfig.model },
@@ -1155,7 +1156,7 @@ export class ContextReducer {
                 inputMessages,
             );
         default:
-            throw new Error(`Unknown provider type: ${(modelConfig as any).type}`);
+            throw new Error(`Unknown provider type: ${String(providerType)}`);
     }
 }
 

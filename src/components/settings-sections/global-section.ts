@@ -202,7 +202,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			const label = row.createEl('label', { cls: 'oap-capability-item' });
 			setTooltip(label, t(keys.desc), { placement: 'top' });
 
-			const input = label.createEl('input', { type: 'checkbox' }) as HTMLInputElement;
+			const input = label.createEl('input', { type: 'checkbox' });
 			input.checked = plugin.settings.allowedCapabilities.includes(cap);
 
 			label.createSpan({ cls: 'oap-capability-label', text: t(keys.label) });

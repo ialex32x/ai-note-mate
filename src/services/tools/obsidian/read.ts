@@ -360,7 +360,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
             for (const path of rawPaths) {
                 const fileOrErr = requireFile(plugin.app, path);
                 if (isFailure(fileOrErr)) {
-                    results.push({ path, error: (fileOrErr as ToolCallResult).content });
+                    results.push({ path, error: fileOrErr.content });
                     continue;
                 }
                 const file = fileOrErr;

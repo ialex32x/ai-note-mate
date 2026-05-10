@@ -127,7 +127,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 		if (this.editingEmbeddingId) {
 			const exists = plugin.settings.embeddingConfigs.some(c => c.id === this.editingEmbeddingId);
-			if (exists) return this.editingEmbeddingId!;
+			if (exists) return this.editingEmbeddingId;
 		}
 		return plugin.settings.activeEmbeddingId
 			|| plugin.settings.embeddingConfigs[0]?.id

@@ -149,7 +149,7 @@ function getLunarYearInfo(year: number): LunarYearInfo | null {
     const data = lunarData.find(d => d[0] === year);
     if (!data) return null;
 
-    const months = data.slice(1, 13).map(m => m as number);
+    const months = data.slice(1, 13);
     const leapMonth = data[13] as number;
 
     return { year, months, leapMonth };

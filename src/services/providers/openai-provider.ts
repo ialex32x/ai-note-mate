@@ -180,7 +180,7 @@ export class OpenAIProvider implements LLMProvider {
                       function: {
                           name: t.function.name,
                           description: t.function.description,
-                          parameters: t.function.parameters as Record<string, unknown>,
+                          parameters: t.function.parameters,
                       },
                   }))
                 : undefined;
@@ -207,7 +207,7 @@ export class OpenAIProvider implements LLMProvider {
                     stream_options: { include_usage: true },
                     // reasoning_effort is supported by OpenAI o-series and DeepSeek R1 models
                     ...(thinkingLevel && thinkingLevel !== "off"
-                        ? { reasoning_effort: thinkingLevel as "low" | "medium" | "high" }
+                        ? { reasoning_effort: thinkingLevel }
                         : {}),
                 },
                 { signal },

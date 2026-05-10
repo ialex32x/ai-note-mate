@@ -1,6 +1,6 @@
 import { type CheerioAPI, type Cheerio, load as cheerioLoad } from "cheerio";
 import { requestUrl, RequestUrlParam } from "obsidian";
-import type { Element } from "domhandler";
+import type { AnyNode, Element } from "domhandler";
 import { getUserAgent } from "./types";
 import { withAbort, checkAbort } from "utils/abortable-request";
 
@@ -275,7 +275,7 @@ export class UrlContentFetcher {
      */
     private extractBlocks(
         $: CheerioAPI,
-        $container: Cheerio<any>,
+        $container: Cheerio<AnyNode>,
         processedElements: Set<Element>
     ): ContentBlock[] {
         const blocks: ContentBlock[] = [];
@@ -302,7 +302,7 @@ export class UrlContentFetcher {
     /**
      * Create a content block
      */
-    private createBlock(_$: CheerioAPI, $el: Cheerio<any>, tagName: string): ContentBlock | null {
+    private createBlock(_$: CheerioAPI, $el: Cheerio<AnyNode>, tagName: string): ContentBlock | null {
         const text = $el.text().trim();
 
         // Ignore empty or too short content

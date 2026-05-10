@@ -112,7 +112,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 		if (this.editingImageGenId) {
 			const exists = plugin.settings.imageGenConfigs.some(c => c.id === this.editingImageGenId);
-			if (exists) return this.editingImageGenId!;
+			if (exists) return this.editingImageGenId;
 		}
 		return plugin.settings.activeImageGenId
 			|| plugin.settings.imageGenConfigs[0]?.id

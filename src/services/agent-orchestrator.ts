@@ -130,12 +130,12 @@ export class AgentOrchestrator implements IChatAgent {
                 // delegate_task call with the corresponding agent.
                 if (this._subAgents.has(toolName)) {
                     const task = typeof toolArgs["task"] === "string"
-                        ? toolArgs["task"] as string
+                        ? toolArgs["task"]
                         : typeof toolArgs["input"] === "string"
-                            ? toolArgs["input"] as string
+                            ? toolArgs["input"]
                             : JSON.stringify(toolArgs);
                     const taskContext = typeof toolArgs["context"] === "string"
-                        ? toolArgs["context"] as string
+                        ? toolArgs["context"]
                         : undefined;
 
                     console.warn(

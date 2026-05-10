@@ -18,13 +18,14 @@ export function createEmbeddings(
     config: MinimalModelConfig,
     texts: string[],
 ): Promise<number[][]> {
-    switch (config.type) {
+    const providerType = config.type;
+    switch (providerType) {
         case "openai":
             return createOpenAIEmbeddings(config, texts);
         case "gemini":
             return createGeminiEmbeddings(config, texts);
         default:
-            throw new Error(`Unknown provider type for embedding: ${(config as any).type}`);
+            throw new Error(`Unknown provider type for embedding: ${String(providerType)}`);
     }
 }
 

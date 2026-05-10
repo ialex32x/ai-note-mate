@@ -210,8 +210,8 @@ export class BubbleRenderer extends Component {
         // For streaming assistant messages, try to do an incremental update
         // instead of tearing down and rebuilding the entire DOM tree.
         if (msg.role === 'assistant' && msg.streaming) {
-            const existing = bubble.querySelector('.session-bubble__content') as HTMLElement | null;
-            if (existing) {
+            const existing = bubble.querySelector('.session-bubble__content');
+            if (existing instanceof HTMLElement) {
                 this.updateStreamingAssistant(bubble, existing, msg, options);
                 return;
             }
@@ -251,17 +251,17 @@ export class BubbleRenderer extends Component {
     ): void {
         // Update thinking section if present
         if (msg.thinkingContent) {
-            let thinkingWrapper = bubble.querySelector('.session-bubble__thinking') as HTMLElement | null;
-            if (thinkingWrapper) {
+            const thinkingWrapper = bubble.querySelector('.session-bubble__thinking');
+            if (thinkingWrapper instanceof HTMLElement) {
                 // Update existing thinking section body text
-                const body = thinkingWrapper.querySelector('.session-bubble__thinking-body') as HTMLElement | null;
-                if (body) body.setText(msg.thinkingContent);
+                const body = thinkingWrapper.querySelector('.session-bubble__thinking-body');
+                if (body instanceof HTMLElement) body.setText(msg.thinkingContent);
 
                 // Update streaming state
                 const thinkingComplete = msg.thinkingComplete === true || msg.streaming === false;
                 thinkingWrapper.toggleClass('session-bubble__thinking--streaming', !thinkingComplete);
-                const summary = thinkingWrapper.querySelector('.session-bubble__thinking-summary') as HTMLElement | null;
-                if (summary) summary.setText(thinkingComplete ? t('view.thinkingDone') : t('view.thinkingInProgress'));
+                const summary = thinkingWrapper.querySelector('.session-bubble__thinking-summary');
+                if (summary instanceof HTMLElement) summary.setText(thinkingComplete ? t('view.thinkingDone') : t('view.thinkingInProgress'));
             } else {
                 // Thinking section appeared for the first time — insert before content
                 const wasExpanded = options.wasThinkingExpanded ?? false;
@@ -283,7 +283,8 @@ export class BubbleRenderer extends Component {
         // Update streaming cursor.
         // The cursor is placed as a sibling AFTER contentEl (not inside it)
         // so that doRender()'s contentEl.empty() won't destroy it.
-        let cursor = bubble.querySelector('.session-bubble__cursor') as HTMLElement | null;
+        const existingCursor = bubble.querySelector('.session-bubble__cursor');
+        let cursor: HTMLElement | null = existingCursor instanceof HTMLElement ? existingCursor : null;
         if (msg.streaming) {
             if (!cursor) {
                 cursor = createEl('span', { cls: 'session-bubble__cursor', text: '▍' });

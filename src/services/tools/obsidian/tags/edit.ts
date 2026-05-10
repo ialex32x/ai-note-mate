@@ -320,7 +320,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
                         const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
                         if (fm) {
                             for (const key of ["tags", "tag"]) {
-                                const v = (fm as Record<string, unknown>)[key];
+                                const v = fm[key];
                                 if (Array.isArray(v)) fmClone[key] = [...v];
                             }
                         }
