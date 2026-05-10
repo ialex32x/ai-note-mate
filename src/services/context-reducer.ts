@@ -1142,7 +1142,7 @@ export class ContextReducer {
  * @param modelConfig API config including provider type
  * @param inputMessages Messages to send to the LLM
  * @returns The assistant's reply content
- */export async function createChatCompletion(modelConfig: MinimalModelConfig, inputMessages: { role: string, content: string }[]): Promise<string> {
+ */export function createChatCompletion(modelConfig: MinimalModelConfig, inputMessages: { role: string, content: string }[]): Promise<string> {
     switch (modelConfig.type) {
         case "openai":
             return createOpenAICompletion(

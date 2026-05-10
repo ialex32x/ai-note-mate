@@ -482,13 +482,13 @@ export class SubAgent {
                 });
                 this._currentExecToolCallEndHandler?.(this.name, args.toolName, args.toolArgs, args.result, args.isError);
             },
-            onConfirmToolCall: async (confirmArgs) => {
+            onConfirmToolCall: (confirmArgs) => {
                 // Forward confirmation requests to the main agent's UI.
                 // If no handler is wired (e.g. single-agent tests), default to approve
                 // to preserve previous behaviour.
                 const handler = this._currentExecConfirmToolCall;
                 if (!handler) {
-                    return true;
+                    return Promise.resolve(true);
                 }
                 return handler(confirmArgs);
             },

@@ -103,7 +103,7 @@ export function registerRewriteSelection(
                             s.setTitle(t(`editHistory.action.${action}`));
                             s.setIcon(ACTION_ICONS[action]);
                             s.onClick(() => {
-                                void startRewriteFromEditor(plugin, store, action, editor, revealView, info);
+                                startRewriteFromEditor(plugin, store, action, editor, revealView, info);
                             });
                         });
                     }
@@ -135,7 +135,7 @@ export function registerRewriteSelection(
             name: t(`editHistory.command.${action}`),
             icon: ACTION_ICONS[action],
             editorCallback: (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
-                void startRewriteFromEditor(plugin, store, action, editor, revealView, ctx);
+                startRewriteFromEditor(plugin, store, action, editor, revealView, ctx);
             },
         });
     }
@@ -145,14 +145,14 @@ export function registerRewriteSelection(
  * Validate the editor state, snapshot the selection, enqueue a task and
  * launch the runner. All user-facing errors surface via `Notice`.
  */
-async function startRewriteFromEditor(
+function startRewriteFromEditor(
     plugin: NoteAssistantPlugin,
     store: EditHistoryStore,
     action: EditAction,
     editor: Editor,
     revealView: () => Promise<void>,
     ctx?: MarkdownView | MarkdownFileInfo,
-): Promise<void> {
+): void {
     const selection = editor.getSelection();
     if (!selection || !selection.trim()) {
         new Notice(t("editHistory.notice.emptySelection"));

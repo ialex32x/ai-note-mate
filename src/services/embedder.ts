@@ -130,8 +130,8 @@ export class Embedder {
      * If the persisted signature does not match the current config, the cache
      * is treated as empty (the stale file will be overwritten on next flush).
      */
-    async load(): Promise<void> {
-        if (this.loaded) return;
+    load(): Promise<void> {
+        if (this.loaded) return Promise.resolve();
         if (this.loadPromise) return this.loadPromise;
         this.loadPromise = this.doLoad().finally(() => {
             this.loaded = true;

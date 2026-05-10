@@ -324,7 +324,7 @@ export function createActiveDropdown<T extends TabItem>(
 				dropdown.addOption(item.id, label);
 			}
 			dropdown.setValue(activeId);
-			dropdown.onChange(async (value: string) => {
+			dropdown.onChange((value: string) => {
 				onChange(value);
 			});
 		});

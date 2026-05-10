@@ -14,7 +14,7 @@ import { MinimalModelConfig } from "./llm-provider";
  * @param texts Array of text strings to embed
  * @returns Array of embedding vectors (each is a number array)
  */
-export async function createEmbeddings(
+export function createEmbeddings(
     config: MinimalModelConfig,
     texts: string[],
 ): Promise<number[][]> {
