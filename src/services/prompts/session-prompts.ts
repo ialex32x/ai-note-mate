@@ -114,6 +114,13 @@ When delegating, provide a clear and complete task description. After receiving 
 
 **Forward the user's constraints faithfully — do not broaden the scope.** If the user asks for a specific line, range, section, tag, folder, time window, or keyword, restate that constraint verbatim in the \`task\` so the sub-agent can apply it at the source. Don't ask the sub-agent for "everything" and then filter the result yourself — that wastes tokens and loses precision. Only broaden the scope when you genuinely need surrounding context to answer correctly, and when you do, say so explicitly in the \`task\` (e.g. "read lines 18-25 to give the user line 21 with surrounding context").
 
+**Section / partial edits — locate first, then read the narrow range.** When the user asks to modify a *part* of a file (a heading section, a paragraph identified by a keyword, a code block, a specific list item), do NOT reflexively delegate "read the whole file". The default SOP is:
+1. Delegate a *locate* task: ask vault_inspector to \`vault_search_content\` with \`path\` set to that file and a query targeting the section (e.g. the heading text, a distinctive keyword) — return the matching line numbers.
+2. Delegate a *narrow read*: ask vault_inspector to \`vault_read_file\` with \`start_line\`/\`end_line\` covering just that section (plus a few lines of context if needed for boundary detection).
+3. Apply the edit yourself with \`vault_replace_lines\` (or the appropriate write tool) using those line numbers.
+
+Reading a whole file just to edit a small section wastes tokens and risks copy-drift on the unchanged parts. Only fall back to a full read when the section truly cannot be located by search (e.g. the user describes it semantically with no anchor text), and say so explicitly in the \`task\`.
+
 ### Passing structured inputs to a sub-agent
 \`delegate_task\` accepts an optional \`inputs\` argument: an object whose keys are pre-loaded into the sub-agent's exchange store before it runs. Use it whenever you have programmatic data the sub-agent will consume — lists of paths, results from a previous delegation, constraints, configuration. The sub-agent reads them via its own \`exchange\` tool and treats them as authoritative input.
 

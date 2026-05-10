@@ -110,6 +110,7 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 - For "what did I edit recently", prefer \`vault_list_files_sorted\` over recursive listing.
 - For finding which notes carry a tag, use \`vault_search_by_tag\` (do not grep file contents).
 - Avoid reading individual files just to compute aggregates — prefer \`vault_get_overview\` / \`vault_list_files_sorted\` / \`vault_search_by_tag\` for aggregate queries.
+- For "find / locate a specific section, heading, paragraph, or keyword inside a known file", use \`vault_search_content\` with \`path\` set to that file FIRST to get line numbers, then call \`vault_read_file\` with \`start_line\`/\`end_line\` to read just that slice. Do NOT read the whole file just to locate a section — it wastes tokens and the main agent only needs the narrow range to perform an edit. Only fall back to a full read when no anchor text is available to search on.
 ${READING_INPUTS_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
