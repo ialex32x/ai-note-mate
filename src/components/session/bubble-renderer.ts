@@ -462,6 +462,14 @@ export class BubbleRenderer extends Component {
             controller.setAfterRenderCallback((el) => {
                 attachImageContextMenu(this.ctx, el);
                 attachLinkContextMenu(this.ctx, el);
+                // The streaming renderer runs asynchronously (markdown render
+                // is async + throttled ~100ms), so the DOM mutation that
+                // grows the bubble happens LATER than the synchronous
+                // onScrollNeeded() call in renderInto(). If we don't also
+                // re-trigger auto-scroll here, the view stays pinned to the
+                // old scroll position and never follows the newly appended
+                // content.
+                this.onScrollNeeded();
             });
             this.streamingControllers.set(messageId, controller);
         }
