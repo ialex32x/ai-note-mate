@@ -1,8 +1,6 @@
-import { TFile } from "obsidian";
 import type NoteAssistantPlugin from "../../../main";
 import type { RegisteredTool } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";
-import { isFailure, requireFile } from "./_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: vault_search_files
@@ -64,6 +62,11 @@ export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: vault_search_content
+//
+// Vault-wide full-text search across all markdown files. Intentionally has
+// NO single-file mode — when the file is already known, callers must use
+// `vault_grep_file` instead, which is far cheaper and supports section
+// anchoring + multi-query OR.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -75,12 +78,12 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
             function: {
                 name: "vault_search_content",
                 description:
-                    "Full-text search inside file contents. " +
-                    "By default searches across all markdown files in the vault. " +
-                    "Optionally specify a path to search within a single file only (any file type, not just markdown). " +
+                    "Vault-wide full-text search across ALL markdown files. " +
                     "Returns matching files with line numbers and surrounding context lines. " +
-                    "Use this when the user wants to find text, content, or keywords inside notes " +
-                    "(not just by filename), or search within file contents.",
+                    "Use this when the user wants to find text, content, or keywords across the whole vault " +
+                    "(not just by filename) and the target file is unknown. " +
+                    "DO NOT use this to search inside a single known file — use `vault_grep_file` instead, " +
+                    "which is much cheaper, supports multiple queries at once, and can be scoped to a heading section.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -95,13 +98,6 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                             description:
                                 "If true, treat query as a JavaScript regular expression pattern. " +
                                 "Defaults to false (plain text search).",
-                        },
-                        path: {
-                            type: "string",
-                            description:
-                                "Vault-relative path to a specific file to search in. " +
-                                "When provided, only this file is searched (any file type). " +
-                                "Omit to search across all markdown files in the vault.",
                         },
                         case_sensitive: {
                             type: "boolean",
@@ -128,9 +124,7 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
             const caseSensitive = (args["case_sensitive"] as boolean) ?? false;
             const limit = (args["limit"] as number) ?? 10;
             const contextLines = (args["context_lines"] as number) ?? 2;
-
             const useRegex = (args["use_regex"] as boolean) ?? false;
-            const targetPath = args["path"] as string | undefined;
 
             // Build matcher
             let matchLine: (line: string) => boolean;
@@ -157,15 +151,7 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                 };
             }
 
-            // Determine which files to search
-            let filesToSearch: TFile[];
-            if (targetPath) {
-                const fileOrErr = requireFile(plugin.app, targetPath);
-                if (isFailure(fileOrErr)) return fileOrErr;
-                filesToSearch = [fileOrErr];
-            } else {
-                filesToSearch = plugin.app.vault.getMarkdownFiles();
-            }
+            const filesToSearch = plugin.app.vault.getMarkdownFiles();
 
             const matches: {
                 path: string;

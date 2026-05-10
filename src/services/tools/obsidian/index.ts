@@ -9,6 +9,7 @@ import {
     vaultResolveLink,
 } from "./read";
 import { vaultBrowseDirectory } from "./browse";
+import { vaultGrepFile } from "./grep";
 import { vaultSearchContent, vaultSearchFiles } from "./search";
 import {
     vaultAppendFile,
@@ -116,6 +117,7 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
         // Search
         vaultSearchFiles(plugin),
         vaultSearchContent(plugin),
+        vaultGrepFile(plugin),
         // Overview
         vaultGetOverview(plugin),
         vaultListFilesSorted(plugin),

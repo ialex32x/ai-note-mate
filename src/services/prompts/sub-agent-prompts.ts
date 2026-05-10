@@ -110,7 +110,7 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 - For "what did I edit recently", prefer \`vault_list_files_sorted\` over recursive listing.
 - For finding which notes carry a tag, use \`vault_search_by_tag\` (do not grep file contents).
 - Avoid reading individual files just to compute aggregates — prefer \`vault_get_overview\` / \`vault_list_files_sorted\` / \`vault_search_by_tag\` for aggregate queries.
-- For "find / locate a specific section, heading, paragraph, or keyword inside a known file", use \`vault_search_content\` with \`path\` set to that file FIRST to get line numbers, then call \`vault_read_file\` with \`start_line\`/\`end_line\` to read just that slice. Do NOT read the whole file just to locate a section — it wastes tokens and the main agent only needs the narrow range to perform an edit. Only fall back to a full read when no anchor text is available to search on.
+- For "find / locate a specific section, heading, paragraph, or keyword inside a known file", use \`vault_grep_file\` with that file's path and the anchor string(s) FIRST to get line numbers, then call \`vault_read_file\` with \`start_line\`/\`end_line\` to read just that slice. Pass several anchors in \`queries\` at once (OR semantics) when the user has given multiple — do NOT spawn one grep call per anchor. Do NOT read the whole file just to locate a section — it wastes tokens and the main agent only needs the narrow range to perform an edit. Only fall back to a full read when no anchor text is available to grep on. Reserve \`vault_search_content\` for vault-wide searches when the target file is unknown.
 ${READING_INPUTS_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
