@@ -30,7 +30,6 @@ import { collectVaultTags } from '../services/insights';
 import {
     createProfileSelector, type ProfileSelectorHandle,
     createCapabilitiesSelector, type CapabilitiesSelectorHandle,
-    createMcpSelector, type McpSelectorHandle,
 } from '../components/session/toolbar';
 import { CMInput } from '../components/cm-input';
 import {
@@ -97,7 +96,6 @@ export class SessionView extends ItemView {
     // ── Toolbar selectors ────────────────────────────────────────────────────────────
     private profileSelector!: ProfileSelectorHandle;
     private capabilitiesSelector!: CapabilitiesSelectorHandle;
-    private mcpSelector!: McpSelectorHandle;
     /** Settings-change listener that keeps the capabilities toolbar in sync. */
     private onSettingsChangedForCapabilities: (() => void) | null = null;
 
@@ -145,7 +143,6 @@ export class SessionView extends ItemView {
                 generationMatches: () => this.chatGeneration === generation,
                 getDynamicTools: () => buildDynamicTools(this.plugin, {
                     hasContextCompressed: this.hasContextCompressed,
-                    enabledMcpServers: this.mcpSelector.getEnabledServers(),
                 }),
                 ...buildChatAgentCallbacks({
                     setStreaming: (v) => { this.isStreaming = v; },
@@ -491,9 +488,6 @@ export class SessionView extends ItemView {
             };
             this.plugin.onSettingsChange(this.onSettingsChangedForCapabilities);
 
-            // ── MCP tools selector (using DropdownManager) ──────────────────────────
-            this.mcpSelector = createMcpSelector(thinkingRow, this.plugin, this.dropdownManager);
-
             // ── Restore session UI from cache ────────────────────────────────
             await this.restoreSessionUI();
         } catch (error) {
@@ -506,7 +500,6 @@ export class SessionView extends ItemView {
         this.draftController.clearTimer();
 
         this.profileSelector.dispose();
-        this.mcpSelector.dispose();
         if (this.onSettingsChangedForCapabilities) {
             this.plugin.offSettingsChange(this.onSettingsChangedForCapabilities);
             this.onSettingsChangedForCapabilities = null;
@@ -631,8 +624,6 @@ export class SessionView extends ItemView {
 
         // Clear draft save timer and reset draft state
         this.draftController.reset();
-
-        this.mcpSelector.reset();
 
         this.followUpBar?.hide();
         this.insightCard?.hide();

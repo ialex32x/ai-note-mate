@@ -137,22 +137,25 @@ export class MCPManager {
 	}
 
 	/**
-	 * Get `RegisteredTool[]` from connected servers, filtered by session state.
+	 * Get `RegisteredTool[]` for all currently usable MCP tools.
 	 *
-	 * @param enabledServerIds  Servers enabled for this session
+	 * Filtering is driven entirely by global plugin settings:
+	 * - Server-level: `MCPServerConfig.enabled` (toggled in the MCP settings
+	 *   section) — must be `true` AND the underlying client must be connected.
+	 * - Tool-level: `MCPToolConfig.enabled` (toggled per tool in the same
+	 *   settings section) — defaults to enabled if no entry exists yet.
 	 */
-	getRegisteredTools(
-		enabledServerIds: Set<string>,
-	): RegisteredTool[] {
+	getRegisteredTools(): RegisteredTool[] {
 		const tools: RegisteredTool[] = [];
 
 		for (const [serverId, client] of this.clients) {
 			if (!client.connected) continue;
-			if (!enabledServerIds.has(serverId)) continue;
 
 			const state = this._states.get(serverId);
-			const serverName = state?.config.name ?? serverId;
-			const toolConfigs = state?.config.tools;
+			if (!state || !state.config.enabled) continue;
+
+			const serverName = state.config.name ?? serverId;
+			const toolConfigs = state.config.tools;
 
 			for (const tool of client.tools) {
 				// Per-tool opt-out: skip tools the user has disabled in config.

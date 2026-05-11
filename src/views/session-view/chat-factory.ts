@@ -240,7 +240,6 @@ export function buildDynamicTools(
     plugin: NoteAssistantPlugin,
     opts: {
         hasContextCompressed: boolean;
-        enabledMcpServers: Set<string>;
     },
 ): ReturnType<typeof createBuiltinTools> {
     const tools: ReturnType<typeof createBuiltinTools> = [];
@@ -258,7 +257,9 @@ export function buildDynamicTools(
     }
 
     if (plugin.mcpManager) {
-        tools.push(...plugin.mcpManager.getRegisteredTools(opts.enabledMcpServers));
+        // MCP server/tool enablement is sourced entirely from plugin settings
+        // (server.enabled + per-tool toggle). No per-session selector exists.
+        tools.push(...plugin.mcpManager.getRegisteredTools());
     }
     return tools;
 }
