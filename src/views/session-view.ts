@@ -10,7 +10,7 @@ import {
     Menu,
 } from 'obsidian';
 import { ChatMessage, IChatAgent } from '../services/chat-stream';
-import { getActiveProfile } from '../settings';
+import { getActiveEmbeddingConfig, getActiveProfile } from '../settings';
 import { exportSessionToVault } from '../services/session-exporter';
 import { ALL_TOOL_CAPABILITIES } from '../services/llm-provider';
 import NoteAssistantPlugin from 'main';
@@ -21,6 +21,7 @@ import {
     DropdownManager,
     BubbleRenderer,
     SessionStatusDisplay,
+    type EmbeddingPanelInfo,
     DraftInputController,
     FollowUpBar,
     InsightCard,
@@ -270,6 +271,7 @@ export class SessionView extends ItemView {
                             this.chat,
                             max,
                             this.plugin.mcpManager,
+                            this.computeEmbeddingPanelInfo(),
                         );
                     } else {
                         this.sessionStatusPanelEl.empty();
@@ -512,6 +514,7 @@ export class SessionView extends ItemView {
                     this.chat,
                     max,
                     this.plugin.mcpManager,
+                    this.computeEmbeddingPanelInfo(),
                 );
             };
             this.plugin.mcpManager?.onChange(this.onMcpStateChangedForStatusPanel);
@@ -1217,8 +1220,38 @@ export class SessionView extends ItemView {
                 this.chat,
                 max,
                 this.plugin.mcpManager,
+                this.computeEmbeddingPanelInfo(),
             );
         }
+    }
+
+    /**
+     * Snapshot of the embedding feature's high-level state for the
+     * session-status panel. We only consider it "configured" when both the
+     * active config exists and its required credentials are non-empty:
+     *
+     *   - For Gemini, only `apiKey` is required (`baseUrl` is ignored).
+     *   - For OpenAI-compatible providers, both `baseUrl` and `apiKey`.
+     *
+     * Note: `getActiveEmbeddingConfig()` already returns `null` when the
+     * feature is disabled in settings, so we can't rely on it alone to tell
+     * disabled apart from unconfigured — we read `embeddingEnabled` directly.
+     */
+    private computeEmbeddingPanelInfo(): EmbeddingPanelInfo {
+        const settings = this.plugin.settings;
+        const enabled = settings.embeddingEnabled;
+        if (!enabled) {
+            return { enabled: false, configured: false };
+        }
+        const config = getActiveEmbeddingConfig(settings);
+        if (!config) {
+            return { enabled: true, configured: false };
+        }
+        const apiKey = config.apiKey?.trim() ?? '';
+        const baseUrl = config.baseUrl?.trim() ?? '';
+        const needsBaseUrl = config.type !== 'gemini';
+        const configured = apiKey.length > 0 && (!needsBaseUrl || baseUrl.length > 0);
+        return { enabled: true, configured };
     }
 
     private appendErrorBubble(message: string) {

@@ -7,6 +7,29 @@ import type { MCPServerStatus } from '../../services/mcp/mcp-types';
 import { humanizeIdentifier } from '../../utils/humanize';
 
 /**
+ * High-level embedding state as seen from the session-status panel. This
+ * combines static configuration (settings) with the runtime
+ * {@link EmbedderStatus} so the UI can show a single, user-meaningful value:
+ *
+ * - `disabled`     — the user turned the feature off in settings.
+ * - `unconfigured` — the feature is enabled, but the active config is missing
+ *                    (no active config, or a required field such as
+ *                    `baseUrl` / `apiKey` is empty).
+ * - everything else — fall through to the runtime embedder status.
+ */
+export interface EmbeddingPanelInfo {
+    /** `true` when `embeddingEnabled` is on in plugin settings. */
+    enabled: boolean;
+    /**
+     * `true` when the active embedding config exists and has all required
+     * credentials filled in. For Gemini, only `apiKey` is required; for
+     * OpenAI-compatible providers, both `baseUrl` and `apiKey` are required.
+     * Ignored when {@link enabled} is `false`.
+     */
+    configured: boolean;
+}
+
+/**
  * Session status display (top toolbar).
  *
  * - `render()` renders the compact top-toolbar indicator (token usage).
@@ -69,6 +92,7 @@ export class SessionStatusDisplay {
         chat: IChatAgent,
         maxTokens: number,
         mcpManager?: MCPManager | null,
+        embeddingInfo?: EmbeddingPanelInfo,
     ): void {
         el.empty();
 
@@ -129,17 +153,44 @@ export class SessionStatusDisplay {
             const summariesCount = chat.summaries?.length ?? 0;
             this.renderRow(section, t('statusLabel.summaries'), summariesCount.toLocaleString());
 
-            // Embedder status: shown as an icon only (no localized text).
-            // A tooltip on hover conveys the textual meaning of the state.
-            // Only rendered when the embedder singleton has been initialized.
-            const embedder = getGlobalEmbedder();
-            if (embedder) {
-                this.renderIconRow(
+            // Embedder status row.
+            //
+            // Display priority (highest first):
+            //   1. `disabled`     — user turned the feature off in settings.
+            //   2. `unconfigured` — feature is on, but credentials are missing.
+            //   3. runtime embedder status (`unused` / `ok` / `unavailable`),
+            //      shown as an icon with a tooltip describing the state.
+            //
+            // (1) and (2) are static states derived from settings, so they are
+            // rendered as plain localized text rather than an icon, since
+            // they're not really "live" indicators.
+            if (embeddingInfo && !embeddingInfo.enabled) {
+                this.renderRow(
                     section,
                     t('statusLabel.embedding'),
-                    this.iconForEmbedderStatus(embedder.status),
-                    this.tooltipForEmbedderStatus(embedder.status, embedder.lastErrorMessage),
+                    t('statusValue.embeddingDisabled'),
+                    t('statusTooltip.embeddingDisabled'),
                 );
+            } else if (embeddingInfo && !embeddingInfo.configured) {
+                this.renderRow(
+                    section,
+                    t('statusLabel.embedding'),
+                    t('statusValue.embeddingUnconfigured'),
+                    t('statusTooltip.embeddingUnconfigured'),
+                );
+            } else {
+                // Runtime status: shown as an icon only (no localized text).
+                // A tooltip on hover conveys the textual meaning of the state.
+                // Only rendered when the embedder singleton has been initialized.
+                const embedder = getGlobalEmbedder();
+                if (embedder) {
+                    this.renderIconRow(
+                        section,
+                        t('statusLabel.embedding'),
+                        this.iconForEmbedderStatus(embedder.status),
+                        this.tooltipForEmbedderStatus(embedder.status, embedder.lastErrorMessage),
+                    );
+                }
             }
         });
 
