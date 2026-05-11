@@ -98,6 +98,12 @@ export class SessionView extends ItemView {
     private capabilitiesSelector!: CapabilitiesSelectorHandle;
     /** Settings-change listener that keeps the capabilities toolbar in sync. */
     private onSettingsChangedForCapabilities: (() => void) | null = null;
+    /**
+     * MCP-manager change listener that refreshes the session-status panel
+     * while it is open, so connection/disconnection events update live
+     * without requiring the user to reopen the panel.
+     */
+    private onMcpStateChangedForStatusPanel: (() => void) | null = null;
 
     // ── Context compression tracking ────────────────────────────────
     /** Whether context compression has occurred in this session */
@@ -259,7 +265,12 @@ export class SessionView extends ItemView {
                 onOpen: () => {
                     if (this.chat) {
                         const max = getActiveProfile(this.plugin.settings).maxTokens;
-                        SessionStatusDisplay.renderPanel(this.sessionStatusPanelEl, this.chat, max);
+                        SessionStatusDisplay.renderPanel(
+                            this.sessionStatusPanelEl,
+                            this.chat,
+                            max,
+                            this.plugin.mcpManager,
+                        );
                     } else {
                         this.sessionStatusPanelEl.empty();
                     }
@@ -488,6 +499,23 @@ export class SessionView extends ItemView {
             };
             this.plugin.onSettingsChange(this.onSettingsChangedForCapabilities);
 
+            // Reflect live MCP connection state in the session-status panel
+            // while it is open. The panel is also refreshed on demand from
+            // `updateSessionStatusDisplay()`; this listener covers state
+            // transitions that happen independently of token-usage updates.
+            this.onMcpStateChangedForStatusPanel = () => {
+                if (!this.chat) return;
+                if (!this.dropdownManager.isActive(this.sessionStatusEl)) return;
+                const max = getActiveProfile(this.plugin.settings).maxTokens;
+                SessionStatusDisplay.renderPanel(
+                    this.sessionStatusPanelEl,
+                    this.chat,
+                    max,
+                    this.plugin.mcpManager,
+                );
+            };
+            this.plugin.mcpManager?.onChange(this.onMcpStateChangedForStatusPanel);
+
             // ── Restore session UI from cache ────────────────────────────────
             await this.restoreSessionUI();
         } catch (error) {
@@ -503,6 +531,10 @@ export class SessionView extends ItemView {
         if (this.onSettingsChangedForCapabilities) {
             this.plugin.offSettingsChange(this.onSettingsChangedForCapabilities);
             this.onSettingsChangedForCapabilities = null;
+        }
+        if (this.onMcpStateChangedForStatusPanel) {
+            this.plugin.mcpManager?.offChange(this.onMcpStateChangedForStatusPanel);
+            this.onMcpStateChangedForStatusPanel = null;
         }
         if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
@@ -1180,7 +1212,12 @@ export class SessionView extends ItemView {
         SessionStatusDisplay.render(this.sessionStatusMainEl, this.chat, max);
         // Keep the panel in sync when it is currently open.
         if (this.dropdownManager.isActive(this.sessionStatusEl)) {
-            SessionStatusDisplay.renderPanel(this.sessionStatusPanelEl, this.chat, max);
+            SessionStatusDisplay.renderPanel(
+                this.sessionStatusPanelEl,
+                this.chat,
+                max,
+                this.plugin.mcpManager,
+            );
         }
     }
 

@@ -2,6 +2,9 @@ import { setIcon, setTooltip } from 'obsidian';
 import { t } from '../../i18n';
 import type { IChatAgent } from '../../services/chat-stream';
 import { getGlobalEmbedder, type EmbedderStatus } from '../../services/embedder';
+import type { MCPManager } from '../../services/mcp/mcp-manager';
+import type { MCPServerStatus } from '../../services/mcp/mcp-types';
+import { humanizeIdentifier } from '../../utils/humanize';
 
 /**
  * Session status display (top toolbar).
@@ -54,8 +57,19 @@ export class SessionStatusDisplay {
      * `.session-dropdown-menu .session-dropdown-menu--toolbar .session-status-panel`).
      *
      * Adding a new section: push another block inside this method.
+     *
+     * @param mcpManager  Optional MCP manager. When provided, an "MCP servers"
+     *                    section is appended that lists each configured server
+     *                    and its current connection status. This is a live
+     *                    view only (not persisted) — the panel is re-rendered
+     *                    on demand from the manager's current state.
      */
-    static renderPanel(el: HTMLElement, chat: IChatAgent, maxTokens: number): void {
+    static renderPanel(
+        el: HTMLElement,
+        chat: IChatAgent,
+        maxTokens: number,
+        mcpManager?: MCPManager | null,
+    ): void {
         el.empty();
 
         const usage = chat.sessionTokenUsage;
@@ -101,7 +115,7 @@ export class SessionStatusDisplay {
                 for (const [name, u] of Object.entries(breakdown.subAgents)) {
                     this.renderRow(
                         section,
-                        name,
+                        humanizeIdentifier(name),
                         this.formatCompact(u.totalTokens),
                         u.totalTokens.toLocaleString(),
                     );
@@ -128,6 +142,27 @@ export class SessionStatusDisplay {
                 );
             }
         });
+
+        // ── MCP servers section ──────────────────────────────────────────
+        // Display-only view of configured MCP servers and their live
+        // connection status. Sourced from `MCPManager` rather than the
+        // chat session — this is not part of session persistence; we just
+        // re-use the panel surface to expose runtime status.
+        if (mcpManager) {
+            const states = mcpManager.getServerStates();
+            if (states.length > 0) {
+                this.renderSection(el, t('status.mcpSection'), (section) => {
+                    for (const state of states) {
+                        this.renderIconRow(
+                            section,
+                            state.config.name || state.config.id,
+                            this.iconForMcpStatus(state.status),
+                            this.tooltipForMcpStatus(state.status, state.error),
+                        );
+                    }
+                });
+            }
+        }
     }
 
     // ── Internal helpers ────────────────────────────────────────────────
@@ -164,6 +199,46 @@ export class SessionStatusDisplay {
             }
             case 'unused':
             default: return t('statusTooltip.embeddingUnused');
+        }
+    }
+
+    /**
+     * Map an {@link MCPServerStatus} to a Lucide icon id.
+     * Mirrors the visual language used elsewhere for connection states:
+     *   connected     -> check-circle
+     *   connecting    -> loader (spinning is not animated here; status is
+     *                    conveyed by shape + tooltip)
+     *   error         -> alert-circle
+     *   disconnected  -> circle-dashed
+     */
+    private static iconForMcpStatus(status: MCPServerStatus): string {
+        switch (status) {
+            case 'connected': return 'check-circle';
+            case 'connecting': return 'loader';
+            case 'error': return 'alert-circle';
+            case 'disconnected':
+            default: return 'circle-dashed';
+        }
+    }
+
+    /**
+     * Localized tooltip text for an {@link MCPServerStatus}.
+     * For `error`, the server-reported message (if any) is appended on a
+     * new line so users can diagnose connection failures.
+     */
+    private static tooltipForMcpStatus(
+        status: MCPServerStatus,
+        errorMessage?: string | null,
+    ): string {
+        switch (status) {
+            case 'connected': return t('statusTooltip.mcpConnected');
+            case 'connecting': return t('statusTooltip.mcpConnecting');
+            case 'error': {
+                const base = t('statusTooltip.mcpError');
+                return errorMessage ? `${base}\n${errorMessage}` : base;
+            }
+            case 'disconnected':
+            default: return t('statusTooltip.mcpDisconnected');
         }
     }    private static renderSection(
         parent: HTMLElement,
