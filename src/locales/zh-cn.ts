@@ -237,6 +237,8 @@ export const zhCN: Record<string, string> = {
 	'settings.mcpReconnect': '重新连接',
 	'settings.mcpUseRequestUrl': '使用 requestUrl',
 	'settings.mcpUseRequestUrlDesc': '使用 Obsidian 的 requestUrl 替代原生 fetch，以绕过 CORS 限制。注意：SSE 响应将缓存至服务器关闭连接后才能处理。',
+	'settings.mcpToolsEmpty': '尚未发现任何工具。连接服务器后会自动填充列表。',
+	'settings.mcpToolNoDescription': '未提供描述。',
 
 	'mcp.serverNotConnected': 'MCP 服务器未连接',
 

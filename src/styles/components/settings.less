@@ -507,6 +507,36 @@
     }
 }
 
+// MCP tools — per-server, user-toggleable list of tools synced from the
+// server on each successful connect. Tool rows are rendered as plain
+// `Setting`s in the same container as the rest of the server fields so
+// horizontal alignment naturally matches; we only style the row content
+// (monospace name, placeholder description, disabled state).
+.oap-mcp-tools-empty {
+    color: @text-faint;
+    font-size: var(--font-ui-small);
+    padding: @spacing-sm 0;
+}
+
+.oap-mcp-tool {
+    .setting-item-name {
+        font-family: var(--font-monospace);
+        font-size: var(--font-ui-small);
+    }
+
+    .setting-item-description.is-placeholder {
+        color: @text-faint;
+        font-style: italic;
+    }
+
+    &.is-disabled {
+        .setting-item-name,
+        .setting-item-description {
+            opacity: 0.55;
+        }
+    }
+}
+
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }

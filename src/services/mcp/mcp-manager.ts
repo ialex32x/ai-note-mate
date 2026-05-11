@@ -1,4 +1,4 @@
-import type { IMCPClient, MCPServerConfig, MCPServerState, MCPToolInfo } from './mcp-types';
+import type { IMCPClient, MCPServerConfig, MCPServerState, MCPToolConfig, MCPToolInfo } from './mcp-types';
 import type { RegisteredTool, ToolCallResult } from '../chat-stream';
 import { SdkMCPClient } from './sdk-mcp-client';
 import type NoteAssistantPlugin from '../../main';
@@ -15,6 +15,25 @@ function sanitizeForToolName(str: string): string {
 		.replace(/[^a-z0-9_-]/g, '_')
 		.replace(/_+/g, '_')
 		.replace(/^_|_$/g, '');
+}
+
+/** Look up whether a tool is enabled in a persisted config list. Missing → true. */
+function isToolEnabledInConfig(list: MCPToolConfig[], name: string): boolean {
+	const entry = list.find(t => t.name === name);
+	return entry ? entry.enabled : true;
+}
+
+/** Shallow compare two tool config lists (order, name, description, enabled). */
+function toolsConfigChanged(a: MCPToolConfig[], b: MCPToolConfig[]): boolean {
+	if (a.length !== b.length) return true;
+	for (let i = 0; i < a.length; i++) {
+		const x = a[i]!;
+		const y = b[i]!;
+		if (x.name !== y.name || x.enabled !== y.enabled || (x.description ?? '') !== (y.description ?? '')) {
+			return true;
+		}
+	}
+	return false;
 }
 
 /**
@@ -133,8 +152,12 @@ export class MCPManager {
 
 			const state = this._states.get(serverId);
 			const serverName = state?.config.name ?? serverId;
+			const toolConfigs = state?.config.tools;
 
 			for (const tool of client.tools) {
+				// Per-tool opt-out: skip tools the user has disabled in config.
+				// If no entry exists yet (e.g., race before first sync), default to enabled.
+				if (toolConfigs && !isToolEnabledInConfig(toolConfigs, tool.name)) continue;
 				tools.push(this._toRegisteredTool(serverId, serverName, tool));
 			}
 		}
@@ -188,10 +211,86 @@ export class MCPManager {
 			url: '',
 			enabled: true,
 			apiKey: '',
+			tools: [],
 		};
 	}
 
+	/**
+	 * Toggle a single tool's enabled state on a server and persist the change.
+	 * Safe to call before any successful connection — a config entry will be
+	 * created if missing.
+	 */
+	async setToolEnabled(serverId: string, toolName: string, enabled: boolean): Promise<void> {
+		const state = this._states.get(serverId);
+		if (!state) return;
+
+		const config = state.config;
+		const list = config.tools ?? (config.tools = []);
+		const entry = list.find(t => t.name === toolName);
+		if (entry) {
+			if (entry.enabled === enabled) return;
+			entry.enabled = enabled;
+		} else {
+			list.push({ name: toolName, enabled });
+		}
+
+		this._persistConfig(config);
+		await this.plugin.saveSettings();
+		this._emit();
+	}
+
 	// ── Private ──────────────────────────────────────────
+
+	/**
+	 * Sync the live tool list returned by the server into the persisted
+	 * `config.tools` array.
+	 *
+	 * Rules:
+	 * - Existing entries: keep `enabled`, refresh `description`.
+	 * - New entries: appended with `enabled: true`.
+	 * - Stale entries (no longer reported by server): removed.
+	 *
+	 * If the merged result differs from the previous one, the change is
+	 * written back to `plugin.settings.mcpServers` and persisted via
+	 * `plugin.saveSettings()`.
+	 */
+	private async _syncToolsToConfig(config: MCPServerConfig, liveTools: MCPToolInfo[]): Promise<void> {
+		const previous = config.tools ?? [];
+		const previousByName = new Map(previous.map(t => [t.name, t]));
+
+		const merged: MCPToolConfig[] = liveTools.map(live => {
+			const existing = previousByName.get(live.name);
+			return {
+				name: live.name,
+				description: live.description,
+				enabled: existing ? existing.enabled : true,
+			};
+		});
+
+		if (!toolsConfigChanged(previous, merged)) return;
+
+		config.tools = merged;
+		this._persistConfig(config);
+		try {
+			await this.plugin.saveSettings();
+		} catch (err) {
+			console.error('[MCP] Failed to persist tool list', err);
+		}
+	}
+
+	/**
+	 * Mirror a config object into `plugin.settings.mcpServers` so the next
+	 * `saveSettings()` writes the latest values to disk.
+	 */
+	private _persistConfig(config: MCPServerConfig): void {
+		const list = this.plugin.settings.mcpServers;
+		if (!list) return;
+		const idx = list.findIndex(s => s.id === config.id);
+		if (idx === -1) return;
+		// The state holds the same reference, but be defensive in case
+		// settings was deep-cloned somewhere.
+		list[idx] = config;
+	}
 
 	private async _connectServer(serverId: string): Promise<void> {
 		const state = this._states.get(serverId);
@@ -219,6 +318,9 @@ export class MCPManager {
 			this.clients.set(serverId, client);
 			state.status = 'connected';
 			state.tools = tools;
+			// Sync the live tool list back into the persisted config so users
+			// can toggle individual tools (preserving their enabled choices).
+			void this._syncToolsToConfig(state.config, tools);
 			this._emit();
 		} catch (err) {
 			// Server may have been removed or disconnected while connecting

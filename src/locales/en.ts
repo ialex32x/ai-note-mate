@@ -238,6 +238,8 @@ export const en: Record<string, string> = {
 	'settings.mcpReconnect': 'Reconnect',
 	'settings.mcpUseRequestUrl': 'Use requestUrl',
 	'settings.mcpUseRequestUrlDesc': 'Bypass CORS restrictions by using Obsidian\'s requestUrl instead of native fetch. Note: SSE responses will be buffered until the server closes the connection.',
+	'settings.mcpToolsEmpty': 'No tools discovered yet. Connect to the server to populate this list.',
+	'settings.mcpToolNoDescription': 'No description provided.',
 
 	'mcp.serverNotConnected': 'MCP server not connected',
 

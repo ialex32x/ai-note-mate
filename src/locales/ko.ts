@@ -238,6 +238,8 @@ export const ko: Record<string, string> = {
 	'settings.mcpReconnect': '재연결',
 	'settings.mcpUseRequestUrl': 'requestUrl 사용',
 	'settings.mcpUseRequestUrlDesc': '네이티브 fetch 대신 Obsidian의 requestUrl을 사용하여 CORS 제한을 우회합니다. 참고: SSE 응답은 서버가 연결을 닫을 때까지 버퍼링됩니다.',
+	'settings.mcpToolsEmpty': '아직 발견된 도구가 없습니다. 서버에 연결하면 목록이 채워집니다.',
+	'settings.mcpToolNoDescription': '설명이 제공되지 않았습니다.',
 
 	'mcp.serverNotConnected': 'MCP 서버 미연결',
 

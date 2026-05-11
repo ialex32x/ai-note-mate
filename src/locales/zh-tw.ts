@@ -238,6 +238,8 @@ export const zhTW: Record<string, string> = {
 	'settings.mcpReconnect': '重新連接',
 	'settings.mcpUseRequestUrl': '使用 requestUrl',
 	'settings.mcpUseRequestUrlDesc': '使用 Obsidian 的 requestUrl 替代原生 fetch，以繞過 CORS 限制。注意：SSE 回應將緩衝至伺服器關閉連線後才能處理。',
+	'settings.mcpToolsEmpty': '尚未發現任何工具。連接伺服器後會自動填入列表。',
+	'settings.mcpToolNoDescription': '未提供描述。',
 
 	'mcp.serverNotConnected': 'MCP 伺服器未連接',
 

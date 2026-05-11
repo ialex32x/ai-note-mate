@@ -238,6 +238,8 @@ export const ja: Record<string, string> = {
 	'settings.mcpReconnect': '再接続',
 	'settings.mcpUseRequestUrl': 'requestUrl を使用',
 	'settings.mcpUseRequestUrlDesc': 'ネイティブ fetch の代わりに Obsidian の requestUrl を使用して CORS 制限を回避します。注意: SSE レスポンスはサーバーが接続を閉じるまでバッファリングされます。',
+	'settings.mcpToolsEmpty': 'まだツールが検出されていません。サーバーに接続するとリストに表示されます。',
+	'settings.mcpToolNoDescription': '説明がありません。',
 
 	'mcp.serverNotConnected': 'MCPサーバー未接続',
 

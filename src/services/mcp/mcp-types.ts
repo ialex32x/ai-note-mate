@@ -2,6 +2,22 @@
 // MCP Types & Interfaces
 // ─────────────────────────────────────────────
 
+/**
+ * A persisted, user-controllable record of a tool exposed by an MCP server.
+ *
+ * Synced from the live tool list returned by the server on each successful
+ * connection. The `enabled` flag is preserved across syncs so users keep
+ * their per-tool on/off preferences.
+ */
+export interface MCPToolConfig {
+	/** Tool name as reported by the MCP server */
+	name: string;
+	/** Latest description reported by the server (refreshed on every sync) */
+	description?: string;
+	/** Whether this tool is exposed to the model. Defaults to true for new tools. */
+	enabled: boolean;
+}
+
 /** Configuration for an MCP server (persisted in plugin settings) */
 export interface MCPServerConfig {
 	/** Unique ID (auto-generated) */
@@ -16,6 +32,16 @@ export interface MCPServerConfig {
 	apiKey: string;
 	/** Use Obsidian's requestUrl instead of native fetch (bypasses CORS) */
 	useRequestUrl?: boolean;
+	/**
+	 * Persisted, user-controllable list of tools exposed by this server.
+	 *
+	 * - Empty before the first successful connection.
+	 * - Synced after each successful connection: existing entries keep their
+	 *   `enabled` state but get their `description` refreshed; new tools are
+	 *   appended with `enabled: true`; tools no longer reported by the
+	 *   server are removed.
+	 */
+	tools?: MCPToolConfig[];
 }
 
 /** A tool exposed by an MCP server */

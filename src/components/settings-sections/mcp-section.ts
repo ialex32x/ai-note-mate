@@ -1,7 +1,7 @@
 import { SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { MCPManager } from "../../services/mcp/mcp-manager";
-import type { MCPServerConfig, MCPServerState } from "../../services/mcp/mcp-types";
+import type { MCPServerConfig, MCPServerState, MCPToolConfig } from "../../services/mcp/mcp-types";
 import { copyToClipboard } from "../../utils/clipboard";
 import {
 	createTabBar,
@@ -71,6 +71,12 @@ export class MCPSettingsSection implements SettingsSection {
 	private editorStatusServerId: string | null = null;
 	/** Per-server tab status dots, keyed by server.id. Rebuilt on each render. */
 	private tabDots = new Map<string, HTMLElement>();
+	/**
+	 * Signature of the tools list currently shown in the editor. Used to
+	 * detect server-side tool changes (after a (re)connect) and trigger a
+	 * full re-render so the displayed list stays in sync.
+	 */
+	private editorToolsSignature: string | null = null;
 	/** Coalesce rapid onChange emissions into a single update pass. */
 	private updateScheduled = false;
 
@@ -84,6 +90,7 @@ export class MCPSettingsSection implements SettingsSection {
 		this.editorStatusBtn = null;
 		this.editorStatusServerId = null;
 		this.tabDots.clear();
+		this.editorToolsSignature = null;
 
 		// Resolve which server is being edited.
 		const editingId = this.getEditingServerId();
@@ -179,6 +186,7 @@ export class MCPSettingsSection implements SettingsSection {
 		this.editorStatusBtn = null;
 		this.editorStatusServerId = null;
 		this.tabDots.clear();
+		this.editorToolsSignature = null;
 		this.updateScheduled = false;
 	}
 
@@ -237,6 +245,19 @@ export class MCPSettingsSection implements SettingsSection {
 				this.editorStatusBtn,
 				manager.getServerState(this.editorStatusServerId),
 			);
+		}
+
+		// If the tools list of the currently-edited server changed (e.g.
+		// after a successful (re)connect synced new tools into the
+		// config), do a full re-render so the list stays accurate.
+		if (this.editorStatusServerId && this.editorToolsSignature !== null) {
+			const editingServer = configured.find(s => s.id === this.editorStatusServerId);
+			if (editingServer) {
+				const sig = computeToolsSignature(editingServer.tools);
+				if (sig !== this.editorToolsSignature) {
+					refreshSection(this);
+				}
+			}
 		}
 	}
 
@@ -323,5 +344,73 @@ export class MCPSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
+
+		// ── Tools list ──
+		// Persisted, synced from the server on each successful connect.
+		// Users can individually toggle which tools are exposed to the model.
+		this.renderToolsList(container, server);
 	}
+
+	/**
+	 * Render the per-server tool list. Records a signature of the tools
+	 * shown so {@link applyStatusUpdates} can detect server-side changes
+	 * (e.g. after a (re)connect) and trigger a full re-render.
+	 */
+	private renderToolsList(container: HTMLElement, server: MCPServerConfig): void {
+		const { plugin } = this.ctx;
+		const tools = server.tools ?? [];
+		this.editorToolsSignature = computeToolsSignature(tools);
+
+		// Render tools at the same nesting level as other server fields so
+		// horizontal alignment matches. No section header — the tool rows
+		// (or the empty-state hint) speak for themselves.
+		if (tools.length === 0) {
+			container.createDiv({
+				cls: 'oap-mcp-tools-empty',
+				text: t('settings.mcpToolsEmpty'),
+			});
+			return;
+		}
+
+		for (const tool of tools) {
+			// One Setting per tool: name on the left, description as desc,
+			// toggle on the right. Setting's standard layout keeps things
+			// visually consistent with the rest of the settings page.
+			const setting = new Setting(container)
+				.setName(tool.name)
+				.addToggle(toggle => toggle
+					.setValue(tool.enabled)
+					.onChange(async (value) => {
+						tool.enabled = value;
+						setting.settingEl.toggleClass('is-disabled', !value);
+						await plugin.mcpManager?.setToolEnabled(server.id, tool.name, value);
+						// Refresh our local signature so the change-detection
+						// in applyStatusUpdates doesn't trigger a redundant
+						// re-render after our own toggle.
+						this.editorToolsSignature = computeToolsSignature(server.tools ?? []);
+					}));
+
+			setting.settingEl.addClass('oap-mcp-tool');
+			if (!tool.enabled) setting.settingEl.addClass('is-disabled');
+
+			const descText = tool.description?.trim();
+			if (descText) {
+				setting.setDesc(descText);
+			} else {
+				setting.setDesc(t('settings.mcpToolNoDescription'));
+				setting.descEl.addClass('is-placeholder');
+			}
+		}
+	}
+}
+
+/**
+ * Compute a compact signature of a tools list so we can detect changes
+ * (additions/removals/description updates/enabled toggles) cheaply.
+ */
+function computeToolsSignature(tools: MCPToolConfig[] | undefined): string {
+	if (!tools || tools.length === 0) return '';
+	return tools
+		.map(t => `${t.name}\u0001${t.enabled ? '1' : '0'}\u0001${t.description ?? ''}`)
+		.join('\u0002');
 }
