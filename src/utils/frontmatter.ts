@@ -73,7 +73,7 @@ export function parseFrontmatterFromContent(
 
     let frontmatter: Record<string, unknown> | null = null;
     try {
-        const parsed = parseYaml(info.frontmatter);
+        const parsed: unknown = parseYaml(info.frontmatter);
         if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
             frontmatter = parsed as Record<string, unknown>;
         }

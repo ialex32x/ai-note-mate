@@ -145,6 +145,11 @@ ${vaultTips}
 - Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`edit_file_tags\`. Never simulate this via \`replace_text\` / \`edit_lines\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`edit_file_tags\` preserves.
 - Vault-wide tag rename → \`rename_tag\`.
 - Move / rename / relocate / archive a file or folder → \`rename_or_move_file\` is the ONLY correct tool. Never simulate via \`create_file\` at a new path + \`delete_files\` on the old path; that route silently breaks every incoming wikilink.
+- Multiple edits to the SAME file MUST be submitted in ONE call. \`replace_text\` takes a \`replacements\` array; \`edit_lines\` takes an \`edits\` array. Both match against the file's pre-edit snapshot and apply atomically. Splitting them across calls means later calls run on shifted content and either miss their target or hit unintended text.
+- Picking the right edit tool for a single file:
+    - Structured edits → \`edit_file_tags\` (tags), \`rename_tag\` (vault-wide tag rename), \`rename_or_move_file\` (paths/links).
+    - Known line range to rewrite/insert/delete → \`edit_lines\`.
+    - Unstructured literal text edits (typos, term renames, deleting a phrase) → \`replace_text\`. Use \`expected_count\` on a replacement when you believe the term appears an exact number of times — the call fails fast if reality disagrees, instead of silently replacing the wrong occurrence.
 - After any tag tool runs, the file is in its final state. Do NOT follow up with another write tool to "clean up", "fix formatting", or "beautify" unless the user explicitly asked. When an inline \`#tag\` was on its own line, removing it leaves a blank line behind — by design, do not "fix" it.
 - In your own replies, never wrap an inline \`#tag\` in backticks, bold, or any other decoration, and don't prefix with labels like \`**Tags:**\` on your own initiative. \`\` \`#foo\` \`\` is inline code, not a tag.
 

@@ -72,8 +72,10 @@ import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
  *
  * Includes (so a future "what's a mutation tool?" check is unambiguous):
  *  - Content-writes: create / append / prepend / replace_text /
- *    edit_lines (edit_lines also handles inserts/deletes via its
- *    `edits` array — there is no separate insert_lines tool)
+ *    edit_lines (replace_text batches multiple literal find/replace
+ *    edits on a single file via its `replacements` array; edit_lines
+ *    handles inserts/deletes via its `edits` array — there is no
+ *    separate insert_lines tool)
  *  - Structural: delete_files / delete_folder / rename_or_move_file
  *  - Tag edits:   edit_file_tags / rename_tag (vault-wide)
  */
