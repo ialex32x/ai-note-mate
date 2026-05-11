@@ -263,7 +263,6 @@ export class MCPSettingsSection implements SettingsSection {
 				.setValue(server.enabled)
 				.onChange(async (value) => {
 					server.enabled = value;
-					server.userToggled = true;
 					await plugin.saveSettings();
 					if (value) {
 						await plugin.mcpManager?.updateServer(server.id, server);

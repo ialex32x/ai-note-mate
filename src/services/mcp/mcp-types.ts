@@ -14,8 +14,6 @@ export interface MCPServerConfig {
 	enabled: boolean;
 	/** Optional API key for authentication */
 	apiKey: string;
-	/** Whether the user has ever changed the enabled state (for default behavior) */
-	userToggled?: boolean;
 	/** Use Obsidian's requestUrl instead of native fetch (bypasses CORS) */
 	useRequestUrl?: boolean;
 }

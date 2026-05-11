@@ -188,7 +188,6 @@ export class MCPManager {
 			url: '',
 			enabled: true,
 			apiKey: '',
-			userToggled: false,
 		};
 	}
 
