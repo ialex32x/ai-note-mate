@@ -900,6 +900,24 @@ export class ContextReducer {
      * content is a short bracketed `[Tool result truncated: ...]` string
      * which is unambiguously meta.
      *
+     * **"Last unconsumed tool_result chain" exemption** — A `tool_result`'s
+     * lifecycle has two stages:
+     *   1. just produced, not yet digested by any subsequent assistant turn;
+     *   2. already followed by an assistant message (text reply OR a new
+     *      tool_call) — meaning the LLM has had at least one chance to read
+     *      it and react to it.
+     * Stage-1 results MUST stay intact: shrinking them before the LLM ever
+     * sees them defeats the entire purpose of the tool call (most painfully
+     * visible when a sub-agent like `delegate_task` returns a multi-thousand-
+     * token digest that is the *whole point* of the call). Stage-2 results
+     * are fair game — by the time the next compression pass runs, the
+     * relevant signal is already in the assistant's text output.
+     *
+     * Concretely: locate the index of the **last** `assistant` message in
+     * the array. Any `tool_result` strictly after that index belongs to the
+     * still-unconsumed tail and is passed through verbatim. All other
+     * tool_results follow the regular size-based shrinking rules.
+     *
      * This method does NOT modify the input array; it returns a new array
      * (new message objects are only created for the messages that actually
      * get rewritten — others are passed through by reference).
@@ -907,10 +925,31 @@ export class ContextReducer {
     private static shrinkLargeToolResults<T extends HistoryMessage>(messages: T[]): T[] {
         if (messages.length === 0) return messages;
 
+        // Locate the index of the last assistant message — anything after it
+        // is part of the "just-produced, not yet digested" tail.
+        // -1 means there is no assistant message at all in this slice; the
+        // condition `i > lastAssistantIdx` then evaluates to true for every
+        // tool_result, so the entire slice is treated as unconsumed and
+        // nothing gets shrunk. This is the safe default — without an
+        // assistant anchor we cannot prove the model has read anything yet.
+        let lastAssistantIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i]!.role === 'assistant') {
+                lastAssistantIdx = i;
+                break;
+            }
+        }
+
         const result: T[] = [];
         for (let i = 0; i < messages.length; i++) {
             const msg = messages[i]!;
             if (msg.role === 'tool_result' && typeof msg.content === 'string' && msg.content.length > 0) {
+                // Exempt the unconsumed tail: tool_results after the last
+                // assistant haven't been read by the model yet.
+                if (i > lastAssistantIdx) {
+                    result.push(msg);
+                    continue;
+                }
                 const shrunk = shrinkToolResultContent(msg.content);
                 if (shrunk !== msg.content) {
                     result.push({ ...msg, content: shrunk } as T);

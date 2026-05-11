@@ -6,6 +6,7 @@ import {
     vaultGetMetadata,
     vaultIsFolder,
     vaultReadFile,
+    vaultReadSection,
     vaultResolveLink,
 } from "./read";
 import { vaultBrowseFolder } from "./browse";
@@ -109,6 +110,7 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
     return [
         // Read
         vaultReadFile(plugin),
+        vaultReadSection(plugin),
         vaultGetActiveFile(plugin),
         vaultGetMetadata(plugin),
         vaultGetFileState(plugin),

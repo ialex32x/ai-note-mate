@@ -33,9 +33,28 @@ import type {
 } from "./llm-provider";
 import { SubAgent, SubAgentConfig, SubAgentResult, SubAgentExecutionLog } from "./sub-agent";
 import { type ExchangeStore, estimateValueSize, validateSerializable } from "./tools/exchange-toolcall";
+import { getResultValidator } from "./result-validators";
 
 // Re-export sub-agent types for external consumers
 export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
+
+// ─────────────────────────────────────────────
+// Per-sub-agent result validators
+//
+// The validator registry lives in `./result-validators` so adding a new
+// sub-agent's schema does not touch this file. The orchestrator only
+// asks `getResultValidator(agentName)` and applies the result issues
+// (if any) to the envelope; everything else — what counts as valid,
+// where the schema lives, what the diagnostics look like — is owned by
+// the per-agent validator module.
+//
+// Soft-degradation policy (mirrors `buildDelegatePayload`'s oversized
+// handling): we DO NOT drop the value, even if it fails validation. The
+// sub-agent has already paid the generation cost; the main LLM is
+// better positioned than we are to choose between "use as-is",
+// "synthesize around the gaps", or "re-delegate". A hard rejection here
+// would waste the entire turn for a recoverable schema slip.
+// ─────────────────────────────────────────────
 
 // ─────────────────────────────────────────────
 // delegate_task payload envelope
@@ -92,13 +111,22 @@ export interface DelegatePayload {
  *   recorded under `omitted` as both an `_omitted: true` flag and an
  *   `_size: N` byte count, so the main LLM can decide whether to ask
  *   the sub-agent to re-run with a leaner output.
+ * - When `agentName` matches a registered `ResultValidator` and the
+ *   sub-agent returned a non-omitted `result`, validator issues are
+ *   surfaced (NOT enforced) under `extras.result_validation_issues`.
+ *   The result itself is passed through verbatim regardless of issues.
  *
  * Exported for tests.
  */
-export function buildDelegatePayload(text: string, store: ExchangeStore): DelegatePayload {
+export function buildDelegatePayload(
+    text: string,
+    store: ExchangeStore,
+    agentName?: string,
+): DelegatePayload {
     const payload: DelegatePayload = { text };
     let omitted: Record<string, true | number> | undefined;
     let extras: Record<string, unknown> | undefined;
+    let resultRetained = false;
 
     for (const [key, value] of store.entries()) {
         const size = estimateValueSize(value);
@@ -114,9 +142,24 @@ export function buildDelegatePayload(text: string, store: ExchangeStore): Delega
 
         if (key === "result") {
             payload.result = value;
+            resultRetained = true;
         } else {
             extras ??= {};
             extras[key] = value;
+        }
+    }
+
+    // Run the per-agent validator only when the result was actually
+    // retained. Skipping when omitted avoids confusing the main LLM with
+    // schema errors about a value it never received in the first place.
+    if (resultRetained) {
+        const validator = getResultValidator(agentName);
+        if (validator) {
+            const issues = validator(payload.result);
+            if (issues.length > 0) {
+                extras ??= {};
+                extras["result_validation_issues"] = issues;
+            }
         }
     }
 
@@ -710,7 +753,7 @@ export class AgentOrchestrator implements IChatAgent {
             //
             // Error and abort branches deliberately return plain strings so
             // existing main-side error-handling paths stay untouched.
-            const payload = buildDelegatePayload(result.summary, exchangeStore);
+            const payload = buildDelegatePayload(result.summary, exchangeStore, agentName);
             return {
                 success: true,
                 content: JSON.stringify(payload),

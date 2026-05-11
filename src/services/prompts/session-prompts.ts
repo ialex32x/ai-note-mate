@@ -123,6 +123,16 @@ When you have **multiple line-based edits to the same file** (e.g. fix a typo on
 
 Reading a whole file just to edit a small section wastes tokens and risks copy-drift on the unchanged parts. Only fall back to a full read when the section truly cannot be located by search (e.g. the user describes it semantically with no anchor text), and say so explicitly in the \`task\`.
 
+**Note analysis / comparison / summary — delegate a digest task, not a raw read.** Whenever the user asks for the *meaning* of one or more notes — "what does this note say about X", "summarize this note", "compare these three notes", "find the conflicts across these papers", "what's in A.md" — do NOT delegate "read the full content and return it". Delegate ONE digest task to vault_inspector with the path list, and let it return a structured digests array (one entry per path with \`summary\`, \`key_points\`, \`anchors\`). You consume \`result.digests\` directly; each \`digests[i].anchors[].heading_path\` is a precise pointer you can later feed to \`replace_text\` (when it gains an anchor mode) or to \`edit_lines\` after a narrow follow-up read.
+
+This applies to **single-note** digests too, not just multi-note comparisons. A 5,000-word note's full body in your context is almost always wasteful when the user only wants to know what it says — the digest's bounded \`summary\` + \`key_points\` is the high-signal answer, and you can still pull a specific section back via a narrow follow-up read if the user asks a follow-up that needs exact wording.
+
+  delegate_task({ "agent": "vault_inspector", "task": "Produce a digest of these notes against the user's question (see exchange.user_focus). Return digests[] under result.", "inputs": { "source": ["Topics/A.md"], "user_focus": "<the user's question, verbatim>" } })
+
+Phrase the \`task\` with the word "digest" (or "summarize and return the digest schema") so it is unambiguous — saying "read X and return it" would route the sub-agent to Mode A and dump the entire file body into your context. The digest format is bounded (per-file ≤ ~80-word summary, ≤ 6 key_points, ≤ 6 anchors) so 5–10 notes still fit your context easily — far cheaper than ingesting their full bodies. Trust \`digests[i].summary\` + \`key_points\` for synthesis; pull a specific section back via a narrow follow-up only when an anchor's \`why\` indicates you need exact wording.
+
+The exception is when you genuinely need the verbatim bytes — e.g. you are about to apply a literal edit to the file and need to see the exact pre-edit text, or the user explicitly asked "show me the raw content of X". In those cases say so in the \`task\` (e.g. "Read the full content of X and return it under result; I need the exact bytes to apply an edit") and the sub-agent will return raw text via Mode A.
+
 ### Passing structured inputs to a sub-agent
 \`delegate_task\` accepts an optional \`inputs\` argument: an object whose keys are pre-loaded into the sub-agent's exchange store before it runs. Use it whenever you have programmatic data the sub-agent will consume — lists of paths, results from a previous delegation, constraints, configuration. The sub-agent reads them via its own \`exchange\` tool and treats them as authoritative input.
 

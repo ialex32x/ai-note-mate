@@ -305,6 +305,137 @@ describe('buildDelegatePayload', () => {
     });
 });
 
+// ─── buildDelegatePayload — vault_inspector result schema ──
+//
+// The validator is wired into buildDelegatePayload behind an optional
+// `agentName` arg. When the agent name matches a registered validator,
+// schema issues are surfaced in `extras.result_validation_issues` —
+// soft degradation, NOT data loss. These tests pin that behaviour.
+
+describe('buildDelegatePayload (with vault_inspector validator)', () => {
+    it('passes a well-formed digest result through with no validation issues', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            digests: [
+                {
+                    path: 'Topics/A.md',
+                    summary: 'A short neutral summary.',
+                    key_points: ['Claim 1.', 'Claim 2.'],
+                    anchors: [
+                        { heading_path: ['Chapter 2', 'Background'], why: 'core argument' },
+                    ],
+                },
+            ],
+            focus: 'compare arguments',
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_inspector');
+        expect(payload.result).toBeDefined();
+        // No issues key when the schema matches.
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('surfaces issues for a digest entry missing required fields', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            digests: [
+                // Missing summary, anchors, key_points
+                { path: 'Topics/A.md' },
+            ],
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_inspector');
+        // The malformed result is STILL passed through (soft degradation).
+        expect(payload.result).toBeDefined();
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(Array.isArray(issues)).toBe(true);
+        expect(issues.length).toBeGreaterThan(0);
+        expect(issues.some((s) => /summary/.test(s))).toBe(true);
+        expect(issues.some((s) => /key_points/.test(s))).toBe(true);
+        expect(issues.some((s) => /anchors/.test(s))).toBe(true);
+    });
+
+    it('flags oversized summary and excessive key_points/anchors counts', () => {
+        const store: ExchangeStore = new Map();
+        const tooLongSummary = 'x'.repeat(1000);
+        store.set('result', {
+            digests: [
+                {
+                    path: 'A.md',
+                    summary: tooLongSummary,
+                    key_points: new Array(8).fill('point'),
+                    anchors: new Array(8).fill({ heading_path: ['H'] }),
+                },
+            ],
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_inspector');
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(issues.some((s) => /summary is too long/.test(s))).toBe(true);
+        expect(issues.some((s) => /key_points has 8 items/.test(s))).toBe(true);
+        expect(issues.some((s) => /anchors has 8 items/.test(s))).toBe(true);
+    });
+
+    it('rejects an empty digests array (every path must have an entry)', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', { digests: [] });
+
+        const payload = buildDelegatePayload('done', store, 'vault_inspector');
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(issues.some((s) => /empty/.test(s))).toBe(true);
+    });
+
+    it('does NOT flag non-digest results (Mode A inspect tasks)', () => {
+        // vault_inspector also handles Mode A (locate/inspect) tasks where
+        // the natural `result` shape is a string / array / object without
+        // `digests`. Those pass through unchanged — the validator only
+        // engages when `digests` is present.
+        const store: ExchangeStore = new Map();
+        store.set('result', { matches: ['a/b.md', 'c.md'] });
+
+        const payload = buildDelegatePayload('done', store, 'vault_inspector');
+        expect(payload.result).toEqual({ matches: ['a/b.md', 'c.md'] });
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('skips validation when result was omitted for size', () => {
+        // If result is too large to inline, it never reaches the validator;
+        // surfacing schema issues about a value the main agent can't see
+        // would just be noise.
+        const store: ExchangeStore = new Map();
+        const huge = { digests: [{ path: 'x', summary: 'x'.repeat(EXCHANGE_VALUE_MAX_BYTES + 100) }] };
+        store.set('result', huge);
+
+        const payload = buildDelegatePayload('done', store, 'vault_inspector');
+        expect(payload.result).toBeUndefined();
+        expect(payload.omitted).toBeDefined();
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('does not validate when no agentName is supplied (back-compat)', () => {
+        // Existing callers and tests pass only (text, store) — the third
+        // arg is optional and absence means "skip validation". This
+        // ensures the new behaviour is fully opt-in.
+        const store: ExchangeStore = new Map();
+        store.set('result', { digests: [{ path: 'x' }] }); // would fail schema
+
+        const payload = buildDelegatePayload('done', store);
+        expect(payload.result).toBeDefined();
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('does not validate for unknown agent names', () => {
+        // Sub-agents without a registered validator pass through
+        // unchanged — adding a new sub-agent should never accidentally
+        // trigger schema enforcement intended for a different one.
+        const store: ExchangeStore = new Map();
+        store.set('result', { digests: [{ path: 'x' }] });
+
+        const payload = buildDelegatePayload('done', store, 'web_researcher');
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+});
+
 // ─── buildInitialStore ─────────────────────────────────────
 //
 // Pure function — covers the validation rules for the main → sub

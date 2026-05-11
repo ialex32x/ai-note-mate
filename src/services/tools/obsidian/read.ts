@@ -16,6 +16,11 @@ import {
     requireFile,
     validateLineRange,
 } from "./_shared";
+import {
+    formatFindSectionError,
+    resolveHeadingPathToRange,
+    type HeadingNode,
+} from "./heading-section";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: read_file
@@ -219,6 +224,167 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     start_line: startLine,
                     end_line: effectiveEndLine,
                     total_lines: totalLines,
+                },
+            };
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: read_section
+//
+// Drill into ONE section of a markdown file by heading path, instead of
+// fetching the whole file. Designed as the natural follow-up to
+// `get_metadata`: once the model knows a file's outline, it can pull just
+// the section it needs without dragging the rest of the file into context.
+//
+// Intentionally *not* exposed to the main agent in multi-agent mode — it
+// is registered alongside other read-only tools so that the vault
+// inspector sub-agent uses it during digest workflows. Letting the main
+// agent call it directly would re-encourage "read full file in main
+// thread" patterns, defeating the digest-via-delegation design.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "read_section",
+                description:
+                    "Read a single section of a markdown file by heading path. " +
+                    "Use this AFTER get_metadata (or read_file's outline mode for large files) " +
+                    "to drill into a specific heading instead of pulling the whole file. " +
+                    "The section spans from the matched heading line up to (but not including) " +
+                    "the next heading at the same OR shallower level — i.e. nested subsections " +
+                    "are included by default. Set include_subsections=false to stop at the very " +
+                    "next heading of any level. Matching is exact (case-sensitive, trimmed). " +
+                    "If the heading path is ambiguous or missing, the tool returns an error " +
+                    "with concrete diagnostics so you can refine the path on the next call.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        path: {
+                            type: "string",
+                            description:
+                                "Vault-relative path to a markdown file, e.g. 'Notes/MyNote.md'.",
+                        },
+                        heading_path: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
+                            description:
+                                "Hierarchical heading titles from outermost to innermost, " +
+                                "e.g. ['Chapter 2', 'Background']. The match locates the unique " +
+                                "heading whose ancestor chain equals this list. Use a single-element " +
+                                "array for a top-level heading.",
+                        },
+                        include_subsections: {
+                            type: "boolean",
+                            description:
+                                "If true (default), nested subsections are included until a sibling " +
+                                "or shallower heading. If false, the section ends at the next heading " +
+                                "of any level.",
+                        },
+                    },
+                    required: ["path", "heading_path"],
+                },
+            },
+        },
+        capabilities: ["read_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+            const path = args["path"] as string;
+            const headingPathRaw = args["heading_path"];
+            const includeSubsections = (args["include_subsections"] as boolean | undefined) ?? true;
+
+            if (!Array.isArray(headingPathRaw) || headingPathRaw.length === 0) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `heading_path must be a non-empty array of heading titles (outermost to innermost).`,
+                };
+            }
+            const headingPath: string[] = [];
+            for (const item of headingPathRaw) {
+                if (typeof item !== "string") {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `heading_path must contain only strings; got ${typeof item}.`,
+                    };
+                }
+                headingPath.push(item);
+            }
+
+            const fileOrErr = requireFile(plugin.app, path);
+            if (isFailure(fileOrErr)) return fileOrErr;
+            const file = fileOrErr;
+
+            // Refuse non-markdown / binary files: heading paths only make sense
+            // for markdown, and silently text-decoding e.g. a PDF or a docx
+            // would feed garbage to the model.
+            if (isMediaFile(file) || isNonMediaBinaryFile(file)) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `read_section only supports markdown / plain-text files; '${path}' has extension '.${file.extension}'. ` +
+                        `Use read_file (multimodal channel) for media or get_metadata for structural inspection.`,
+                };
+            }
+            if (file.extension.toLowerCase() !== "md") {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `read_section only operates on markdown files (.md); '${path}' has extension '.${file.extension}'. ` +
+                        `Use read_file with start_line/end_line for non-markdown text files.`,
+                };
+            }
+
+            const cache = plugin.app.metadataCache.getFileCache(file);
+            const cachedHeadings: HeadingNode[] = (cache?.headings ?? []).map((h) => ({
+                level: h.level,
+                heading: h.heading,
+                line: h.position.start.line,
+            }));
+
+            const content = await plugin.app.vault.read(file);
+            const lines = content.split("\n");
+            const totalLines = lines.length;
+
+            const resolved = resolveHeadingPathToRange(
+                cachedHeadings,
+                headingPath,
+                totalLines,
+                includeSubsections,
+            );
+            if (!resolved.ok) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: formatFindSectionError(resolved.error, headingPath),
+                };
+            }
+
+            const { start_line, end_line, level, heading } = resolved.section;
+            const sliced = lines.slice(start_line - 1, end_line).join("\n");
+
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    path,
+                    heading_path: headingPath,
+                    matched_heading: heading,
+                    level,
+                    start_line,
+                    end_line,
+                    total_lines: totalLines,
+                    include_subsections: includeSubsections,
+                    content: sliced,
                 },
             };
         },
