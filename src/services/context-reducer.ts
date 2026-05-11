@@ -151,19 +151,8 @@ export interface ConversationSummary {
 // Token estimation
 // ─────────────────────────────────────────────
 
-/** Token threshold for collapsing a single tool result in historical messages. */
+/** Token threshold for shrinking a single tool result in historical messages. */
 const TOOL_RESULT_COLLAPSE_THRESHOLD = 500;
-
-/**
- * Disclaimer prepended to every collapsed (assistant + tool_results) block in
- * the replayed conversation history. The wording is deliberately conversational
- * and explicit so the model understands the following lines are a recap of
- * earlier actions, not a syntax it should imitate when it wants to call a tool
- * itself. The real tool calls must always go through the function-calling
- * channel, never as plain text.
- */
-const COLLAPSED_TOOL_SECTION_PREFIX =
-    "(Note to myself: the lines below are just a brief recap of tool calls I made earlier in this conversation, written out in plain language because the original tool messages have been compacted. They are NOT a template for invoking tools — to actually call a tool I must use the proper function-calling channel, never write a tool call out as text.)";
 
 /**
  * Rough token count estimation.
@@ -275,6 +264,47 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
     // Plain text: keep first 200 chars
     const preview = safeSliceHead(result, 200).replace(/\n/g, ' ');
     return `${head}; it returned (truncated, original ${result.length} chars): ${preview}...`;
+}
+
+/**
+ * Produce a compact replacement for a single oversized tool_result `content`.
+ *
+ * Used by {@link ContextReducer.shrinkLargeToolResults} to reduce the token
+ * footprint of historical `tool_result` messages **without changing the
+ * protocol shape**: the resulting string is still returned as the `content`
+ * of a `tool_result` message, keeping `toolCallId` and the assistant→tool
+ * pairing intact. This is deliberately different from
+ * {@link collapseToolResult}, which produces a past-tense narrative line for
+ * inclusion inside a synthetic assistant message during summarization.
+ *
+ * Rules mirror {@link collapseToolResult}'s strategy but the wording is
+ * strictly meta (brackets + "truncated"/"omitted") so nothing in the output
+ * looks like free-form assistant prose the model might imitate.
+ */
+function shrinkToolResultContent(result: string): string {
+    // Error results: always keep full text (usually short and meaningful).
+    if (result.startsWith('Error:')) return result;
+
+    // Below threshold: keep the original content untouched.
+    if (estimateTokens(result) <= TOOL_RESULT_COLLAPSE_THRESHOLD) return result;
+
+    // Try to parse as JSON for a structured meta summary.
+    try {
+        const parsed = JSON.parse(result) as unknown;
+        if (Array.isArray(parsed)) {
+            return `[Tool result truncated: JSON array of ${parsed.length} items, ${result.length} chars total, original content omitted to save context budget.]`;
+        } else if (typeof parsed === 'object' && parsed !== null) {
+            const keys = Object.keys(parsed);
+            const keyPreview = keys.slice(0, 5).join(', ') + (keys.length > 5 ? ', ...' : '');
+            return `[Tool result truncated: JSON object with keys {${keyPreview}}, ${result.length} chars total, original content omitted to save context budget.]`;
+        }
+    } catch {
+        // Not JSON, fall through to plain text handling.
+    }
+
+    // Plain text: keep first 200 chars as a preview inside the meta wrapper.
+    const preview = safeSliceHead(result, 200).replace(/\n/g, ' ');
+    return `[Tool result truncated: original ${result.length} chars, preview: ${preview}...]`;
 }
 
 // ─────────────────────────────────────────────
@@ -445,14 +475,15 @@ export class ContextReducer {
                 : unsummarizedMessages;
 
             // No compression needed - but if there are existing summaries, context IS compressed
-            // Collapse historical tool messages before ensuring integrity
-            const collapsedUnsummarized = this.collapseToolMessages(snapped);
+            // Shrink oversized tool_result payloads while keeping the
+            // assistant(toolCalls) ↔ tool_result structure intact.
+            const shrunkUnsummarized = this.shrinkLargeToolResults(snapped);
             // Ensure tool message sequence integrity in the final messagesToSend
             const finalMessagesToSend = [
                 ...systemMessages,
                 ...summaryMessages,
                 ...archiveNoteMessages,
-                ...this.ensureToolSequenceIntegrity(collapsedUnsummarized),
+                ...this.ensureToolSequenceIntegrity(shrunkUnsummarized),
             ] as T[];
 
             const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend);
@@ -533,9 +564,13 @@ export class ContextReducer {
             };
         }
 
-        // Collapse tool messages in the old portion before summarization
-        const oldMessagesRaw = messagesToSummarize.slice(0, splitIndex);
-        const oldMessages = this.collapseToolMessages(oldMessagesRaw);
+        // Feed the raw old messages to the summarizer. `summarizeConversation`
+        // internally calls `collapseToolMessagesForSummary` to fold the tool
+        // chains into narrative assistant messages before summarizing, so we
+        // must NOT pre-collapse here (doing so would either double-wrap or
+        // destroy the toolCalls metadata that collapseToolMessagesForSummary
+        // relies on).
+        const oldMessages = messagesToSummarize.slice(0, splitIndex);
         const recentMessages = messagesToSummarize.slice(splitIndex);
 
         // ── 7. Calculate the message index for the new summary ─────────────
@@ -581,12 +616,12 @@ export class ContextReducer {
                 role: "assistant" as ChatMessageRole,
                 content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
             }] : [];
-            const fallbackCollapsed = this.collapseToolMessages(unsummarizedMessages);
+            const fallbackShrunk = this.shrinkLargeToolResults(unsummarizedMessages);
             const fallbackAssembled = [
                 ...systemMessages,
                 ...fallbackSummaryMessages,
                 ...fallbackArchiveNote,
-                ...this.ensureToolSequenceIntegrity(fallbackCollapsed),
+                ...this.ensureToolSequenceIntegrity(fallbackShrunk),
             ] as T[];
             const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled);
             ContextReducer.checkFinalBudget(sanitizedFallback, accessoryTokens, threshold);
@@ -845,130 +880,66 @@ export class ContextReducer {
     }
 
     /**
-     * Collapse tool call sequences in a message array.
+     * Shrink the `content` of oversized `tool_result` messages while preserving
+     * the protocol structure (role, toolCallId, assistant→tool pairing).
      *
-     * Scans for assistant messages with `toolCalls` followed by their corresponding
-     * `tool_result` messages. Replaces each such sequence with a single assistant
-     * message containing a concise summary of what tools were called and what they
-     * returned.
+     * Rationale — earlier versions of this module used to **collapse** the
+     * entire assistant(toolCalls) + tool_result chain into a single
+     * narrative `assistant` message. That saved tokens but also fed the
+     * model out-of-distribution input: the recap lines ("Earlier I called
+     * the `foo` tool …") looked enough like a callable syntax that some
+     * models started emitting fake "tool calls" as plain text instead of
+     * going through the real function-calling channel. The fix there was a
+     * long "note to myself" disclaimer, which is a clear smell.
      *
-     * **Important**: Only collapses sequences that are NOT in the most recent turn
-     * (i.e., the last user→assistant exchange). The most recent turn's tool results
-     * must remain intact so the LLM can reference them.
+     * This method keeps the structure intact — every assistant(toolCalls) is
+     * still followed by its matching tool_result messages with the same ids
+     * — and only rewrites the payload of individual `tool_result` messages
+     * whose content would otherwise bloat the context (e.g. large
+     * `retrieve_chat_history` / file read / search results). Replacement
+     * content is a short bracketed `[Tool result truncated: ...]` string
+     * which is unambiguously meta.
      *
-     * This method does NOT modify the input array; it returns a new array.
+     * This method does NOT modify the input array; it returns a new array
+     * (new message objects are only created for the messages that actually
+     * get rewritten — others are passed through by reference).
      */
-    private static collapseToolMessages<T extends HistoryMessage>(messages: T[]): T[] {
+    private static shrinkLargeToolResults<T extends HistoryMessage>(messages: T[]): T[] {
         if (messages.length === 0) return messages;
 
-        // If the slice we were handed begins with orphan tool_result(s)
-        // (because the owning assistant was already folded into a summary on
-        // a previous turn), drop that leading orphan run so the sequence we
-        // return can be joined without introducing a 400 later.
-        let leadingDrop = 0;
-        while (leadingDrop < messages.length && messages[leadingDrop]!.role === 'tool_result') {
-            console.warn("[ContextReducer] collapseToolMessages: dropping leading orphan tool_result at index",
-                leadingDrop);
-            leadingDrop++;
-        }
-        if (leadingDrop > 0) {
-            messages = messages.slice(leadingDrop);
-            if (messages.length === 0) return messages;
-        }
-
-        // Find the start of the last turn (last user message index)
-        let lastTurnStart = -1;
-        for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i]!.role === 'user') {
-                lastTurnStart = i;
-                break;
-            }
-        }
-
         const result: T[] = [];
-        let i = 0;
-
-        while (i < messages.length) {
+        for (let i = 0; i < messages.length; i++) {
             const msg = messages[i]!;
-
-            // If we're in the last turn, keep everything intact
-            if (lastTurnStart >= 0 && i >= lastTurnStart) {
-                result.push(msg);
-                i++;
-                continue;
-            }
-
-            // Check if this is an assistant message with tool calls
-            const toolCalls = msg.toolCalls;
-            if (msg.role === 'assistant' && toolCalls && toolCalls.length > 0) {
-                // Collect all tool_result messages that follow
-                const toolCallIds = new Set(toolCalls.map(tc => tc.id));
-                const collapsedParts: string[] = [];
-
-                // If the assistant message has text content, preserve it
-                if (msg.content && msg.content.trim()) {
-                    collapsedParts.push(msg.content.trim());
+            if (msg.role === 'tool_result' && typeof msg.content === 'string' && msg.content.length > 0) {
+                const shrunk = shrinkToolResultContent(msg.content);
+                if (shrunk !== msg.content) {
+                    result.push({ ...msg, content: shrunk } as T);
+                    continue;
                 }
-
-                let j = i + 1;
-                while (j < messages.length && messages[j]!.role === 'tool_result') {
-                    const resultMsg = messages[j]!;
-                    const resultToolCallId = resultMsg.toolCallId;
-
-                    if (resultToolCallId && toolCallIds.has(resultToolCallId)) {
-                        // Find the matching tool call to get name and args
-                        const matchingCall = toolCalls.find(tc => tc.id === resultToolCallId);
-                        if (matchingCall) {
-                            const summary = collapseToolResult(
-                                matchingCall.function.name,
-                                matchingCall.function.arguments,
-                                resultMsg.content,
-                            );
-                            collapsedParts.push(summary);
-                        }
-                        toolCallIds.delete(resultToolCallId);
-                    }
-                    j++;
-                }
-
-                // Create a collapsed assistant message replacing the entire sequence.
-                //
-                // We prepend a short disclaimer so the model treats these lines
-                // as a recap of past actions rather than a format to mimic.
-                // Without it, models tend to copy the textual style and emit
-                // fake tool calls as plain text instead of using the real
-                // function-calling channel.
-                const collapsedContent = COLLAPSED_TOOL_SECTION_PREFIX + '\n' + collapsedParts.join('\n');
-                const collapsedMsg = {
-                    role: 'assistant' as ChatMessageRole,
-                    content: collapsedContent,
-                    id: msg.id,
-                    // Preserve thinkingContent so thinking-mode APIs receive
-                    // the reasoning_content they require on replay.
-                    ...(msg.thinkingContent ? { thinkingContent: msg.thinkingContent } : {}),
-                } as T;
-                result.push(collapsedMsg);
-                i = j; // Skip past all consumed tool_result messages
-            } else {
-                result.push(msg);
-                i++;
             }
+            result.push(msg);
         }
-
         return result;
     }
 
     /**
-     * Collapse ALL tool call sequences in a message array (no protected window).
+     * Collapse ALL tool call sequences into narrative assistant messages
+     * **for summarizer input only**.
      *
-     * Unlike `collapseToolMessages()` which protects the most recent turn,
-     * this method collapses every tool call sequence unconditionally.
-     * It is designed for use by `summarizeConversation()` where all messages
-     * are historical and should be collapsed before being sent to the summarizer.
+     * Folds every `assistant(toolCalls) + tool_result*` chain into a single
+     * synthetic assistant message whose content is a past-tense recap (see
+     * {@link collapseToolResult}). This output is designed to be fed to
+     * `summarizeConversation`'s summarizer LLM — it is NEVER returned to
+     * the main chat LLM, because the recap style would otherwise tempt the
+     * model into emitting fake tool calls as plain text. Within the main
+     * chat path we use {@link shrinkLargeToolResults} instead, which keeps
+     * the protocol structure intact.
      *
-     * This ensures that tool_call/tool_result messages (which would otherwise
-     * be filtered out by the `role === 'user' || role === 'assistant'` check)
-     * are preserved as collapsed assistant messages in the summary input.
+     * This is necessary because the summarizer filters messages down to
+     * `role === 'user' | 'assistant'` only — without this pre-pass, all
+     * tool_call / tool_result content would be silently dropped from the
+     * summary input and the summary would lose the entire tool-interaction
+     * history.
      */
     static collapseToolMessagesForSummary<T extends HistoryMessage>(messages: T[]): T[] {
         if (messages.length === 0) return messages;

@@ -894,11 +894,19 @@ export class ChatStream implements IChatAgent {
                         const toolName = toolCall.function.name;
                         const toolCallId = toolCall.id;
                         let toolArgs: Record<string, unknown>;
+                        let argParseError: string | null = null;
 
                         try {
                             toolArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
                         } catch {
-                            throw new Error(`Failed to parse arguments for tool "${toolName}": ${toolCall.function.arguments}`);
+                            // Surface the parse failure as a tool_result error rather than
+                            // throwing — otherwise a single malformed tool_call (often caused
+                            // by an over-long / truncated arguments string from the model)
+                            // would abort the entire conversation. Returning an error result
+                            // lets the LLM observe the failure and self-correct (retry with
+                            // smaller / properly escaped arguments).
+                            toolArgs = {};
+                            argParseError = `Failed to parse arguments for tool "${toolName}": ${toolCall.function.arguments}`;
                         }
 
                         // Add a tool_call message to UI-facing history
@@ -922,7 +930,12 @@ export class ChatStream implements IChatAgent {
                         let toolResult: string;
                         let mediaAttachment: MediaAttachment | null = null;
 
-                        if (!registered) {
+                        if (argParseError) {
+                            // Skip handler dispatch entirely when arguments are unparseable —
+                            // there is nothing meaningful to execute. Report the error back
+                            // to the model so it can retry with corrected arguments.
+                            toolResult = `Error: ${argParseError}`;
+                        } else if (!registered) {
                             // No handler registered → delegate to onToolCall callback
                             if (this._config.onToolCall) {
                                 toolResult = await this._config.onToolCall({
