@@ -4,27 +4,27 @@ import type { RegisteredTool } from "../../chat-stream";
 import { isFailure, requireFolder } from "./_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_browse_directory
+// Tool: browse_folder
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultBrowseDirectory(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultBrowseFolder(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "vault_browse_directory",
+                name: "browse_folder",
                 description:
-                    "Browse files and sub-folders inside a vault directory with metadata. " +
+                    "Browse files and sub-folders inside a vault folder with metadata. " +
                     "Each file entry includes extension, creation time (ctime), modification time (mtime), and size in bytes. " +
                     "Each folder entry only includes its path. " +
                     "Use this when the user wants to see, browse, explore, list, or check the contents of a folder. " +
                     "Pass an empty string or '/' to list the vault root. " +
                     "Prefer a SINGLE call with an appropriate `max_depth` (e.g. 2) over multiple sequential calls " +
                     "that walk each top-level folder one at a time. " +
-                    "For broad vault-wide statistics (sizes, extension breakdown, recency), call `vault_get_overview` instead. " +
-                    "Set `entries_type` to \"folder\" to list only directories (useful for mapping vault structure without file noise) " +
+                    "For broad vault-wide statistics (sizes, extension breakdown, recency), call `get_overview` instead. " +
+                    "Set `entries_type` to \"folder\" to list only folders (useful for mapping vault structure without file noise) " +
                     "or \"file\" to list only files.",
                 parameters: {
                     type: "object",
@@ -63,7 +63,7 @@ export function vaultBrowseDirectory(plugin: NoteAssistantPlugin): RegisteredToo
                             description:
                                 "Maximum number of entries to return. Defaults to 1000. " +
                                 "If there are more entries beyond `skip + limit`, the response will include `has_more: true`. " +
-                                "Use `skip` to paginate through large directories.",
+                                "Use `skip` to paginate through large folders.",
                         },
                     },
                     required: ["path"],

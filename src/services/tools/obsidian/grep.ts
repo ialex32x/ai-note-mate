@@ -4,11 +4,11 @@ import type { ToolCapability } from "../../llm-provider";
 import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "./_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_grep_file
+// Tool: grep_file
 //
 // Single-file content locator. The cheap middle-ground between:
-//   - vault_search_content   (vault-wide; too broad when you already know the file)
-//   - vault_read_file        (returns the entire file body when you only needed
+//   - search_content   (vault-wide; too broad when you already know the file)
+//   - read_file        (returns the entire file body when you only needed
 //                             a few line numbers)
 //
 // Designed for the very common pattern of "I know which file; I have a few
@@ -92,18 +92,18 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_grep_file",
+                name: "grep_file",
                 description:
                     "Find lines matching one or more queries within a SINGLE known file, " +
                     "and return their line numbers and matched content. " +
-                    "Use this — NOT vault_read_file — when you already know which file to inspect " +
+                    "Use this — NOT read_file — when you already know which file to inspect " +
                     "and you need line numbers for specific strings or patterns " +
-                    "(e.g. preparing a follow-up vault_edit_lines call, or confirming whether a marker exists). " +
+                    "(e.g. preparing a follow-up edit_lines call, or confirming whether a marker exists). " +
                     "Much cheaper than reading the full file: it skips delivering unrelated lines. " +
                     "Multiple queries are evaluated with OR semantics; each result reports which query it matched. " +
                     "Optional `section` restricts the search to a single heading-anchored region " +
-                    "(use vault_get_metadata first to discover heading names if needed). " +
-                    "For vault-wide search across many files, use vault_search_content instead.",
+                    "(use get_metadata first to discover heading names if needed). " +
+                    "For vault-wide search across many files, use search_content instead.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -254,7 +254,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         type: "text",
                         content:
                             `Section '${sectionName}' not found in '${path}'. ` +
-                            `Use vault_get_metadata to list available headings, or omit the 'section' parameter to grep the whole file.`,
+                            `Use get_metadata to list available headings, or omit the 'section' parameter to grep the whole file.`,
                     };
                 }
                 scanStart = section.start_line;

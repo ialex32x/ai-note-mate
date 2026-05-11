@@ -4,11 +4,11 @@ import {
     vaultGetActiveFile,
     vaultGetFileState,
     vaultGetMetadata,
-    vaultIsDirectory,
+    vaultIsFolder,
     vaultReadFile,
     vaultResolveLink,
 } from "./read";
-import { vaultBrowseDirectory } from "./browse";
+import { vaultBrowseFolder } from "./browse";
 import { vaultGrepFile } from "./grep";
 import { vaultSearchContent, vaultSearchFiles } from "./search";
 import {
@@ -20,7 +20,7 @@ import {
     vaultRenameFile,
     vaultEditLines,
     vaultReplaceText,
-} from "./write";
+} from "./edit";
 import { vaultGetOverview, vaultListFilesSorted } from "./overview";
 import { vaultEditFileTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
 import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
@@ -46,12 +46,12 @@ import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
  *     → main") instead of nuanced ("only delegate writes that don't
  *     have a content body").
  *  2. Removes the prompt-injection seam for content-bearing writes
- *     (`vault_create_file` / `vault_append_file` / `vault_replace_*`):
+ *     (`create_file` / `append_file` / `replace_text`):
  *     the literal file body rides as a JSON `content` field, never as
  *     prose inside `delegate_task.task`.
  *  3. Keeps the related hard rules (e.g. "tag edits MUST use
- *     `vault_edit_file_tags`, not `vault_replace_text`"; "moves MUST
- *     use `vault_rename_or_move_file`, not delete+create") on the
+ *     `edit_file_tags`, not `replace_text`"; "moves MUST
+ *     use `rename_or_move_file`, not delete+create") on the
  *     same agent that owns the tools they constrain — the rules and
  *     the tools live together.
  *
@@ -110,10 +110,10 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
         vaultGetActiveFile(plugin),
         vaultGetMetadata(plugin),
         vaultGetFileState(plugin),
-        vaultIsDirectory(plugin),
+        vaultIsFolder(plugin),
         vaultResolveLink(plugin),
         // List / browse
-        vaultBrowseDirectory(plugin),
+        vaultBrowseFolder(plugin),
         // Search
         vaultSearchFiles(plugin),
         vaultSearchContent(plugin),

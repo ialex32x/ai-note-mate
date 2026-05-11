@@ -12,7 +12,7 @@ import {
 } from "./_tag-ops";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_edit_file_tags
+// Tool: edit_file_tags
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface EditTagsFileResult {
@@ -28,10 +28,10 @@ interface EditTagsFileResult {
 /**
  * Add, remove, or set tags on one or more specific notes.
  *
- * Unlike `vault_rename_tag` (which operates on the whole vault), this tool targets a small list of
+ * Unlike `rename_tag` (which operates on the whole vault), this tool targets a small list of
  * files explicitly chosen by the caller. Frontmatter writes go through `processFrontMatter`, and
  * inline edits use the metadata cache's precise offsets, so neither YAML structure nor in-body
- * prose can get corrupted by the kind of accidents `vault_replace_text` is prone to.
+ * prose can get corrupted by the kind of accidents `replace_text` is prone to.
  */
 export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
@@ -40,15 +40,15 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_edit_file_tags",
+                name: "edit_file_tags",
                 description:
                     "Add, remove, or set (overwrite) tags on one or more specific notes. " +
-                    "This is the ONLY safe way to edit tags on individual files — do NOT use vault_replace_text for tag edits, " +
+                    "This is the ONLY safe way to edit tags on individual files — do NOT use replace_text for tag edits, " +
                     "as it cannot reliably distinguish '#X' from '#XYZ', and cannot safely modify YAML frontmatter. " +
                     "Frontmatter is updated via the official processFrontMatter API (preserves YAML structure, quoting, key order). " +
                     "Inline '#tag' occurrences are located via the metadata cache's exact offsets. " +
                     "Operations are idempotent: adding an existing tag or removing a missing tag is a no-op, not an error. " +
-                    "If the user wants to rename a tag everywhere across the entire vault, use vault_rename_tag instead.",
+                    "If the user wants to rename a tag everywhere across the entire vault, use rename_tag instead.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -377,7 +377,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Frontmatter add / set helpers (used by vault_edit_file_tags only)
+// Frontmatter add / set helpers (used by edit_file_tags only)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

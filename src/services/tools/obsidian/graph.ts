@@ -7,7 +7,7 @@ import { isFailure, requireFile } from "./_shared";
 const MARKDOWN_EXTENSIONS = new Set(["md", "canvas"]);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_get_backlinks
+// Tool: get_backlinks
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -25,7 +25,7 @@ export function vaultGetBacklinks(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_get_backlinks",
+                name: "get_backlinks",
                 description:
                     "Return all notes that link TO the given file (incoming/backlinks). " +
                     "Backlinks are a core Obsidian concept that reveals which notes reference the target, " +
@@ -88,7 +88,7 @@ export function vaultGetBacklinks(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_find_orphan_files
+// Tool: find_orphan_files
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -113,7 +113,7 @@ export function vaultFindOrphanFiles(plugin: NoteAssistantPlugin): RegisteredToo
         schema: {
             type: "function",
             function: {
-                name: "vault_find_orphan_files",
+                name: "find_orphan_files",
                 description:
                     "Find files that are NOT linked or embedded from any note, based on Obsidian's resolved link graph. " +
                     "Useful for cleanup review: surfacing notes with no backlinks, or attachments (images, PDFs, audio, etc.) " +

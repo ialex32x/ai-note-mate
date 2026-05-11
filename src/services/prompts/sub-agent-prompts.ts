@@ -99,18 +99,18 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 - Return the actual data via \`exchange.put({ key: "result", ... })\`; your text reply should be a one-line acknowledgement only (see "Returning structured data" below).
 - When referencing notes, use wiki-link syntax \`[[path/to/note]]\` (no .md extension).
 - Vault-internal paths MUST use forward slashes \`/\` only, MUST NOT contain backslashes \`\\\`, and MUST NOT start with a leading \`/\` or \`\\\`.
-- For file contents you read, put the FULL content under \`result\` via \`exchange.put\` — the main agent needs the full text to act on it. Do NOT paste the content into your text reply. BUT: if the task specifies a line range, section, or other narrowing constraint, honor it — read only what was asked (e.g. \`vault_read_file\` with \`start_line\`/\`end_line\`) and put that narrowed slice under \`result\`. "Full content" means the full content of what was requested, not the full content of the whole file.
+- For file contents you read, put the FULL content under \`result\` via \`exchange.put\` — the main agent needs the full text to act on it. Do NOT paste the content into your text reply. BUT: if the task specifies a line range, section, or other narrowing constraint, honor it — read only what was asked (e.g. \`read_file\` with \`start_line\`/\`end_line\`) and put that narrowed slice under \`result\`. "Full content" means the full content of what was requested, not the full content of the whole file.
 - If a file is not found, report it clearly rather than guessing.
 - Do NOT retry the same tool call more than 3 times if it fails.
 
 ## Tool selection hints
-- For "largest / smallest / oldest / newest note" type questions, use \`vault_get_overview\` first — it already computes these extremes.
-- For "list files by size / date / creation time", use \`vault_list_files_sorted\` with appropriate \`sort_by\` / \`sort_order\` instead of scanning files manually.
-- For first exploration of an unfamiliar vault: \`vault_get_overview\` first, then a SINGLE \`vault_browse_directory\` with \`max_depth: 2\`. Drill deeper only when there's a reason.
-- For "what did I edit recently", prefer \`vault_list_files_sorted\` over recursive listing.
-- For finding which notes carry a tag, use \`vault_search_by_tag\` (do not grep file contents).
-- Avoid reading individual files just to compute aggregates — prefer \`vault_get_overview\` / \`vault_list_files_sorted\` / \`vault_search_by_tag\` for aggregate queries.
-- For "find / locate a specific section, heading, paragraph, or keyword inside a known file", use \`vault_grep_file\` with that file's path and the anchor string(s) FIRST to get line numbers, then call \`vault_read_file\` with \`start_line\`/\`end_line\` to read just that slice. Pass several anchors in \`queries\` at once (OR semantics) when the user has given multiple — do NOT spawn one grep call per anchor. Do NOT read the whole file just to locate a section — it wastes tokens and the main agent only needs the narrow range to perform an edit. Only fall back to a full read when no anchor text is available to grep on. Reserve \`vault_search_content\` for vault-wide searches when the target file is unknown.
+- For "largest / smallest / oldest / newest note" type questions, use \`get_overview\` first — it already computes these extremes.
+- For "list files by size / date / creation time", use \`list_files_sorted\` with appropriate \`sort_by\` / \`sort_order\` instead of scanning files manually.
+- For first exploration of an unfamiliar vault: \`get_overview\` first, then a SINGLE \`browse_folder\` with \`max_depth: 2\`. Drill deeper only when there's a reason.
+- For "what did I edit recently", prefer \`list_files_sorted\` over recursive listing.
+- For finding which notes carry a tag, use \`search_by_tag\` (do not grep file contents).
+- Avoid reading individual files just to compute aggregates — prefer \`get_overview\` / \`list_files_sorted\` / \`search_by_tag\` for aggregate queries.
+- For "find / locate a specific section, heading, paragraph, or keyword inside a known file", use \`grep_file\` with that file's path and the anchor string(s) FIRST to get line numbers, then call \`read_file\` with \`start_line\`/\`end_line\` to read just that slice. Pass several anchors in \`queries\` at once (OR semantics) when the user has given multiple — do NOT spawn one grep call per anchor. Do NOT read the whole file just to locate a section — it wastes tokens and the main agent only needs the narrow range to perform an edit. Only fall back to a full read when no anchor text is available to grep on. Reserve \`search_content\` for vault-wide searches when the target file is unknown.
 ${READING_INPUTS_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;

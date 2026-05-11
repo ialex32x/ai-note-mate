@@ -4,7 +4,7 @@ import type { ToolCapability } from "../../../llm-provider";
 import { collectTagsForFile } from "./_tag-ops";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_search_by_tag
+// Tool: search_by_tag
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -17,7 +17,7 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_search_by_tag",
+                name: "search_by_tag",
                 description:
                     "Find all markdown notes that carry any of the given tags. " +
                     "ALWAYS batch multiple tags into a single call (up to 10) — NEVER issue separate calls for each tag. " +

@@ -4,7 +4,7 @@ import type { ToolCapability } from "../../../llm-provider";
 import { collectTagsForFile } from "./_tag-ops";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_list_tags
+// Tool: list_tags
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -17,7 +17,7 @@ export function vaultListTags(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_list_tags",
+                name: "list_tags",
                 description:
                     "List all tags used across the vault with their occurrence counts (number of notes using each tag). " +
                     "Optionally filter by a prefix to narrow down to a tag namespace (e.g. 'project/'). " +

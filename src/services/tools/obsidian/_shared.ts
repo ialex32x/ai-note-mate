@@ -28,7 +28,7 @@ export function isMediaFile(file: TFile): boolean {
 // These are known binary file formats that are NOT currently delivered to the
 // model via the multimodal channel (see MEDIA_EXTENSIONS). Reading them through
 // the text path would feed garbage bytes to the LLM, which then tends to
-// hallucinate plausible-looking content. `vault_read_file` explicitly refuses
+// hallucinate plausible-looking content. `read_file` explicitly refuses
 // these so the failure is loud instead of silent.
 //
 // Keep this list conservative: only add extensions whose content is ALWAYS

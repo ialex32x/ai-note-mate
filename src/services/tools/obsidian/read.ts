@@ -18,7 +18,7 @@ import {
 } from "./_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_read_file
+// Tool: read_file
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -28,7 +28,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_read_file",
+                name: "read_file",
                 description:
                     "Read the content of a file in the Obsidian vault. " +
                     "For text/markdown files, optionally specify start_line and end_line (1-based, inclusive) " +
@@ -226,7 +226,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_get_active_file
+// Tool: get_active_file
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -236,7 +236,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
         schema: {
             type: "function",
             function: {
-                name: "vault_get_active_file",
+                name: "get_active_file",
                 description:
                     "Get information about the file currently open and focused in the editor. " +
                     "Use this when the user refers to 'this file', 'current note', 'active file', " +
@@ -244,7 +244,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                     "Optionally include its content. " +
                     "NOTE: When include_content is true and the file is large (more than ~200 lines), " +
                     "only an outline with headings/line numbers and a content preview are returned " +
-                    "instead of the full content. Use vault_read_file with start_line/end_line to read specific sections.",
+                    "instead of the full content. Use read_file with start_line/end_line to read specific sections.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -280,7 +280,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                 if (isMediaFile(activeFile)) {
                     result["content_omitted"] =
                         `File extension '.${activeFile.extension}' is a media file. ` +
-                        `Use vault_read_file to load it via the multimodal channel.`;
+                        `Use read_file to load it via the multimodal channel.`;
                 } else if (isNonMediaBinaryFile(activeFile)) {
                     result["content_omitted"] =
                         `File extension '.${activeFile.extension}' is a binary format and cannot be decoded as text.`;
@@ -304,7 +304,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                             total_lines: totalLines,
                             notice:
                                 `This file is large (${totalLines} lines). Showing outline and first ${previewEnd} lines as preview. ` +
-                                `Use vault_read_file with start_line/end_line to read specific sections.`,
+                                `Use read_file with start_line/end_line to read specific sections.`,
                             outline: headings,
                             preview: {
                                 start_line: 1,
@@ -322,7 +322,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_get_metadata
+// Tool: get_metadata
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -332,7 +332,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_get_metadata",
+                name: "get_metadata",
                 description:
                     "Get the parsed frontmatter metadata and structural info (headings, tags, links) " +
                     "of one or more markdown files, without reading the full content. " +
@@ -414,7 +414,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_get_file_state
+// Tool: get_file_state
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultGetFileState(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -424,7 +424,7 @@ export function vaultGetFileState(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_get_file_state",
+                name: "get_file_state",
                 description:
                     "Get the state information (creation time, modification time, size) for a file. " +
                     "Use this when the user asks about when a file was created, modified, last edited, " +
@@ -466,19 +466,19 @@ export function vaultGetFileState(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_is_directory
+// Tool: is_folder
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultIsDirectory(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultIsFolder(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "vault_is_directory",
+                name: "is_folder",
                 description:
-                    "Check if a given path in the vault is a directory (folder) or a file. " +
+                    "Check if a given path in the vault is a folder or a file. " +
                     "Use this when the user wants to verify if a path is a folder or check path type.",
                 parameters: {
                     type: "object",
@@ -504,19 +504,19 @@ export function vaultIsDirectory(plugin: NoteAssistantPlugin): RegisteredTool {
                     content: {
                         path,
                         exists: false,
-                        isDirectory: false,
+                        isFolder: false,
                     },
                 };
             }
 
-            const isDir = file instanceof TFolder;
+            const isFolder = file instanceof TFolder;
             return {
                 success: true,
                 type: "object",
                 content: {
                     path,
                     exists: true,
-                    isDirectory: isDir,
+                    isFolder,
                 },
             };
         },
@@ -524,7 +524,7 @@ export function vaultIsDirectory(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_resolve_link
+// Tool: resolve_link
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultResolveLink(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -534,7 +534,7 @@ export function vaultResolveLink(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_resolve_link",
+                name: "resolve_link",
                 description:
                     "Resolve a wikilink reference to its full vault path. " +
                     "IMPORTANT: Only use this tool when the reference does NOT contain a path separator (/). " +

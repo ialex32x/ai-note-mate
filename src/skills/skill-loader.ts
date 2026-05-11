@@ -1,10 +1,12 @@
 /**
- * Standalone Skill Loader - extracted from gemini-cli
- * Zero dependency on gemini-cli internals.
- * npm dependencies: js-yaml
+ * Standalone Skill Loader - extracted from gemini-cli.
+ *
+ * Frontmatter parsing is delegated to the shared `utils/frontmatter` helper,
+ * which uses Obsidian's built-in `parseYaml` / `getFrontMatterInfo` — so this
+ * module has no third-party YAML dependency.
  */
 
-import { load } from 'js-yaml';
+import { parseFrontmatterFromContent } from '../utils/frontmatter.js';
 
 /**
  * File system adapter interface for platform-agnostic file operations.
@@ -65,77 +67,6 @@ export interface SkillDefinition {
   mtime?: number;
 }
 
-export const FRONTMATTER_REGEX =
-  /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?/;
-
-/**
- * Parses frontmatter content using YAML with a fallback to simple key-value parsing.
- */
-function parseFrontmatter(
-  content: string,
-): { name: string; description: string } | null {
-  try {
-    const parsed = load(content);
-    if (parsed && typeof parsed === 'object') {
-      const { name, description } = parsed as Record<string, unknown>;
-      if (typeof name === 'string' && typeof description === 'string') {
-        return { name, description };
-      }
-    }
-  } catch {
-    // YAML parsing failed, fall back to simple parser
-  }
-
-  return parseSimpleFrontmatter(content);
-}
-
-/**
- * Simple frontmatter parser that extracts name and description fields.
- * Handles cases where values contain colons that would break YAML parsing.
- */
-function parseSimpleFrontmatter(
-  content: string,
-): { name: string; description: string } | null {
-  const lines = content.split(/\r?\n/);
-  let name: string | undefined;
-  let description: string | undefined;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (!line) continue;
-
-    const nameMatch = line.match(/^\s*name:\s*(.*)$/);
-    if (nameMatch && nameMatch[1] !== undefined) {
-      name = nameMatch[1].trim();
-      continue;
-    }
-
-    const descMatch = line.match(/^\s*description:\s*(.*)$/);
-    if (descMatch && descMatch[1] !== undefined) {
-      const descLines = [descMatch[1].trim()];
-
-      // Check for multi-line description (indented continuation lines)
-      while (i + 1 < lines.length) {
-        const nextLine = lines[i + 1];
-        if (nextLine && nextLine.match(/^[ \t]+\S/)) {
-          descLines.push(nextLine.trim());
-          i++;
-        } else {
-          break;
-        }
-      }
-
-      description = descLines.filter(Boolean).join(' ');
-      continue;
-    }
-  }
-
-  if (name !== undefined && description !== undefined) {
-    return { name, description };
-  }
-  return null;
-}
-
 /**
  * Discovers and loads all skills (SKILL.md files) in the provided directory.
  * Searches for SKILL.md at root level and one level deep (subdir/SKILL.md).
@@ -184,26 +115,32 @@ export async function loadSkillFromFile(
 ): Promise<SkillDefinition | null> {
   try {
     const content = await fsAdapter.readFile(filePath);
-    const match = content.match(FRONTMATTER_REGEX);
-    if (!match || !match[1]) {
+    const { exists, frontmatter, body } = parseFrontmatterFromContent(content, {
+      // Skill descriptions commonly contain unquoted colons, which break
+      // strict YAML. Enable the permissive fallback so we still salvage the
+      // `name` / `description` fields in that case.
+      permissiveFallback: true,
+    });
+    if (!exists || !frontmatter) {
       return null;
     }
 
-    const frontmatter = parseFrontmatter(match[1]);
-    if (!frontmatter) {
+    const name = frontmatter.name;
+    const description = frontmatter.description;
+    if (typeof name !== 'string' || typeof description !== 'string') {
       return null;
     }
 
     // Sanitize name for use as a filename/directory name
-    const sanitizedName = frontmatter.name.replace(/[:\\/<>*?"|]/g, '-');
+    const sanitizedName = name.replace(/[:\\/<>*?"|]/g, '-');
 
     const mtime = await fsAdapter.getMtime(filePath);
 
     return {
       name: sanitizedName,
-      description: frontmatter.description,
+      description,
       location: filePath,
-      body: match[2]?.trim() ?? '',
+      body: body.trim(),
       mtime: mtime ?? undefined,
     };
   } catch (error) {

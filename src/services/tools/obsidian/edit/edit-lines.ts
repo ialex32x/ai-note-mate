@@ -1,10 +1,10 @@
-import type NoteAssistantPlugin from "../../../main";
-import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
-import type { ToolCapability } from "../../llm-provider";
-import { isFailure, requireFile } from "./_shared";
+import type NoteAssistantPlugin from "../../../../main";
+import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
+import type { ToolCapability } from "../../../llm-provider";
+import { isFailure, requireFile } from "../_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_edit_lines
+// Tool: edit_lines
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -288,7 +288,7 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_edit_lines",
+                name: "edit_lines",
                 description:
                     "Apply one or more line-based edits to a file in a single atomic operation. " +
                     "Supports replacing a line range, deleting a range (replace with empty content), " +
@@ -296,7 +296,7 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                     "\n\n" +
                     "LINE NUMBERING: Lines are 1-based and split by '\\n'. A trailing newline at the " +
                     "end of the file produces a final empty line that DOES count toward the file's " +
-                    "total line count. Always run `vault_read_file` first to verify line numbers " +
+                    "total line count. Always run `read_file` first to verify line numbers " +
                     "before editing — do not guess. " +
                     "\n\n" +
                     "IMPORTANT: When you need multiple edits in the same file, you MUST submit them ALL " +

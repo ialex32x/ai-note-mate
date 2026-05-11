@@ -3,7 +3,7 @@ import type { RegisteredTool } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_search_files
+// Tool: search_files
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -13,7 +13,7 @@ export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_search_files",
+                name: "search_files",
                 description:
                     "Search for files in the vault whose path or filename contains the given keyword. " +
                     "Case-insensitive substring match. " +
@@ -61,11 +61,11 @@ export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_search_content
+// Tool: search_content
 //
 // Vault-wide full-text search across all markdown files. Intentionally has
 // NO single-file mode — when the file is already known, callers must use
-// `vault_grep_file` instead, which is far cheaper and supports section
+// `grep_file` instead, which is far cheaper and supports section
 // anchoring + multi-query OR.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -76,13 +76,13 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
         schema: {
             type: "function",
             function: {
-                name: "vault_search_content",
+                name: "search_content",
                 description:
                     "Vault-wide full-text search across ALL markdown files. " +
                     "Returns matching files with line numbers and surrounding context lines. " +
                     "Use this when the user wants to find text, content, or keywords across the whole vault " +
                     "(not just by filename) and the target file is unknown. " +
-                    "DO NOT use this to search inside a single known file — use `vault_grep_file` instead, " +
+                    "DO NOT use this to search inside a single known file — use `grep_file` instead, " +
                     "which is much cheaper, supports multiple queries at once, and can be scoped to a heading section.",
                 parameters: {
                     type: "object",

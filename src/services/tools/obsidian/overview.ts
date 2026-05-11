@@ -4,7 +4,7 @@ import type { RegisteredTool } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_get_overview
+// Tool: get_overview
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -18,7 +18,7 @@ export function vaultGetOverview(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_get_overview",
+                name: "get_overview",
                 description:
                     "Get a high-level overview of the entire vault: total number of files, breakdown by file extension, " +
                     "total folder count, total size in bytes, and information about the most recently modified, " +
@@ -102,7 +102,7 @@ export function vaultGetOverview(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_list_files_sorted
+// Tool: list_files_sorted
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -117,7 +117,7 @@ export function vaultListFilesSorted(plugin: NoteAssistantPlugin): RegisteredToo
         schema: {
             type: "function",
             function: {
-                name: "vault_list_files_sorted",
+                name: "list_files_sorted",
                 description:
                     "List files in the vault sorted by a chosen field (modification time, creation time, or size). " +
                     "Defaults to modification time descending (most recent first). " +

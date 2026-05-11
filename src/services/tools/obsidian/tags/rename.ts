@@ -10,7 +10,7 @@ import {
 } from "./_tag-ops";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: vault_rename_tag
+// Tool: rename_tag
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -37,15 +37,15 @@ export function vaultRenameTag(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "vault_rename_tag",
+                name: "rename_tag",
                 description:
                     "Rename a tag (and optionally all of its nested sub-tags) across every markdown note in the vault. " +
                     "Rewrites both inline '#tag' occurrences AND YAML frontmatter tag entries (under 'tags' or 'tag') in a single atomic operation per file. " +
                     "Inline replacements use the metadata cache's precise offsets, so they will NOT accidentally touch words like 'XYZ' or '#X-foo' when renaming '#X'. " +
                     "When include_descendants is true, '#X/alpha' is also renamed to '#Y/alpha', preserving the sub-path. " +
                     "Always run with dry_run=true first to preview the impact (file count, occurrence count) before applying. " +
-                    "Use this whenever the user wants to rename, refactor, merge, or move a tag across the whole vault — much safer and cheaper than looping vault_replace_text over many files. " +
-                    "If the user only wants to add/remove/set tags on specific notes (rather than rename everywhere), use vault_edit_file_tags instead.",
+                    "Use this whenever the user wants to rename, refactor, merge, or move a tag across the whole vault — much safer and cheaper than looping replace_text over many files. " +
+                    "If the user only wants to add/remove/set tags on specific notes (rather than rename everywhere), use edit_file_tags instead.",
                 parameters: {
                     type: "object",
                     properties: {
