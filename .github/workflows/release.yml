@@ -12,6 +12,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need full history so we can verify the tag is reachable from main
+          # and fast-forward main locally before pushing the version bump back.
+          fetch-depth: 0
 
       - name: Use Node.js
         uses: actions/setup-node@v4
@@ -19,18 +23,83 @@ jobs:
           node-version: "22.x"
           cache: "npm"
 
-      - name: Build plugin
+      - name: Resolve version from tag
+        id: version
+        run: |
+          tag="${GITHUB_REF#refs/tags/}"
+          # Obsidian community plugins require tags WITHOUT a leading "v".
+          # Fail loudly instead of silently stripping it, so a wrong tag never
+          # ships as a different version than what was pushed.
+          if [[ "$tag" == v* ]]; then
+            echo "::error::Tag '$tag' must not start with 'v'. Re-tag as '${tag#v}' and push again."
+            exit 1
+          fi
+          if [[ ! "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+].+)?$ ]]; then
+            echo "::error::Tag '$tag' is not a valid SemVer (expected X.Y.Z)."
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Sync version into manifest.json / versions.json
+        env:
+          TARGET_VERSION: ${{ steps.version.outputs.version }}
         run: |
           npm ci --legacy-peer-deps
-          npm run build
+          node version-bump.mjs
+
+      - name: Build plugin
+        run: npm run build
 
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-
-          gh release create "$tag" \
-            --title="$tag" \
+          gh release create "$TAG" \
+            --title="$TAG" \
             --draft \
             main.js manifest.json styles.css
+
+      - name: Sync manifest.json / versions.json back to main
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          # Only sync back when the tag commit actually lives on origin/main.
+          # Tags cut from other branches must not push version metadata into main.
+          git fetch origin main --quiet
+          tag_sha="$(git rev-parse HEAD)"
+          if ! git merge-base --is-ancestor "$tag_sha" origin/main; then
+            echo "Tag commit $tag_sha is not on origin/main; skipping write-back."
+            exit 0
+          fi
+
+          # Preserve the bumped files across the branch switch.
+          git stash push --quiet -- manifest.json versions.json
+
+          git checkout main
+          git pull --ff-only origin main
+
+          git stash pop --quiet
+
+          if git diff --quiet -- manifest.json versions.json; then
+            echo "manifest.json / versions.json already up to date on main; nothing to commit."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add manifest.json versions.json
+          git commit -m "chore(release): sync manifest.json and versions.json for $TAG"
+
+          # Retry once on push race (someone landed a commit on main between
+          # our pull and our push). Rebase on top and try again.
+          if ! git push origin HEAD:main; then
+            echo "Push rejected, attempting rebase + retry..."
+            git fetch origin main --quiet
+            git rebase origin/main
+            git push origin HEAD:main
+          fi
