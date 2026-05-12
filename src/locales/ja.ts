@@ -284,6 +284,7 @@ export const ja: Record<string, string> = {
 	'status.sessionSection': 'セッション',
 	'status.agentsSection': 'エージェント',
 	'status.mcpSection': 'MCP サーバー',
+	'status.artifactsSection': 'アーティファクト',
 	'status.ariaLabel': 'セッション状態',
 	'statusLabel.prompt': 'プロンプト',
 	'statusLabel.completion': '補完',
@@ -292,6 +293,9 @@ export const ja: Record<string, string> = {
 	'statusLabel.summaries': '要約',
 	'statusLabel.mainAgent': 'メイン',
 	'statusLabel.embedding': '埋め込み',
+	'statusLabel.artifactsLive': '保持中',
+	'statusLabel.artifactsBytes': 'サイズ',
+	'statusLabel.artifactsTombstones': 'トゥームストーン',
 	'statusValue.embeddingDisabled': '無効',
 	'statusValue.embeddingUnconfigured': '未設定',
 	'statusTooltip.embeddingDisabled': '埋め込みサービスは設定で無効になっています',
@@ -303,6 +307,8 @@ export const ja: Record<string, string> = {
 	'statusTooltip.mcpConnecting': '接続中…',
 	'statusTooltip.mcpDisconnected': '切断',
 	'statusTooltip.mcpError': '接続エラー',
+	'statusTooltip.artifactsLive': '現在メモリに保持されている復元可能なアーティファクト数',
+	'statusTooltip.artifactsTombstones': '既に破棄済みのエントリ。recall_artifact は引き続き理由を返します',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '参照するファイルまたはフォルダを検索…',

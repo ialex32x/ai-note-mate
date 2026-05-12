@@ -284,6 +284,7 @@ export const en: Record<string, string> = {
 	'status.sessionSection': 'Session',
 	'status.agentsSection': 'Agents',
 	'status.mcpSection': 'MCP servers',
+	'status.artifactsSection': 'Artifacts',
 	'status.ariaLabel': 'Session status',
 	'statusLabel.prompt': 'Prompt',
 	'statusLabel.completion': 'Completion',
@@ -292,6 +293,9 @@ export const en: Record<string, string> = {
 	'statusLabel.summaries': 'Summaries',
 	'statusLabel.mainAgent': 'Main',
 	'statusLabel.embedding': 'Embedding',
+	'statusLabel.artifactsLive': 'Live',
+	'statusLabel.artifactsBytes': 'Size',
+	'statusLabel.artifactsTombstones': 'Tombstones',
 	'statusValue.embeddingDisabled': 'Disabled',
 	'statusValue.embeddingUnconfigured': 'Not configured',
 	'statusTooltip.embeddingDisabled': 'Embedding service is turned off in settings',
@@ -303,6 +307,8 @@ export const en: Record<string, string> = {
 	'statusTooltip.mcpConnecting': 'Connecting…',
 	'statusTooltip.mcpDisconnected': 'Disconnected',
 	'statusTooltip.mcpError': 'Connection error',
+	'statusTooltip.artifactsLive': 'Recoverable artifact entries currently held in memory',
+	'statusTooltip.artifactsTombstones': 'Entries already evicted; recall_artifact still reports the reason',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': 'Search for a file or folder to reference…',

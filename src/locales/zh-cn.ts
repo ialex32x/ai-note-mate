@@ -283,6 +283,7 @@ export const zhCN: Record<string, string> = {
 	'status.sessionSection': '会话',
 	'status.agentsSection': '代理',
 	'status.mcpSection': 'MCP 服务器',
+	'status.artifactsSection': '产物',
 	'status.ariaLabel': '会话状态',
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '补全',
@@ -291,6 +292,9 @@ export const zhCN: Record<string, string> = {
 	'statusLabel.summaries': '摘要',
 	'statusLabel.mainAgent': '主',
 	'statusLabel.embedding': '嵌入',
+	'statusLabel.artifactsLive': '存活',
+	'statusLabel.artifactsBytes': '占用',
+	'statusLabel.artifactsTombstones': '墓碑',
 	'statusValue.embeddingDisabled': '已禁用',
 	'statusValue.embeddingUnconfigured': '未配置',
 	'statusTooltip.embeddingDisabled': '嵌入服务已在设置中关闭',
@@ -302,6 +306,8 @@ export const zhCN: Record<string, string> = {
 	'statusTooltip.mcpConnecting': '连接中…',
 	'statusTooltip.mcpDisconnected': '已断开',
 	'statusTooltip.mcpError': '连接错误',
+	'statusTooltip.artifactsLive': '当前内存中可恢复的产物条目数',
+	'statusTooltip.artifactsTombstones': '已被淘汰的条目；recall_artifact 仍可返回原因',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '搜索要引用的文件或文件夹…',

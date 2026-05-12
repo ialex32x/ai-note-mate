@@ -284,6 +284,7 @@ export const zhTW: Record<string, string> = {
 	'status.sessionSection': '會話',
 	'status.agentsSection': '代理',
 	'status.mcpSection': 'MCP 伺服器',
+	'status.artifactsSection': '產物',
 	'status.ariaLabel': '會話狀態',
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '完成',
@@ -292,6 +293,9 @@ export const zhTW: Record<string, string> = {
 	'statusLabel.summaries': '摘要',
 	'statusLabel.mainAgent': '主',
 	'statusLabel.embedding': '嵌入',
+	'statusLabel.artifactsLive': '存活',
+	'statusLabel.artifactsBytes': '佔用',
+	'statusLabel.artifactsTombstones': '墓碑',
 	'statusValue.embeddingDisabled': '已停用',
 	'statusValue.embeddingUnconfigured': '未設定',
 	'statusTooltip.embeddingDisabled': '嵌入服務已在設定中關閉',
@@ -303,6 +307,8 @@ export const zhTW: Record<string, string> = {
 	'statusTooltip.mcpConnecting': '連接中…',
 	'statusTooltip.mcpDisconnected': '已斷開',
 	'statusTooltip.mcpError': '連接錯誤',
+	'statusTooltip.artifactsLive': '目前記憶體中可恢復的產物條目數',
+	'statusTooltip.artifactsTombstones': '已被淘汰的條目；recall_artifact 仍可回報原因',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '搜尋要引用的檔案或資料夾…',

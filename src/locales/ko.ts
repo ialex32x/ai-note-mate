@@ -284,6 +284,7 @@ export const ko: Record<string, string> = {
 	'status.sessionSection': '세션',
 	'status.agentsSection': '에이전트',
 	'status.mcpSection': 'MCP 서버',
+	'status.artifactsSection': '아티팩트',
 	'status.ariaLabel': '세션 상태',
 	'statusLabel.prompt': '프롬프트',
 	'statusLabel.completion': '완성',
@@ -292,6 +293,9 @@ export const ko: Record<string, string> = {
 	'statusLabel.summaries': '요약',
 	'statusLabel.mainAgent': '메인',
 	'statusLabel.embedding': '임베딩',
+	'statusLabel.artifactsLive': '활성',
+	'statusLabel.artifactsBytes': '크기',
+	'statusLabel.artifactsTombstones': '툼스톤',
 	'statusValue.embeddingDisabled': '비활성화',
 	'statusValue.embeddingUnconfigured': '미설정',
 	'statusTooltip.embeddingDisabled': '임베딩 서비스가 설정에서 비활성화되었습니다',
@@ -303,6 +307,8 @@ export const ko: Record<string, string> = {
 	'statusTooltip.mcpConnecting': '연결 중…',
 	'statusTooltip.mcpDisconnected': '연결 끊김',
 	'statusTooltip.mcpError': '연결 오류',
+	'statusTooltip.artifactsLive': '현재 메모리에 보관된 복구 가능한 아티팩트 항목 수',
+	'statusTooltip.artifactsTombstones': '이미 제거된 항목. recall_artifact 가 계속 사유를 반환합니다',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '참조할 파일 또는 폴더 검색…',

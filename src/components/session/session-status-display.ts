@@ -4,6 +4,7 @@ import type { IChatAgent } from '../../services/chat-stream';
 import { getGlobalEmbedder, type EmbedderStatus } from '../../services/embedder';
 import type { MCPManager } from '../../services/mcp/mcp-manager';
 import type { MCPServerStatus } from '../../services/mcp/mcp-types';
+import type { ArtifactStoreStats } from '../../services/artifact-store';
 import { humanizeIdentifier } from '../../utils/humanize';
 
 /**
@@ -50,6 +51,18 @@ export class SessionStatusDisplay {
     }
 
     /**
+     * Compact byte formatter for the Artifacts section.
+     * `0` -> "0 B", `4096` -> "4.0 KB", `1_572_864` -> "1.5 MB".
+     * Kept separate from {@link formatCompact} (which is unit-less) so we
+     * don't lose the explicit "B / KB / MB" suffix on small numbers.
+     */
+    static formatBytes(n: number): string {
+        if (n < 1024) return `${n} B`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+        return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    /**
      * Render the compact top-toolbar indicator into `el`.
      * Primary metric: token usage (with optional max / percentage).
      */
@@ -86,6 +99,14 @@ export class SessionStatusDisplay {
      *                    and its current connection status. This is a live
      *                    view only (not persisted) — the panel is re-rendered
      *                    on demand from the manager's current state.
+     * @param embeddingInfo Optional embedding feature snapshot. Drives the
+     *                    Embedding row inside the "Session" section.
+     * @param artifactStats Optional snapshot from
+     *                    `SessionRuntime.artifactStore.stats()`. When
+     *                    provided, an "Artifacts" section surfaces the live
+     *                    entry count, byte usage, and tombstone count. This
+     *                    is purely runtime state (not persisted) — sourced
+     *                    fresh on every panel open.
      */
     static renderPanel(
         el: HTMLElement,
@@ -93,6 +114,7 @@ export class SessionStatusDisplay {
         maxTokens: number,
         mcpManager?: MCPManager | null,
         embeddingInfo?: EmbeddingPanelInfo,
+        artifactStats?: ArtifactStoreStats | null,
     ): void {
         el.empty();
 
@@ -193,6 +215,40 @@ export class SessionStatusDisplay {
                 }
             }
         });
+
+        // ── Artifacts section ────────────────────────────────────────────
+        // Pure runtime view of `SessionRuntime.artifactStore`. Surfaces the
+        // three fields exposed by `ArtifactStore.stats()`:
+        //   - liveCount       (number of recoverable entries)
+        //   - liveBytes       (their total serialized byte usage)
+        //   - tombstoneCount  (entries already evicted, kept for recall hints)
+        //
+        // Hidden when the store is fully empty so the panel stays focused
+        // for sessions that never spilled an artifact. We treat
+        // `liveCount === 0 && tombstoneCount === 0` as "nothing to show";
+        // a non-zero `liveBytes` without a live count is impossible.
+        if (artifactStats && (artifactStats.liveCount > 0 || artifactStats.tombstoneCount > 0)) {
+            this.renderSection(el, t('status.artifactsSection'), (section) => {
+                this.renderRow(
+                    section,
+                    t('statusLabel.artifactsLive'),
+                    artifactStats.liveCount.toLocaleString(),
+                    t('statusTooltip.artifactsLive'),
+                );
+                this.renderRow(
+                    section,
+                    t('statusLabel.artifactsBytes'),
+                    this.formatBytes(artifactStats.liveBytes),
+                    `${artifactStats.liveBytes.toLocaleString()} B`,
+                );
+                this.renderRow(
+                    section,
+                    t('statusLabel.artifactsTombstones'),
+                    artifactStats.tombstoneCount.toLocaleString(),
+                    t('statusTooltip.artifactsTombstones'),
+                );
+            });
+        }
 
         // ── MCP servers section ──────────────────────────────────────────
         // Display-only view of configured MCP servers and their live

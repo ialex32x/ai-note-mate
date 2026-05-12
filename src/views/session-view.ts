@@ -401,6 +401,7 @@ export class SessionView extends ItemView {
                             max,
                             this.plugin.mcpManager,
                             this.computeEmbeddingPanelInfo(),
+                            this.runtime?.artifactStore.stats() ?? null,
                         );
                     } else {
                         this.sessionStatusPanelEl.empty();
@@ -644,6 +645,7 @@ export class SessionView extends ItemView {
                     max,
                     this.plugin.mcpManager,
                     this.computeEmbeddingPanelInfo(),
+                    this.runtime?.artifactStore.stats() ?? null,
                 );
             };
             this.plugin.mcpManager?.onChange(this.onMcpStateChangedForStatusPanel);
@@ -1379,6 +1381,7 @@ export class SessionView extends ItemView {
                 max,
                 this.plugin.mcpManager,
                 this.computeEmbeddingPanelInfo(),
+                this.runtime?.artifactStore.stats() ?? null,
             );
         }
     }
