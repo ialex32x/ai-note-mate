@@ -1,4 +1,5 @@
 import { createDefaultProfile } from "./defaults";
+import { ARTIFACT_STORE_DEFAULTS, type ArtifactStoreOptions } from "../services/artifact-store";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
@@ -42,4 +43,41 @@ export function getActiveEmbeddingConfig(settings: NoteAssistantPluginSettings):
 	if (config) return config;
 	// Fallback to the first config
 	return settings.embeddingConfigs[0]!;
+}
+
+/**
+ * Helper: derive {@link ArtifactStoreOptions} from plugin settings.
+ *
+ * Validation policy (mirrors §1.3 of `docs/delegate-envelope-artifact-plan.md`):
+ *   - `totalBytesKb` / `singleArtifactKb` < 1 fall back to the built-in
+ *     default. Zero or negative byte budgets would either disable the
+ *     store entirely or break the LRU loop's termination invariant; both
+ *     are misconfigurations rather than features, so silently snap to a
+ *     sane value.
+ *   - `ttlMinutes` < 0 falls back to default. `0` is **kept** verbatim
+ *     because the store treats `ttlMs === 0` as "TTL disabled" — that's
+ *     a legitimate user choice (long-running research sessions where
+ *     LRU + total-byte cap are the only desired evictors).
+ *
+ * The conversion to bytes / ms is done here, not in the store, so the
+ * store stays in its native units and tests can pass byte counts
+ * directly without going through the settings layer.
+ */
+export function deriveArtifactStoreOptions(settings: NoteAssistantPluginSettings): ArtifactStoreOptions {
+	const totalKb = settings.artifactStoreTotalBytesKb;
+	const totalBytesCap = totalKb >= 1
+		? Math.floor(totalKb * 1024)
+		: ARTIFACT_STORE_DEFAULTS.totalBytesCap;
+
+	const singleKb = settings.artifactStoreSingleArtifactKb;
+	const singleArtifactCap = singleKb >= 1
+		? Math.floor(singleKb * 1024)
+		: ARTIFACT_STORE_DEFAULTS.singleArtifactCap;
+
+	const ttlMinutes = settings.artifactStoreTtlMinutes;
+	const ttlMs = ttlMinutes >= 0
+		? Math.floor(ttlMinutes * 60_000)
+		: ARTIFACT_STORE_DEFAULTS.ttlMs;
+
+	return { totalBytesCap, singleArtifactCap, ttlMs };
 }

@@ -165,11 +165,21 @@ If \`result.warnings\` contains a structural follow-up (e.g. "file also needs to
 - Each value MUST be JSON-serializable and ≤ 32 KB serialized; oversized inputs are rejected (the call fails, no sub-agent runs).
 
 ### Reading delegate_task results
-The \`delegate_task\` tool_result is a JSON-encoded object of the form:
+The \`delegate_task\` tool_result is a JSON-encoded envelope of the form:
 
-  { "text": "<sub-agent's text reply>", "result": <structured value, omitted if absent>, "extras": { "<key>": <value>, ... } }
+  { "__kind": "delegate_envelope", "__v": 1, "text": "<sub-agent's text reply>", "result": <structured value, omitted if absent>, "extras": { "<key>": <value>, ... }, "artifacts": { "<field>": { "key": "<store-handle>", "size": <bytes>, "preview": "...", "reason": "oversize" | "shrunk" }, ... }, "omitted": { "<key>_omitted": true, "<key>_size": <bytes>, "<key>_too_large_for_store": true } }
 
-Prefer the structured \`result\` field for any downstream tool call or programmatic decision. Use \`text\` only for human-facing explanation. If \`result\` is absent, fall back to \`text\`. If an \`omitted\` field is present, the value was too large to inline; consider re-delegating with a narrower scope. If you ever see \`result.needs_main: true\`, the sub-agent is signalling that the task you sent it requires a tool it doesn't have — handle the operation yourself.
+\`__kind\` and \`__v\` are runtime metadata that mark the JSON as a delegate envelope and pin its schema version — **ignore them**; they are not data for you. The fields that carry meaning are:
+
+- \`result\` — the structured value the sub-agent produced. Prefer this for any downstream tool call or programmatic decision. If \`result\` is absent, fall back to \`text\` or to \`artifacts.result\` (see below).
+- \`text\` — a human-facing summary. Use it for explanation to the user, not as the source of structured data.
+- \`extras\` — additional auxiliary fields the sub-agent wrote via its \`exchange\` tool (validator notes, supplementary indices, etc.). Read by key; never required.
+- \`artifacts\` — a map keyed by **field name** (\`"result"\` or an extras key). Each entry's \`key\` is an opaque artifact-store handle (e.g. \`"auto:tc-123:result"\`) — pass it verbatim to \`recall_artifact({ key: "<store-handle>" })\` to fetch the full content. \`size\` is the original byte size; \`preview\` is the first ~200 chars of the JSON-stringified value for orientation; \`reason\` is \`"oversize"\` (the value was too big to inline at envelope time) or \`"shrunk"\` (the value was inline but later spilled to keep your context lean). Do NOT re-call \`delegate_task\` just to read an artifact again — re-running the sub-agent costs tokens and may produce different output.
+- \`omitted\` — present when a value the sub-agent produced was dropped entirely. Each field appears as \`<key>_omitted: true\` plus \`<key>_size: <bytes>\`, and (when the drop was because the value exceeded the artifact store cap) an additional \`<key>_too_large_for_store: true\` flag. Dropped content is **not** recoverable via \`recall_artifact\`. If you need that data, re-delegate with a narrower scope (e.g. ask for a specific section, smaller result set, or a digest instead of the raw bytes) — do not retry the same call hoping for a different outcome.
+
+Stale tool_results may also contain \`{ "__artifact_ref": "<key>", "size": <bytes>, "preview": "..." }\` placeholders. These appear after history compaction has spilled an old envelope's value out of your context to keep the prompt lean. The original is still in the artifact store; recall it the same way: \`recall_artifact({ key: "<the key>" })\`. If \`recall_artifact\` reports \`evicted: true\`, the artifact has aged out — read the \`reason\` (\`lru\` / \`ttl\` / \`session_end\`) and decide whether to re-derive it via a fresh delegation.
+
+If you ever see \`result.needs_main: true\`, the sub-agent is signalling that the task you sent it requires a tool it doesn't have — handle the operation yourself.
 ${vaultTips}
 
 ## Vault hard rules (apply to your own vault tool calls)

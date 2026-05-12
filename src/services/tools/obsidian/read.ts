@@ -561,9 +561,17 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                     displayText: l.displayText,
                 }));
 
+                const frontmatterPosition = cache.frontmatterPosition
+                    ? {
+                          start_line: cache.frontmatterPosition.start.line + 1, // Convert 0-based to 1-based
+                          end_line: cache.frontmatterPosition.end.line + 1,
+                      }
+                    : null;
+
                 results.push({
                     path,
                     frontmatter: cache.frontmatter ?? null,
+                    frontmatter_position: frontmatterPosition,
                     headings,
                     tags,
                     links,

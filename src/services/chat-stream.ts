@@ -5,6 +5,7 @@ export type { ConversationSummary } from "./context-reducer";
 // override structure without reaching into the reducer module directly.
 export type { ContextReduceOptions } from "./context-reducer";
 import type { MinimalModelConfig } from "./llm-provider";
+import type { ArtifactStore } from "./artifact-store";
 import type {
     LLMProvider,
     MediaAttachment,
@@ -315,6 +316,26 @@ export interface ChatStreamConfig {
     compressionOptions?: Pick<ContextReduceOptions,
         'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
     >;
+
+    /**
+     * Returns the per-session artifact store this ChatStream should use
+     * when the context reducer's shrink stage spills inline envelope
+     * fields (B-1, plan §1.5) into out-of-prompt storage. The store
+     * is owned by the {@link SessionRuntime}; passing a getter (vs. a
+     * direct field) mirrors the dynamic-tools / artifact-promotion
+     * wiring on `AgentOrchestratorConfig` and lets the runtime swap the
+     * store on rebuild without leaking stale references through this
+     * config object.
+     *
+     * Returning `null` (or omitting the callback) disables envelope
+     * spilling: the reducer falls back to the legacy generic JSON
+     * truncation path. Single-agent mode (no `delegate_task`) sees no
+     * envelopes and so this is a no-op for it; the field is hoisted
+     * here from `AgentOrchestratorConfig` purely so the reducer call
+     * inside `ChatStream.prompt()` can read it without a downcast or
+     * a separate field on the orchestrator.
+     */
+    getArtifactStore?: () => ArtifactStore | null;
 }
 
 // ─────────────────────────────────────────────
@@ -818,6 +839,13 @@ export class ChatStream implements IChatAgent {
                         {
                             ...this._config.compressionOptions,
                             accessoryTokens,
+                            // B-1: pass the per-session artifact store so the
+                            // shrink stage can spill historical delegate
+                            // envelopes' inline `result` / `extras` into
+                            // out-of-prompt storage. `?? undefined` keeps
+                            // legacy semantics when the runtime / single-agent
+                            // mode doesn't supply a store.
+                            artifactStore: this._config.getArtifactStore?.() ?? undefined,
                         },
                     );
                     messagesToSend = reduceResult.messagesToSend;

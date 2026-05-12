@@ -1,5 +1,6 @@
 import type { IChatAgent, ChatMessage } from '../chat-stream';
 import type { SessionManager } from '../../session-manager';
+import { ArtifactStore, type ArtifactStoreOptions } from '../artifact-store';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
 
 /**
@@ -93,12 +94,42 @@ export class SessionRuntime {
      */
     onIdleNotifier?: () => void;
 
+    /**
+     * Per-session artifact store backing `delegate_task` envelopes
+     * and the main agent's `recall_artifact` tool. Owned by the
+     * runtime (plan §1.3 "Mounting") rather than by the orchestrator
+     * or the plugin so that background sessions and the foreground
+     * session never share a store. The store is constructed eagerly
+     * with the knobs handed in by {@link createSessionRuntime}, which
+     * derives them from plugin settings via
+     * {@link deriveArtifactStoreOptions}.
+     *
+     * Lifetime: born with the runtime, cleared (→ `session_end`
+     * tombstones) on {@link dispose} so any in-flight recall during
+     * teardown gets a meaningful evicted-reason rather than a bare
+     * miss. The reference itself is `readonly` so the chat-factory
+     * getter can capture it once and stay correct for the runtime's
+     * whole life.
+     *
+     * Note: settings are read once at runtime construction. Live
+     * tuning (changing the cap mid-session) intentionally does not
+     * affect existing runtimes; new sessions will pick up the new
+     * values. Otherwise we'd need a re-balance protocol that's not
+     * justified for a knob users adjust ~once.
+     */
+    readonly artifactStore: ArtifactStore;
+
     private readonly sessionManager: SessionManager;
 
-    constructor(sessionId: string, sessionManager: SessionManager) {
+    constructor(
+        sessionId: string,
+        sessionManager: SessionManager,
+        artifactStoreOptions?: ArtifactStoreOptions,
+    ) {
         this.sessionId = sessionId;
         this.sessionManager = sessionManager;
         this.lastAttachedAt = Date.now();
+        this.artifactStore = new ArtifactStore(artifactStoreOptions);
     }
 
     /**
@@ -280,5 +311,15 @@ export class SessionRuntime {
         this.pendingConfirmations.clear();
         this.listeners.clear();
         this._isBusy = false;
+        // Convert remaining live artifacts to `session_end` tombstones so
+        // any racing `recall_artifact` resolves to a clear evicted reason
+        // rather than a confusing pure miss. The whole runtime is about
+        // to be GC'd anyway, but the cost is constant in liveCount and
+        // worth the diagnostic clarity (plan §1.3 last bullet).
+        try {
+            this.artifactStore.clear();
+        } catch (err) {
+            console.warn('[SessionRuntime] artifactStore.clear during dispose threw:', err);
+        }
     }
 }

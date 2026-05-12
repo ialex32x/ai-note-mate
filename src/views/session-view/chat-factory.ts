@@ -6,6 +6,7 @@ import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provide
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
 import { buildSubAgentConfigs } from '../../services/sub-agent-registry';
+import type { ArtifactStore } from '../../services/artifact-store';
 import { createObsidianTools, createObsidianMutationTools } from '../../services/tools/obsidian';
 import { createWebSearchTools } from '../../services/tools/web-search-toolcall';
 import { createWebFetchTools } from '../../services/tools/web-fetch-toolcall';
@@ -16,6 +17,7 @@ import { createJavaScriptTools } from '../../services/tools/js_toolcall';
 import { createSkillTools } from '../../services/tools/skill-toolcall';
 import { createImageTool } from '../../services/tools/image-toolcall';
 import { createConversationTools } from '../../services/tools/conversation-toolcall';
+import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
 
 /** Resolve the summarizer model config from settings (if any). */
 export function createSummarizerConfig(plugin: NoteAssistantPlugin): MinimalModelConfig | undefined {
@@ -80,6 +82,16 @@ export interface ChatAgentCallbacks {
     onConfirmToolCall?: (messageId: string) => Promise<boolean>;
     /** Returns the list of tools that can change dynamically per turn. */
     getDynamicTools(): ReturnType<typeof createBuiltinTools>;
+    /**
+     * Returns the per-session artifact store used by the main agent's
+     * `recall_artifact` tool (multi-agent mode only). Implementations
+     * MUST return the same instance for the runtime's whole life so
+     * that the tool, registered once at construction time, always
+     * reaches the right store. Returning `null` is reserved for tests
+     * that explicitly want to disable the recall channel; in that
+     * case the recall tool is not registered.
+     */
+    getArtifactStore?(): ArtifactStore | null;
 }
 
 /**
@@ -133,6 +145,29 @@ export function createChatAgent(
         systemPrompt: fullSystemPrompt,
         compressionOptions,
         dynamicTools: () => callbacks.getDynamicTools(),
+        // Forward the runtime's per-session artifact store. Two consumers
+        // share this single getter:
+        //   1. `AgentOrchestrator.buildDelegatePayload` (multi-agent
+        //      branch below) — E-3, build-time promotion of 32–128 KB
+        //      sub-agent returns into the store instead of dropping
+        //      them to `omitted`.
+        //   2. `ChatStream`'s call to `ContextReducer.reduce` — B-1,
+        //      shrink-time spill of historical envelope `result` /
+        //      `extras` into the same store with `reason: "shrunk"`.
+        // Co-locating the getter on the base config (rather than only on
+        // the orchestrator) keeps both writers feeding the exact same
+        // store instance, which is the invariant `recall_artifact`
+        // depends on. Single-agent mode never produces envelopes so the
+        // shrink path is a no-op there; passing the getter is harmless
+        // and keeps the wiring uniform.
+        //
+        // Defensive: if the runtime didn't wire a store (some tests,
+        // exotic call paths), returning `null` disables both spill
+        // paths and falls back to legacy `omitted` / generic-truncation
+        // behaviour. Both consumers handle the null case explicitly.
+        getArtifactStore: callbacks.getArtifactStore
+            ? () => callbacks.getArtifactStore!()
+            : undefined,
         onStart: () => {
             if (!callbacks.generationMatches()) return;
             callbacks.onStart();
@@ -217,6 +252,24 @@ export function createChatAgent(
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
         createObsidianMutationTools(plugin).forEach(tool => chat.registerTool(tool));
+
+        // Register `recall_artifact` only when an artifact store is wired
+        // (production: SessionRuntime supplies one; some tests deliberately
+        // omit the callback). The tool is bound via a getter — the chat is
+        // long-lived but the store reference, while stable for a given
+        // runtime, is conceptually owned by the runtime and threading it
+        // through a getter avoids capturing the wrong instance in any
+        // future refactor that introduces store rebuilds.
+        //
+        // Sub-agents do NOT receive this tool (plan §1.4): they upload
+        // structured data through their own `exchange` store; the main
+        // agent reads via the envelope and recalls via this tool.
+        if (callbacks.getArtifactStore) {
+            // Capture inside an arrow to preserve `callbacks` as the
+            // method receiver; assigning the method to a bare local
+            // would unbind it (lint: @typescript-eslint/unbound-method).
+            chat.registerTool(createRecallArtifactTool(() => callbacks.getArtifactStore!()));
+        }
     } else {
         // Fallback: single-agent mode (all tools on one ChatStream)
         chat = new ChatStream(chatStreamConfig);

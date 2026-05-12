@@ -2,6 +2,13 @@ import { createOpenAICompletion } from "./providers/openai-provider";
 import { createGeminiCompletion } from "./providers/gemini-provider";
 import { ChatMessageRole, CompleteToolCall, MediaAttachment, MinimalModelConfig } from "./llm-provider";
 import { safeSliceHead } from "../utils/string-safe";
+import {
+    DELEGATE_ENVELOPE_KIND,
+    DELEGATE_ENVELOPE_VERSION,
+    type ArtifactRef,
+    type DelegatePayload,
+} from "./delegate-envelope-shape";
+import type { ArtifactStore } from "./artifact-store";
 
 // ─────────────────────────────────────────────
 // Defaults
@@ -91,6 +98,30 @@ export interface ContextReduceOptions {
      * `rawMessages` but still consume the model's real prompt budget.
      */
     accessoryTokens?: number;
+    /**
+     * Per-session artifact store used by the shrink stage to spill
+     * historical delegate-envelope `result` / `extras` fields out of
+     * the prompt (B-1, plan §1.5).
+     *
+     * When provided, an envelope tool_result that is large enough to
+     * trigger shrinking is rewritten in place: each inline `result` /
+     * `extras[k]` field above {@link ENVELOPE_FIELD_SPILL_MIN_BYTES}
+     * is moved to the store under `auto:<toolCallId>:<field>` and
+     * replaced with an {@link ArtifactRef} in `payload.artifacts`. The
+     * envelope's `text`, discriminator markers, `omitted`, and any
+     * pre-existing `artifacts` entries (from E-3 build-time promotion)
+     * are kept verbatim. The `tool_result.toolCallId` is the source of
+     * the namespace prefix — without it, the envelope falls through to
+     * the generic truncation path because we cannot mint a collision-
+     * free key.
+     *
+     * When omitted (or null), the reducer's behaviour is unchanged:
+     * envelopes that exceed the shrink threshold get the same opaque
+     * `[Tool result truncated: …]` replacement as any other oversized
+     * tool_result. This is the path used by tests and by single-agent
+     * mode (which never produces envelopes anyway).
+     */
+    artifactStore?: ArtifactStore | null;
 }
 
 export interface HistoryMessage {
@@ -267,6 +298,113 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
 }
 
 /**
+ * Cheap precheck: a serialized delegate envelope is always a JSON object
+ * starting with `{` and, because `buildDelegatePayload` emits `__kind`
+ * as the *first* key (after `JSON.stringify` preserves insertion order
+ * per ECMA-262), the substring `"__kind"` reliably appears within the
+ * first ~50 bytes. We don't anchor on a strict prefix because future
+ * formatters (pretty-printing, key reordering by `JSON.stringify`
+ * replacers, etc.) might insert whitespace or shift keys; a small
+ * substring scan is robust to those without paying for a full
+ * `JSON.parse` on every plain-text or non-envelope JSON tool result.
+ *
+ * The 64-byte horizon comfortably covers `{"__kind":"delegate_envelope","__v":1,...`
+ * (37 chars) plus pretty-print padding, while keeping false-positive
+ * scan cost negligible for huge tool results (we only look at the head).
+ */
+const ENVELOPE_MARKER_SCAN_BYTES = 64;
+
+/**
+ * Cheap, allocation-free probe used as a gate before `JSON.parse`.
+ * Conservative — false positives here are harmless (the parse step
+ * catches them), but false negatives would silently disable envelope
+ * recognition, so this only rejects the obvious non-candidates.
+ */
+function looksLikeEnvelope(s: string): boolean {
+    if (s.length < 30) return false; // `{"__kind":"delegate_envelope","__v":1,"text":""}` is 47 chars; anything shorter cannot be a valid envelope.
+    if (s.charCodeAt(0) !== 0x7B /* '{' */) return false;
+    const idx = s.indexOf("__kind", 0);
+    return idx >= 0 && idx < ENVELOPE_MARKER_SCAN_BYTES;
+}
+
+/**
+ * Recognise a `DelegatePayload` envelope inside a serialized
+ * `tool_result` content string.
+ *
+ * Returns the parsed envelope on success, or `null` if the string is
+ * not a recognisable envelope (not JSON, not an object, missing or
+ * wrong `__kind`, missing or unknown `__v`). Used by the shrink stage
+ * — and, in a later step, by `recall_artifact` — to decide whether a
+ * tool result deserves envelope-aware handling versus the generic
+ * truncation path.
+ *
+ * **Why parse-and-return rather than a boolean**: every realistic
+ * consumer needs the parsed object immediately after the check (to
+ * spill `result` / `extras`, to extract `text`, etc.). Parsing twice
+ * — once to decide, once to use — would double the cost on the only
+ * path where this helper matters (the shrink hot path). Callers that
+ * only need a boolean can `!= null` the result.
+ *
+ * **Forward compatibility**: an envelope with a `__v` greater than
+ * {@link DELEGATE_ENVELOPE_VERSION} is treated as *unrecognised*
+ * (returns `null`). This is deliberate: if a future plugin version
+ * adds breaking shape changes, an older runtime reading a persisted
+ * session should fall through to the safe generic path rather than
+ * mis-parse and corrupt the envelope. (See plan doc §6 — "Backward
+ * compat with persisted sessions": graceful degradation, no
+ * migration needed.)
+ *
+ * **Performance**: `looksLikeEnvelope` gates the parse so plain text
+ * and unrelated JSON tool results pay only a O(64) substring scan,
+ * not a full parse. The hot path is the shrink stage which sees every
+ * historical tool_result on every prompt assembly.
+ *
+ * @param raw The exact string that appears as `tool_result.content`.
+ * @returns The parsed envelope, or `null` if `raw` is not one.
+ */
+export function tryParseDelegateEnvelope(raw: string): DelegatePayload | null {
+    if (!looksLikeEnvelope(raw)) return null;
+
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        return null;
+    }
+
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return null;
+    }
+
+    const obj = parsed as Record<string, unknown>;
+
+    if (obj.__kind !== DELEGATE_ENVELOPE_KIND) return null;
+    // Strict equality on version: anything beyond what we know how to
+    // handle falls back to the safe generic path. When/if `__v` is
+    // bumped, this check is the single point of truth that needs to
+    // learn the new version.
+    if (obj.__v !== DELEGATE_ENVELOPE_VERSION) return null;
+    if (typeof obj.text !== "string") return null;
+
+    // At this point the discriminant + required field have been
+    // validated; optional fields (`result`, `extras`, `omitted`) are
+    // accepted as-is and structurally typed by the interface. We do
+    // *not* validate their inner shape — that would be defensive
+    // overreach against `buildDelegatePayload`, which is the only
+    // legitimate producer.
+    //
+    // The double cast (`as unknown as DelegatePayload`) is intentional:
+    // we have just dynamically verified the three required fields, but
+    // TS cannot flow that knowledge from `Record<string,unknown>` to
+    // the literal-typed interface fields (`typeof DELEGATE_ENVELOPE_KIND`
+    // etc.). The cast is the canonical escape hatch for this exact
+    // "I just runtime-checked it" situation; a custom type predicate
+    // would be slightly cleaner but adds noise out of proportion to
+    // the size of the function.
+    return obj as unknown as DelegatePayload;
+}
+
+/**
  * Produce a compact replacement for a single oversized tool_result `content`.
  *
  * Used by {@link ContextReducer.shrinkLargeToolResults} to reduce the token
@@ -280,13 +418,51 @@ function collapseToolResult(toolName: string, rawArgs: string, result: string): 
  * Rules mirror {@link collapseToolResult}'s strategy but the wording is
  * strictly meta (brackets + "truncated"/"omitted") so nothing in the output
  * looks like free-form assistant prose the model might imitate.
+ *
+ * **B-1 — envelope-aware branch**: when `result` is a recognisable
+ * {@link DelegatePayload} AND the caller supplied an `artifactStore` and
+ * a `toolCallId`, the envelope is **rewritten in place** rather than
+ * collapsed: inline `result` and `extras[k]` fields above
+ * {@link ENVELOPE_FIELD_SPILL_MIN_BYTES} are moved into the store and
+ * replaced with {@link ArtifactRef}s under `payload.artifacts[<field>]`
+ * (with `reason: "shrunk"`). This preserves the envelope's discriminator,
+ * `text`, `omitted`, and pre-existing `artifacts` entries — so the next
+ * turn's main agent still sees an envelope, just with most of the bulk
+ * parked in the recall store. Without a store / toolCallId, or for non-
+ * envelope JSON, the legacy generic truncation path runs unchanged.
  */
-function shrinkToolResultContent(result: string): string {
+function shrinkToolResultContent(
+    result: string,
+    toolCallId?: string,
+    store?: ArtifactStore | null,
+): string {
     // Error results: always keep full text (usually short and meaningful).
     if (result.startsWith('Error:')) return result;
 
     // Below threshold: keep the original content untouched.
     if (estimateTokens(result) <= TOOL_RESULT_COLLAPSE_THRESHOLD) return result;
+
+    // B-1: envelope branch. Recognise a delegate envelope before the
+    // generic JSON path so we can park `result`/`extras` in the store
+    // instead of dropping them. Only triggers when both a store and a
+    // toolCallId are available; otherwise we fall through to the
+    // legacy "JSON object with keys {…}" replacement so the rest of
+    // the pipeline (summarizer, persistence) is unchanged.
+    if (store && typeof toolCallId === "string" && toolCallId.length > 0) {
+        const envelope = tryParseDelegateEnvelope(result);
+        if (envelope) {
+            const rewritten = shrinkEnvelopeForPrompt(envelope, toolCallId, store);
+            if (rewritten !== null) return rewritten;
+            // rewritten === null means "nothing worth spilling" — the
+            // envelope is mostly `text`, or every spill candidate fell
+            // below the per-field min. Returning the original JSON
+            // here is safe because `estimateTokens > threshold` already
+            // accepted it as "expensive", but keeping it intact is
+            // strictly better than collapsing an envelope (we'd lose
+            // the structured `result` for no real gain).
+            return result;
+        }
+    }
 
     // Try to parse as JSON for a structured meta summary.
     try {
@@ -305,6 +481,193 @@ function shrinkToolResultContent(result: string): string {
     // Plain text: keep first 200 chars as a preview inside the meta wrapper.
     const preview = safeSliceHead(result, 200).replace(/\n/g, ' ');
     return `[Tool result truncated: original ${result.length} chars, preview: ${preview}...]`;
+}
+
+/**
+ * Per-field minimum size (JSON-stringified bytes) below which envelope
+ * spilling is a net loss: an {@link ArtifactRef} JSON-serialises to
+ * ~80–280 chars (key + size + reason + optional preview), so values
+ * smaller than this would inflate the envelope rather than shrink it.
+ *
+ * 256 bytes is comfortably above the worst-case ref overhead and is
+ * the same scale as the `preview` cap embedded in the ref itself, so
+ * a spilled value "feels at most as small as its preview" in the
+ * resulting envelope. Tunable; not exposed as a setting because the
+ * trade-off is purely an internal storage micro-optimization.
+ */
+const ENVELOPE_FIELD_SPILL_MIN_BYTES = 256;
+
+/**
+ * Per-field preview cap for {@link ArtifactRef.preview} produced by the
+ * shrink path. Mirrors `ARTIFACT_PREVIEW_MAX_CHARS` in `agent-orchestrator`,
+ * deliberately duplicated here (rather than imported) to keep the reducer
+ * dependency-light — the orchestrator imports types from this module's
+ * sibling `delegate-envelope-shape`, and reaching back across the boundary
+ * for a 200-char constant would re-introduce the cycle the shape module
+ * was split out to avoid.
+ */
+const SHRUNK_ARTIFACT_PREVIEW_MAX_CHARS = 200;
+
+/**
+ * Build a head preview for a value spilled by the shrink path. Same
+ * shape as `agent-orchestrator.buildArtifactPreview` (JSON head + `…`
+ * marker, undefined on serialization failure) so the LLM cannot tell
+ * whether a given preview was minted at envelope-build or shrink time.
+ */
+function buildShrunkArtifactPreview(value: unknown): string | undefined {
+    let json: string;
+    try {
+        json = JSON.stringify(value);
+    } catch {
+        return undefined;
+    }
+    if (json === undefined) return undefined;
+    if (json.length <= SHRUNK_ARTIFACT_PREVIEW_MAX_CHARS) return json;
+    return json.slice(0, SHRUNK_ARTIFACT_PREVIEW_MAX_CHARS) + "…";
+}
+
+/**
+ * Rewrite a parsed {@link DelegatePayload} so that bulky inline fields
+ * are moved into the artifact store, returning the new JSON string the
+ * caller should use as the `tool_result.content` replacement.
+ *
+ * Returns `null` when the rewrite would not actually save space — i.e.
+ * no inline field exceeded {@link ENVELOPE_FIELD_SPILL_MIN_BYTES} and
+ * no field was successfully spilled. The caller treats `null` as "keep
+ * the original content as-is" rather than falling through to the
+ * generic truncation path: an envelope whose bulk is already in `text`
+ * or in pre-existing `artifacts` is cheap enough to leave alone, and
+ * collapsing it to a meta string would lose the structured shape for
+ * no real budget gain.
+ *
+ * Mutual exclusion (mirrors `buildDelegatePayload`'s build-time rules):
+ *
+ *   - `result` / `extras[k]`: deleted from the payload after spill.
+ *     The new `artifacts[k]` entry is the only home for the value.
+ *   - Pre-existing `artifacts[k]` (from E-3 build-time promotion) is
+ *     kept untouched — that field is already in the store under a
+ *     different key and we must not double-spill or rename it.
+ *   - Pre-existing `omitted[k_*]` is kept untouched — that field's
+ *     content was never seen by us and there is nothing to spill.
+ *   - When `store.put` rejects with `too_large_for_store`, the field
+ *     is moved to `omitted` with `_too_large_for_store: true`,
+ *     matching E-3's bucket-3 marker shape.
+ */
+function shrinkEnvelopeForPrompt(
+    envelope: DelegatePayload,
+    toolCallId: string,
+    store: ArtifactStore,
+): string | null {
+    // Work on a shallow clone so the caller's `envelope` object — and
+    // by transitivity the original `tool_result.content` if anyone
+    // re-parses it later — is not mutated. `result` and `extras` are
+    // also cloned out before mutation so the original references in
+    // chat memory stay intact.
+    const next: DelegatePayload = {
+        __kind: envelope.__kind,
+        __v: envelope.__v,
+        text: envelope.text,
+    };
+    if (envelope.omitted !== undefined) next.omitted = { ...envelope.omitted };
+    // Existing artifacts are reused in-place: their values already live
+    // in the store under their build-time key, and we do NOT re-spill.
+    let nextArtifacts: Record<string, ArtifactRef> | undefined =
+        envelope.artifacts !== undefined ? { ...envelope.artifacts } : undefined;
+
+    let didSpill = false;
+
+    /**
+     * Per-field spill: try to move `value` into the store under
+     * `auto:<toolCallId>:<fieldName>`. On success, register an
+     * `ArtifactRef` (with `reason: "shrunk"`) and report `"spilled"`.
+     * On rejection, stamp the matching `omitted_*` markers and report
+     * `"too_large"`. Below the per-field min, report `"too_small"`
+     * so the caller can keep the value inline.
+     */
+    const trySpill = (
+        fieldName: string,
+        value: unknown,
+    ): "spilled" | "too_large" | "too_small" | "not_serializable" => {
+        let json: string;
+        try {
+            json = JSON.stringify(value);
+        } catch {
+            // Non-serializable values cannot be stored or previewed.
+            // Drop them silently — same defensive default as
+            // `buildArtifactPreview` returning undefined at build time.
+            return "not_serializable";
+        }
+        if (json === undefined) return "not_serializable";
+        const size = json.length;
+        if (size < ENVELOPE_FIELD_SPILL_MIN_BYTES) return "too_small";
+
+        const artifactKey = `auto:${toolCallId}:${fieldName}`;
+        const putResult = store.put(artifactKey, value, size);
+        if (putResult.stored) {
+            nextArtifacts ??= {};
+            nextArtifacts[fieldName] = {
+                key: artifactKey,
+                size,
+                preview: buildShrunkArtifactPreview(value),
+                reason: "shrunk",
+            };
+            return "spilled";
+        }
+        // Store rejected (oversize for the store itself). Match the
+        // build-time bucket-3 markers so the LLM sees a uniform
+        // "this slot is unrecoverable" signal regardless of when the
+        // drop happened.
+        next.omitted ??= {};
+        next.omitted[`${fieldName}_omitted`] = true;
+        next.omitted[`${fieldName}_size`] = size;
+        next.omitted[`${fieldName}_too_large_for_store`] = true;
+        return "too_large";
+    };
+
+    // Spill `result` if it is currently inline AND not already an
+    // artifact. (`envelope.artifacts.result` would mean E-3 already
+    // promoted it at build time; `envelope.result === undefined`
+    // means the sub-agent never produced one — both → skip.)
+    if (envelope.result !== undefined
+        && (envelope.artifacts === undefined || !("result" in envelope.artifacts))) {
+        const outcome = trySpill("result", envelope.result);
+        if (outcome === "spilled" || outcome === "too_large") {
+            didSpill = true;
+            // Field is gone from inline either way (spilled or marked
+            // omitted). Don't put it back into `next.result`.
+        } else {
+            // too_small / not_serializable: keep inline.
+            next.result = envelope.result;
+        }
+    }
+
+    // Spill each `extras[k]` field individually so a small auxiliary
+    // log next to a huge data blob doesn't get unnecessarily uprooted.
+    if (envelope.extras !== undefined) {
+        let nextExtras: Record<string, unknown> | undefined;
+        for (const [k, v] of Object.entries(envelope.extras)) {
+            // Skip if this extras key is already represented as an
+            // artifact (E-3 build-time promotion). Should not happen
+            // — `buildDelegatePayload` enforces mutual exclusion at
+            // build — but defensively keep the artifact entry as-is.
+            if (envelope.artifacts !== undefined && k in envelope.artifacts) {
+                continue;
+            }
+            const outcome = trySpill(k, v);
+            if (outcome === "spilled" || outcome === "too_large") {
+                didSpill = true;
+                continue;
+            }
+            nextExtras ??= {};
+            nextExtras[k] = v;
+        }
+        if (nextExtras !== undefined) next.extras = nextExtras;
+    }
+
+    if (!didSpill) return null;
+
+    if (nextArtifacts !== undefined) next.artifacts = nextArtifacts;
+    return JSON.stringify(next);
 }
 
 // ─────────────────────────────────────────────
@@ -363,6 +726,11 @@ export class ContextReducer {
         const accessoryTokens = options?.accessoryTokens && options.accessoryTokens > 0
             ? options.accessoryTokens
             : 0;
+        // B-1: artifact store, when provided, lets the shrink stage spill
+        // historical envelope `result` / `extras` into out-of-prompt
+        // storage. `null` is treated identically to `undefined` —
+        // disables spilling, falls back to the legacy generic truncation.
+        const artifactStore = options?.artifactStore ?? null;
 
         // ── 1. Separate system messages (always preserved) ────────────────
         const systemMessages = rawMessages.filter(msg => msg.role === "system");
@@ -477,7 +845,7 @@ export class ContextReducer {
             // No compression needed - but if there are existing summaries, context IS compressed
             // Shrink oversized tool_result payloads while keeping the
             // assistant(toolCalls) ↔ tool_result structure intact.
-            const shrunkUnsummarized = this.shrinkLargeToolResults(snapped);
+            const shrunkUnsummarized = this.shrinkLargeToolResults(snapped, artifactStore);
             // Ensure tool message sequence integrity in the final messagesToSend
             const finalMessagesToSend = [
                 ...systemMessages,
@@ -616,7 +984,7 @@ export class ContextReducer {
                 role: "assistant" as ChatMessageRole,
                 content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
             }] : [];
-            const fallbackShrunk = this.shrinkLargeToolResults(unsummarizedMessages);
+            const fallbackShrunk = this.shrinkLargeToolResults(unsummarizedMessages, artifactStore);
             const fallbackAssembled = [
                 ...systemMessages,
                 ...fallbackSummaryMessages,
@@ -921,8 +1289,21 @@ export class ContextReducer {
      * This method does NOT modify the input array; it returns a new array
      * (new message objects are only created for the messages that actually
      * get rewritten — others are passed through by reference).
+     *
+     * **B-1 — envelope spill**: when an `artifactStore` is supplied, an
+     * eligible (consumed, oversized) tool_result whose content is a
+     * recognisable delegate envelope is rewritten in place — its inline
+     * `result` / `extras[k]` are moved into the store and replaced with
+     * `ArtifactRef`s. The envelope structure (`__kind` / `__v` / `text`
+     * / `omitted` / pre-existing `artifacts`) is preserved, and the
+     * `tool_result.toolCallId` is used as the namespace prefix
+     * (`auto:<toolCallId>:<field>`). Without a store, the legacy generic
+     * truncation path runs.
      */
-    private static shrinkLargeToolResults<T extends HistoryMessage>(messages: T[]): T[] {
+    private static shrinkLargeToolResults<T extends HistoryMessage>(
+        messages: T[],
+        store?: ArtifactStore | null,
+    ): T[] {
         if (messages.length === 0) return messages;
 
         // Locate the index of the last assistant message — anything after it
@@ -950,7 +1331,7 @@ export class ContextReducer {
                     result.push(msg);
                     continue;
                 }
-                const shrunk = shrinkToolResultContent(msg.content);
+                const shrunk = shrinkToolResultContent(msg.content, msg.toolCallId, store ?? null);
                 if (shrunk !== msg.content) {
                     result.push({ ...msg, content: shrunk } as T);
                     continue;

@@ -196,4 +196,35 @@ export interface NoteAssistantPluginSettings {
 	 * Replies shorter than this are considered too thin to mine.
 	 */
 	insightExtractionMinReplyChars: number;
+
+	// ── Delegate envelope artifact store ────────────────────────────────────
+	/**
+	 * Total live-byte budget of a session's artifact store, in KB.
+	 * Backs `delegate_task` envelope spills and the `recall_artifact`
+	 * tool. Once the running total exceeds this, the least-recently-
+	 * accessed artifact is evicted (with a tombstone the model can
+	 * still see via `recall_artifact`). Default: 1024 KB (1 MB).
+	 *
+	 * Validation: values < 1 are treated as misconfigured and the
+	 * built-in default is used. Per-session, in-memory only — not
+	 * persisted to disk.
+	 */
+	artifactStoreTotalBytesKb: number;
+	/**
+	 * Maximum size of a single artifact, in KB. Anything bigger is
+	 * rejected at put time and the envelope records a
+	 * `too_large_for_store` marker rather than a recoverable artifact.
+	 * Default: 128 KB. Should normally be ≤ {@link artifactStoreTotalBytesKb}.
+	 *
+	 * Validation: values < 1 fall back to the built-in default.
+	 */
+	artifactStoreSingleArtifactKb: number;
+	/**
+	 * Time-to-live for an artifact since its last access, in minutes.
+	 * `0` explicitly disables TTL (entries only leave via LRU eviction
+	 * or session end). Default: 30 minutes.
+	 *
+	 * Validation: negative values fall back to the built-in default.
+	 */
+	artifactStoreTtlMinutes: number;
 }

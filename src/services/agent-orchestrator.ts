@@ -34,6 +34,8 @@ import type {
 import { SubAgent, SubAgentConfig, SubAgentResult, SubAgentExecutionLog } from "./sub-agent";
 import { type ExchangeStore, estimateValueSize, validateSerializable } from "./tools/exchange-toolcall";
 import { getResultValidator } from "./result-validators";
+import type { ArtifactStore } from "./artifact-store";
+import type { ArtifactRef } from "./delegate-envelope-shape";
 
 // Re-export sub-agent types for external consumers
 export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
@@ -75,27 +77,97 @@ export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
 export const EXCHANGE_VALUE_MAX_BYTES = 32 * 1024;
 
 /**
- * The envelope returned to the main agent as the `delegate_task` tool_result
- * content (after `JSON.stringify`). Always carries `text`; `result` and
- * `extras` are omitted (not set to `null`) when the sub-agent did not
- * populate them, so the JSON stays compact for the common case.
+ * Discriminator marker, schema version, and shape interface for the
+ * delegate envelope are defined in `./delegate-envelope-shape` and
+ * re-exported here for backward compatibility with existing import
+ * sites (and so the orchestrator's public surface still advertises the
+ * full envelope contract in one place).
  *
- * Exported for tests.
+ * The split exists to break a value-level import cycle: `context-reducer.ts`
+ * needs the markers to detect envelopes, and `agent-orchestrator.ts`
+ * already `import type`s from the reducer for `ConversationSummary`.
+ * Keeping the shape in a dependency-free leaf module keeps both imports
+ * unidirectional. See `delegate-envelope-shape.ts` for the rationale.
  */
-export interface DelegatePayload {
-    /** Human-readable summary — the sub-agent's last assistant text, same as before exchange existed. */
-    text: string;
-    /** Canonical structured return value, present iff the sub-agent put something under key "result". */
-    result?: unknown;
-    /** Auxiliary keys the sub-agent put under names other than "result". */
-    extras?: Record<string, unknown>;
+export {
+    DELEGATE_ENVELOPE_KIND,
+    DELEGATE_ENVELOPE_VERSION,
+    type DelegatePayload,
+    type ArtifactRef,
+    type ArtifactRefReason,
+} from "./delegate-envelope-shape";
+import {
+    DELEGATE_ENVELOPE_KIND,
+    DELEGATE_ENVELOPE_VERSION,
+    type DelegatePayload,
+} from "./delegate-envelope-shape";
+
+/**
+ * Maximum head-preview length (in JSON-stringified characters) embedded
+ * in `ArtifactRef.preview`. Kept tight — the preview is meant as a
+ * "you'd recognise it if you saw it" hint for the LLM, not a usable
+ * fragment of the value. 200 chars is well under the per-key inline
+ * cap (32 KB) so an envelope listing many artifacts stays cheap; it's
+ * also long enough to surface a leading object key or first list item
+ * for orientation. If real workloads find this too short, raise it
+ * deliberately rather than chasing the cap.
+ */
+const ARTIFACT_PREVIEW_MAX_CHARS = 200;
+
+/**
+ * Build a short head preview of a value for inclusion in an
+ * {@link ArtifactRef}. JSON-stringifies the value and truncates with a
+ * clear ellipsis marker so the LLM can tell at a glance that the
+ * preview is incomplete. Returns `undefined` when the value cannot be
+ * serialized (defence in depth — the exchange tool should already have
+ * rejected such values at put-time, but a missing preview is strictly
+ * better than throwing here mid-envelope-build).
+ */
+function buildArtifactPreview(value: unknown): string | undefined {
+    let json: string;
+    try {
+        json = JSON.stringify(value);
+    } catch {
+        return undefined;
+    }
+    if (json === undefined) return undefined;
+    if (json.length <= ARTIFACT_PREVIEW_MAX_CHARS) return json;
+    return json.slice(0, ARTIFACT_PREVIEW_MAX_CHARS) + "…";
+}
+
+/**
+ * Optional dependencies for {@link buildDelegatePayload}. Splitting them
+ * out into an options bag (rather than positional args) keeps existing
+ * 2- and 3-arg call sites working unchanged and leaves room to add
+ * further knobs (size caps, key-prefix override) without another
+ * signature break.
+ *
+ * If `artifactStore` is omitted OR `delegateCallId` is omitted, the
+ * function falls back to the pre-E-3 behaviour: oversized values are
+ * recorded under `omitted` with `<key>_omitted: true` / `<key>_size: N`
+ * markers and the value content is lost. Both being present is the
+ * trigger for the "promote to artifact" path; this is intentional —
+ * promotion without a stable per-call ID would risk key collisions
+ * across concurrent delegations sharing the same store.
+ */
+export interface BuildDelegatePayloadOptions {
     /**
-     * Per-key oversized-drop markers, e.g. `{ "result_omitted": true,
-     * "result_size": 51234 }`. Present iff at least one value was dropped.
-     * Sits at the top level (not nested under `extras`) so the main LLM
-     * sees it without parsing extras unnecessarily.
+     * Per-session artifact store owned by the {@link AgentOrchestrator}'s
+     * `SessionRuntime`. When provided alongside {@link delegateCallId},
+     * 32 KB < size ≤ 128 KB values are spilled here and an
+     * {@link ArtifactRef} is emitted in `payload.artifacts`. When
+     * `null` / `undefined`, the spill path is disabled.
      */
-    omitted?: Record<string, true | number>;
+    artifactStore?: ArtifactStore | null;
+    /**
+     * Stable identifier for the current `delegate_task` invocation,
+     * used to namespace artifact keys (`auto:<delegateCallId>:<field>`).
+     * In production this is the main agent's `toolCallId`; tests pass a
+     * synthetic string. Without this we cannot mint a collision-free
+     * key, so promotion is silently skipped (and the value falls
+     * through to `omitted`) if it's missing.
+     */
+    delegateCallId?: string;
 }
 
 /**
@@ -103,18 +175,35 @@ export interface DelegatePayload {
  * `delegate_task` invocation. The store is read once and never retained
  * (the orchestrator drops its reference immediately after this call).
  *
- * Behaviour:
- * - The sub-agent's text summary is always carried as `text`.
- * - The reserved key `"result"` (if present) is lifted to a top-level
- *   `result` field; everything else lives under `extras`.
- * - Any value larger than `EXCHANGE_VALUE_MAX_BYTES` is dropped and
- *   recorded under `omitted` as both an `_omitted: true` flag and an
- *   `_size: N` byte count, so the main LLM can decide whether to ask
- *   the sub-agent to re-run with a leaner output.
- * - When `agentName` matches a registered `ResultValidator` and the
- *   sub-agent returned a non-omitted `result`, validator issues are
- *   surfaced (NOT enforced) under `extras.result_validation_issues`.
- *   The result itself is passed through verbatim regardless of issues.
+ * Three size buckets, applied per (key, value) pair:
+ *
+ *   1. `size ≤ EXCHANGE_VALUE_MAX_BYTES` (32 KB) — value is inlined as
+ *      `payload.result` (for key `"result"`) or `payload.extras[key]`
+ *      (otherwise). Identical to legacy behaviour.
+ *   2. `EXCHANGE_VALUE_MAX_BYTES < size ≤ singleArtifactCap` (32–128 KB,
+ *      iff `options.artifactStore` AND `options.delegateCallId` are
+ *      both provided) — value is spilled to the artifact store under
+ *      `auto:<delegateCallId>:<key>` and an {@link ArtifactRef} is
+ *      emitted in `payload.artifacts[key]`. The main LLM then calls
+ *      `recall_artifact({ key })` on demand. The value is NOT inlined
+ *      and NOT recorded under `omitted`.
+ *   3. `size > singleArtifactCap` OR (no store / no callId AND size
+ *      exceeds 32 KB) OR store rejects with `too_large_for_store` —
+ *      value is dropped. `omitted[<key>_omitted] = true` /
+ *      `omitted[<key>_size] = N` is recorded as before, and (when the
+ *      store actually rejected the put) `omitted[<key>_too_large_for_store]
+ *      = true` flags the rejection reason so the LLM understands the
+ *      content is unrecoverable rather than just unrequested.
+ *
+ * Validator policy (unchanged from D-1): when `agentName` matches a
+ * registered {@link getResultValidator} entry AND the result was
+ * NOT dropped to `omitted`, validator issues are surfaced under
+ * `extras.result_validation_issues`. Critically, the validator runs
+ * against the *original* value — even when that value is then promoted
+ * to an artifact (bucket 2) — because the schema check is on the
+ * structured shape, not on the inlined JSON. Skipping validation on a
+ * dropped result (bucket 3) preserves the existing rationale: surfacing
+ * schema errors about a value the main agent can't see is just noise.
  *
  * Exported for tests.
  */
@@ -122,40 +211,112 @@ export function buildDelegatePayload(
     text: string,
     store: ExchangeStore,
     agentName?: string,
+    options: BuildDelegatePayloadOptions = {},
 ): DelegatePayload {
-    const payload: DelegatePayload = { text };
+    const payload: DelegatePayload = {
+        __kind: DELEGATE_ENVELOPE_KIND,
+        __v: DELEGATE_ENVELOPE_VERSION,
+        text,
+    };
     let omitted: Record<string, true | number> | undefined;
     let extras: Record<string, unknown> | undefined;
+    let artifacts: Record<string, ArtifactRef> | undefined;
     let resultRetained = false;
+    /**
+     * The original `result` value, captured BEFORE bucket-routing, so the
+     * validator can run against the structured shape regardless of which
+     * bucket the value ended up in (inline or artifact). `undefined`
+     * means "no result key was written" (different from "result was
+     * literally `undefined`" — the exchange tool rejects `undefined`
+     * at put-time, so the ambiguity cannot arise).
+     */
+    let originalResult: unknown;
+
+    // Promotion is only enabled when both knobs are supplied. The
+    // store-without-callId path is treated identically to no-store: we
+    // refuse to mint a key that could collide with another in-flight
+    // delegation. Bucket 3 (omitted) absorbs everything that doesn't
+    // fit bucket 1 in that case, exactly matching legacy behaviour.
+    const promotionEnabled =
+        options.artifactStore != null &&
+        typeof options.delegateCallId === "string" &&
+        options.delegateCallId.length > 0;
+    const storeRef = promotionEnabled ? options.artifactStore! : null;
+    const callId = promotionEnabled ? options.delegateCallId! : null;
 
     for (const [key, value] of store.entries()) {
         const size = estimateValueSize(value);
-        if (size > EXCHANGE_VALUE_MAX_BYTES) {
-            // Oversized — drop the value but tell the main agent it existed
-            // and how large it was, so it can react (e.g. re-delegate with a
-            // narrower scope) instead of silently losing data.
+
+        if (key === "result") {
+            originalResult = value;
+        }
+
+        if (size <= EXCHANGE_VALUE_MAX_BYTES) {
+            // Bucket 1: inline.
+            if (key === "result") {
+                payload.result = value;
+                resultRetained = true;
+            } else {
+                extras ??= {};
+                extras[key] = value;
+            }
+            continue;
+        }
+
+        // Bucket 2 candidate: try to promote to an artifact.
+        if (promotionEnabled && storeRef && callId) {
+            const artifactKey = `auto:${callId}:${key}`;
+            const putResult = storeRef.put(artifactKey, value, size);
+            if (putResult.stored) {
+                artifacts ??= {};
+                artifacts[key] = {
+                    key: artifactKey,
+                    size,
+                    preview: buildArtifactPreview(value),
+                    reason: "oversize",
+                };
+                continue;
+            }
+            // Promotion declined (size > singleArtifactCap or
+            // size > totalBytesCap). Fall through to bucket 3 with
+            // an explicit too_large_for_store flag so the LLM knows
+            // it's not just oversize-for-inline but oversize-for-store.
+            if (putResult.reason === "too_large_for_store") {
+                omitted ??= {};
+                omitted[`${key}_omitted`] = true;
+                omitted[`${key}_size`] = size;
+                omitted[`${key}_too_large_for_store`] = true;
+                continue;
+            }
+            // Defensive default — a future PutResult variant would land
+            // here. Treat as a generic drop so the envelope stays valid.
             omitted ??= {};
             omitted[`${key}_omitted`] = true;
             omitted[`${key}_size`] = size;
             continue;
         }
 
-        if (key === "result") {
-            payload.result = value;
-            resultRetained = true;
-        } else {
-            extras ??= {};
-            extras[key] = value;
-        }
+        // Bucket 3: drop with size record. Same shape as legacy so
+        // existing main-agent prompts and tests keep working.
+        omitted ??= {};
+        omitted[`${key}_omitted`] = true;
+        omitted[`${key}_size`] = size;
     }
 
-    // Run the per-agent validator only when the result was actually
-    // retained. Skipping when omitted avoids confusing the main LLM with
-    // schema errors about a value it never received in the first place.
-    if (resultRetained) {
+    // Run the per-agent validator only when the result is actually
+    // observable by the main agent — either inlined (bucket 1) or
+    // recoverable via recall (bucket 2). When the result was dropped
+    // (bucket 3), surfacing schema errors about a value it can't see
+    // would just be noise (cf. the existing `omitted` skip rationale).
+    const resultObservable = resultRetained || (artifacts && "result" in artifacts);
+    if (resultObservable) {
         const validator = getResultValidator(agentName);
         if (validator) {
-            const issues = validator(payload.result);
+            // Validate against the value as the sub-agent produced it,
+            // not against the (possibly absent) inlined `payload.result`.
+            // For bucket 2, the LLM will pull this exact value via
+            // `recall_artifact`; for bucket 1, originalResult === payload.result.
+            const issues = validator(originalResult);
             if (issues.length > 0) {
                 extras ??= {};
                 extras["result_validation_issues"] = issues;
@@ -164,6 +325,7 @@ export function buildDelegatePayload(
     }
 
     if (extras) payload.extras = extras;
+    if (artifacts) payload.artifacts = artifacts;
     if (omitted) payload.omitted = omitted;
     return payload;
 }
@@ -753,7 +915,20 @@ export class AgentOrchestrator implements IChatAgent {
             //
             // Error and abort branches deliberately return plain strings so
             // existing main-side error-handling paths stay untouched.
-            const payload = buildDelegatePayload(result.summary, exchangeStore, agentName);
+            //
+            // E-3 wiring: the per-session artifact store (if the runtime
+            // wired one in) is forwarded so 32 KB < size ≤ 128 KB values
+            // are promoted to artifacts instead of dropped. The
+            // `parentToolCallId` doubles as the artifact-key namespace
+            // (`auto:<parentToolCallId>:<field>`) — when it's absent
+            // (e.g. exotic call paths that didn't carry one through),
+            // promotion is silently skipped and the legacy `omitted`
+            // path absorbs the value. See `BuildDelegatePayloadOptions`
+            // for the exact mutual-presence requirement.
+            const payload = buildDelegatePayload(result.summary, exchangeStore, agentName, {
+                artifactStore: this._config.getArtifactStore?.() ?? null,
+                delegateCallId: parentToolCallId,
+            });
             return {
                 success: true,
                 content: JSON.stringify(payload),

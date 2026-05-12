@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { ContextReducer, HistroyMessage } from '../src/services/context-reducer';
+import { ContextReducer, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-reducer';
+import { ArtifactStore } from '../src/services/artifact-store';
+import { DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, type DelegatePayload } from '../src/services/delegate-envelope-shape';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -34,8 +36,11 @@ function toolResult(toolCallId: string, content: string, id?: string): HistroyMe
 
 // `shrinkLargeToolResults` is private — invoke via `as any` for white-box
 // testing of the "skip last unconsumed tool_result chain" semantics.
-function shrink(messages: HistroyMessage[]): HistroyMessage[] {
-    return (ContextReducer as any).shrinkLargeToolResults(messages);
+function shrink(
+    messages: HistroyMessage[],
+    store?: ArtifactStore,
+): HistroyMessage[] {
+    return (ContextReducer as any).shrinkLargeToolResults(messages, store ?? null);
 }
 
 // Generate a tool_result payload that's well above
@@ -43,6 +48,51 @@ function shrink(messages: HistroyMessage[]): HistroyMessage[] {
 // shrink rule will definitely fire when not exempted.
 function bigText(): string {
     return 'lorem ipsum dolor sit amet '.repeat(400); // ~10.8k chars
+}
+
+/**
+ * Build a `delegate_task` tool_result content (envelope JSON) sized
+ * to comfortably exceed the shrink threshold. The fields we want to
+ * spill (`result.payload`, `extras.notes`) are made individually
+ * larger than `ENVELOPE_FIELD_SPILL_MIN_BYTES` (256 bytes) so the
+ * spill path actually fires; otherwise the helper would return
+ * `null` and the envelope would be left intact.
+ *
+ * Helper rather than inline JSON so each test reads the same
+ * envelope shape buildDelegatePayload would emit at runtime.
+ */
+function envelopeContent(opts?: {
+    text?: string;
+    result?: unknown;
+    extras?: Record<string, unknown>;
+    omitted?: Record<string, true | number>;
+    artifacts?: DelegatePayload['artifacts'];
+}): string {
+    const env: DelegatePayload = {
+        __kind: DELEGATE_ENVELOPE_KIND,
+        __v: DELEGATE_ENVELOPE_VERSION,
+        text: opts?.text ?? 'sub-agent did its thing',
+    };
+    if (opts?.result !== undefined) env.result = opts.result;
+    if (opts?.extras !== undefined) env.extras = opts.extras;
+    if (opts?.omitted !== undefined) env.omitted = opts.omitted;
+    if (opts?.artifacts !== undefined) env.artifacts = opts.artifacts;
+    return JSON.stringify(env);
+}
+
+/**
+ * Big payload that comfortably exceeds the per-field min spill size
+ * (256 bytes) but stays well under the artifact store's per-entry cap
+ * (128 KB). Picked to be JSON-friendly so we can assert byte-for-byte
+ * round-trips through the store.
+ */
+function bigPayload(label: string): { items: Array<{ id: number; body: string }> } {
+    return {
+        items: Array.from({ length: 30 }, (_, i) => ({
+            id: i,
+            body: `${label}: ` + 'x'.repeat(50),
+        })),
+    };
 }
 
 // ─── Tests ─────────────────────────────────────────────────
@@ -209,5 +259,388 @@ describe('ContextReducer.shrinkLargeToolResults', () => {
         ];
         const out = shrink(msgs);
         expect(out[2]!.content).toBe('Error: file not found');
+    });
+});
+
+// ─── B-1: envelope-aware shrink (spill into ArtifactStore) ────────
+//
+// The pre-B-1 path collapses every oversized tool_result to a
+// `[Tool result truncated: …]` meta string, which loses the entire
+// structured `result` / `extras` channel of a `delegate_task` envelope.
+// B-1 changes this for envelopes specifically: instead of collapsing,
+// rewrite the envelope so that bulky inline fields move into a per-
+// session artifact store and the envelope retains a recoverable
+// reference (`payload.artifacts[k]`).
+//
+// What these tests pin down:
+//   1. The envelope structure survives the shrink (kind/version/text/
+//      omitted/pre-existing artifacts all preserved).
+//   2. The store actually gets the original value, byte-for-byte
+//      (covers the recall_artifact contract that B-1 feeds into).
+//   3. Without a store OR without a toolCallId, the legacy generic
+//      truncation runs unchanged — backward compat.
+//   4. Stage-1 exemption (last unconsumed tool_result) still wins.
+//   5. Idempotency: an already-shrunk envelope (no spillable inline
+//      fields left) is left alone, NOT collapsed to a meta string.
+//   6. Mutual exclusion: pre-existing `artifacts[k]` (E-3 build-time
+//      promotion) is not double-spilled; pre-existing `omitted` keys
+//      are kept.
+//   7. Store rejection (too_large_for_store) flows into `omitted`
+//      with the standard `_too_large_for_store` flag, matching E-3's
+//      build-time bucket-3 markers.
+
+describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
+    it('spills inline `result` into the artifact store and emits an ArtifactRef', () => {
+        const store = new ArtifactStore();
+        const result = bigPayload('A');
+        const env = envelopeContent({ text: 'done', result });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            // Trailing assistant text → tc1 is "consumed" → eligible to shrink.
+            assistant('summary text'),
+        ];
+
+        const out = shrink(msgs, store);
+        const rewritten = out[2]!.content;
+
+        // Still a valid envelope (structure preserved).
+        const parsed = tryParseDelegateEnvelope(rewritten);
+        expect(parsed).not.toBeNull();
+        expect(parsed!.text).toBe('done');
+        expect(parsed!.__kind).toBe(DELEGATE_ENVELOPE_KIND);
+        expect(parsed!.__v).toBe(DELEGATE_ENVELOPE_VERSION);
+
+        // Inline `result` is gone, replaced by an artifact ref.
+        expect(parsed!.result).toBeUndefined();
+        expect(parsed!.artifacts).toBeDefined();
+        expect(parsed!.artifacts!.result).toBeDefined();
+        expect(parsed!.artifacts!.result.reason).toBe('shrunk');
+        expect(parsed!.artifacts!.result.key).toBe('auto:tc1:result');
+        expect(parsed!.artifacts!.result.size).toBeGreaterThan(0);
+
+        // Store has the original value byte-for-byte (recall contract).
+        const got = store.get('auto:tc1:result');
+        expect(got.found).toBe(true);
+        if (got.found) expect(got.value).toEqual(result);
+
+        // toolCallId pairing preserved.
+        expect((out[2] as any).toolCallId).toBe('tc1');
+    });
+
+    it('spills each `extras` field independently and keeps small ones inline', () => {
+        const store = new ArtifactStore();
+        const big = bigPayload('B');
+        const env = envelopeContent({
+            text: 'done',
+            extras: {
+                big_log: big,
+                tiny_note: 'short string', // < 256 bytes, must stay inline
+            },
+        });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        const parsed = tryParseDelegateEnvelope(out[2]!.content)!;
+
+        // Big extras field promoted.
+        expect(parsed.artifacts!.big_log).toBeDefined();
+        expect(parsed.artifacts!.big_log.reason).toBe('shrunk');
+        expect(parsed.extras?.big_log).toBeUndefined();
+
+        // Tiny extras field stays inline.
+        expect(parsed.extras?.tiny_note).toBe('short string');
+
+        // Store contains the spilled big_log.
+        const got = store.get('auto:tc1:big_log');
+        expect(got.found).toBe(true);
+        if (got.found) expect(got.value).toEqual(big);
+    });
+
+    it('preserves pre-existing `artifacts` (E-3 build-time promotion) without re-spilling', () => {
+        const store = new ArtifactStore();
+        // Simulate an envelope where E-3 already promoted `result` at
+        // build time. The shrink stage MUST NOT re-spill or rename it,
+        // because the stored value already lives under the build-time
+        // key (which the orchestrator may have minted with a different
+        // toolCallId scheme).
+        const preExisting: NonNullable<DelegatePayload['artifacts']> = {
+            result: {
+                key: 'auto:tc-original:result',
+                size: 99_000,
+                preview: '{"payload":[…',
+                reason: 'oversize',
+            },
+        };
+        const env = envelopeContent({
+            text: 'done',
+            extras: { big_log: bigPayload('C') },
+            artifacts: preExisting,
+        });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        const parsed = tryParseDelegateEnvelope(out[2]!.content)!;
+
+        // Pre-existing artifact entry is kept verbatim (same key, same reason).
+        expect(parsed.artifacts!.result).toEqual(preExisting.result);
+
+        // The newly-shrunk extras field gets the shrink reason.
+        expect(parsed.artifacts!.big_log.reason).toBe('shrunk');
+        expect(parsed.artifacts!.big_log.key).toBe('auto:tc1:big_log');
+    });
+
+    it('keeps pre-existing `omitted` markers and stays out of their way', () => {
+        const store = new ArtifactStore();
+        const env = envelopeContent({
+            text: 'done',
+            result: bigPayload('D'),
+            omitted: { huge_blob_omitted: true, huge_blob_size: 999_999 },
+        });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        const parsed = tryParseDelegateEnvelope(out[2]!.content)!;
+
+        // Original omitted markers preserved unchanged.
+        expect(parsed.omitted).toMatchObject({
+            huge_blob_omitted: true,
+            huge_blob_size: 999_999,
+        });
+        // Result was promoted to artifacts (not added to omitted).
+        expect(parsed.artifacts!.result).toBeDefined();
+    });
+
+    it('flags store-rejected fields with `_too_large_for_store`', () => {
+        // A store with an artificially tiny per-entry cap so any spill
+        // attempt is rejected. This exercises the bucket-3 fallback
+        // path: rejected fields move into `omitted` with the same
+        // `_too_large_for_store` flag E-3 emits at build time, so the
+        // LLM cannot tell whether the drop happened at build or shrink.
+        const store = new ArtifactStore({ singleArtifactCap: 100 });
+        const env = envelopeContent({ text: 'done', result: bigPayload('E') });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        const parsed = tryParseDelegateEnvelope(out[2]!.content)!;
+
+        // Inline result is gone, but NOT in artifacts (store rejected).
+        expect(parsed.result).toBeUndefined();
+        expect(parsed.artifacts?.result).toBeUndefined();
+        // Instead, the field is recorded as omitted with the rejection flag.
+        expect(parsed.omitted).toBeDefined();
+        expect(parsed.omitted!.result_omitted).toBe(true);
+        expect(parsed.omitted!.result_too_large_for_store).toBe(true);
+        expect(typeof parsed.omitted!.result_size).toBe('number');
+    });
+
+    it('falls back to legacy truncation when no store is provided', () => {
+        // Single-agent mode / tests / exotic call paths: without a store,
+        // an envelope is treated like any other oversized JSON object,
+        // which is exactly the pre-B-1 behaviour. Backward-compat clause.
+        const env = envelopeContent({ text: 'done', result: bigPayload('F') });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs); // no store
+        // Legacy generic truncation: opaque meta string, not a parseable envelope.
+        expect(out[2]!.content).toContain('truncated');
+        expect(tryParseDelegateEnvelope(out[2]!.content)).toBeNull();
+    });
+
+    it('falls back to legacy truncation when the tool_result has no toolCallId', () => {
+        // Without a toolCallId we cannot mint a collision-free key. The
+        // safe choice is to take the legacy path rather than risk a key
+        // namespaced by something the orchestrator might reuse.
+        const store = new ArtifactStore();
+        const env = envelopeContent({ text: 'done', result: bigPayload('G') });
+
+        // Manually construct the message without a toolCallId.
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            { role: 'tool_result', content: env } as any,
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        expect(out[2]!.content).toContain('truncated');
+        expect(tryParseDelegateEnvelope(out[2]!.content)).toBeNull();
+        // Store untouched — nothing was spilled.
+        expect(store.stats().liveCount).toBe(0);
+    });
+
+    it('exempts the last unconsumed envelope from spilling (stage-1 rule)', () => {
+        // Stage-1 exemption is the foundational rule of the shrink
+        // stage: the most recent tool_result hasn't been seen by any
+        // assistant turn yet. Spilling its `result` into the store
+        // would defeat the purpose of the delegate_task call (the
+        // main agent is about to read the value RIGHT NOW). B-1 must
+        // not regress this — verify by leaving no trailing assistant
+        // after the envelope tool_result.
+        const store = new ArtifactStore();
+        const env = envelopeContent({ text: 'done', result: bigPayload('H') });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            // No trailing assistant → tc1 is the unconsumed tail.
+        ];
+
+        const out = shrink(msgs, store);
+        // Original content preserved byte-for-byte; same object reference.
+        expect(out[2]!.content).toBe(env);
+        expect(out[2]).toBe(msgs[2]);
+        // Store untouched.
+        expect(store.stats().liveCount).toBe(0);
+    });
+
+    it('is idempotent: an already-shrunk envelope is left alone (not collapsed)', () => {
+        // After B-1 runs once on a turn, the envelope still parses (the
+        // shape is intact, just with the `result` moved to `artifacts`).
+        // The next reduce pass MUST recognise that there's nothing
+        // spillable left and keep the envelope as-is rather than fall
+        // through to the generic truncation path — that would lose the
+        // recoverable artifact reference and the LLM's ability to
+        // recall_artifact would silently break.
+        const store = new ArtifactStore();
+        const env = envelopeContent({ text: 'done', result: bigPayload('I') });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('first reply'),
+        ];
+
+        // First pass: do the spill.
+        const firstOut = shrink(msgs, store);
+        const firstShrunk = firstOut[2]!.content;
+        const firstParsed = tryParseDelegateEnvelope(firstShrunk)!;
+        expect(firstParsed.artifacts?.result).toBeDefined();
+
+        // Second pass: feed the already-shrunk envelope back in.
+        const replayMsgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', firstShrunk),
+            assistant('first reply'),
+            user('follow up'),
+            assistant('second reply'),
+        ];
+        const secondOut = shrink(replayMsgs, store);
+        // Same content — no further mutation. Crucially NOT a `[Tool
+        // result truncated: …]` meta string.
+        expect(secondOut[2]!.content).toBe(firstShrunk);
+        expect(tryParseDelegateEnvelope(secondOut[2]!.content)).not.toBeNull();
+    });
+
+    it('leaves an envelope with no spillable fields intact (does NOT collapse it)', () => {
+        // An envelope that's nominally large only because of `text`
+        // (e.g. a verbose narrative summary, no structured payload).
+        // There's nothing to spill — but collapsing it to `[Tool result
+        // truncated…]` would lose the envelope shape for no real
+        // budget gain, since the bulk is exactly the field we'd want
+        // the model to read. The B-1 design returns null from the
+        // spiller in this case and the caller keeps the original.
+        const store = new ArtifactStore();
+        // Only `text` is large; result is small and stays inline.
+        // Note: helper text is small by default so we inflate it here.
+        const env = envelopeContent({
+            text: 'narrative summary: ' + 'x'.repeat(8000),
+            result: { ok: true }, // way under the 256-byte spill min
+        });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'delegate_task', arguments: '{}' },
+            ]),
+            toolResult('tc1', env),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        // Original envelope kept; not collapsed to a meta string.
+        expect(out[2]!.content).toBe(env);
+        expect(store.stats().liveCount).toBe(0);
+    });
+
+    it('still falls through to legacy truncation for non-envelope JSON tool_results', () => {
+        // A non-envelope JSON tool_result (e.g. a vault search returning
+        // a plain JSON object) must NOT be confused for an envelope and
+        // must follow the legacy generic truncation path. This is the
+        // backward-compat guarantee for every non-delegate_task tool.
+        const store = new ArtifactStore();
+        const plainJson = JSON.stringify({
+            results: Array.from({ length: 50 }, (_, i) => ({ id: i, body: 'x'.repeat(100) })),
+        });
+
+        const msgs: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [
+                { id: 'tc1', name: 'search', arguments: '{}' },
+            ]),
+            toolResult('tc1', plainJson),
+            assistant('ack'),
+        ];
+
+        const out = shrink(msgs, store);
+        expect(out[2]!.content).toContain('truncated');
+        expect(out[2]!.content).toContain('JSON object');
+        // Store untouched — non-envelope content never touches the artifact path.
+        expect(store.stats().liveCount).toBe(0);
     });
 });

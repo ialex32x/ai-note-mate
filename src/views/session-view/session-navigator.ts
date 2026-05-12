@@ -3,7 +3,7 @@ import { t } from '../../i18n';
 import type { SessionManager } from '../../session-manager';
 import type { DropdownManager } from '../../components/session';
 import { DeleteHistoryConfirmModal } from '../../modals/delete-history-confirm-modal';
-import { rebuildSessionDropdown } from './session-dropdown';
+import { rebuildSessionDropdown, type SessionRuntimeStatus } from './session-dropdown';
 
 /**
  * Dependencies the navigator needs from the host SessionView.
@@ -24,11 +24,12 @@ export interface SessionNavigatorDeps {
      */
     isStreaming: () => boolean;
     /**
-     * Whether the given (possibly background) session is currently
-     * running a turn in the runtime pool. Used to mark dropdown
-     * entries with a small "still working" indicator.
+     * Resolve the runtime-pool status for the given (possibly
+     * background) session. Used by the dropdown to render a small
+     * status icon — distinguishing serialized-only sessions from
+     * loaded/idle/busy/awaiting-confirm runtimes.
      */
-    isSessionBusy: (sessionId: string) => boolean;
+    getSessionStatus: (sessionId: string) => SessionRuntimeStatus;
     /**
      * Forcefully tear down a SessionRuntime in the pool, aborting its
      * chat regardless of busy state. Called on explicit user deletion.
@@ -164,7 +165,7 @@ export class SessionNavigator {
             onDeleteSession: (id, itemEl, isActive) => {
                 void this.handleDeleteSession(id, itemEl, isActive);
             },
-            isBusy: (id) => this.deps.isSessionBusy(id),
+            getStatus: (id) => this.deps.getSessionStatus(id),
         });
     }
 

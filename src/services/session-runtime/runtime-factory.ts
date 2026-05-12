@@ -1,6 +1,7 @@
 import type NoteAssistantPlugin from 'main';
 import { createChatAgent, buildDynamicTools, createSummarizerConfig } from '../../views/session-view/chat-factory';
 import { maybeGenerateSessionTitle } from '../../views/session-view/session-title-editor';
+import { deriveArtifactStoreOptions } from '../../settings/helpers';
 import { SessionRuntime } from './session-runtime';
 import type { ChatMessage } from '../chat-stream';
 
@@ -43,7 +44,16 @@ export function createSessionRuntime(
     plugin: NoteAssistantPlugin,
     sessionId: string,
 ): SessionRuntime {
-    const runtime = new SessionRuntime(sessionId, plugin.sessionManager);
+    // Read settings ONCE at construction. Live re-tuning of the
+    // store knobs is intentionally not supported: existing entries
+    // would need re-balancing across the new caps, which is not
+    // worth the complexity for a knob users touch rarely. New
+    // sessions pick up the new values automatically.
+    const runtime = new SessionRuntime(
+        sessionId,
+        plugin.sessionManager,
+        deriveArtifactStoreOptions(plugin.settings),
+    );
 
     const chat = createChatAgent(plugin, {
         // No generation guard at the runtime layer; identity = runtime instance.
@@ -51,6 +61,11 @@ export function createSessionRuntime(
         getDynamicTools: () => buildDynamicTools(plugin, {
             hasContextCompressed: runtime.hasContextCompressed,
         }),
+        // Surface the runtime's per-session artifact store to the chat
+        // factory so the main agent's `recall_artifact` tool can be
+        // bound to it. Returning the runtime's own field keeps the
+        // store's lifetime perfectly aligned with the runtime.
+        getArtifactStore: () => runtime.artifactStore,
         onStart: () => {
             runtime.markBusy();
             runtime.emit({ type: 'start' });

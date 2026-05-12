@@ -163,6 +163,63 @@ export class GlobalSettingsSection implements SettingsSection {
 			},
 		});
 
+		// ── Sub-agent return cache (artifact store) ─────────────────────────
+		// All three knobs are read once at SessionRuntime construction
+		// (see runtime-factory.ts). Existing runtimes are NOT re-tuned —
+		// users are warned via the session-restart hint.
+		new Setting(container)
+			.setName(t('settings.artifactStore'))
+			.setDesc(t('settings.artifactStoreDesc'))
+			.setHeading();
+
+		createTextField({
+			container,
+			name: t('settings.artifactStoreTotalBytesKb'),
+			desc: t('settings.artifactStoreTotalBytesKbDesc'),
+			placeholder: '1024',
+			value: String(plugin.settings.artifactStoreTotalBytesKb),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				// `< 1` falls back to default at use-site (deriveArtifactStoreOptions);
+				// store the user's literal here so the UI reflects what they typed,
+				// even if it's a sentinel like 0.
+				plugin.settings.artifactStoreTotalBytesKb = isNaN(num) ? 0 : num;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		createTextField({
+			container,
+			name: t('settings.artifactStoreSingleArtifactKb'),
+			desc: t('settings.artifactStoreSingleArtifactKbDesc'),
+			placeholder: '128',
+			value: String(plugin.settings.artifactStoreSingleArtifactKb),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.artifactStoreSingleArtifactKb = isNaN(num) ? 0 : num;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		createTextField({
+			container,
+			name: t('settings.artifactStoreTtlMinutes'),
+			desc: t('settings.artifactStoreTtlMinutesDesc'),
+			placeholder: '30',
+			value: String(plugin.settings.artifactStoreTtlMinutes),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				// Negative falls back to default; 0 explicitly disables TTL
+				// (see deriveArtifactStoreOptions). NaN → -1 so the helper
+				// reads it as "use default".
+				plugin.settings.artifactStoreTtlMinutes = isNaN(num) ? -1 : num;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
 		// Tool confirm mode dropdown
 		createDropdownField({
 			container,

@@ -3,6 +3,20 @@ import { t } from '../../i18n';
 import type { SessionManager } from '../../session-manager';
 import { SessionStatusDisplay } from '../../components/session';
 
+/**
+ * Lifecycle status of a session as reflected in the runtime pool.
+ *
+ * - `unloaded`        : pure history record, no live runtime in memory.
+ * - `idle`            : runtime instantiated but not currently turning.
+ * - `busy`            : runtime is mid-turn (streaming / tool calls).
+ * - `awaitingConfirm` : runtime paused on a tool-call confirmation prompt.
+ */
+export type SessionRuntimeStatus =
+    | 'unloaded'
+    | 'idle'
+    | 'busy'
+    | 'awaitingConfirm';
+
 export interface SessionDropdownDeps {
     dropdownEl: HTMLElement;
     sessionManager: SessionManager;
@@ -10,13 +24,46 @@ export interface SessionDropdownDeps {
     onSwitchSession: (sessionId: string) => void;
     onDeleteSession: (sessionId: string, itemEl: HTMLElement, isActive: boolean) => void;
     /**
-     * Optional predicate: whether the given session is currently
-     * running a turn in the background runtime pool. Used to render
-     * a small "still working" indicator next to that entry so the
-     * user can tell which detached sessions are still active.
+     * Resolve the current runtime-pool status for a session. Used to
+     * render a small status icon below the active-check on each entry
+     * so the user can tell at a glance which sessions are loaded /
+     * busy / waiting for confirmation.
      */
-    isBusy?: (sessionId: string) => boolean;
+    getStatus?: (sessionId: string) => SessionRuntimeStatus;
 }
+
+interface StatusIconSpec {
+    icon: string;
+    tooltipKey:
+        | 'view.sessionStatusUnloaded'
+        | 'view.sessionStatusIdle'
+        | 'view.sessionStatusBusy'
+        | 'view.sessionStatusAwaitingConfirm';
+    cls: string;
+}
+
+const STATUS_ICONS: Record<SessionRuntimeStatus, StatusIconSpec> = {
+    unloaded: {
+        icon: 'archive',
+        tooltipKey: 'view.sessionStatusUnloaded',
+        cls: 'session-dropdown__item-status--unloaded',
+    },
+    idle: {
+        icon: 'circle',
+        tooltipKey: 'view.sessionStatusIdle',
+        cls: 'session-dropdown__item-status--idle',
+    },
+    busy: {
+        icon: 'loader',
+        tooltipKey: 'view.sessionStatusBusy',
+        cls: 'session-dropdown__item-status--busy',
+    },
+    awaitingConfirm: {
+        icon: 'help-circle',
+        tooltipKey: 'view.sessionStatusAwaitingConfirm',
+        cls: 'session-dropdown__item-status--awaiting-confirm',
+    },
+};
 
 /**
  * Populate the session-switcher dropdown menu with the current list of
@@ -38,23 +85,27 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         const isActive = session.id === sessionManager.activeSessionId;
         if (isActive) item.addClass('session-dropdown__item--active');
 
-        const checkIcon = item.createEl('span', { cls: 'session-dropdown__item-check' });
+        // Left column: stacks the runtime status icon on top of the
+        // active-check. Both slots are always rendered so column width
+        // stays stable regardless of which session is active or which
+        // runtimes are warm.
+        const iconCol = item.createEl('span', { cls: 'session-dropdown__item-icons' });
+
+        const status = deps.getStatus?.(session.id) ?? 'unloaded';
+        const statusSpec = STATUS_ICONS[status];
+        const statusIcon = iconCol.createEl('span', {
+            cls: `session-dropdown__item-status ${statusSpec.cls}`,
+        });
+        setIcon(statusIcon, statusSpec.icon);
+        const statusTooltip = t(statusSpec.tooltipKey);
+        setTooltip(statusIcon, statusTooltip);
+        statusIcon.setAttr('aria-label', statusTooltip);
+
+        const checkIcon = iconCol.createEl('span', { cls: 'session-dropdown__item-check' });
         if (isActive) setIcon(checkIcon, 'check');
 
         const textWrapper = item.createEl('span', { cls: 'session-dropdown__item-body' });
-        // Render the title row. If a background runtime is still
-        // turning for this session, prepend a small loader icon so
-        // the user can identify which detached sessions are still
-        // running.
         const titleRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-text' });
-        if (deps.isBusy?.(session.id)) {
-            const busyIcon = titleRow.createEl('span', {
-                cls: 'session-dropdown__item-busy',
-                attr: { 'aria-label': t('view.sessionBusy') },
-            });
-            setIcon(busyIcon, 'loader');
-            setTooltip(busyIcon, t('view.sessionBusy'));
-        }
         const displayTitle = session.title || session.firstUserMessage || t('view.newChat');
         titleRow.appendChild(document.createTextNode(displayTitle));
 

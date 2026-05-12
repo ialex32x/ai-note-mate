@@ -338,7 +338,13 @@ export class SessionView extends ItemView {
                 sessionManager: this.sessionManager,
                 dropdownManager: this.dropdownManager,
                 isStreaming: () => this.isStreaming,
-                isSessionBusy: (id) => this.plugin.runtimePool.get(id)?.isBusy === true,
+                getSessionStatus: (id) => {
+                    const rt = this.plugin.runtimePool.get(id);
+                    if (!rt) return 'unloaded';
+                    if (rt.pendingConfirmations.size > 0) return 'awaitingConfirm';
+                    if (rt.isBusy) return 'busy';
+                    return 'idle';
+                },
                 evictRuntime: (id) => this.plugin.runtimePool.evict(id),
                 clearActiveDraftTimer: () => this.draftController.clearTimer(),
                 onSwitchSession: (id) => { void this.handleSwitchSession(id); },

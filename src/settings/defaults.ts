@@ -75,4 +75,11 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	followUpSuggestionsAutoSend: false,
 	insightExtractionEnabled: false,
 	insightExtractionMinReplyChars: 400,
+	// Mirrors ARTIFACT_STORE_DEFAULTS (1 MB / 128 KB / 30 min). Kept as
+	// literals here rather than `import { ARTIFACT_STORE_DEFAULTS }` to
+	// avoid pulling the artifact-store module into the cold settings
+	// startup path (defaults are read on every plugin load).
+	artifactStoreTotalBytesKb: 1024,
+	artifactStoreSingleArtifactKb: 128,
+	artifactStoreTtlMinutes: 30,
 };

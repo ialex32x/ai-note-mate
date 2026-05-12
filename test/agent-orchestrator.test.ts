@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AgentOrchestrator, buildDelegatePayload, buildInitialStore, EXCHANGE_VALUE_MAX_BYTES, InvalidDelegateInputError } from '../src/services/agent-orchestrator';
+import { AgentOrchestrator, buildDelegatePayload, buildInitialStore, DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, EXCHANGE_VALUE_MAX_BYTES, InvalidDelegateInputError } from '../src/services/agent-orchestrator';
 import type { SubAgentConfig } from '../src/services/sub-agent';
 import type { ExchangeStore } from '../src/services/tools/exchange-toolcall';
 import type { RegisteredTool, ToolCallResult, ChatMessage } from '../src/services/chat-stream';
+import { ArtifactStore, ARTIFACT_STORE_DEFAULTS } from '../src/services/artifact-store';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -188,7 +189,14 @@ describe('buildDelegatePayload', () => {
         const store: ExchangeStore = new Map();
         const payload = buildDelegatePayload('plain summary', store);
 
-        expect(payload).toEqual({ text: 'plain summary' });
+        // The envelope always carries the marker fields (so the reducer
+        // can recognise it downstream — see plan doc §1.1) plus `text`.
+        // No empty `result: null` / `extras: {}` leak when unused.
+        expect(payload).toEqual({
+            __kind: DELEGATE_ENVELOPE_KIND,
+            __v: DELEGATE_ENVELOPE_VERSION,
+            text: 'plain summary',
+        });
         // Explicit absence checks — the envelope must NOT carry these
         // when not used. JSON.stringify of an `undefined` field is fine
         // (it gets dropped) but a literal `null`/empty object would leak.
@@ -298,10 +306,346 @@ describe('buildDelegatePayload', () => {
         const roundTripped = JSON.parse(json);
 
         expect(roundTripped).toEqual({
+            __kind: DELEGATE_ENVELOPE_KIND,
+            __v: DELEGATE_ENVELOPE_VERSION,
             text: 'ok',
             result: { nested: { a: 1, b: [true, null, 'x'] } },
             extras: { extra1: 42 },
         });
+    });
+
+    it('always stamps `__kind` and `__v` marker fields (envelope-detection contract)', () => {
+        // The shrink stage in `context-reducer.ts` will branch on these
+        // two fields to decide whether a tool_result string is a delegate
+        // envelope (vs. a coincidentally JSON-shaped tool result). They
+        // are part of the wire contract from this point on — pin them
+        // here so a careless edit to `buildDelegatePayload` cannot drop
+        // them silently.
+        //
+        // Cover all three buckets (empty store, with result, with omitted)
+        // because the marker fields are set at construction, not at any
+        // conditional branch — but the test is cheap and the regression
+        // surface (silent removal during a refactor) is real.
+        const empty = buildDelegatePayload('t1', new Map());
+        expect(empty.__kind).toBe(DELEGATE_ENVELOPE_KIND);
+        expect(empty.__v).toBe(DELEGATE_ENVELOPE_VERSION);
+
+        const withResult = new Map();
+        withResult.set('result', { ok: true });
+        const p2 = buildDelegatePayload('t2', withResult);
+        expect(p2.__kind).toBe(DELEGATE_ENVELOPE_KIND);
+        expect(p2.__v).toBe(DELEGATE_ENVELOPE_VERSION);
+
+        const withOmitted = new Map();
+        withOmitted.set('result', 'x'.repeat(EXCHANGE_VALUE_MAX_BYTES + 100));
+        const p3 = buildDelegatePayload('t3', withOmitted);
+        expect(p3.__kind).toBe(DELEGATE_ENVELOPE_KIND);
+        expect(p3.__v).toBe(DELEGATE_ENVELOPE_VERSION);
+
+        // Marker fields survive a JSON round trip — they must be on the
+        // wire, not just on the in-memory object.
+        const json = JSON.stringify(empty);
+        expect(JSON.parse(json).__kind).toBe(DELEGATE_ENVELOPE_KIND);
+        expect(JSON.parse(json).__v).toBe(DELEGATE_ENVELOPE_VERSION);
+    });
+});
+
+// ─── buildDelegatePayload — artifact promotion (E-3) ───────
+//
+// Plan §1.6 / §6 step 6: 32 KB < size ≤ 128 KB values are routed to
+// the per-session artifact store rather than dropped to `omitted`. The
+// envelope grows an `artifacts` field describing each promoted entry;
+// `recall_artifact({key})` is the main agent's recovery path.
+//
+// These tests pin the per-bucket routing rules and the contract that
+// `omitted` / `artifacts` never overlap. Validator-runs-against-promoted
+// behaviour lives further down with the other validator tests.
+
+describe('buildDelegatePayload (artifact promotion)', () => {
+    /** Build an in-band-but-too-big-to-inline value: ~50 KB serialized. */
+    function midSizeString(): string {
+        // JSON-stringified length of a string s is s.length + 2 ("...").
+        // Aim well above EXCHANGE_VALUE_MAX_BYTES (32 KB) and well under
+        // singleArtifactCap (128 KB) so the artifact band is unambiguous.
+        return 'm'.repeat(50_000);
+    }
+
+    /** Build an over-128KB value: ~150 KB serialized. */
+    function oversizeString(): string {
+        return 'o'.repeat(150_000);
+    }
+
+    it('promotes a 32K < size ≤ 128K result into the artifact store and emits an ArtifactRef', () => {
+        const store: ExchangeStore = new Map();
+        const value = midSizeString();
+        store.set('result', value);
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('done', store, undefined, {
+            artifactStore,
+            delegateCallId: 'tc-abc',
+        });
+
+        // Inline `result` MUST be empty — promotion is mutually exclusive
+        // with inlining for the same field.
+        expect('result' in payload).toBe(false);
+
+        // `artifacts.result` carries a complete ArtifactRef.
+        expect(payload.artifacts).toBeDefined();
+        const ref = payload.artifacts!['result'];
+        expect(ref).toBeDefined();
+        expect(ref.key).toBe('auto:tc-abc:result'); // plan §1.3 key format
+        expect(ref.size).toBeGreaterThan(EXCHANGE_VALUE_MAX_BYTES);
+        expect(ref.size).toBeLessThanOrEqual(ARTIFACT_STORE_DEFAULTS.singleArtifactCap);
+        expect(ref.reason).toBe('oversize');
+        // Preview is bounded — we don't want it leaking the whole value.
+        expect(ref.preview).toBeDefined();
+        expect(ref.preview!.length).toBeLessThanOrEqual(220); // 200 chars + ellipsis tolerance
+
+        // `omitted` MUST NOT mention the promoted field — the value is
+        // recoverable, not lost.
+        expect(payload.omitted?.['result_omitted']).toBeUndefined();
+        expect(payload.omitted?.['result_size']).toBeUndefined();
+
+        // The store actually has the value, byte-for-byte.
+        const got = artifactStore.get('auto:tc-abc:result');
+        expect(got.found).toBe(true);
+        if (got.found) {
+            expect(got.value).toBe(value);
+            expect(got.size).toBe(ref.size);
+        }
+    });
+
+    it('promotes a mid-sized extras key under its own field name', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', { ok: true });           // small, inlines
+        store.set('details', midSizeString());       // mid, promotes
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('mixed', store, undefined, {
+            artifactStore,
+            delegateCallId: 'tc-xyz',
+        });
+
+        // Small result inlines.
+        expect(payload.result).toEqual({ ok: true });
+
+        // Mid extras key shows up only in `artifacts`, never in `extras`.
+        expect(payload.extras?.['details']).toBeUndefined();
+        expect(payload.artifacts?.['details']).toBeDefined();
+        expect(payload.artifacts!['details'].key).toBe('auto:tc-xyz:details');
+        expect(payload.artifacts!['details'].reason).toBe('oversize');
+
+        // No accidental cross-pollution: the artifact ref's outer field
+        // name is the extras key, NOT `result`.
+        expect(payload.artifacts!['result']).toBeUndefined();
+    });
+
+    it('drops > singleArtifactCap values to `omitted` with a too_large_for_store flag', () => {
+        // Value above the artifact store's per-entry cap (128 KB default).
+        // The store refuses the put and the orchestrator falls back to
+        // the legacy `omitted` shape, plus an extra flag so the LLM
+        // distinguishes "could-have-recalled-but-evicted" from "never-stored".
+        const store: ExchangeStore = new Map();
+        store.set('result', oversizeString());
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('too big', store, undefined, {
+            artifactStore,
+            delegateCallId: 'tc-huge',
+        });
+
+        // Not inline, not in artifacts, definitely in omitted.
+        expect('result' in payload).toBe(false);
+        expect(payload.artifacts?.['result']).toBeUndefined();
+        expect(payload.omitted).toBeDefined();
+        expect(payload.omitted!['result_omitted']).toBe(true);
+        expect(typeof payload.omitted!['result_size']).toBe('number');
+        expect(payload.omitted!['result_too_large_for_store']).toBe(true);
+
+        // Store stays empty for this key — no tombstone for a put that
+        // was never accepted (plan §1.6 last bullet).
+        const got = artifactStore.get('auto:tc-huge:result');
+        expect(got.found).toBe(false);
+        if (!got.found) {
+            // Confirm specifically: NOT a tombstone either; the store
+            // never owned this value.
+            expect(got.evicted).toBe(false);
+        }
+    });
+
+    it('falls back to `omitted` (no flag) when no artifact store is provided', () => {
+        // Back-compat path: legacy 3-arg call sites and unit tests that
+        // don't care about artifacts must keep working unchanged.
+        // Oversized values land in `omitted` exactly as before, with
+        // NO `_too_large_for_store` flag (the value didn't exceed the
+        // store's cap — there is no store).
+        const store: ExchangeStore = new Map();
+        store.set('result', midSizeString()); // 50K → would promote if store wired
+
+        const payload = buildDelegatePayload('legacy call', store, undefined);
+
+        expect('result' in payload).toBe(false);
+        expect(payload.artifacts).toBeUndefined();
+        expect(payload.omitted).toBeDefined();
+        expect(payload.omitted!['result_omitted']).toBe(true);
+        expect(payload.omitted!['result_size']).toBeGreaterThan(EXCHANGE_VALUE_MAX_BYTES);
+        // The flag MUST be absent — it is reserved for the
+        // store-rejected-this case, which is not what happened here.
+        expect(payload.omitted!['result_too_large_for_store']).toBeUndefined();
+    });
+
+    it('falls back to `omitted` when delegateCallId is missing (key-collision guard)', () => {
+        // The orchestrator namespaces artifact keys with the parent
+        // toolCallId. Without one, two concurrent delegations could
+        // mint the same key — refusing to promote is the safe default.
+        const store: ExchangeStore = new Map();
+        store.set('result', midSizeString());
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('no callId', store, undefined, {
+            artifactStore,
+            // delegateCallId intentionally omitted
+        });
+
+        expect(payload.artifacts).toBeUndefined();
+        expect(payload.omitted!['result_omitted']).toBe(true);
+        // Store must remain untouched.
+        expect(artifactStore.stats().liveCount).toBe(0);
+    });
+
+    it('keeps `omitted` and `artifacts` field-disjoint within a single envelope', () => {
+        // Mixed bucket-3 / bucket-2 / bucket-1 in one call. Each field
+        // routes to exactly ONE of the three slots; no field appears
+        // twice. This is the crucial invariant the prompt relies on
+        // when it tells the LLM "look in artifacts before re-delegating".
+        const store: ExchangeStore = new Map();
+        store.set('result', { ok: true });           // bucket 1: inline
+        store.set('details', midSizeString());        // bucket 2: artifact
+        store.set('mega', oversizeString());          // bucket 3: omitted
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('three buckets', store, undefined, {
+            artifactStore,
+            delegateCallId: 'tc-three',
+        });
+
+        // bucket 1
+        expect(payload.result).toEqual({ ok: true });
+        expect(payload.extras).toBeUndefined();
+
+        // bucket 2
+        expect(payload.artifacts?.['details']).toBeDefined();
+        expect(payload.artifacts?.['result']).toBeUndefined();
+        expect(payload.artifacts?.['mega']).toBeUndefined();
+
+        // bucket 3
+        expect(payload.omitted?.['mega_omitted']).toBe(true);
+        expect(payload.omitted?.['mega_too_large_for_store']).toBe(true);
+        expect(payload.omitted?.['details_omitted']).toBeUndefined();
+        expect(payload.omitted?.['result_omitted']).toBeUndefined();
+
+        // Cross-check: `result` is ONLY in the inline slot.
+        expect(payload.artifacts && 'result' in payload.artifacts).toBeFalsy();
+        // `details` is ONLY in artifacts.
+        expect(payload.extras && 'details' in payload.extras).toBeFalsy();
+        expect(payload.omitted && 'details_omitted' in payload.omitted).toBeFalsy();
+    });
+
+    it('produces a JSON-serializable envelope when artifacts are present', () => {
+        // Defence-in-depth: the orchestrator JSON.stringify's the
+        // envelope; all artifact-side fields (key, size, preview, reason)
+        // must be plain JSON values.
+        const store: ExchangeStore = new Map();
+        store.set('result', midSizeString());
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('json', store, undefined, {
+            artifactStore,
+            delegateCallId: 'tc-json',
+        });
+
+        const json = JSON.stringify(payload);
+        const round = JSON.parse(json);
+
+        expect(round.__kind).toBe(DELEGATE_ENVELOPE_KIND);
+        expect(round.__v).toBe(DELEGATE_ENVELOPE_VERSION);
+        expect(round.artifacts.result.key).toBe('auto:tc-json:result');
+        expect(round.artifacts.result.reason).toBe('oversize');
+        expect(typeof round.artifacts.result.size).toBe('number');
+        expect(typeof round.artifacts.result.preview).toBe('string');
+    });
+
+    it('preview is a head slice with an ellipsis for truncated values', () => {
+        // The preview is meant as a quick orientation hint for the LLM,
+        // not a usable fragment. Confirm: ≤200 chars for short values
+        // (no ellipsis), or 200 chars + "…" for long ones.
+        const shortStore: ExchangeStore = new Map();
+        // Pick a small structured value that, when JSON-stringified,
+        // is ≤200 chars but big enough overall to land in the artifact
+        // band — so we get a SHORT preview but still hit the promote path.
+        // Easiest: a long string of repeated "ab" (each "a" = 1 char in JSON);
+        // we can't get a "short preview" + "long total" out of a single
+        // string, so instead rely on the long-value case below to verify
+        // the truncation, and add a separate small-value case where the
+        // preview IS the full JSON.
+        const value = midSizeString();
+        shortStore.set('result', value);
+        const payload = buildDelegatePayload('p', shortStore, undefined, {
+            artifactStore: new ArtifactStore(),
+            delegateCallId: 'tc-prev',
+        });
+        const ref = payload.artifacts!['result'];
+        // The preview ends with the ellipsis marker we picked.
+        expect(ref.preview!.endsWith('…')).toBe(true);
+        // Before the ellipsis the preview is exactly 200 chars (the cap).
+        expect(ref.preview!.slice(0, -1).length).toBe(200);
+        // And the chars match the head of the JSON-stringified value.
+        const expectedHead = JSON.stringify(value).slice(0, 200);
+        expect(ref.preview!.slice(0, -1)).toBe(expectedHead);
+    });
+
+    it('LRU-evicts older artifacts when the store fills up; eviction is observable but envelope-stable', () => {
+        // Pin the lifecycle contract: putting a second mid-sized
+        // artifact when the store can only hold one causes the first
+        // to be tombstoned. The envelope produced for the SECOND call
+        // is unaffected — the contract says the just-written artifact
+        // is live, and any prior artifact's eviction is a runtime
+        // concern surfaced through `recall_artifact`, not the envelope.
+        //
+        // Scenario tightens the cap to barely fit one 50K entry so
+        // adding a second forces the eviction.
+        const tightStore = new ArtifactStore({ totalBytesCap: 60_000 });
+
+        // First call: writes "auto:tc-1:result".
+        const s1: ExchangeStore = new Map();
+        s1.set('result', midSizeString());
+        const p1 = buildDelegatePayload('first', s1, undefined, {
+            artifactStore: tightStore,
+            delegateCallId: 'tc-1',
+        });
+        expect(p1.artifacts!['result'].key).toBe('auto:tc-1:result');
+        expect(tightStore.get('auto:tc-1:result').found).toBe(true);
+
+        // Second call: writes "auto:tc-2:result" → first is LRU-evicted.
+        const s2: ExchangeStore = new Map();
+        s2.set('result', midSizeString());
+        const p2 = buildDelegatePayload('second', s2, undefined, {
+            artifactStore: tightStore,
+            delegateCallId: 'tc-2',
+        });
+        expect(p2.artifacts!['result'].key).toBe('auto:tc-2:result');
+
+        // Old key now answers "evicted, reason=lru" — the LLM can tell
+        // the difference between a forgotten key and a never-existed one.
+        const oldGot = tightStore.get('auto:tc-1:result');
+        expect(oldGot.found).toBe(false);
+        if (!oldGot.found && oldGot.evicted) {
+            expect(oldGot.reason).toBe('lru');
+        } else {
+            // Force a clear failure if the assertion above didn't bite.
+            expect.fail('expected lru tombstone on auto:tc-1:result');
+        }
     });
 });
 
@@ -409,6 +753,75 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         const payload = buildDelegatePayload('done', store, 'vault_inspector');
         expect(payload.result).toBeUndefined();
         expect(payload.omitted).toBeDefined();
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('runs the validator on a result promoted to an artifact (E-3)', () => {
+        // Critical contract for E-3: the LLM still sees the artifact's
+        // shape via `recall_artifact`, so schema issues are STILL useful
+        // even when the value is parked in the store rather than inlined.
+        // Validate against the original value, not the (absent) inline
+        // payload. A malformed-but-promoted result should surface issues
+        // exactly as if it had been inlined.
+        //
+        // We aim the malformed result at the vault_inspector schema:
+        // missing required fields (summary / key_points / anchors) on a
+        // digest entry. Pad with a long string so the JSON crosses the
+        // 32 KB inline cap and lands in the artifact band.
+        const store: ExchangeStore = new Map();
+        const padding = 'p'.repeat(50_000); // pushes serialized size past 32 KB
+        store.set('result', {
+            digests: [
+                { path: 'Topics/A.md' }, // missing summary, key_points, anchors
+            ],
+            // padding lives at the top level, ensuring the WHOLE result
+            // is large; the validator only inspects digests so padding
+            // does not perturb its decisions.
+            padding,
+        });
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('done', store, 'vault_inspector', {
+            artifactStore,
+            delegateCallId: 'tc-promoted',
+        });
+
+        // Promoted, not inlined.
+        expect(payload.result).toBeUndefined();
+        expect(payload.artifacts?.['result']).toBeDefined();
+
+        // Validator issues surface anyway — same shape as the inline path.
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(Array.isArray(issues)).toBe(true);
+        expect(issues.some((s) => /summary/.test(s))).toBe(true);
+        expect(issues.some((s) => /key_points/.test(s))).toBe(true);
+        expect(issues.some((s) => /anchors/.test(s))).toBe(true);
+    });
+
+    it('does NOT run the validator when result was dropped to omitted (store rejected)', () => {
+        // Companion to the test above: when a result is so large the
+        // artifact store also rejects it, surfacing schema issues about
+        // a value the LLM cannot recover would just be noise — same
+        // rationale as the original "omitted for size" skip.
+        const store: ExchangeStore = new Map();
+        // Build a value that WOULD fail vault_inspector validation
+        // (missing required digest fields) AND is large enough to
+        // exceed singleArtifactCap (128 KB).
+        store.set('result', {
+            digests: [{ path: 'A.md' }],
+            mega: 'q'.repeat(150_000),
+        });
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload('done', store, 'vault_inspector', {
+            artifactStore,
+            delegateCallId: 'tc-too-big',
+        });
+
+        expect(payload.result).toBeUndefined();
+        expect(payload.artifacts?.['result']).toBeUndefined();
+        expect(payload.omitted?.['result_too_large_for_store']).toBe(true);
+        // No validation noise on an unrecoverable value.
         expect(payload.extras?.['result_validation_issues']).toBeUndefined();
     });
 
