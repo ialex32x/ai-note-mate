@@ -11,3 +11,4 @@ export { vaultDeleteFolder } from "./delete-folder";
 export { vaultRenameFile } from "./rename-file";
 export { vaultReplaceText } from "./replace-text";
 export { vaultEditLines } from "./edit-lines";
+export { vaultWriteFile } from "./write-file";

@@ -36,11 +36,13 @@
  */
 
 import { validateVaultInspectorResult } from "./vault-inspector-validator";
+import { validateVaultEditorResult } from "./vault-editor-validator";
 
 export type ResultValidator = (value: unknown) => string[];
 
 export const RESULT_VALIDATORS: Record<string, ResultValidator> = {
     vault_inspector: validateVaultInspectorResult,
+    vault_editor: validateVaultEditorResult,
     // future: web_researcher, code_reviewer, ...
 };
 

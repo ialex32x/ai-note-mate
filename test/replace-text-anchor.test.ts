@@ -3,7 +3,15 @@ import { __TEST_ONLY__ } from "../src/services/tools/obsidian/edit/replace-text"
 import type { HeadingNode } from "../src/services/tools/obsidian/heading-section";
 import type { AnchorEntry, AnchorWhere } from "../src/services/tools/obsidian/edit/replace-text";
 
-const { buildLineStarts, resolveAnchorEntry, padForGap, sectionLinesToOffsets } = __TEST_ONLY__;
+const {
+    buildLineStarts,
+    resolveAnchorEntry,
+    padForGap,
+    sectionLinesToOffsets,
+    buildSpanExcerpts,
+    EXCERPT_HARD_CAP,
+    EXCERPT_CONTEXT_CHARS,
+} = __TEST_ONLY__;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sample fixture: a small markdown file with a couple of nested sections.
@@ -311,5 +319,72 @@ describe("padForGap", () => {
         const host = "AAA";
         const r = padForGap(host, 1, 1, "\nX\n");
         expect(r).toBe("\nX\n");
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildSpanExcerpts — the pair of before/after excerpts that the
+// `vault_editor` sub-agent will feed to `result.sample_diff` without
+// paraphrasing. These tests pin the geometry (context window, hard cap,
+// truncation flag) against the plan's stated limits.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildSpanExcerpts", () => {
+    it("centres the span on EXCERPT_CONTEXT_CHARS of pre/post context", () => {
+        // Build a host large enough that the span isn't near either end.
+        const prefix = "p".repeat(100);
+        const needle = "SPAN";
+        const suffix = "s".repeat(100);
+        const original = prefix + needle + suffix;
+
+        const from = prefix.length;
+        const to = from + needle.length;
+        // Pretend the rewrite replaced SPAN with GONE at the same offset
+        // (length changed from 4 → 4, so newFrom/newTo match).
+        const modified = prefix + "GONE" + suffix;
+
+        const r = buildSpanExcerpts(original, modified, from, to, from, to);
+
+        // Before excerpt: context_chars of p + needle + context_chars of s
+        expect(r.before).toBe(
+            "p".repeat(EXCERPT_CONTEXT_CHARS) + needle + "s".repeat(EXCERPT_CONTEXT_CHARS),
+        );
+        // After excerpt: same layout with the replacement
+        expect(r.after).toBe(
+            "p".repeat(EXCERPT_CONTEXT_CHARS) + "GONE" + "s".repeat(EXCERPT_CONTEXT_CHARS),
+        );
+        expect(r.truncated).toBe(false);
+    });
+
+    it("clips to the hard cap and flags truncation when the span itself is large", () => {
+        // Huge span — emulates anchor-mode `replace_section` on a big section.
+        const huge = "x".repeat(500);
+        const original = `PREFIX ${huge} SUFFIX`;
+        const from = "PREFIX ".length;
+        const to = from + huge.length;
+
+        const modified = "PREFIX REPLACED SUFFIX";
+        const newFrom = "PREFIX ".length;
+        const newTo = newFrom + "REPLACED".length;
+
+        const r = buildSpanExcerpts(original, modified, from, to, newFrom, newTo);
+        expect(r.before.length).toBe(EXCERPT_HARD_CAP);
+        // After excerpt is still short (REPLACED is tiny), so it's NOT
+        // truncated on its own — but `truncated` is true because the
+        // before side hit the cap.
+        expect(r.after.length).toBeLessThanOrEqual(EXCERPT_HARD_CAP);
+        expect(r.truncated).toBe(true);
+    });
+
+    it("does not exceed buffer bounds when the span sits at the very start or end", () => {
+        // span at offset 0
+        const original = "HEAD" + "a".repeat(100);
+        const modified = "TAIL" + "a".repeat(100);
+        const r = buildSpanExcerpts(original, modified, 0, 4, 0, 4);
+        // Should include the span + EXCERPT_CONTEXT_CHARS of post-context
+        // but no pre-context (nothing before offset 0).
+        expect(r.before.startsWith("HEAD")).toBe(true);
+        expect(r.after.startsWith("TAIL")).toBe(true);
+        expect(r.truncated).toBe(false);
     });
 });

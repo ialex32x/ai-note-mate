@@ -133,6 +133,27 @@ Phrase the \`task\` with the word "digest" (or "summarize and return the digest 
 
 The exception is when you genuinely need the verbatim bytes — e.g. you are about to apply a literal edit to the file and need to see the exact pre-edit text, or the user explicitly asked "show me the raw content of X". In those cases say so in the \`task\` (e.g. "Read the full content of X and return it under result; I need the exact bytes to apply an edit") and the sub-agent will return raw text via Mode A.
 
+**Whole-file body rewrites — delegate to vault_editor, don't read + rewrite yourself.** When the user asks to **reformat / translate / restructure / normalize / rewrite / paraphrase the BODY of one specific file**, do NOT read the file and then produce the new body yourself — both the read (the full old body lands in your context) and the write (you have to emit the full new body as a tool argument) blow up your context budget and tokens. Instead, delegate ONE task per file to \`vault_editor\`. The sub-agent reads the file itself, produces the new body, writes it back, and returns a structured diff summary (\`sample_diff\` with short before/after excerpts) — the full body never rides through your context.
+
+  delegate_task({
+      "agent": "vault_editor",
+      "task": "Reformat the file: normalize heading levels, fix list indents, standardize quote blocks. Keep all content; do not translate.",
+      "inputs": {
+          "path": "Notes/Foo.md",
+          "style_rules": "<any concrete rules, one per line; optional>"
+      }
+  })
+
+After the call, consume \`result.sample_diff\` and \`result.edits_applied\` to confirm the change with the user. Do NOT re-read the file afterwards unless the user explicitly asks for verification — the sample_diff IS your verification surface.
+
+Do NOT delegate to \`vault_editor\` when:
+- The change is trivial and you already know exactly what to write (e.g. fix one specific typo at a known line, add one word to a heading) — call \`replace_text\` or \`edit_lines\` directly. Delegating overhead would cost more than the edit itself.
+- The change spans multiple files. Delegate ONE task per file; \`vault_editor\` refuses multi-file tasks by design.
+- The task involves creating, renaming, moving, or deleting the file. Those are your tools — do them yourself, and only then (if needed) delegate the body rewrite of the surviving file.
+- The task requires tag edits (\`edit_file_tags\`, \`rename_tag\`). Do those yourself; the editor cannot.
+
+If \`result.warnings\` contains a structural follow-up (e.g. "file also needs to be renamed"), treat it as a handoff and act on it with your own tools.
+
 ### Passing structured inputs to a sub-agent
 \`delegate_task\` accepts an optional \`inputs\` argument: an object whose keys are pre-loaded into the sub-agent's exchange store before it runs. Use it whenever you have programmatic data the sub-agent will consume — lists of paths, results from a previous delegation, constraints, configuration. The sub-agent reads them via its own \`exchange\` tool and treats them as authoritative input.
 

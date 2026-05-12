@@ -51,6 +51,81 @@ interface ReplacementSummary {
     occurrences_found: number;
     occurrences_replaced: number;
     replace_all: boolean;
+    /**
+     * Up to ~240 chars of pre-edit context centred on this replacement's
+     * span. Omitted when the replacement produced multiple disjoint spans
+     * (search mode with `replace_all: true` + N>1 hits) — a single excerpt
+     * would be misleading in that case, and emitting N of them would blow
+     * past the caller's context budget. Present for all anchor-mode
+     * entries (always 1 span) and for single-hit search entries.
+     */
+    before_excerpt?: string;
+    /** Up to ~240 chars of post-edit context at the same offset. */
+    after_excerpt?: string;
+    /** True if either excerpt was truncated due to span length. */
+    excerpt_truncated?: boolean;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Excerpt geometry
+//
+// The structured edit summary embeds a short before/after excerpt so the
+// caller (typically the `vault_editor` sub-agent, or the main agent
+// consuming its structured result) can describe what changed without
+// having to re-read the file. Two knobs control excerpt shape:
+//
+//   - EXCERPT_CONTEXT_CHARS: how much pre/post context flanks the span
+//     on each side. 30 chars is ~5–8 words — enough to anchor the edit
+//     to its surrounding sentence, cheap enough that a 5-edit summary
+//     still costs < 2.5 KB.
+//   - EXCERPT_HARD_CAP: upper bound per excerpt, including flanking
+//     context and the replaced span itself. Anchor-mode
+//     `replace_section` can produce a span spanning thousands of chars;
+//     without a cap the excerpt would swallow the whole section and
+//     defeat its purpose. 240 chars matches
+//     `multi-note-digest-workflow-plan.md` §2.4's per-item budget.
+// ─────────────────────────────────────────────────────────────────────────────
+const EXCERPT_CONTEXT_CHARS = 30;
+const EXCERPT_HARD_CAP = 240;
+
+/**
+ * Build the before/after excerpt pair for a single span. `original` is
+ * the pre-edit content, `modified` is the post-edit content, and
+ * `newFrom`/`newTo` are the span's offsets in the modified buffer
+ * (pre-edit `from`/`to` shifted by any replacements that came before).
+ *
+ * Truncation strategy is simple and symmetric: take the natural window
+ * (span + context), and if it exceeds the hard cap, trim from both ends
+ * keeping the span's start anchored at offset ~30 into the excerpt.
+ * That biases the visible portion toward the "what you asked to find"
+ * side, which is usually the most informative part for an LLM reading
+ * the summary.
+ */
+function buildSpanExcerpts(
+    original: string,
+    modified: string,
+    from: number,
+    to: number,
+    newFrom: number,
+    newTo: number,
+): { before: string; after: string; truncated: boolean } {
+    const beforeStart = Math.max(0, from - EXCERPT_CONTEXT_CHARS);
+    const beforeEnd = Math.min(original.length, to + EXCERPT_CONTEXT_CHARS);
+    const afterStart = Math.max(0, newFrom - EXCERPT_CONTEXT_CHARS);
+    const afterEnd = Math.min(modified.length, newTo + EXCERPT_CONTEXT_CHARS);
+
+    let before = original.substring(beforeStart, beforeEnd);
+    let after = modified.substring(afterStart, afterEnd);
+    let truncated = false;
+    if (before.length > EXCERPT_HARD_CAP) {
+        before = before.substring(0, EXCERPT_HARD_CAP);
+        truncated = true;
+    }
+    if (after.length > EXCERPT_HARD_CAP) {
+        after = after.substring(0, EXCERPT_HARD_CAP);
+        truncated = true;
+    }
+    return { before, after, truncated };
 }
 
 /** Soft guard: same shape as the pre-array version — see description below. */
@@ -693,6 +768,12 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
 
             const spans: Span[] = [];
             const summaries: ReplacementSummary[] = [];
+            // Parallel to `summaries`: records the single span index in
+            // `spans` that this summary is 1:1 with, or null when the
+            // summary produced 0 or >1 spans. Only 1:1 summaries get
+            // before/after excerpts — see `ReplacementSummary.before_excerpt`
+            // doc comment for why.
+            const summaryUniqueSpanIdx: Array<number | null> = [];
 
             for (let i = 0; i < normalised.length; i++) {
                 const n = normalised[i]!;
@@ -723,6 +804,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                     }
 
                     const targetPositions = n.replaceAll ? positions : [positions[0]!];
+                    const firstSpanIdx = spans.length;
                     for (const start of targetPositions) {
                         spans.push({
                             repIndex: i,
@@ -741,6 +823,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                         occurrences_replaced: targetPositions.length,
                         replace_all: n.replaceAll,
                     });
+                    summaryUniqueSpanIdx.push(targetPositions.length === 1 ? firstSpanIdx : null);
                 } else {
                     // anchor mode
                     ensureAnchorContext();
@@ -752,6 +835,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                             content: `replacements[${i}] (anchor): ${resolved}`,
                         };
                     }
+                    const spanIdx = spans.length;
                     spans.push({
                         repIndex: i,
                         from: resolved.from,
@@ -768,6 +852,8 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                         occurrences_replaced: 1,
                         replace_all: false,
                     });
+                    // anchor mode is always 1:1 — excerpt is always computable.
+                    summaryUniqueSpanIdx.push(spanIdx);
                 }
             }
 
@@ -783,6 +869,40 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             let working = original;
             for (const span of sortedDesc) {
                 working = working.substring(0, span.from) + span.replace + working.substring(span.to);
+            }
+
+            // Compute each span's (newFrom, newTo) in the post-edit buffer.
+            // For a span S, newFrom[S] = original from[S] + Σ(delta_i) over
+            // all prior spans (those with from[i] < from[S]), where
+            // delta_i = replace.length[i] - (to[i] - from[i]). Equivalently,
+            // walk spans in ascending `from` order and carry a running total.
+            const spanPostEdit: Array<{ newFrom: number; newTo: number }> = [];
+            for (let k = 0; k < spans.length; k++) {
+                spanPostEdit.push({ newFrom: 0, newTo: 0 });
+            }
+            const sortedAsc = spans
+                .map((s, idx) => ({ s, idx }))
+                .sort((a, b) => a.s.from - b.s.from || a.s.to - b.s.to);
+            let cumulativeDelta = 0;
+            for (const { s, idx } of sortedAsc) {
+                const newFrom = s.from + cumulativeDelta;
+                const newTo = newFrom + s.replace.length;
+                spanPostEdit[idx] = { newFrom, newTo };
+                cumulativeDelta += s.replace.length - (s.to - s.from);
+            }
+
+            // Fill before/after excerpts for summaries with a unique span.
+            for (let i = 0; i < summaries.length; i++) {
+                const uniq = summaryUniqueSpanIdx[i];
+                if (uniq === null || uniq === undefined) continue;
+                const span = spans[uniq]!;
+                const post = spanPostEdit[uniq]!;
+                const ex = buildSpanExcerpts(original, working, span.from, span.to, post.newFrom, post.newTo);
+                summaries[i]!.before_excerpt = ex.before;
+                summaries[i]!.after_excerpt = ex.after;
+                if (ex.truncated) {
+                    summaries[i]!.excerpt_truncated = true;
+                }
             }
 
             if (!dryRun) {
@@ -822,5 +942,8 @@ export const __TEST_ONLY__ = {
     resolveAnchorEntry,
     padForInsertion,
     padForGap,
+    buildSpanExcerpts,
+    EXCERPT_HARD_CAP,
+    EXCERPT_CONTEXT_CHARS,
 };
 export type { AnchorEntry, AnchorWhere };

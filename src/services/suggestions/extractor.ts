@@ -67,7 +67,19 @@ function parseStructuredBlock(markdown: string): SuggestedAction[] {
 
     const flush = () => {
         if (current && current.label && current.prompt) {
-            out.push({ label: current.label.trim(), prompt: current.prompt.trim() });
+            const label = current.label.trim();
+            const prompt = current.prompt.trim();
+            // Format-violation guard: in the structured block the prompt is
+            // contractually required to be a full, sendable instruction that
+            // differs from the short action label. When the model collapses
+            // both into the same string it almost always means it produced a
+            // descriptive sentence rather than an actionable suggestion, so we
+            // drop the entry entirely. This filter is intentionally limited to
+            // the structured path — the heuristic fallback legitimately reuses
+            // the same text for label and prompt and must not be affected.
+            if (label && prompt && !equalsIgnoreCaseAndSpace(label, prompt)) {
+                out.push({ label, prompt });
+            }
         }
         current = null;
     };
@@ -265,4 +277,14 @@ function cleanupText(s: string): string {
         .replace(/^[*_`]+|[*_`]+$/g, '') // strip surrounding markdown emphasis
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+/**
+ * Compare two strings ignoring case and whitespace differences. Used by the
+ * structured-block parser to detect entries where the model emitted the same
+ * text for both `label` and `prompt`.
+ */
+function equalsIgnoreCaseAndSpace(a: string, b: string): boolean {
+    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
+    return norm(a) === norm(b);
 }

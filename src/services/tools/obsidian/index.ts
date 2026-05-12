@@ -21,6 +21,7 @@ import {
     vaultRenameFile,
     vaultEditLines,
     vaultReplaceText,
+    vaultWriteFile,
 } from "./edit";
 import { vaultGetOverview, vaultListFilesSorted } from "./overview";
 import { vaultEditFileTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
@@ -148,5 +149,50 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
     return [
         ...createObsidianReadOnlyTools(plugin),
         ...createObsidianMutationTools(plugin),
+    ];
+}
+
+/**
+ * Vault tools for the `vault_editor` sub-agent: the full read-only
+ * inspection surface (so it can navigate and double-check before
+ * editing) PLUS the subset of mutation tools that operate on the
+ * CONTENT of a single already-existing file.
+ *
+ * Deliberately EXCLUDED — and the rationale matters enough to spell out:
+ *
+ *  - `create_file`: creating a new file is a main-agent planning
+ *    decision. "Rewrite Foo.md" should never turn into "…and while I'm
+ *    at it, spawn Foo-v2.md". If a task legitimately requires creating
+ *    a sibling file (e.g. splitting one note into two), the editor
+ *    refuses and surfaces the request as a warning — main agent takes
+ *    over.
+ *  - `delete_files` / `delete_folder` / `rename_or_move_file`: structural
+ *    changes have nothing to do with rewriting a body. Giving the editor
+ *    these tools just tempts it to "tidy up" on its own, which hides
+ *    state changes from the main agent (violating the
+ *    `§0.3 principle 1` of `docs/vault-editor-subagent-plan.md`).
+ *  - `edit_file_tags` / `rename_tag`: tag edits are either per-file
+ *    structural (vs content) or vault-wide. Either way, they should
+ *    stay explicit in the main agent's plan. The editor can still
+ *    rewrite frontmatter text via `replace_text` (anchor or search
+ *    mode) when that's genuinely part of a content rewrite — but it
+ *    cannot trigger a tag-aware structural edit unilaterally.
+ *  - `write_file`: this is the NEW tool added for wholesale rewrites
+ *    (§3.2 of the plan). Included here.
+ *
+ * The main agent explicitly does NOT get `write_file` — see
+ * `docs/vault-editor-subagent-plan.md` §8.2 for why. Giving main the
+ * overwrite tool would invite it to "read full + write full" and
+ * negate the whole point of this sub-agent.
+ */
+export function createObsidianEditorTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
+    return [
+        ...createObsidianReadOnlyTools(plugin),
+        // Content writes ONLY — no structural mutations.
+        vaultReplaceText(plugin),
+        vaultEditLines(plugin),
+        vaultAppendFile(plugin),
+        vaultPrependFile(plugin),
+        vaultWriteFile(plugin),
     ];
 }

@@ -436,6 +436,142 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
     });
 });
 
+// ─── buildDelegatePayload — vault_editor result schema ─────
+//
+// The `vault_editor` sub-agent's result schema pins down the
+// structured diff contract: a strategy verb + a cap-respecting
+// sample_diff. These tests mirror the vault_inspector block above,
+// covering happy paths, caps, and the abort shape.
+
+describe('buildDelegatePayload (with vault_editor validator)', () => {
+    it('passes a well-formed wholesale result with no issues', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            path: 'Notes/Foo.md',
+            strategy: 'wholesale',
+            edits_applied: 1,
+            previous_size: 1200,
+            new_size: 1150,
+            sample_diff: [
+                { before_excerpt: '# Old Heading\n\nold body start...', after_excerpt: '# New Heading\n\nnew body start...' },
+            ],
+            warnings: [],
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        expect(payload.result).toBeDefined();
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('passes a surgical result with multiple samples', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            path: 'Notes/Foo.md',
+            strategy: 'surgical',
+            edits_applied: 3,
+            sample_diff: [
+                { before_excerpt: 'foo', after_excerpt: 'bar' },
+                { before_excerpt: 'baz', after_excerpt: 'qux' },
+                { before_excerpt: 'hello', after_excerpt: 'world' },
+            ],
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        expect(payload.result).toBeDefined();
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+
+    it('flags an invalid strategy value', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            path: 'Notes/Foo.md',
+            strategy: 'wat',
+            edits_applied: 1,
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        expect(payload.result).toBeDefined();
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(Array.isArray(issues)).toBe(true);
+        expect(issues.some((s) => /strategy must be one of/.test(s))).toBe(true);
+    });
+
+    it('flags a sample_diff with more than 5 entries', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            path: 'Notes/Foo.md',
+            strategy: 'surgical',
+            edits_applied: 6,
+            sample_diff: Array.from({ length: 6 }, (_, i) => ({
+                before_excerpt: `b${i}`,
+                after_excerpt: `a${i}`,
+            })),
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(issues.some((s) => /sample_diff has 6 entries/.test(s))).toBe(true);
+    });
+
+    it('flags a sample_diff entry whose excerpt exceeds the 240-char cap', () => {
+        const store: ExchangeStore = new Map();
+        const huge = 'x'.repeat(300);
+        store.set('result', {
+            path: 'Notes/Foo.md',
+            strategy: 'wholesale',
+            edits_applied: 1,
+            sample_diff: [{ before_excerpt: huge, after_excerpt: 'short' }],
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(issues.some((s) => /before_excerpt is too long/.test(s))).toBe(true);
+    });
+
+    it('flags a non-empty path that is missing entirely', () => {
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            path: '',
+            strategy: 'wholesale',
+            edits_applied: 1,
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(issues.some((s) => /path must be a non-empty string/.test(s))).toBe(true);
+    });
+
+    it('flags a completely non-object result (string mis-wrap)', () => {
+        // An LLM slip: put "Done rewriting." as the result instead of
+        // an object. We want this to fail schema loudly but still pass
+        // through (soft degradation).
+        const store: ExchangeStore = new Map();
+        store.set('result', 'Done rewriting Foo.md.');
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        expect(payload.result).toBeDefined();
+        const issues = payload.extras?.['result_validation_issues'] as string[];
+        expect(issues.some((s) => /result must be an object/.test(s))).toBe(true);
+    });
+
+    it('accepts the abort shape ({ error, strategy: noop, ... }) without issues', () => {
+        // The editor refuses multi-file tasks via this shape. It must
+        // pass cleanly — otherwise every refusal produces false-positive
+        // validation noise on the main agent side.
+        const store: ExchangeStore = new Map();
+        store.set('result', {
+            path: 'Notes/Foo.md',
+            strategy: 'noop',
+            edits_applied: 0,
+            error: 'multi-file task; please delegate one file per call.',
+        });
+
+        const payload = buildDelegatePayload('done', store, 'vault_editor');
+        expect(payload.result).toBeDefined();
+        expect(payload.extras?.['result_validation_issues']).toBeUndefined();
+    });
+});
+
 // ─── buildInitialStore ─────────────────────────────────────
 //
 // Pure function — covers the validation rules for the main → sub
