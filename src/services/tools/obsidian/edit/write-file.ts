@@ -95,7 +95,9 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Overwrite the ENTIRE content of an existing markdown file in one atomic operation. " +
                     "Use this when you have produced a fully rewritten body (e.g. after reformatting, " +
-                    "translating, or restructuring the note). " +
+                    "translating, or restructuring the note). This is the ONLY tool that performs " +
+                    "wholesale overwrite of an existing file — `create_file` strictly creates new files " +
+                    "and refuses when the path already exists. " +
                     "\n\n" +
                     "For SURGICAL multi-region edits (a few typo fixes, heading renames, a couple of " +
                     "paragraphs to rewrite), prefer `replace_text` — it batches multiple locators into " +

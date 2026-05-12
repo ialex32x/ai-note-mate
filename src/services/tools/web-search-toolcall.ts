@@ -9,12 +9,42 @@ import { checkAbort } from "../../utils/abortable-request";
 
 export function createWebSearchTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     if (!plugin.settings.builtinWebSearchEnabled) return [];
-    
+
+    // Read-only web tools live with the `web` sub-agent. The image
+    // *download* tool is intentionally excluded here — it writes to the
+    // vault and therefore lives on the main agent (mirrors the same
+    // read/write split applied to vault tools; see
+    // `createObsidianMutationTools`). The web sub-agent returns image
+    // URLs, the main agent saves them.
     return [
         webSearch(plugin),
         imageSearch(plugin),
-        saveImageUrls(plugin),
-        downloadImages(plugin),
+    ];
+}
+
+/**
+ * Image-download tools that belong to the **main agent**.
+ *
+ * Why split out from `createWebSearchTools`:
+ *  - The web sub-agent should only *look*; persisting bytes to the vault
+ *    is a write side-effect and matches the "doing → call directly" half
+ *    of the routing rule used elsewhere (see `sub-agent-registry.ts` and
+ *    `createObsidianMutationTools` in `tools/obsidian/index.ts`).
+ *  - This also lets the model use `download_image_urls` on URLs from
+ *    *any* source (clipboard, web_fetch_url, user-provided list) without
+ *    having to detour through the web sub-agent first.
+ *
+ * The previous `download_images` tool (image_search + save in one call)
+ * was removed: it was a pure composition of `image_search` (web sub-agent)
+ * + `download_image_urls` (main agent), and keeping it duplicated routing
+ * decisions across two agents while offering no behaviour the LLM can't
+ * trivially express as two calls.
+ */
+export function createImageDownloadTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
+    if (!plugin.settings.builtinWebSearchEnabled) return [];
+
+    return [
+        downloadImageUrls(plugin),
     ];
 }
 
@@ -83,7 +113,7 @@ function imageSearch(_plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Search for images on the web and return a list of image URLs matching the query. " +
                     "Use this when the user wants to find, look for, or search for images/pictures online. " +
-                    "Note: Only URLs are returned; use save_image_urls or download_images to save images to the vault.",
+                    "Note: Only URLs are returned; use download_image_urls to save images to the vault.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -112,7 +142,7 @@ function imageSearch(_plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: save_image_urls
+// Tool: download_image_urls
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Common function to download images from URLs
@@ -169,7 +199,7 @@ async function downloadImagesFromUrls(
     }
 }
 
-function saveImageUrls(plugin: NoteAssistantPlugin): RegisteredTool {
+function downloadImageUrls(plugin: NoteAssistantPlugin): RegisteredTool {
     const searcher = new ImageWebSearcher();
     return {
         ondemand: true,
@@ -177,11 +207,12 @@ function saveImageUrls(plugin: NoteAssistantPlugin): RegisteredTool {
         schema: {
             type: "function",
             function: {
-                name: "save_image_urls",
+                name: "download_image_urls",
                 description:
-                    "Save images from a list of URLs to the vault. " +
+                    "Download images from a list of URLs and save them to the vault. " +
                     "Images are tried in random order until the requested count is successfully saved. " +
-                    "Use this when the user has specific image URLs and wants to download, save, or store them in the vault.",
+                    "Use this when the user has specific image URLs (e.g. from image_search, web_fetch_url, " +
+                    "or supplied directly) and wants to download, save, or store them in the vault.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -209,62 +240,3 @@ function saveImageUrls(plugin: NoteAssistantPlugin): RegisteredTool {
         },
     };
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool: download_images (combines image_search + save_image_urls)
-// ─────────────────────────────────────────────────────────────────────────────
-
-function downloadImages(plugin: NoteAssistantPlugin): RegisteredTool {
-    const searcher = new ImageWebSearcher();
-    return {
-        ondemand: true,
-
-        schema: {
-            type: "function",
-            function: {
-                name: "download_images",
-                description:
-                    "Search for images on the web and save them to the vault in one step. " +
-                    "Combines image search and download in a single operation. " +
-                    "Use this when the user wants to find and download/save images from the internet to the vault, " +
-                    "without needing separate search and save steps.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        query: {
-                            type: "string",
-                            description: "The search query for images.",
-                        },
-                        limit: {
-                            type: "number",
-                            description: "Number of images to save. Must not exceed 20.",
-                        },
-                    },
-                    required: ["query", "limit"],
-                },
-            },
-        },
-        capabilities: ["network", "create_file"] as ToolCapability[],
-        requiresConfirmation: true,
-        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
-            const query = args["query"] as string;
-            const limit = Math.min(Math.max((args["limit"] as number) || 0, 1), 20);
-
-            try {
-                const urls = await searcher.search(query, signal);
-
-                if (urls.length === 0) {
-                    return { success: false, type: "text", content: "No images found for the given query." };
-                }
-
-                return downloadImagesFromUrls(plugin, urls, limit, searcher, signal);
-            } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
-                const msg = err instanceof Error ? err.message : String(err);
-                return { success: false, type: "text", content: `Download images failed: ${msg}` };
-            }
-        },
-    };
-}
-
-

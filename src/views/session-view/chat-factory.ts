@@ -8,7 +8,7 @@ import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts
 import { buildSubAgentConfigs } from '../../services/sub-agent-registry';
 import type { ArtifactStore } from '../../services/artifact-store';
 import { createObsidianTools, createObsidianMutationTools } from '../../services/tools/obsidian';
-import { createWebSearchTools } from '../../services/tools/web-search-toolcall';
+import { createWebSearchTools, createImageDownloadTools } from '../../services/tools/web-search-toolcall';
 import { createWebFetchTools } from '../../services/tools/web-fetch-toolcall';
 import { createRSSFetchTools } from '../../services/tools/rss-fetch-toolcall';
 import { createBuiltinTools } from '../../services/tools/builtin-toolcall';
@@ -252,6 +252,12 @@ export function createChatAgent(
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
         createObsidianMutationTools(plugin).forEach(tool => chat.registerTool(tool));
+        // `download_image_urls` is a vault-write tool (creates files under
+        // the configured attachments folder), so it lives on the main
+        // agent for the same reason as the other mutation tools — see the
+        // comment block above. The web sub-agent only returns image URLs
+        // via `image_search`; the main agent saves them.
+        createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
 
         // Register `recall_artifact` only when an artifact store is wired
         // (production: SessionRuntime supplies one; some tests deliberately
@@ -276,6 +282,7 @@ export function createChatAgent(
 
         createObsidianTools(plugin).forEach(tool => chat.registerTool(tool));
         createWebSearchTools(plugin).forEach(tool => chat.registerTool(tool));
+        createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
         createWebFetchTools(plugin).forEach(tool => chat.registerTool(tool));
         createRSSFetchTools(plugin).forEach(tool => chat.registerTool(tool));
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
