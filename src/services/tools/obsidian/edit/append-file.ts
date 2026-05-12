@@ -3,6 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: append_file
@@ -41,7 +42,7 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file", "create_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal) => {
+        exec: async (chatStream, args, _signal) => {
             const path = args["path"] as string;
             const content = args["content"] as string;
 
@@ -49,6 +50,7 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             if (file instanceof TFile) {
                 await plugin.app.vault.append(file, content);
+                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "append_file" });
                 return { success: true, type: "object", content: { action: "appended", path } };
             }
 
@@ -58,6 +60,7 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
             if (extErr) return extErr;
             await ensureParentFolder(plugin.app, path);
             await plugin.app.vault.create(path, content);
+            recordVaultEdit(plugin, chatStream, { kind: "create", path, toolName: "append_file" });
             return { success: true, type: "object", content: { action: "created", path } };
         },
         requiresConfirmation: true,

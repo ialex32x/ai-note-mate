@@ -3,6 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: prepend_file
@@ -43,7 +44,7 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file", "create_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
             const contentToPrepend = args["content"] as string;
 
@@ -72,6 +73,7 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 }
 
                 await plugin.app.vault.modify(file, newContent);
+                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "prepend_file" });
                 return { success: true, type: "object", content: { action: "prepended", path } };
             }
 
@@ -81,6 +83,7 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
             if (extErr) return extErr;
             await ensureParentFolder(plugin.app, path);
             await plugin.app.vault.create(path, contentToPrepend);
+            recordVaultEdit(plugin, chatStream, { kind: "create", path, toolName: "prepend_file" });
             return { success: true, type: "object", content: { action: "created", path } };
         },
         requiresConfirmation: true,

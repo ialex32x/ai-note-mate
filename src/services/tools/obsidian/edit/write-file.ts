@@ -2,6 +2,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: write_file
@@ -141,7 +142,7 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
             const content = args["content"] as string;
             const dryRun = (args["dry_run"] as boolean) ?? false;
@@ -204,6 +205,7 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             if (!dryRun) {
                 await plugin.app.vault.modify(file, content);
+                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "write_file" });
             }
 
             return {

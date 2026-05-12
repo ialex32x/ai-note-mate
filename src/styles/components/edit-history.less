@@ -19,18 +19,66 @@
     overflow: hidden;
 }
 
+// Host for the (re-rendered) header — lets us swap the toolbar per tab
+// without losing the body's scroll position.
+.ai-edit-history-header-host {
+    flex-shrink: 0;
+}
+
+.ai-edit-history-body {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
 .ai-edit-history-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: @spacing-md;
-    flex-shrink: 0;
+    flex-wrap: wrap;
+}
+
+.ai-edit-history-header-left {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+    min-width: 0;
+    flex: 1 1 auto;
 }
 
 .ai-edit-history-title {
     font-size: var(--font-ui-medium);
     font-weight: 600;
     color: @text-primary;
+}
+
+.ai-edit-history-tabs {
+    display: flex;
+    gap: @spacing-xs;
+    align-items: center;
+}
+
+.ai-edit-history-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 2px @spacing-sm;
+    border-radius: @radius-sm;
+    font-size: var(--font-ui-smaller);
+    color: @text-secondary;
+    cursor: pointer;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+
+    &.is-active {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+        border-color: @bg-modifier-border;
+    }
 }
 
 .ai-edit-history-header-actions {
@@ -223,4 +271,47 @@
     margin-top: @spacing-md;
     color: @text-faint;
     font-size: var(--font-ui-smaller);
+}
+
+// ── File changes tab ────────────────────────────────────────────────────
+
+.ai-edit-history-list--file-changes {
+    gap: @spacing-xs;
+}
+
+// Session / group header between blocks of file-change rows. Subdued so
+// the rows themselves remain the focal point.
+.ai-edit-history-group-title {
+    font-size: var(--font-ui-smaller);
+    color: @text-faint;
+    padding: @spacing-sm 0 @spacing-xs;
+    border-bottom: 1px dashed @bg-modifier-border;
+    margin-bottom: @spacing-xs;
+
+    // Collapse top margin / border for the first group so it sits flush.
+    &:first-child {
+        padding-top: 0;
+        border-top: none;
+    }
+}
+
+// Log-row colour hints per mutation kind, mirroring the border tint
+// convention used by rewrite rows above.
+.ai-edit-history-item--log {
+    border-left-width: 3px;
+
+    &.ai-edit-history-item--log-create { border-left-color: @text-success; }
+    &.ai-edit-history-item--log-modify { border-left-color: @text-accent; }
+    &.ai-edit-history-item--log-rename { border-left-color: @text-warning; }
+    &.ai-edit-history-item--log-delete { border-left-color: @text-error; }
+}
+
+// Disabled file label for delete rows — not clickable, shown in the
+// "faint" colour so it reads as archival metadata.
+.ai-edit-history-file.is-disabled {
+    color: @text-faint;
+    cursor: default;
+    text-decoration: line-through;
+
+    &:hover { text-decoration: line-through; }
 }

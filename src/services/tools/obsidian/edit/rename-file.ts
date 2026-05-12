@@ -3,6 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: rename_or_move_file
@@ -49,7 +50,7 @@ export function vaultRenameFile(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
             const newPath = args["new_path"] as string;
 
@@ -78,8 +79,18 @@ export function vaultRenameFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             await ensureParentFolder(plugin.app, newPath);
 
+            const isFolder = file instanceof TFolder;
+
             // Use fileManager.renameFile to automatically update all links
             await plugin.app.fileManager.renameFile(file, newPath);
+
+            recordVaultEdit(plugin, chatStream, {
+                kind: "rename",
+                path: newPath,
+                previousPath: path,
+                isFolder,
+                toolName: "rename_or_move_file",
+            });
 
             return {
                 success: true,
@@ -88,7 +99,7 @@ export function vaultRenameFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     action: "renamed",
                     old_path: path,
                     new_path: newPath,
-                    is_folder: file instanceof TFolder,
+                    is_folder: isFolder,
                 },
             };
         },

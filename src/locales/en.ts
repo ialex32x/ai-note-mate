@@ -381,4 +381,19 @@ export const en: Record<string, string> = {
 	'editHistory.notice.stale': 'Target text was modified — rewrite was not applied.',
 	'editHistory.notice.emptyResponse': 'Model returned no content.',
 	'editHistory.notice.fileMissing': 'Original file is no longer available.',
+
+	// ── AI Edit History: File changes tab ────────────────
+	'editHistory.tab.rewrites': 'Rewrites',
+	'editHistory.tab.fileChanges': 'File changes',
+	'editHistory.fileChanges.empty': 'No AI file changes yet.',
+	'editHistory.fileChanges.kind.create': 'Created',
+	'editHistory.fileChanges.kind.modify': 'Modified',
+	'editHistory.fileChanges.kind.rename': 'Moved',
+	'editHistory.fileChanges.kind.delete': 'Deleted',
+	'editHistory.fileChanges.renamedFrom': 'from {0}',
+	'editHistory.fileChanges.deletedHint': 'Deleted — cannot open',
+	'editHistory.fileChanges.clearAll': 'Clear all',
+	'editHistory.fileChanges.removeEntry': 'Remove entry',
+	'editHistory.fileChanges.sessionGroup': 'Session {0}',
+	'editHistory.fileChanges.sessionUnknown': 'Unattributed changes',
 };

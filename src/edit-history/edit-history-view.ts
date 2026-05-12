@@ -1,21 +1,28 @@
 /**
- * AI Edit History view — sidebar `ItemView` listing every rewrite task.
+ * AI Edit History view — sidebar `ItemView` exposing TWO separate audit logs
+ * under a single tabbed panel:
  *
- * The view is a thin presenter on top of `EditHistoryStore`:
- * - subscribes to the store's `change` and `task-updated` events,
- * - re-renders the list on structural changes,
- * - patches a single item element on streaming updates (no full rerender).
+ *   1. **Rewrites** — selection-rewrite tasks triggered from the editor
+ *      (expand / shorten / polish). Thin presenter on top of
+ *      {@link EditHistoryStore}; subscribes to `change` / `task-updated`
+ *      and patches a single item element on streaming updates.
+ *   2. **File changes** — a flat log of vault mutations performed by AI
+ *      tool calls (create / modify / rename / delete). Presenter on top of
+ *      {@link VaultEditLogStore}; entries are grouped by the sessionId
+ *      they originated from so related edits stay together.
  *
  * All UI text flows through `t()` so the 5 supported locales stay in sync.
  */
 
-import { ItemView, WorkspaceLeaf, IconName, Menu, Notice, MarkdownView, TFile, setIcon, setTooltip } from "obsidian";
+import { ItemView, WorkspaceLeaf, IconName, Menu, Notice, MarkdownView, TFile, TFolder, setIcon, setTooltip } from "obsidian";
 import type NoteAssistantPlugin from "../main";
 import { t } from "../i18n";
 import { copyToClipboard } from "../utils/clipboard";
 import type { EditHistoryStore } from "./edit-history-store";
 import type { EditTask, EditTaskStatus, EditAction } from "./edit-history-types";
 import { runEditTask } from "./edit-history-runner";
+import type { VaultEditLogStore } from "./vault-edit-log-store";
+import type { VaultEditLogEntry, VaultEditKind } from "./vault-edit-log-types";
 
 const STATUS_ICONS: Record<EditTaskStatus, IconName> = {
     pending: "clock",
@@ -31,6 +38,21 @@ const ACTION_ICONS: Record<EditAction, IconName> = {
     shorten: "minimize-2",
     polish: "wand-2",
 };
+
+/**
+ * Lucide icon per mutation kind shown on each file-change row. Kept here
+ * (not in the locale bundle) because icons are cross-locale and sharing
+ * the mapping keeps the view declarative.
+ */
+const KIND_ICONS: Record<VaultEditKind, IconName> = {
+    create: "file-plus",
+    modify: "file-pen",
+    rename: "arrow-right-left",
+    delete: "trash-2",
+};
+
+/** Which tab is currently showing. Held only in memory (not persisted). */
+type ActiveTab = "rewrites" | "fileChanges";
 
 /**
  * Subset of `EditTask` fields that, when changed, force the row to be
@@ -79,7 +101,16 @@ function snapshotsEqual(a: ItemSnapshot, b: ItemSnapshot): boolean {
 export class EditHistoryView extends ItemView {
     static readonly VIEW_TYPE = "ai-edit-history-view";
 
-    private listEl!: HTMLElement;
+    /** The current tab. */
+    private activeTab: ActiveTab = "rewrites";
+
+    /** Header container — re-rendered on tab switch to rewire tab buttons / toolbar. */
+    private headerEl!: HTMLElement;
+    /** Container that hosts either the rewrites list or the file-changes list. */
+    private bodyEl!: HTMLElement;
+
+    /** Rewrites list host + per-task caches. Populated lazily per tab mount. */
+    private listEl: HTMLElement | null = null;
     /** Maps task id → its rendered list-item element, for in-place updates. */
     private readonly itemEls = new Map<string, HTMLElement>();
     /**
@@ -89,6 +120,10 @@ export class EditHistoryView extends ItemView {
      * states to flicker and tooltips to be re-registered.
      */
     private readonly itemSnapshots = new Map<string, ItemSnapshot>();
+
+    /** File-changes list host, only present while that tab is mounted. */
+    private fileChangesListEl: HTMLElement | null = null;
+
     /** Disposers returned by `store.on(...)`. */
     private readonly unsubscribers: Array<() => void> = [];
 
@@ -96,6 +131,7 @@ export class EditHistoryView extends ItemView {
         leaf: WorkspaceLeaf,
         private readonly plugin: NoteAssistantPlugin,
         private readonly store: EditHistoryStore,
+        private readonly logStore: VaultEditLogStore,
     ) {
         super(leaf);
     }
@@ -109,29 +145,25 @@ export class EditHistoryView extends ItemView {
         root.empty();
         root.addClass("ai-edit-history-view");
 
-        // Header / toolbar
-        const header = root.createEl("div", { cls: "ai-edit-history-header" });
-        header.createEl("div", { cls: "ai-edit-history-title", text: t("editHistory.title") });
+        // Header host (re-rendered on tab switch to swap the toolbar) +
+        // body host (list container).
+        this.headerEl = root.createEl("div", { cls: "ai-edit-history-header-host" });
+        this.bodyEl = root.createEl("div", { cls: "ai-edit-history-body" });
 
-        const actions = header.createEl("div", { cls: "ai-edit-history-header-actions" });
+        this.renderHeader();
+        this.renderActiveTabBody();
 
-        const cancelAllBtn = actions.createEl("button", { cls: "clickable-icon" });
-        setIcon(cancelAllBtn, "square");
-        setTooltip(cancelAllBtn, t("editHistory.button.cancelAll"));
-        cancelAllBtn.addEventListener("click", () => this.store.cancelAll());
-
-        const clearBtn = actions.createEl("button", { cls: "clickable-icon" });
-        setIcon(clearBtn, "trash-2");
-        setTooltip(clearBtn, t("editHistory.button.clearFinished"));
-        clearBtn.addEventListener("click", () => this.store.clearFinished());
-
-        // List
-        this.listEl = root.createEl("div", { cls: "ai-edit-history-list" });
-
-        this.renderList();
-
-        this.unsubscribers.push(this.store.on("change", () => this.renderList()));
-        this.unsubscribers.push(this.store.on("task-updated", (task) => this.patchItem(task)));
+        // Subscribe once; router decides what to repaint based on the
+        // currently active tab.
+        this.unsubscribers.push(this.store.on("change", () => {
+            if (this.activeTab === "rewrites") this.renderRewritesList();
+        }));
+        this.unsubscribers.push(this.store.on("task-updated", (task) => {
+            if (this.activeTab === "rewrites") this.patchItem(task);
+        }));
+        this.unsubscribers.push(this.logStore.on("change", () => {
+            if (this.activeTab === "fileChanges") this.renderFileChangesList();
+        }));
     }
 
     async onClose(): Promise<void> {
@@ -141,12 +173,82 @@ export class EditHistoryView extends ItemView {
         this.unsubscribers.length = 0;
         this.itemEls.clear();
         this.itemSnapshots.clear();
+        this.listEl = null;
+        this.fileChangesListEl = null;
         this.contentEl.empty();
     }
 
-    // ── Rendering ────────────────────────────────────────────────────────
+    // ── Header & tabs ────────────────────────────────────────────────────
 
-    private renderList(): void {
+    private renderHeader(): void {
+        const header = this.headerEl;
+        header.empty();
+        header.addClass("ai-edit-history-header");
+
+        // Title + tab switcher on the left.
+        const left = header.createEl("div", { cls: "ai-edit-history-header-left" });
+        left.createEl("div", { cls: "ai-edit-history-title", text: t("editHistory.title") });
+
+        const tabs = left.createEl("div", { cls: "ai-edit-history-tabs" });
+        this.makeTabButton(tabs, "rewrites", t("editHistory.tab.rewrites"));
+        this.makeTabButton(tabs, "fileChanges", t("editHistory.tab.fileChanges"));
+
+        // Toolbar on the right (tab-specific).
+        const actions = header.createEl("div", { cls: "ai-edit-history-header-actions" });
+        if (this.activeTab === "rewrites") {
+            const cancelAllBtn = actions.createEl("button", { cls: "clickable-icon" });
+            setIcon(cancelAllBtn, "square");
+            setTooltip(cancelAllBtn, t("editHistory.button.cancelAll"));
+            cancelAllBtn.addEventListener("click", () => this.store.cancelAll());
+
+            const clearBtn = actions.createEl("button", { cls: "clickable-icon" });
+            setIcon(clearBtn, "trash-2");
+            setTooltip(clearBtn, t("editHistory.button.clearFinished"));
+            clearBtn.addEventListener("click", () => this.store.clearFinished());
+        } else {
+            const clearBtn = actions.createEl("button", { cls: "clickable-icon" });
+            setIcon(clearBtn, "trash-2");
+            setTooltip(clearBtn, t("editHistory.fileChanges.clearAll"));
+            clearBtn.addEventListener("click", () => this.logStore.clear());
+        }
+    }
+
+    private makeTabButton(host: HTMLElement, id: ActiveTab, label: string): HTMLElement {
+        const btn = host.createEl("button", {
+            cls: `ai-edit-history-tab${this.activeTab === id ? " is-active" : ""}`,
+            text: label,
+        });
+        btn.addEventListener("click", () => {
+            if (this.activeTab === id) return;
+            this.activeTab = id;
+            this.renderHeader();
+            this.renderActiveTabBody();
+        });
+        return btn;
+    }
+
+    private renderActiveTabBody(): void {
+        this.bodyEl.empty();
+        this.itemEls.clear();
+        this.itemSnapshots.clear();
+        this.listEl = null;
+        this.fileChangesListEl = null;
+
+        if (this.activeTab === "rewrites") {
+            this.listEl = this.bodyEl.createEl("div", { cls: "ai-edit-history-list" });
+            this.renderRewritesList();
+        } else {
+            this.fileChangesListEl = this.bodyEl.createEl("div", {
+                cls: "ai-edit-history-list ai-edit-history-list--file-changes",
+            });
+            this.renderFileChangesList();
+        }
+    }
+
+    // ── Rewrites tab ────────────────────────────────────────────────────
+
+    private renderRewritesList(): void {
+        if (!this.listEl) return;
         this.listEl.empty();
         this.itemEls.clear();
         this.itemSnapshots.clear();
@@ -179,10 +281,11 @@ export class EditHistoryView extends ItemView {
      * returns.
      */
     private patchItem(task: EditTask): void {
+        if (!this.listEl) return;
         const existing = this.itemEls.get(task.id);
         const prevSnap = this.itemSnapshots.get(task.id);
         if (!existing || !prevSnap) {
-            this.renderList();
+            this.renderRewritesList();
             return;
         }
 
@@ -399,7 +502,7 @@ export class EditHistoryView extends ItemView {
         return btn;
     }
 
-    // ── Actions ─────────────────────────────────────────────────────────
+    // ── Rewrites actions ────────────────────────────────────────────────
 
     private async openTaskFile(task: EditTask): Promise<void> {
         if (!task.filePath) return;
@@ -444,5 +547,132 @@ export class EditHistoryView extends ItemView {
             modelName: task.modelName,
         });
         void runEditTask(this.plugin, this.store, fresh, controller.signal);
+    }
+
+    // ── File changes tab ────────────────────────────────────────────────
+
+    private renderFileChangesList(): void {
+        const list = this.fileChangesListEl;
+        if (!list) return;
+        list.empty();
+
+        const entries = this.logStore.entries;
+        if (entries.length === 0) {
+            list.createEl("div", {
+                cls: "ai-edit-history-empty",
+                text: t("editHistory.fileChanges.empty"),
+            });
+            return;
+        }
+
+        // Group consecutive entries that share the same sessionId. Entries
+        // are already sorted newest-first; we preserve that order and only
+        // collapse adjacent same-session runs. This keeps the UI close to
+        // "one chat turn, one group" without hiding interleaved edits from
+        // concurrent sessions.
+        type Group = { sessionId: string | undefined; entries: VaultEditLogEntry[] };
+        const groups: Group[] = [];
+        for (const entry of entries) {
+            const last = groups[groups.length - 1];
+            if (last && last.sessionId === entry.sessionId) {
+                last.entries.push(entry);
+            } else {
+                groups.push({ sessionId: entry.sessionId, entries: [entry] });
+            }
+        }
+
+        for (const group of groups) {
+            // Short id suffix in the header keeps the label readable while
+            // still letting power users tell sessions apart. The full id is
+            // in the tooltip for anyone who needs it.
+            if (group.sessionId) {
+                const shortId = group.sessionId.slice(-6);
+                const header = list.createEl("div", {
+                    cls: "ai-edit-history-group-title",
+                    text: t("editHistory.fileChanges.sessionGroup", { 0: shortId }),
+                });
+                setTooltip(header, group.sessionId);
+            } else {
+                list.createEl("div", {
+                    cls: "ai-edit-history-group-title",
+                    text: t("editHistory.fileChanges.sessionUnknown"),
+                });
+            }
+
+            for (const entry of group.entries) {
+                list.appendChild(this.renderFileChangeItem(entry));
+            }
+        }
+    }
+
+    private renderFileChangeItem(entry: VaultEditLogEntry): HTMLElement {
+        const el = createEl("div", {
+            cls: `ai-edit-history-item ai-edit-history-item--log ai-edit-history-item--log-${entry.kind}`,
+        });
+        el.dataset.entryId = entry.id;
+
+        const head = el.createEl("div", { cls: "ai-edit-history-item-head" });
+
+        // Kind icon on the left (create / modify / rename / delete).
+        const kindIcon = head.createEl("span", { cls: "ai-edit-history-action-icon" });
+        setIcon(kindIcon, KIND_ICONS[entry.kind]);
+        setTooltip(kindIcon, t(`editHistory.fileChanges.kind.${entry.kind}`));
+
+        const canOpen = entry.kind !== "delete";
+
+        // File path — clickable for everything except `delete` entries,
+        // where the referenced path is no longer resolvable.
+        const fileEl = head.createEl("a", {
+            cls: "ai-edit-history-file" + (canOpen ? "" : " is-disabled"),
+        });
+        fileEl.setText(entry.path);
+        if (canOpen) {
+            setTooltip(fileEl, entry.path);
+            fileEl.addEventListener("click", (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                void this.openLogEntry(entry);
+            });
+        } else {
+            setTooltip(fileEl, t("editHistory.fileChanges.deletedHint"));
+        }
+
+        const buttonRow = head.createEl("div", { cls: "ai-edit-history-buttons" });
+        this.makeIconButton(buttonRow, "trash", t("editHistory.fileChanges.removeEntry"), (ev) => {
+            ev.stopPropagation();
+            this.logStore.remove(entry.id);
+        });
+
+        // Secondary line: tool name + timestamp (+ previous path for renames).
+        const meta = el.createEl("div", { cls: "ai-edit-history-preview-line" });
+        const ts = new Date(entry.createdAt).toLocaleString();
+        const parts: string[] = [entry.toolName, ts];
+        if (entry.kind === "rename" && entry.previousPath) {
+            parts.push(t("editHistory.fileChanges.renamedFrom", { 0: entry.previousPath }));
+        }
+        meta.setText(parts.join(" · "));
+
+        return el;
+    }
+
+    /**
+     * Open the file referenced by a file-change log entry. Renames point at
+     * the NEW path (which is what the log stores). Deletes can't be opened
+     * (their row is rendered as non-interactive) and never reach this path.
+     */
+    private async openLogEntry(entry: VaultEditLogEntry): Promise<void> {
+        const abs = this.app.vault.getAbstractFileByPath(entry.path);
+        if (abs instanceof TFile) {
+            const leaf = this.app.workspace.getLeaf(false);
+            await leaf.openFile(abs);
+            return;
+        }
+        if (abs instanceof TFolder) {
+            // Folders have no default open action; reveal in the file
+            // explorer if we can, otherwise surface a notice.
+            new Notice(entry.path);
+            return;
+        }
+        new Notice(t("editHistory.notice.fileMissing"));
     }
 }

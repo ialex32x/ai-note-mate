@@ -221,6 +221,14 @@ export class SubAgent {
              * tool calls will report "no store available" to the model.
              */
             exchangeStore?: ExchangeStore;
+            /**
+             * Optional opaque tag forwarded to the sub-agent's ChatStream
+             * as {@link ChatStream.contextTag} for the duration of this
+             * execute() call. Used by downstream side-effect logging (e.g.
+             * the AI file-changes audit log) to attribute vault mutations
+             * back to the parent session.
+             */
+            contextTag?: string;
         },
     ): Promise<SubAgentResult> {
         const startTime = Date.now();
@@ -246,6 +254,10 @@ export class SubAgent {
         // Reuse or create a ChatStream for this execution
         const chatStream = this._getOrCreateChatStream();
         this._chatStream = chatStream;
+        // Propagate the caller's context tag (typically the session id the
+        // orchestrator is running inside) so tool side-effects triggered
+        // from this sub-agent can be attributed back to that session.
+        chatStream.contextTag = options.contextTag;
 
         let aborted = false;
 

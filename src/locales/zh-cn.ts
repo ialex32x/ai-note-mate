@@ -380,4 +380,19 @@ export const zhCN: Record<string, string> = {
 	'editHistory.notice.stale': '目标内容已被修改，未写回编辑器。',
 	'editHistory.notice.emptyResponse': '模型未返回任何内容。',
 	'editHistory.notice.fileMissing': '原文件已不存在。',
+
+	// ── AI Edit History: File changes tab ────────────────
+	'editHistory.tab.rewrites': '重写历史',
+	'editHistory.tab.fileChanges': '文件改动',
+	'editHistory.fileChanges.empty': '暂无 AI 文件改动记录。',
+	'editHistory.fileChanges.kind.create': '创建',
+	'editHistory.fileChanges.kind.modify': '修改',
+	'editHistory.fileChanges.kind.rename': '移动',
+	'editHistory.fileChanges.kind.delete': '删除',
+	'editHistory.fileChanges.renamedFrom': '原路径 {0}',
+	'editHistory.fileChanges.deletedHint': '已删除 — 无法打开',
+	'editHistory.fileChanges.clearAll': '全部清空',
+	'editHistory.fileChanges.removeEntry': '移除此项',
+	'editHistory.fileChanges.sessionGroup': '会话 {0}',
+	'editHistory.fileChanges.sessionUnknown': '未归属的改动',
 };

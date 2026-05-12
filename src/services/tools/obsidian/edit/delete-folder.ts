@@ -3,6 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFolder } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: delete_folder
@@ -33,7 +34,7 @@ export function vaultDeleteFolder(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["delete_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal) => {
+        exec: async (chatStream, args, _signal) => {
             const path = args["path"] as string;
             const folderOrErr = requireFolder(plugin.app, path);
             if (isFailure(folderOrErr)) return folderOrErr;
@@ -53,6 +54,13 @@ export function vaultDeleteFolder(plugin: NoteAssistantPlugin): RegisteredTool {
 
             await deleteRecursive(folder);
             await plugin.app.fileManager.trashFile(folder);
+            // Record only the top-level folder deletion — not every file
+            // inside it — to keep the audit log signal-dense. Users who
+            // need to enumerate the wiped contents can inspect the folder
+            // in trash or consult version control.
+            recordVaultEdit(plugin, chatStream, {
+                kind: "delete", path, toolName: "delete_folder", isFolder: true,
+            });
             return { success: true, type: "object", content: { path } };
         },
         requiresConfirmation: true,

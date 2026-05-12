@@ -381,4 +381,19 @@ export const ja: Record<string, string> = {
 	'editHistory.notice.stale': '対象テキストが変更されたため、書き戻しは行われませんでした。',
 	'editHistory.notice.emptyResponse': 'モデルから応答がありませんでした。',
 	'editHistory.notice.fileMissing': '元のファイルが見つかりません。',
+
+	// ── AI Edit History: File changes tab ────────────────
+	'editHistory.tab.rewrites': '書き直し履歴',
+	'editHistory.tab.fileChanges': 'ファイル変更',
+	'editHistory.fileChanges.empty': 'AI によるファイル変更はまだありません。',
+	'editHistory.fileChanges.kind.create': '作成',
+	'editHistory.fileChanges.kind.modify': '変更',
+	'editHistory.fileChanges.kind.rename': '移動',
+	'editHistory.fileChanges.kind.delete': '削除',
+	'editHistory.fileChanges.renamedFrom': '元のパス {0}',
+	'editHistory.fileChanges.deletedHint': '削除済み — 開けません',
+	'editHistory.fileChanges.clearAll': 'すべてクリア',
+	'editHistory.fileChanges.removeEntry': 'この項目を削除',
+	'editHistory.fileChanges.sessionGroup': 'セッション {0}',
+	'editHistory.fileChanges.sessionUnknown': '未紐付けの変更',
 };

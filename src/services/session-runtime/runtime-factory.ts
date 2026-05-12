@@ -149,5 +149,9 @@ export function createSessionRuntime(
     });
 
     runtime.bindChat(chat);
+    // Tag the chat agent with our sessionId so downstream side-effect
+    // logs (e.g. the AI file-changes audit log) can attribute each
+    // recorded mutation back to the session it was performed in.
+    chat.contextTag = sessionId;
     return runtime;
 }

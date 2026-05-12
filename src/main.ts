@@ -8,6 +8,7 @@ import { initGlobalEmbedder, disposeGlobalEmbedder } from './services/embedder';
 import { PluginPaths } from './plugin-paths';
 import { EditHistoryStore } from './edit-history/edit-history-store';
 import { EditHistoryView } from './edit-history/edit-history-view';
+import { VaultEditLogStore } from './edit-history/vault-edit-log-store';
 import { registerRewriteSelection, type AISubmenuItem } from './edit-history/rewrite-selection';
 import { SessionManager } from './session-manager';
 import { SessionRuntimePool } from './services/session-runtime';
@@ -18,6 +19,12 @@ export default class NoteAssistantPlugin extends Plugin {
 	skillManager!: SkillManager;
 	paths!: PluginPaths;
 	editHistory!: EditHistoryStore;
+	/**
+	 * Log of vault file mutations performed by AI tool calls (create /
+	 * modify / rename / delete). Metadata-only — no file content. Shared
+	 * with the AI Edit History view via a dedicated "File changes" tab.
+	 */
+	vaultEditLog!: VaultEditLogStore;
 	/**
 	 * Plugin-wide session storage. Owned at the plugin level (not per-view)
 	 * so multiple SessionView leaves observe the same underlying data and so
@@ -91,9 +98,16 @@ export default class NoteAssistantPlugin extends Plugin {
 			persistPath: `${this.paths.cache()}/edit-history.json`,
 		});
 		await this.editHistory.load();
+		// AI file-changes log: separate store from the selection-rewrite
+		// history above. Persisted under cache/ for the same reason — it's
+		// rebuildable audit metadata, not user-owned content.
+		this.vaultEditLog = new VaultEditLogStore(this.app, {
+			persistPath: `${this.paths.cache()}/vault-edit-log.json`,
+		});
+		await this.vaultEditLog.load();
 		this.registerView(
 			EditHistoryView.VIEW_TYPE,
-			(leaf) => new EditHistoryView(leaf, this, this.editHistory),
+			(leaf) => new EditHistoryView(leaf, this, this.editHistory, this.vaultEditLog),
 		);
 		// "Send to AI Session" lives inside the same "AI" submenu as the
 		// rewrite actions (expand/shorten/polish) so all AI-related editor
@@ -181,6 +195,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		void this.mcpManager?.closeAll();
 		void disposeGlobalEmbedder();
 		this.editHistory?.dispose();
+		this.vaultEditLog?.dispose();
 	}
 
 	private async createSessionView(activate: boolean) {

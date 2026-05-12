@@ -7,6 +7,7 @@ import {
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "../heading-section";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: replace_text
@@ -688,7 +689,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
             const rawReplacements = args["replacements"];
             const dryRun = (args["dry_run"] as boolean) ?? false;
@@ -907,6 +908,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
 
             if (!dryRun) {
                 await plugin.app.vault.modify(file, working);
+                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "replace_text" });
             }
 
             const totalReplaced = summaries.reduce((s, r) => s + r.occurrences_replaced, 0);

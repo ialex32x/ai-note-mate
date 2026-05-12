@@ -381,4 +381,19 @@ export const ko: Record<string, string> = {
 	'editHistory.notice.stale': '대상 텍스트가 변경되어 적용되지 않았습니다.',
 	'editHistory.notice.emptyResponse': '모델이 내용을 반환하지 않았습니다.',
 	'editHistory.notice.fileMissing': '원본 파일을 더 이상 사용할 수 없습니다.',
+
+	// ── AI Edit History: File changes tab ────────────────
+	'editHistory.tab.rewrites': '재작성 기록',
+	'editHistory.tab.fileChanges': '파일 변경',
+	'editHistory.fileChanges.empty': 'AI 파일 변경 내역이 아직 없습니다.',
+	'editHistory.fileChanges.kind.create': '생성',
+	'editHistory.fileChanges.kind.modify': '수정',
+	'editHistory.fileChanges.kind.rename': '이동',
+	'editHistory.fileChanges.kind.delete': '삭제',
+	'editHistory.fileChanges.renamedFrom': '이전 경로 {0}',
+	'editHistory.fileChanges.deletedHint': '삭제됨 — 열 수 없음',
+	'editHistory.fileChanges.clearAll': '모두 지우기',
+	'editHistory.fileChanges.removeEntry': '항목 삭제',
+	'editHistory.fileChanges.sessionGroup': '세션 {0}',
+	'editHistory.fileChanges.sessionUnknown': '귀속되지 않은 변경',
 };

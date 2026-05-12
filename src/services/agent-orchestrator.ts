@@ -484,6 +484,18 @@ export class AgentOrchestrator implements IChatAgent {
      */
     private _subAgentTokenUsagePerAgent: Map<string, TokenUsage> = new Map();
 
+    /**
+     * Opaque contextTag forwarded to the main agent ChatStream and
+     * propagated into each sub-agent's ChatStream at `delegate_task`
+     * dispatch time. See `ChatStream.contextTag` for usage.
+     */
+    get contextTag(): string | undefined {
+        return this._mainAgent.contextTag;
+    }
+    set contextTag(tag: string | undefined) {
+        this._mainAgent.contextTag = tag;
+    }
+
     constructor(config: AgentOrchestratorConfig) {
         this._config = config;
 
@@ -850,6 +862,10 @@ export class AgentOrchestrator implements IChatAgent {
                 context: taskContext,
                 parentToolCallId,
                 exchangeStore,
+                // Forward the main agent's contextTag so vault-mutation side
+                // effects performed by this sub-agent are attributed back to
+                // the same session as the main conversation.
+                contextTag: this._mainAgent.contextTag,
                 onMessageUpdate: (name, msg) => {
                     // Store / update the sub-agent message in our per-parent bucket
                     if (parentToolCallId) {

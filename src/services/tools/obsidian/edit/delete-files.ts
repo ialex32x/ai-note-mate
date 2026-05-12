@@ -2,6 +2,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: delete_files
@@ -38,7 +39,7 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["delete_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal) => {
+        exec: async (chatStream, args, _signal) => {
             const rawPaths = args["paths"];
             if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
                 return { success: false, type: "text", content: "`paths` must be a non-empty array of strings." };
@@ -70,6 +71,7 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
                 try {
                     await plugin.app.fileManager.trashFile(fileOrErr);
                     deleted.push(path);
+                    recordVaultEdit(plugin, chatStream, { kind: "delete", path, toolName: "delete_files" });
                 } catch (e) {
                     failed.push({ path, error: e instanceof Error ? e.message : String(e) });
                 }

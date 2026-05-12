@@ -3,6 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
+import { recordVaultEdit } from "./_log";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: create_file
@@ -40,7 +41,7 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["create_file", "write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal) => {
+        exec: async (chatStream, args, _signal) => {
             const path = args["path"] as string;
             const content = args["content"] as string;
 
@@ -51,11 +52,13 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             if (existing instanceof TFile) {
                 await plugin.app.vault.modify(existing, content);
+                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "create_file" });
                 return { success: true, type: "object", content: { action: "overwritten", path } };
             }
 
             await ensureParentFolder(plugin.app, path);
             await plugin.app.vault.create(path, content);
+            recordVaultEdit(plugin, chatStream, { kind: "create", path, toolName: "create_file" });
             return { success: true, type: "object", content: { action: "created", path } };
         },
         requiresConfirmation: true,

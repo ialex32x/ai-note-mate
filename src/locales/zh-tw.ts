@@ -381,4 +381,19 @@ export const zhTW: Record<string, string> = {
 	'editHistory.notice.stale': '目標內容已變更，未寫回編輯器。',
 	'editHistory.notice.emptyResponse': '模型未回傳任何內容。',
 	'editHistory.notice.fileMissing': '原始檔案已不存在。',
+
+	// ── AI Edit History: File changes tab ────────────────
+	'editHistory.tab.rewrites': '重寫歷史',
+	'editHistory.tab.fileChanges': '檔案變更',
+	'editHistory.fileChanges.empty': '尚無 AI 檔案變更紀錄。',
+	'editHistory.fileChanges.kind.create': '建立',
+	'editHistory.fileChanges.kind.modify': '修改',
+	'editHistory.fileChanges.kind.rename': '移動',
+	'editHistory.fileChanges.kind.delete': '刪除',
+	'editHistory.fileChanges.renamedFrom': '原路徑 {0}',
+	'editHistory.fileChanges.deletedHint': '已刪除 — 無法開啟',
+	'editHistory.fileChanges.clearAll': '全部清除',
+	'editHistory.fileChanges.removeEntry': '移除此項目',
+	'editHistory.fileChanges.sessionGroup': '會話 {0}',
+	'editHistory.fileChanges.sessionUnknown': '未歸屬的變更',
 };

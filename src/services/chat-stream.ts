@@ -435,6 +435,12 @@ export interface IChatAgent {
     /** Get all conversation summaries (for persistence) */
     readonly summaries: ConversationSummary[];
 
+    /**
+     * Optional opaque tag used for logging / audit attribution.
+     * Not part of the chat semantics. See {@link ChatStream.contextTag}.
+     */
+    contextTag?: string;
+
     /** Clear all message history and reset state */
     clearHistory(): void;
     /** Restore messages and token usage from a previous session */
@@ -507,6 +513,20 @@ export interface IChatAgent {
  * ```
  */
 export class ChatStream implements IChatAgent {
+    // ── Public fields ───────────────────────────────────────────────────────
+
+    /**
+     * Optional opaque tag attached to this ChatStream for logging /
+     * auditing purposes. Not used by the chat flow itself.
+     *
+     * Today it is populated by `createSessionRuntime` with the sessionId
+     * so that side-effects triggered from within a tool (e.g. vault file
+     * mutations recorded into the AI file-changes log) can be attributed
+     * back to the session the user is chatting in. Sub-agents inherit
+     * the value from the orchestrator before their `execute()` runs.
+     */
+    contextTag?: string;
+
     // ── Private fields ──────────────────────────────────────────────────────
 
     private readonly _config: ChatStreamConfig;
