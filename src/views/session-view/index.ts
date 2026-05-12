@@ -21,4 +21,3 @@ export {
 export { InsightCoordinator, type InsightDeps } from './insight-coordinator';
 export { rebuildSessionDropdown, type SessionDropdownDeps } from './session-dropdown';
 export { SessionNavigator, type SessionNavigatorDeps } from './session-navigator';
-export { buildChatAgentCallbacks, type ChatCallbackContext } from './chat-callbacks';

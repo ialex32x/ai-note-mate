@@ -17,8 +17,23 @@ export interface SessionNavigatorDeps {
     app: App;
     sessionManager: SessionManager;
     dropdownManager: DropdownManager;
-    /** True while a streaming response is in flight; blocks destructive ops. */
+    /**
+     * Whether the currently-attached session is mid-turn. Used purely
+     * for UI hints (no longer blocks deletion — deletion of a busy
+     * session forcibly aborts via `evictRuntime`).
+     */
     isStreaming: () => boolean;
+    /**
+     * Whether the given (possibly background) session is currently
+     * running a turn in the runtime pool. Used to mark dropdown
+     * entries with a small "still working" indicator.
+     */
+    isSessionBusy: (sessionId: string) => boolean;
+    /**
+     * Forcefully tear down a SessionRuntime in the pool, aborting its
+     * chat regardless of busy state. Called on explicit user deletion.
+     */
+    evictRuntime: (sessionId: string) => void;
     /**
      * Clear the active session's draft save timer. Called before deleting
      * the active session so the draft is not flushed to a session that's
@@ -27,14 +42,14 @@ export interface SessionNavigatorDeps {
     clearActiveDraftTimer: () => void;
     /**
      * Switch to the given session. The view owns the full switch pipeline
-     * (clearViewForSessionSwitch + restoreSessionUI + isSwitchingSession
+     * (detach + clearViewDOM + bindActiveSessionRuntime + isSwitchingSession
      * guard), so we just delegate.
      */
     onSwitchSession: (sessionId: string) => void;
     /**
      * Called after the *active* session was deleted and the SessionManager
-     * has already promoted a new active session. The view should run its
-     * normal clear+restore pipeline for that new session.
+     * has already promoted a new active session. The view should rebind
+     * to whichever session is now active.
      */
     onActiveSessionDeleted: () => Promise<void>;
 }
@@ -149,6 +164,7 @@ export class SessionNavigator {
             onDeleteSession: (id, itemEl, isActive) => {
                 void this.handleDeleteSession(id, itemEl, isActive);
             },
+            isBusy: (id) => this.deps.isSessionBusy(id),
         });
     }
 
@@ -174,11 +190,11 @@ export class SessionNavigator {
         itemEl: HTMLElement,
         isActive: boolean,
     ): Promise<void> {
-        // Prevent deleting while streaming
-        if (this.deps.isStreaming()) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
-            return;
-        }
+        // Streaming no longer blocks deletion — we forcibly evict the
+        // runtime which aborts its chat. This is consistent with the
+        // user's intent ("delete this session") even if a background
+        // turn is still in progress.
+        this.deps.evictRuntime(sessionId);
 
         // Clear draft save timer before deleting (draft will be lost with the session)
         if (isActive) {
@@ -219,16 +235,11 @@ export class SessionNavigator {
     }
 
     private async handleDeleteHistorySessions(): Promise<void> {
-        // Prevent deletion while streaming
-        if (this.deps.isStreaming()) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
-            return;
-        }
-
         // Check if there are any sessions to delete (excluding current)
         const allSessions = this.deps.sessionManager.getAllSessions();
         const activeId = this.deps.sessionManager.activeSessionId;
-        const historySessionsCount = allSessions.filter(s => s.id !== activeId).length;
+        const historySessions = allSessions.filter(s => s.id !== activeId);
+        const historySessionsCount = historySessions.length;
 
         if (historySessionsCount === 0) {
             new Notice(t('view.noHistorySessionsToDelete'));
@@ -240,6 +251,14 @@ export class SessionNavigator {
             historySessionsCount,
         ).waitForResult();
         if (!confirmed) return;
+
+        // Forcibly evict every soon-to-be-deleted runtime first. Doing
+        // this before the disk delete means a background turn can't
+        // race in another saveSession() call after the metadata is
+        // already gone.
+        for (const s of historySessions) {
+            this.deps.evictRuntime(s.id);
+        }
 
         try {
             const deletedCount = await this.deps.sessionManager.deleteAllHistorySessions();

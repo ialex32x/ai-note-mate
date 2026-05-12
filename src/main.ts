@@ -9,6 +9,8 @@ import { PluginPaths } from './plugin-paths';
 import { EditHistoryStore } from './edit-history/edit-history-store';
 import { EditHistoryView } from './edit-history/edit-history-view';
 import { registerRewriteSelection, type AISubmenuItem } from './edit-history/rewrite-selection';
+import { SessionManager } from './session-manager';
+import { SessionRuntimePool } from './services/session-runtime';
 
 export default class NoteAssistantPlugin extends Plugin {
 	settings!: NoteAssistantPluginSettings;
@@ -16,6 +18,20 @@ export default class NoteAssistantPlugin extends Plugin {
 	skillManager!: SkillManager;
 	paths!: PluginPaths;
 	editHistory!: EditHistoryStore;
+	/**
+	 * Plugin-wide session storage. Owned at the plugin level (not per-view)
+	 * so multiple SessionView leaves observe the same underlying data and so
+	 * the {@link SessionRuntimePool} can keep background runtimes alive
+	 * across view detach/reattach without their persistence target shifting.
+	 */
+	sessionManager!: SessionManager;
+	/**
+	 * Pool of in-memory chat runtimes ({@link SessionRuntime}), keyed by
+	 * sessionId. The pool keeps busy chat instances alive after the
+	 * SessionView switches away from them, so an in-progress response is
+	 * not aborted just because the user navigated elsewhere.
+	 */
+	runtimePool!: SessionRuntimePool;
 
 	private readonly _settingsListeners: Array<() => void> = [];
 
@@ -43,6 +59,13 @@ export default class NoteAssistantPlugin extends Plugin {
 		this.paths = new PluginPaths(this);
 		this.mcpManager = new MCPManager(this);
 		this.skillManager = new SkillManager(createVaultFsAdapter(this.app.vault));
+		// Plugin-wide session storage. Created here so it loads from disk
+		// once before any SessionView opens; views just attach to it.
+		this.sessionManager = new SessionManager(this.app, this.paths.sessions());
+		await this.sessionManager.loadFromCache();
+		// Runtime pool needs the session manager for per-id persistence
+		// after background turns finish.
+		this.runtimePool = new SessionRuntimePool(this, { maxIdle: 3 });
 
 		// Initialize the process-wide embedding cache.
 		// Lives under the plugin's `cache/` directory — rebuildable derived data,
@@ -151,6 +174,10 @@ export default class NoteAssistantPlugin extends Plugin {
 	}
 
 	onunload() {
+		// Tear down background runtimes first so any in-flight chat
+		// stream is aborted before its dependencies (mcp, embedder) go
+		// away under it.
+		this.runtimePool?.disposeAll();
 		void this.mcpManager?.closeAll();
 		void disposeGlobalEmbedder();
 		this.editHistory?.dispose();

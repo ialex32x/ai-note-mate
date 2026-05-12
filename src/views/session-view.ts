@@ -44,12 +44,10 @@ import {
     createSummarizerConfig,
     createEmbeddingConfig,
     createProviderForActiveProfileOf,
-    createChatAgent,
-    buildDynamicTools,
     InsightCoordinator,
     SessionNavigator,
-    buildChatAgentCallbacks,
 } from './session-view/index';
+import { SessionRuntime, type RuntimeEvent } from '../services/session-runtime';
 
 export class SessionView extends ItemView {
     static readonly VIEW_TYPE = 'ai-session-view';
@@ -63,7 +61,6 @@ export class SessionView extends ItemView {
     private sessionStatusPanelEl!: HTMLElement;
     /** Singleton typing indicator manager (see TypingIndicator for rationale). */
     private typingIndicator!: TypingIndicator;
-    private isStreaming = false;
     /** Scroll container controller (user-scrolled-up tracking + scroll-to-bottom button). */
     private scroller!: ScrollController;
     /** Flag to prevent concurrent session switches */
@@ -72,24 +69,32 @@ export class SessionView extends ItemView {
     private newChatBtn!: HTMLButtonElement;
     private sessionNavigator!: SessionNavigator;
     private sessionTitleEl!: HTMLElement;
-    /** Incremented on each resetChat(); callbacks from a stale generation are silently discarded */
-    private chatGeneration = 0;
 
-    // ── ChatStream instance ──────────────────────────────────────────────────
-    private chat?: IChatAgent;
-
-    // ── Session management ──────────────────────────────────────────────────
-    private sessionManager: SessionManager;
+    // ── Session runtime ──────────────────────────────────────────────────────
+    /**
+     * The runtime currently bound to this view. Sourced from
+     * `plugin.runtimePool`; the view does NOT own its lifecycle (the
+     * pool does). When the view switches sessions or closes, it
+     * detaches its listener and tells the pool to `release()`; the
+     * pool decides whether the runtime keeps running in the background.
+     */
+    private runtime?: SessionRuntime;
+    /** Detach fn returned by `runtime.attach(...)`. Cleared after detach. */
+    private detachRuntime?: () => void;
 
     private plugin!: NoteAssistantPlugin;
+
+    // ── Session management ──────────────────────────────────────────────────
+    /** Convenience accessor for the plugin-wide SessionManager. */
+    private get sessionManager(): SessionManager {
+        return this.plugin.sessionManager;
+    }
 
     // ── In-flight streaming bubble ───────────────────────────────────────────
     /** Maps message id → the DOM element currently rendering that message */
     private messageBubbles: Map<string, HTMLElement> = new Map();
     /** Set of message IDs that were aborted by the user */
     private abortedMessageIds: Set<string> = new Set();
-    /** Pending tool confirmation promises keyed by message ID */
-    private pendingConfirmations: Map<string, (approved: boolean) => void> = new Map();
 
     // ── Draft input debounce ────────────────────────────────────────────────
     private draftController!: DraftInputController;
@@ -106,10 +111,6 @@ export class SessionView extends ItemView {
      */
     private onMcpStateChangedForStatusPanel: (() => void) | null = null;
 
-    // ── Context compression tracking ────────────────────────────────
-    /** Whether context compression has occurred in this session */
-    private hasContextCompressed = false;
-
     // ── Refactored components ────────────────────────────────────────────────
     private dropdownManager = new DropdownManager();
     private bubbleRenderer!: BubbleRenderer;
@@ -124,7 +125,6 @@ export class SessionView extends ItemView {
     constructor(leaf: WorkspaceLeaf, plugin: NoteAssistantPlugin) {
         super(leaf);
         this.plugin = plugin;
-        this.sessionManager = new SessionManager(plugin.app, plugin.paths.sessions());
     }
 
     getViewType() { return SessionView.VIEW_TYPE; }
@@ -143,37 +143,151 @@ export class SessionView extends ItemView {
         });
     }
 
-    private getChatStream(): IChatAgent {
-        if (!this.chat) {
-            const generation = this.chatGeneration;
-            this.chat = createChatAgent(this.plugin, {
-                generationMatches: () => this.chatGeneration === generation,
-                getDynamicTools: () => buildDynamicTools(this.plugin, {
-                    hasContextCompressed: this.hasContextCompressed,
-                }),
-                ...buildChatAgentCallbacks({
-                    setStreaming: (v) => { this.isStreaming = v; },
-                    setInputLocked: (locked) => this.setInputLocked(locked),
-                    showTypingIndicator: () => this.showTypingIndicator(),
-                    hideTypingIndicator: () => this.hideTypingIndicator(),
-                    handleMessageUpdate: (msg) => this.handleMessageUpdate(msg),
-                    handleSubAgentMessageUpdate: (msg) => this.handleSubAgentMessageUpdate(msg),
-                    handleAbort: (msg) => this.handleAbort(msg),
-                    appendErrorBubble: (m) => this.appendErrorBubble(m),
-                    isMessageProducingVisibleContent: (msg) => this.isMessageProducingVisibleContent(msg),
-                    saveCurrentSessionState: () => this.saveCurrentSessionState(),
-                    maybeGenerateSessionTitle: () => this.maybeGenerateSessionTitle(),
-                    maybeShowFollowUpSuggestions: () => this.maybeShowFollowUpSuggestions(),
-                    updateSessionStatusDisplay: () => this.updateSessionStatusDisplay(),
-                    markContextCompressed: () => { this.hasContextCompressed = true; },
-                    sessionManager: this.sessionManager,
-                    scroller: this.scroller,
-                    insightCoordinator: this.insightCoordinator,
-                    pendingConfirmations: this.pendingConfirmations,
-                }),
-            });
+    /**
+     * The IChatAgent backing the currently attached runtime, if any.
+     * Returns undefined when the view has no runtime bound (e.g. during
+     * the brief window inside `clearViewDOM()`).
+     */
+    private get chat(): IChatAgent | undefined {
+        return this.runtime?.chat;
+    }
+
+    /**
+     * Whether the current session's chat is producing output. Pure
+     * accessor — the underlying state lives on the SessionRuntime so
+     * that background continuations remain accurate.
+     */
+    private get isStreaming(): boolean {
+        return this.runtime?.isBusy === true;
+    }
+
+    /**
+     * Pending tool-call confirmations for the currently attached
+     * runtime. Returns an empty map when no runtime is bound (used by
+     * the bubble renderer; an empty map is a safe no-op there).
+     */
+    private get pendingConfirmations(): Map<string, (approved: boolean) => void> {
+        return this.runtime?.pendingConfirmations ?? new Map();
+    }
+
+    /**
+     * Resolve (or create) the runtime that should be bound to this
+     * view's active session, and ensure this view is attached to it.
+     *
+     * Replaces the old `getChatStream()` accessor. Unlike that one,
+     * this method does NOT lazily create state on first read inside
+     * UI helpers; the only places that may create a runtime are the
+     * switch / new / open flows. Other call sites should treat
+     * `this.runtime` as readonly.
+     */
+    private ensureRuntimeAttached(): SessionRuntime {
+        const targetId = this.sessionManager.activeSessionId;
+        if (this.runtime && this.runtime.sessionId === targetId) return this.runtime;
+        // Mismatch: this is a logic error — the caller forgot to run the
+        // switch flow before calling something that requires a chat.
+        // Recover by attaching to the correct runtime so the user isn't
+        // left with a broken view, but log so we notice during dev.
+        console.warn(
+            '[SessionView] ensureRuntimeAttached invoked with mismatched runtime; reattaching.',
+        );
+        this.attachRuntime(this.plugin.runtimePool.getOrCreate(targetId));
+        return this.runtime!;
+    }
+
+    /**
+     * Wire this view as a listener on the given runtime. Replaces any
+     * previously attached runtime (caller is responsible for having
+     * already detached/released it).
+     */
+    private attachRuntime(runtime: SessionRuntime): void {
+        this.runtime = runtime;
+        this.detachRuntime = runtime.attach((ev) => this.onRuntimeEvent(ev));
+    }
+
+    /**
+     * Central event handler for the attached SessionRuntime. Mirrors
+     * what `buildChatAgentCallbacks` used to do inline, but routed
+     * through a single typed event channel so the runtime can keep
+     * pushing events even when no view is attached (in which case
+     * this function simply isn't called).
+     */
+    private onRuntimeEvent(ev: RuntimeEvent): void {
+        switch (ev.type) {
+            case 'start':
+                this.setInputLocked(true);
+                this.showTypingIndicator();
+                break;
+            case 'message-update':
+                // Hide typing indicator once visible content is being
+                // streamed; the bubble's own cursor takes over.
+                if (this.isMessageProducingVisibleContent(ev.msg)) {
+                    this.hideTypingIndicator();
+                }
+                this.handleMessageUpdate(ev.msg);
+                break;
+            case 'sub-agent-message-update':
+                if (this.isMessageProducingVisibleContent(ev.msg)) {
+                    this.hideTypingIndicator();
+                }
+                this.handleSubAgentMessageUpdate(ev.msg);
+                break;
+            case 'tool-call-end':
+                // Tool execution completed — re-show typing dots while
+                // the AI prepares its next response (possibly thinking).
+                this.showTypingIndicator();
+                break;
+            case 'finish':
+                this.scroller.clearUserScrolledUp();
+                this.hideTypingIndicator();
+                this.setInputLocked(false);
+                // Persistence + title generation are owned by the
+                // runtime; the view only needs to refresh derived UI
+                // and run UI-only post-turn hooks.
+                this.updateSessionTitle();
+                this.maybeShowFollowUpSuggestions();
+                void this.insightCoordinator.maybeShowInsightCard();
+                this.updateNewChatBtnState();
+                break;
+            case 'abort':
+                this.scroller.clearUserScrolledUp();
+                this.hideTypingIndicator();
+                this.handleAbort(ev.msg);
+                break;
+            case 'usage-update':
+                this.updateSessionStatusDisplay();
+                break;
+            case 'error':
+                console.warn('ChatStream error:', ev.err);
+                this.scroller.clearUserScrolledUp();
+                this.hideTypingIndicator();
+                this.setInputLocked(false);
+                this.appendErrorBubble(ev.err.message);
+                break;
+            case 'context-compressed':
+                // The runtime already flipped its own flag; the view has
+                // nothing extra to render here, but keep the case
+                // explicit so an exhaustiveness check would catch a
+                // missing branch.
+                break;
+            case 'title-updated':
+                // Runtime finished a post-turn title-generation pass;
+                // refresh the toolbar title display.
+                this.updateSessionTitle();
+                break;
+            case 'confirm-tool-call': {
+                // The runtime already recorded the resolver in its
+                // pendingConfirmations map. We need the corresponding
+                // bubble to re-render its Allow / Deny UI now that a
+                // resolver exists; trigger that by re-rendering the
+                // bubble if it's already on screen.
+                const bubble = this.messageBubbles.get(ev.messageId);
+                if (bubble) {
+                    const msg = this.chat?.messages.find(m => m.id === ev.messageId);
+                    if (msg) this.updateBubbleContent(bubble, msg);
+                }
+                break;
+            }
         }
-        return this.chat;
     }
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
@@ -224,11 +338,20 @@ export class SessionView extends ItemView {
                 sessionManager: this.sessionManager,
                 dropdownManager: this.dropdownManager,
                 isStreaming: () => this.isStreaming,
+                isSessionBusy: (id) => this.plugin.runtimePool.get(id)?.isBusy === true,
+                evictRuntime: (id) => this.plugin.runtimePool.evict(id),
                 clearActiveDraftTimer: () => this.draftController.clearTimer(),
                 onSwitchSession: (id) => { void this.handleSwitchSession(id); },
                 onActiveSessionDeleted: async () => {
-                    this.clearViewForSessionSwitch();
-                    await this.restoreSessionUI();
+                    // The active session's runtime was already evicted
+                    // by SessionNavigator (via plugin.runtimePool.evict);
+                    // we just need to detach our listener (no-op since
+                    // the runtime is gone) and rebind to whichever
+                    // session SessionManager auto-selected.
+                    this.detachRuntime = undefined;
+                    this.runtime = undefined;
+                    this.clearViewDOM();
+                    await this.bindActiveSessionRuntime();
                 },
             });
             this.sessionNavigator.mount(leftGroup);
@@ -520,7 +643,7 @@ export class SessionView extends ItemView {
             this.plugin.mcpManager?.onChange(this.onMcpStateChangedForStatusPanel);
 
             // ── Restore session UI from cache ────────────────────────────────
-            await this.restoreSessionUI();
+            await this.bindActiveSessionRuntime();
         } catch (error) {
             showInitializationError(this.contentEl, error, () => { void this.onOpen(); });
         }
@@ -529,6 +652,11 @@ export class SessionView extends ItemView {
     async onClose() {
         // Clear draft save timer and save any pending draft
         this.draftController.clearTimer();
+
+        // Detach (NOT abort) the runtime so a background turn can keep
+        // running in the pool. The pool decides retention based on
+        // busy/idle state.
+        this.detachFromCurrentRuntime();
 
         this.profileSelector.dispose();
         if (this.onSettingsChangedForCapabilities) {
@@ -551,25 +679,24 @@ export class SessionView extends ItemView {
 
     /**
      * Whether a session switch / new-session operation is currently allowed.
-     * When `false`, callers should typically surface a Notice explaining why
-     * (use {@link guardSwitchSession} for the standard behaviour).
+     *
+     * Streaming no longer blocks switches — switching while the AI is
+     * mid-turn is the core feature this view now supports (the runtime
+     * keeps running in the background; the pool decides retention).
+     * We only need to serialize concurrent switches against each other.
      */
     canSwitchSession(): boolean {
-        return !this.isSwitchingSession && !this.isStreaming;
+        return !this.isSwitchingSession;
     }
 
     /**
      * Convenience guard for external callers: returns `true` if a session
-     * switch is currently possible, otherwise emits the same Notice that
-     * the in-view controls would and returns `false`.
+     * switch is currently possible, otherwise emits a Notice and returns
+     * `false`.
      */
     guardSwitchSession(): boolean {
         if (this.isSwitchingSession) {
             new Notice(t('view.sessionSwitchInProgress'));
-            return false;
-        }
-        if (this.isStreaming) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
             return false;
         }
         return true;
@@ -582,28 +709,30 @@ export class SessionView extends ItemView {
      * input" without re-implementing the save/switch dance.
      *
      * Returns `false` if the operation could not run because another
-     * switch is in progress or the AI is still streaming; in that case a
-     * Notice has already been shown to the user. Returns `true` after a
-     * successful switch.
+     * switch is in progress; in that case a Notice has already been shown
+     * to the user. Returns `true` after a successful switch.
      *
-     * NOTE: when the caller already pre-checked via {@link canSwitchSession},
-     * the second guard inside this method is still cheap and protects
-     * against races (e.g. an answer streaming in between the check and the
-     * call).
+     * NOTE: if the OLD session was streaming, its runtime is retained in
+     * the pool so the background turn finishes and persists into its
+     * own session file. See SessionRuntimePool for retention rules.
      */
     async startNewSession(): Promise<boolean> {
         if (!this.guardSwitchSession()) return false;
 
         this.isSwitchingSession = true;
         try {
-            // Save draft input before switching
             await this.draftController.flush();
-
-            const messages = this.chat ? this.chat.messages : [];
-            const usage = this.chat ? this.chat.sessionTokenUsage : { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-            const summaries = this.chat ? this.chat.summaries : [];
-            await this.sessionManager.saveAndSwitch(messages, usage, summaries);
-            this.clearViewForSessionSwitch();
+            // Detach from the old runtime (pool decides retention) BEFORE
+            // creating the new session, so the runtime's own onFinish can
+            // still write into its session file even if the user never
+            // comes back to it.
+            this.detachFromCurrentRuntime();
+            // Snapshot list.json + create the new active session.
+            await this.sessionManager.saveAndSwitch(
+                [], { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, [],
+            );
+            this.clearViewDOM();
+            await this.bindActiveSessionRuntime();
             new Notice(t('view.newSessionCreated'));
             return true;
         } finally {
@@ -616,43 +745,56 @@ export class SessionView extends ItemView {
     }
 
     private async handleSwitchSession(targetId: string) {
-        // Prevent concurrent session operations
         if (this.isSwitchingSession) {
             new Notice(t('view.sessionSwitchInProgress'));
-            return;
-        }
-        if (this.isStreaming) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
             return;
         }
         if (targetId === this.sessionManager.activeSessionId) return;
 
         this.isSwitchingSession = true;
         try {
-            // Save draft input before switching
             await this.draftController.flush();
-
-            const messages = this.chat ? this.chat.messages : [];
-            const usage = this.chat ? this.chat.sessionTokenUsage : { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-            const summaries = this.chat ? this.chat.summaries : [];
-            await this.sessionManager.saveAndSwitch(messages, usage, summaries, targetId);
-
-            // Pre-load messages for the new active session (lazy load)
-            await this.sessionManager.ensureActiveMessagesLoaded();
-
-            this.clearViewForSessionSwitch();
-            await this.restoreSessionUI();
+            this.detachFromCurrentRuntime();
+            // Just update list.json's activeSessionId. The old runtime's
+            // own persistence layer is responsible for its session file.
+            await this.sessionManager.switchTo(targetId);
+            await this.sessionManager.ensureMessagesLoaded(targetId);
+            this.clearViewDOM();
+            await this.bindActiveSessionRuntime();
         } finally {
             this.isSwitchingSession = false;
         }
     }
 
-    private clearViewForSessionSwitch() {
-        if (this.chat) this.chat.abort();
+    /**
+     * Detach the view's listener from the currently bound runtime and
+     * hand it back to the pool. The pool decides whether to keep the
+     * runtime warm (busy continuations are always retained; idle ones
+     * are LRU-capped at `maxIdle`).
+     *
+     * Idempotent: safe to call when no runtime is bound.
+     */
+    private detachFromCurrentRuntime(): void {
+        if (!this.runtime) return;
+        const id = this.runtime.sessionId;
+        try { this.detachRuntime?.(); } finally {
+            this.detachRuntime = undefined;
+        }
+        this.runtime = undefined;
+        this.plugin.runtimePool.release(id);
+    }
+
+    /**
+     * Clear all view-private DOM and UI state, leaving the view ready
+     * to bind a new runtime. Replaces the old `clearViewForSessionSwitch`
+     * but, crucially, does NOT abort any chat or destroy any runtime —
+     * those are owned by the pool now.
+     */
+    private clearViewDOM(): void {
+        // speechSynthesis is a global singleton; cancel any in-flight
+        // utterances regardless of which session triggered them.
         if ('speechSynthesis' in window && speechSynthesis.speaking) speechSynthesis.cancel();
         this.bubbleRenderer?.cancelSpeech();
-        this.chatGeneration++;
-        this.isStreaming = false;
         this.scroller.resetScrollIntent();
         this.hideTypingIndicator();
         this.setInputLocked(false);
@@ -666,110 +808,133 @@ export class SessionView extends ItemView {
         // cannot resurrect a card on a freshly cleared session.
         this.insightExtractionGen++;
         // Detach the singleton typing indicator before emptying, then
-        // reattach so it remains the sole instance and still lives at the
-        // tail of messagesEl.
+        // reattach so it remains the sole instance and still lives at
+        // the tail of messagesEl.
         this.typingIndicator.detach();
         this.messagesEl.empty();
         this.typingIndicator.reattachAfterEmpty();
         this.messageBubbles.clear();
         this.abortedMessageIds.clear();
 
-        for (const msgId of this.pendingConfirmations.keys()) {
-            this.containerEl.querySelector(`[data-confirm-msg-id="${msgId}"]`)?.remove();
-        }
-        this.pendingConfirmations.clear();
-        this.chat = undefined;
         this.cmInput.clear();
         this.scrollToBottomBtn.hide();
         this.updateSessionStatusDisplay();
         this.updateNewChatBtnState();
     }
 
-    private async restoreSessionUI() {
-        const session = await this.sessionManager.getActiveSession();
-        if (!session || session.messages.length === 0) {
-            // Restore draft input even for empty sessions
+    /**
+     * Resolve the runtime for the session manager's currently active
+     * id (from pool cache, or create one fresh), attach this view as a
+     * listener, and replay the runtime's current state to the DOM.
+     */
+    private async bindActiveSessionRuntime(): Promise<void> {
+        const id = this.sessionManager.activeSessionId;
+        const cached = this.plugin.runtimePool.get(id);
+        if (cached) {
+            this.attachRuntime(cached);
+            await this.replayRuntimeUI(cached, { fromCache: true });
+        } else {
+            // Fresh runtime — needs history loaded from disk first.
+            await this.sessionManager.ensureMessagesLoaded(id);
+            const runtime = this.plugin.runtimePool.create(id);
+            this.attachRuntime(runtime);
+            this.hydrateRuntimeFromDisk(runtime);
+            await this.replayRuntimeUI(runtime, { fromCache: false });
+        }
+    }
+
+    /**
+     * Pull the session's persisted state (messages, summaries, sub-agent
+     * messages, per-agent token breakdown) from SessionManager and inject
+     * it into the runtime's IChatAgent. Only called for FRESH runtimes;
+     * cached ones already have everything in memory.
+     */
+    private hydrateRuntimeFromDisk(runtime: SessionRuntime): void {
+        const session = this.sessionManager.getSessionSync(runtime.sessionId);
+        if (!session || session.messages.length === 0) return;
+
+        const chat = runtime.chat;
+        chat.restoreState(session.messages, session.tokenUsage);
+
+        const summaries = this.sessionManager.getSessionSummaries(runtime.sessionId);
+        if (summaries.length > 0) {
+            chat.restoreSummaries(summaries);
+            runtime.hasContextCompressed = true;
+        }
+
+        // Sub-agent inline messages (v2+ sessions only).
+        const subAgentMessages = this.sessionManager.getSubAgentMessages();
+        if (subAgentMessages && Object.keys(subAgentMessages).length > 0
+                && typeof chat.restoreSubAgentMessages === 'function') {
+            chat.restoreSubAgentMessages(subAgentMessages);
+        }
+
+        // Per-agent token usage breakdown (v3+ sessions only). Must be
+        // called AFTER restoreState — see AgentOrchestrator.restoreAgentTokenBreakdown.
+        const agentTokenBreakdown = this.sessionManager.getAgentTokenBreakdown();
+        if (agentTokenBreakdown && typeof chat.restoreAgentTokenBreakdown === 'function') {
+            chat.restoreAgentTokenBreakdown(agentTokenBreakdown);
+        }
+    }
+
+    /**
+     * Render the runtime's current chat state into the (just-cleared)
+     * view DOM. Used both for fresh runtimes (after disk hydration) and
+     * cached runtimes (after a switch back from another session).
+     *
+     * For a cached runtime that is currently busy, this also re-shows
+     * the typing indicator and locks the input so the UI immediately
+     * reflects the in-flight turn. Any pending tool confirmations are
+     * implicitly rendered via the bubble renderer reading
+     * `runtime.pendingConfirmations` through `this.pendingConfirmations`.
+     */
+    private async replayRuntimeUI(
+        runtime: SessionRuntime,
+        opts: { fromCache: boolean },
+    ): Promise<void> {
+        const chat = runtime.chat;
+        const messages = chat.messages;
+
+        if (messages.length === 0) {
+            // Empty session (typical "new chat" case).
             this.draftController.restore();
+            this.updateSessionStatusDisplay();
+            this.updateNewChatBtnState();
             return;
         }
 
-        const chatStream = this.getChatStream();
-        chatStream.restoreState(session.messages, session.tokenUsage);
-
-        // Restore summaries for context compression
-        const summaries = this.sessionManager.getSummaries();
-        if (summaries.length > 0) {
-            chatStream.restoreSummaries(summaries);
-            this.hasContextCompressed = true;
-        }
-
-        // Restore sub-agent inline messages (new sessions only; legacy v1 sessions
-        // have no such data and will fall back to the nested delegate_task display).
-        const subAgentMessages = this.sessionManager.getSubAgentMessages();
-        if (subAgentMessages && Object.keys(subAgentMessages).length > 0 && typeof chatStream.restoreSubAgentMessages === 'function') {
-            chatStream.restoreSubAgentMessages(subAgentMessages);
-        }
-
-        // Restore per-agent token usage breakdown (v3+ sessions only).
-        // Must be called AFTER restoreState, which stuffs the combined total into
-        // main-agent's session usage; this corrects main-agent's usage to its
-        // historical own value (see AgentOrchestrator.restoreAgentTokenBreakdown).
-        const agentTokenBreakdown = this.sessionManager.getAgentTokenBreakdown();
-        if (agentTokenBreakdown && typeof chatStream.restoreAgentTokenBreakdown === 'function') {
-            chatStream.restoreAgentTokenBreakdown(agentTokenBreakdown);
-        }
-
-        for (const msg of session.messages) {
+        for (const msg of messages) {
             this.appendBubble({ ...msg, streaming: false });
 
-            // After a delegate_task bubble, append any inline sub-agent bubbles
-            // belonging to this invocation so history reads naturally.
+            // After a delegate_task bubble, append any inline sub-agent
+            // bubbles belonging to this invocation so history reads naturally.
             if (
                 msg.role === 'tool_call' &&
                 msg.toolCallMeta?.toolName === 'delegate_task' &&
-                typeof chatStream.getSubAgentMessages === 'function'
+                typeof chat.getSubAgentMessages === 'function'
             ) {
-                const children = chatStream.getSubAgentMessages(msg.id);
+                const children = chat.getSubAgentMessages(msg.id);
                 for (const child of children) {
                     this.appendBubble({ ...child, streaming: false });
                 }
             }
         }
 
-        // Restore draft input after restoring messages
         this.draftController.restore();
-
         this.forceScrollToBottom();
         this.updateSessionStatusDisplay();
         this.updateNewChatBtnState();
+
+        // If we just bound a busy runtime (background turn still in
+        // flight), bring the typing indicator + locked input back so
+        // the UI reflects the real state. Subsequent message-update
+        // events will continue updating the bubbles in place.
+        if (opts.fromCache && runtime.isBusy) {
+            this.setInputLocked(true);
+            this.showTypingIndicator();
+        }
     }
 
-    private async saveCurrentSessionState() {
-        if (!this.chat) return;
-        // Snapshot sub-agent inline messages (if supported) for persistence
-        let subAgentMessagesObj: Record<string, ChatMessage[]> | undefined;
-        if (typeof this.chat.getAllSubAgentMessages === 'function') {
-            const map = this.chat.getAllSubAgentMessages();
-            if (map.size > 0) {
-                subAgentMessagesObj = {};
-                for (const [parentId, msgs] of map.entries()) {
-                    // Freeze streaming flag to false when persisted so reloads
-                    // don't resurrect transient streaming state.
-                    subAgentMessagesObj[parentId] = msgs.map(m => ({ ...m, streaming: false }));
-                }
-            }
-        }
-        // Snapshot per-agent token usage breakdown (multi-agent only)
-        const agentTokenBreakdown = this.chat.agentTokenBreakdown;
-        await this.sessionManager.saveCurrentSession(
-            this.chat.messages,
-            this.chat.sessionTokenUsage,
-            this.chat.summaries,
-            subAgentMessagesObj,
-            agentTokenBreakdown,
-        );
-        this.updateSessionTitle();
-    }
 
     /**
      * Rebuild session dropdown content (called by DropdownManager onOpen)
@@ -779,12 +944,6 @@ export class SessionView extends ItemView {
     }
 
     private async openSessionSearch() {
-        // Prevent search while streaming
-        if (this.isStreaming) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
-            return;
-        }
-
         const modal = new SessionSearchModal(this.app, this.sessionManager);
         const result = await modal.waitForResult();
 
@@ -794,33 +953,19 @@ export class SessionView extends ItemView {
     }
 
     private async handleSearchResultNavigation(result: SessionSearchResult) {
-        // Prevent concurrent session operations
         if (this.isSwitchingSession) {
             new Notice(t('view.sessionSwitchInProgress'));
-            return;
-        }
-        if (this.isStreaming) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
             return;
         }
 
         this.isSwitchingSession = true;
         try {
-            // Save draft input before switching
             await this.draftController.flush();
-
-            // Save current session and switch to target
-            const messages = this.chat ? this.chat.messages : [];
-            const usage = this.chat ? this.chat.sessionTokenUsage : { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-            const summaries = this.chat ? this.chat.summaries : [];
-            await this.sessionManager.saveAndSwitch(messages, usage, summaries, result.sessionId);
-
-            // Ensure messages are loaded
-            await this.sessionManager.ensureActiveMessagesLoaded();
-
-            // Clear and restore UI
-            this.clearViewForSessionSwitch();
-            await this.restoreSessionUI();
+            this.detachFromCurrentRuntime();
+            await this.sessionManager.switchTo(result.sessionId);
+            await this.sessionManager.ensureMessagesLoaded(result.sessionId);
+            this.clearViewDOM();
+            await this.bindActiveSessionRuntime();
 
             // Scroll to the specific message
             requestAnimationFrame(() => {
@@ -873,7 +1018,7 @@ export class SessionView extends ItemView {
         this.forceScrollToBottom();
         this.updateSessionTitle();
 
-        await this.getChatStream().prompt(text, {
+        await this.ensureRuntimeAttached().chat.prompt(text, {
             allowedCapabilities: (() => {
                 const allowed = this.capabilitiesSelector.getAllowed();
                 return allowed.length < ALL_TOOL_CAPABILITIES.length ? allowed : undefined;
@@ -1021,7 +1166,9 @@ export class SessionView extends ItemView {
             this.appendBubble(lastMsg);
         }
 
-        void this.saveCurrentSessionState();
+        // Persistence is owned by the runtime (see runtime-factory's
+        // onAbort) — the view only needs to refresh derived UI here.
+        this.updateSessionTitle();
     }
 
     // ── Follow-up suggestion bar ─────────────────────────────────────────
@@ -1195,6 +1342,11 @@ export class SessionView extends ItemView {
     }
 
     private async maybeGenerateSessionTitle() {
+        // Kept as a thin wrapper for parity with the previous API.
+        // The runtime owns automatic generation on turn completion
+        // now (see runtime-factory's onFinish); this remains so a
+        // future hook can force a regen without re-importing the
+        // helper.
         await maybeGenerateSessionTitle(
             this.sessionManager,
             createSummarizerConfig(this.plugin),

@@ -101,13 +101,20 @@ export function handleTitleClick(opts: TitleClickOptions): void {
  * Automatically generate a session title from the conversation content
  * after enough rounds, using the summarizer profile. No-op if already
  * titled, too few rounds, or no summarizer configured.
+ *
+ * When `sessionId` is provided, operates on that specific session
+ * (used by background SessionRuntime instances whose finish event
+ * fires after the view has switched away). When omitted, falls back
+ * to the active session for backwards-compatible callers.
  */
 export async function maybeGenerateSessionTitle(
     sessionManager: SessionManager,
     summarizerConfig: MinimalModelConfig | undefined,
     onAfter: () => void,
+    sessionId?: string,
 ): Promise<void> {
-    const session = await sessionManager.getActiveSession();
+    const targetId = sessionId ?? sessionManager.activeSessionId;
+    const session = await sessionManager.getSession(targetId);
     if (!session) return;
 
     if (session.title) return;
@@ -128,7 +135,7 @@ export async function maybeGenerateSessionTitle(
         // despite the prompt's plain-text instruction, then cap length.
         const trimmedTitle = stripMarkdownToPlainText(generatedTitle).slice(0, 150);
         if (trimmedTitle) {
-            sessionManager.setTitle(trimmedTitle);
+            sessionManager.setSessionTitle(targetId, trimmedTitle);
             onAfter();
         }
     } catch (e) {

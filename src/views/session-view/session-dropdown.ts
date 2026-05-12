@@ -9,6 +9,13 @@ export interface SessionDropdownDeps {
     closeDropdown: () => void;
     onSwitchSession: (sessionId: string) => void;
     onDeleteSession: (sessionId: string, itemEl: HTMLElement, isActive: boolean) => void;
+    /**
+     * Optional predicate: whether the given session is currently
+     * running a turn in the background runtime pool. Used to render
+     * a small "still working" indicator next to that entry so the
+     * user can tell which detached sessions are still active.
+     */
+    isBusy?: (sessionId: string) => boolean;
 }
 
 /**
@@ -35,9 +42,21 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         if (isActive) setIcon(checkIcon, 'check');
 
         const textWrapper = item.createEl('span', { cls: 'session-dropdown__item-body' });
+        // Render the title row. If a background runtime is still
+        // turning for this session, prepend a small loader icon so
+        // the user can identify which detached sessions are still
+        // running.
+        const titleRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-text' });
+        if (deps.isBusy?.(session.id)) {
+            const busyIcon = titleRow.createEl('span', {
+                cls: 'session-dropdown__item-busy',
+                attr: { 'aria-label': t('view.sessionBusy') },
+            });
+            setIcon(busyIcon, 'loader');
+            setTooltip(busyIcon, t('view.sessionBusy'));
+        }
         const displayTitle = session.title || session.firstUserMessage || t('view.newChat');
-        textWrapper.createEl('span', { cls: 'session-dropdown__item-text' })
-            .setText(displayTitle);
+        titleRow.appendChild(document.createTextNode(displayTitle));
 
         const metaRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-meta' });
         metaRow.createEl('span', { cls: 'session-dropdown__item-time' })

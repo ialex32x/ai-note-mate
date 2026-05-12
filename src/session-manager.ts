@@ -214,7 +214,17 @@ export class SessionManager {
 
     /** Set the title of the active session */
     setTitle(title: string): void {
-        const meta = this.metadataMap.get(this._activeSessionId);
+        this.setSessionTitle(this._activeSessionId, title);
+    }
+
+    /**
+     * Set the title of a specific session by id. Used by background
+     * SessionRuntime instances that finish their turn after the view
+     * has switched away — they need to write into their own metadata,
+     * not whichever session happens to be active.
+     */
+    setSessionTitle(sessionId: string, title: string): void {
+        const meta = this.metadataMap.get(sessionId);
         if (meta) {
             meta.title = title;
         }
@@ -250,25 +260,53 @@ export class SessionManager {
         subAgentMessages?: Record<string, ChatMessage[]>,
         agentTokenBreakdown?: AgentTokenBreakdown,
     ): Promise<void> {
-        const meta = this.metadataMap.get(this._activeSessionId);
+        await this.saveSession(
+            this._activeSessionId,
+            currentMessages,
+            currentTokenUsage,
+            summaries,
+            subAgentMessages,
+            agentTokenBreakdown,
+        );
+    }
+
+    /**
+     * Save a session's state into the in-memory caches by explicit id,
+     * independent of `activeSessionId`. This is the back-end used by both
+     * the active-session shortcut above and by background SessionRuntime
+     * instances that need to persist their progress after the view has
+     * already switched away from them.
+     *
+     * Only updates the in-memory caches + metadata; callers still need to
+     * invoke {@link saveToCache} (or one of its triggers) to flush to disk.
+     */
+    async saveSession(
+        sessionId: string,
+        currentMessages: ReadonlyChatMessages,
+        currentTokenUsage: TokenUsage,
+        summaries?: ConversationSummary[],
+        subAgentMessages?: Record<string, ChatMessage[]>,
+        agentTokenBreakdown?: AgentTokenBreakdown,
+    ): Promise<void> {
+        const meta = this.metadataMap.get(sessionId);
         if (!meta) return;
 
         // Update messages cache
-        this.messagesCache.set(this._activeSessionId, [...currentMessages]);
-        this.loadedMessages.add(this._activeSessionId);
+        this.messagesCache.set(sessionId, [...currentMessages]);
+        this.loadedMessages.add(sessionId);
 
         // Update summaries cache
         if (summaries && summaries.length > 0) {
-            this.summariesCache.set(this._activeSessionId, summaries.map(s => ({ ...s })));
+            this.summariesCache.set(sessionId, summaries.map(s => ({ ...s })));
         }
 
         // Update sub-agent messages cache (undefined means "no change";
         // pass an empty object to explicitly clear)
         if (subAgentMessages !== undefined) {
             if (Object.keys(subAgentMessages).length > 0) {
-                this.subAgentMessagesCache.set(this._activeSessionId, subAgentMessages);
+                this.subAgentMessagesCache.set(sessionId, subAgentMessages);
             } else {
-                this.subAgentMessagesCache.delete(this._activeSessionId);
+                this.subAgentMessagesCache.delete(sessionId);
             }
         }
 
@@ -279,14 +317,14 @@ export class SessionManager {
             const hasAny = Object.keys(agentTokenBreakdown.subAgents).length > 0
                 || agentTokenBreakdown.main.totalTokens > 0;
             if (hasAny) {
-                this.agentTokenBreakdownCache.set(this._activeSessionId, {
+                this.agentTokenBreakdownCache.set(sessionId, {
                     main: { ...agentTokenBreakdown.main },
                     subAgents: Object.fromEntries(
                         Object.entries(agentTokenBreakdown.subAgents).map(([k, v]) => [k, { ...v }]),
                     ),
                 });
             } else {
-                this.agentTokenBreakdownCache.delete(this._activeSessionId);
+                this.agentTokenBreakdownCache.delete(sessionId);
             }
         }
 

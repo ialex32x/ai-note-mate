@@ -126,10 +126,11 @@ export class InsightCoordinator {
      *     the extractor still has something to anchor against.
      */
     handleExtractForMessage(assistant: ChatMessage): void {
-        // Don't fight an in-flight chat turn. The action bar button doesn't
-        // disable itself globally, so we guard here.
+        // Don't fight an in-flight chat turn. Extracting from a message
+        // stream that's still mutating would produce unstable results,
+        // and the action bar button doesn't disable itself globally.
         if (this.deps.isStreaming()) {
-            new Notice(t('view.cannotSwitchWhileStreaming'));
+            new Notice(t('view.sessionBusy'));
             return;
         }
 
