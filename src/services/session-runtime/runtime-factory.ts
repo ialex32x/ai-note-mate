@@ -3,6 +3,7 @@ import { createChatAgent, buildDynamicTools, createSummarizerConfig } from '../.
 import { maybeGenerateSessionTitle } from '../../views/session-view/session-title-editor';
 import { deriveArtifactStoreOptions } from '../../settings/helpers';
 import { SessionRuntime } from './session-runtime';
+import { maybeExtractInsightsAfterFinish } from './insight-runner';
 import type { ChatMessage } from '../chat-stream';
 
 /**
@@ -35,10 +36,15 @@ import type { ChatMessage } from '../chat-stream';
  *   - No DOM access of any kind. The runtime stays free of
  *     view-private references so a background continuation cannot
  *     leak into a detached DOM tree.
- *   - No follow-up suggestions / insight extraction / title generation.
- *     Those are post-turn side-effects routed through the SessionView's
- *     event listener (see SessionView.onRuntimeEvent). The runtime
- *     itself only owns persistence — UI work is the view's job.
+ *   - No follow-up-suggestion EXTRACTION; suggestions are deterministic
+ *     from the assistant reply content and the SessionView re-runs the
+ *     pure extractor on every turn-finish AND on session bind, so no
+ *     runtime-side machinery is needed for them.
+ *   - Title generation and insight extraction, by contrast, both call
+ *     out to an LLM and are not idempotent / cheap. Those run here in
+ *     `onFinish` so background continuations correctly produce + persist
+ *     them even while no view is attached. The SessionView then just
+ *     re-renders from runtime state when re-attached.
  */
 export function createSessionRuntime(
     plugin: NoteAssistantPlugin,
@@ -68,6 +74,11 @@ export function createSessionRuntime(
         getArtifactStore: () => runtime.artifactStore,
         onStart: () => {
             runtime.markBusy();
+            // A new turn supersedes any previously-extracted insights
+            // (they were anchored to a now-stale assistant message id).
+            // Clearing both in-memory and persisted state here keeps
+            // metadata in sync; the next clean finish will repopulate.
+            runtime.clearInsightState();
             runtime.emit({ type: 'start' });
         },
         onMessageUpdate: (msg: ChatMessage) => {
@@ -106,6 +117,14 @@ export function createSessionRuntime(
                     () => { runtime.emit({ type: 'title-updated' }); },
                     runtime.sessionId,
                 );
+                // Insight extraction: also runs here so a background
+                // turn that finishes while the view is on another
+                // session still produces (and persists) insights. The
+                // runtime drives its own state machine + emits
+                // 'insight-update'; an attached view re-renders, a
+                // detached one will read via getInsightState() on next
+                // attach. Fire-and-forget — errors are logged inside.
+                void maybeExtractInsightsAfterFinish(plugin, runtime);
             });
         },
         onAbort: (msg: ChatMessage) => {

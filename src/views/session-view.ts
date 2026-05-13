@@ -27,7 +27,11 @@ import {
     InsightCard,
 } from '../components/session';
 import { extractSuggestions, type SuggestedAction } from '../services/suggestions';
-import { collectVaultTags } from '../services/insights';
+import {
+    buildInsightDeepenPrompt,
+    type ConversationInsight,
+    type InsightCardState,
+} from '../services/insights';
 import { openFileInWorkspace } from '../utils/workspace-utils';
 import {
     createProfileSelector, type ProfileSelectorHandle,
@@ -45,10 +49,13 @@ import {
     createSummarizerConfig,
     createEmbeddingConfig,
     createProviderForActiveProfileOf,
-    InsightCoordinator,
     SessionNavigator,
 } from './session-view/index';
-import { SessionRuntime, type RuntimeEvent } from '../services/session-runtime';
+import {
+    SessionRuntime,
+    extractInsightsForMessage,
+    type RuntimeEvent,
+} from '../services/session-runtime';
 
 export class SessionView extends ItemView {
     static readonly VIEW_TYPE = 'ai-session-view';
@@ -117,11 +124,14 @@ export class SessionView extends ItemView {
     private bubbleRenderer!: BubbleRenderer;
     /** Quick-pick bar for follow-up suggestions extracted from the last assistant reply. */
     private followUpBar!: FollowUpBar;
-    /** Read-only preview card for candidate knowledge nuggets extracted from the last turn. */
+    /**
+     * Read-only preview card for candidate knowledge nuggets extracted
+     * from the last turn. The card is a pure renderer driven by
+     * {@link SessionRuntime}'s `insight-update` events and the runtime's
+     * persisted `lastInsights` metadata — the view never decides what
+     * state to show on its own.
+     */
     private insightCard!: InsightCard;
-    /** Monotonic id of the most recent insight extraction request, used to drop stale results. */
-    private insightExtractionGen = 0;
-    private insightCoordinator!: InsightCoordinator;
 
     constructor(leaf: WorkspaceLeaf, plugin: NoteAssistantPlugin) {
         super(leaf);
@@ -241,12 +251,13 @@ export class SessionView extends ItemView {
                 this.scroller.clearUserScrolledUp();
                 this.hideTypingIndicator();
                 this.setInputLocked(false);
-                // Persistence + title generation are owned by the
-                // runtime; the view only needs to refresh derived UI
-                // and run UI-only post-turn hooks.
+                // Persistence + title generation + insight extraction
+                // are all owned by the runtime; the view only needs to
+                // refresh derived UI and re-render the (deterministic,
+                // cheap) follow-up suggestion bar from the new tail
+                // assistant reply.
                 this.updateSessionTitle();
                 this.maybeShowFollowUpSuggestions();
-                void this.insightCoordinator.maybeShowInsightCard();
                 this.updateNewChatBtnState();
                 break;
             case 'abort':
@@ -288,6 +299,32 @@ export class SessionView extends ItemView {
                 }
                 break;
             }
+            case 'insight-update':
+                this.renderInsightFromRuntimeState(ev.state);
+                break;
+        }
+    }
+
+    /**
+     * Project a runtime insight state onto the DOM, with appropriate
+     * scroll behaviour for auto vs manual extractions. Called from the
+     * `insight-update` event handler and (on bind) from
+     * {@link replayRuntimeUI}.
+     */
+    private renderInsightFromRuntimeState(state: InsightCardState | null): void {
+        this.insightCard.applyState(state);
+        if (state === null) return;
+
+        // Manual gestures (clicking "Extract insights" on an action bar
+        // that may be far up in the history) deserve assertive scroll:
+        // every phase including the empty / error placeholders should
+        // be visible without further user effort. Auto extractions
+        // respect user scroll intent and only nudge when the user is
+        // already at the tail.
+        if (state.cause === 'manual') {
+            this.forceScrollToBottom();
+        } else if (state.phase === 'results') {
+            this.maybeScrollToBottom();
         }
     }
 
@@ -487,7 +524,7 @@ export class SessionView extends ItemView {
             this.bubbleRenderer = new BubbleRenderer(
                 this.app,
                 () => this.maybeScrollToBottom(),
-                (msg) => this.insightCoordinator.handleExtractForMessage(msg),
+                (msg) => { void this.handleExtractInsights(msg); },
                 // Mount floating (fixed-positioned) dropdowns inside this view's
                 // container so they don't leak onto document.body and are
                 // cleaned up naturally when the view is detached.
@@ -501,39 +538,15 @@ export class SessionView extends ItemView {
                 this.handleFollowUpPick(action);
             });
 
-            // Initialize conversation-insight preview card.
+            // Conversation-insight preview card. The card is purely a
+            // renderer; SessionRuntime owns the extraction state machine
+            // and persistence. Deepen is a UI gesture (send/fill input)
+            // and stays in the view.
             this.insightCard = new InsightCard(
                 this.messagesEl,
                 this.app,
-                (insight) => this.insightCoordinator.handleDeepen(insight),
+                (insight) => this.handleInsightDeepen(insight),
             );
-
-            // Insight coordinator (shared by auto + manual paths; depends on
-            // insightCard existing already).
-            this.insightCoordinator = new InsightCoordinator({
-                insightCard: this.insightCard,
-                isStreaming: () => this.isStreaming,
-                isAborted: (id) => this.abortedMessageIds.has(id),
-                getMessages: () => this.chat?.messages ?? [],
-                getSummarizerConfig: () => createSummarizerConfig(this.plugin),
-                getVaultTags: () => collectVaultTags(this.app),
-                insightExtractionEnabled: () => this.plugin.settings.insightExtractionEnabled === true,
-                insightExtractionMinReplyChars: () => this.plugin.settings.insightExtractionMinReplyChars,
-                forceScrollToBottom: () => this.forceScrollToBottom(),
-                maybeScrollToBottom: () => this.maybeScrollToBottom(),
-                nextGeneration: () => ++this.insightExtractionGen,
-                currentGeneration: () => this.insightExtractionGen,
-                submitPrompt: (prompt) => {
-                    this.cmInput.setContent(prompt);
-                    void this.handleSend();
-                },
-                fillInputAndFocus: (prompt) => {
-                    this.cmInput.setContent(prompt);
-                    this.cmInput.focus();
-                    this.draftController?.scheduleSave();
-                },
-                hasDraft: () => this.cmInput.getContent().trim().length > 0,
-            });
 
             // Scroll-to-bottom button
             this.scrollToBottomBtn = messagesWrapper.createEl('button', {
@@ -864,10 +877,10 @@ export class SessionView extends ItemView {
         this.draftController.reset();
 
         this.followUpBar?.hide();
+        // DOM-level dismissal only. Persisted insights (owned by the
+        // SessionRuntime and stored in session metadata) survive the
+        // switch so they reappear when the user returns to this session.
         this.insightCard?.hide();
-        // Invalidate any in-flight insight extraction so a late callback
-        // cannot resurrect a card on a freshly cleared session.
-        this.insightExtractionGen++;
         // Detach the singleton typing indicator before emptying, then
         // reattach so it remains the sole instance and still lives at
         // the tail of messagesEl.
@@ -936,6 +949,15 @@ export class SessionView extends ItemView {
         if (agentTokenBreakdown && typeof chat.restoreAgentTokenBreakdown === 'function') {
             chat.restoreAgentTokenBreakdown(agentTokenBreakdown);
         }
+
+        // Persisted insight card state (post-feature sessions only).
+        // Mirrors the draft-input restore — the user's last view of the
+        // card should reappear when they return to (or reload into)
+        // this session, without re-spending tokens to recompute it.
+        const lastInsights = this.sessionManager.getSessionLastInsights(runtime.sessionId);
+        if (lastInsights) {
+            runtime.restoreInsightState(lastInsights);
+        }
     }
 
     /**
@@ -985,6 +1007,14 @@ export class SessionView extends ItemView {
         this.forceScrollToBottom();
         this.updateSessionStatusDisplay();
         this.updateNewChatBtnState();
+
+        // Recompute the (deterministic, free) follow-up suggestion bar
+        // from the tail assistant reply, and project the runtime's
+        // current insight state onto the DOM. Both must happen AFTER
+        // the bubble loop so they end up at the tail of messagesEl
+        // (each `appendBubble` defensively hides them).
+        this.maybeShowFollowUpSuggestions();
+        this.renderInsightFromRuntimeState(this.runtime?.getInsightState() ?? null);
 
         // If we just bound a busy runtime (background turn still in
         // flight), bring the typing indicator + locked input back so
@@ -1068,17 +1098,12 @@ export class SessionView extends ItemView {
         // Clear draft input since message is being sent
         this.draftController.clearDraft();
 
-        const msgId = `user-${Date.now()}`;
-        this.appendBubble({
-            id: msgId,
-            role: 'user',
-            content: text,
-            streaming: false,
-            timestamp: Date.now(),
-        });
-        this.forceScrollToBottom();
-        this.updateSessionTitle();
-
+        // The user bubble is rendered from inside chat.prompt()'s
+        // synchronous onUserMessage callback so it can be keyed by the
+        // agent's real message id (not a separately-minted optimistic
+        // id). This is what keeps the message branch-able afterwards —
+        // SessionManager.branchSession looks up the anchor by id in the
+        // agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
         await this.ensureRuntimeAttached().chat.prompt(text, {
             allowedCapabilities: (() => {
                 const allowed = this.capabilitiesSelector.getAllowed();
@@ -1087,6 +1112,10 @@ export class SessionView extends ItemView {
             provider: createProviderForActiveProfileOf(this.plugin),
             summarizer: createSummarizerConfig(this.plugin),
             embedding: createEmbeddingConfig(this.plugin),
+            onUserMessage: (msg) => {
+                this.appendBubble(msg);
+                this.forceScrollToBottom();
+            },
         });
     }
 
@@ -1136,15 +1165,17 @@ export class SessionView extends ItemView {
     }
 
     private appendBubble(msg: ChatMessage): HTMLElement {
-        // Any new bubble invalidates the previous follow-up suggestions bar.
-        // Must dismiss BEFORE creating the new bubble so the bar (which lives at
-        // the tail of messagesEl) does not end up sandwiched between two bubbles.
+        // Any new bubble invalidates the previous follow-up suggestions bar
+        // and insight card AT THE DOM LEVEL. Must dismiss BEFORE creating
+        // the new bubble so neither tail element ends up sandwiched
+        // between two bubbles. The runtime is the source of truth for
+        // persisted insight state — its `insight-update`/`start` events
+        // are what actually flip the canonical state; this hide is just
+        // a defensive DOM cleanup for the rare case where a new bubble
+        // arrives before the runtime's clear event has been observed
+        // (e.g. during replay, where no runtime emit happens).
         this.followUpBar?.hide();
-        // Same reasoning applies to the insight preview card.
         this.insightCard?.hide();
-        // Invalidate any in-flight insight extraction so a late callback
-        // cannot resurrect a card on a freshly cleared session.
-        this.insightExtractionGen++;
 
         let statusCls = '';
         if (msg.role === 'tool_call' && msg.toolCallResult) {
@@ -1348,6 +1379,64 @@ export class SessionView extends ItemView {
                 // Exhaustiveness: unknown kinds fall back to prompt flow.
                 return false;
         }
+    }
+
+    // ── Conversation insights ────────────────────────────────────────────
+
+    /**
+     * Click handler for the per-bubble "Extract insights" action in the
+     * bubble action bar (the manual counterpart to the runtime's
+     * automatic post-finish extraction).
+     *
+     * Visible feedback for "no summarizer configured" lives here rather
+     * than in {@link extractInsightsForMessage} so the helper stays
+     * safe to call from background paths that should fail silently.
+     */
+    private async handleExtractInsights(assistantMsg: ChatMessage): Promise<void> {
+        if (this.isStreaming) {
+            new Notice(t('view.sessionBusy'));
+            return;
+        }
+        if (!this.runtime) return;
+
+        const summarizer = createSummarizerConfig(this.plugin);
+        if (!summarizer) {
+            new Notice(t('view.insightExtractionUnavailable'));
+            return;
+        }
+
+        await extractInsightsForMessage(this.plugin, this.runtime, assistantMsg);
+    }
+
+    /**
+     * Click handler for the per-item "Deepen" button on the insight card.
+     *
+     * Sends (or, when a draft already exists, prefills) a follow-up
+     * prompt asking the model to expand on the chosen insight. The new
+     * assistant reply will naturally trigger another extraction pass
+     * via the runtime's onFinish hook.
+     */
+    private handleInsightDeepen(insight: ConversationInsight): void {
+        if (this.isStreaming) return;
+
+        const prompt = buildInsightDeepenPrompt({
+            title: insight.title,
+            summary: insight.summary,
+            tags: insight.tags,
+            linkedNotes: insight.linkedNotes,
+        });
+
+        // Don't trash the user's in-progress message — surface the
+        // generated prompt as a draft so they can decide what to do.
+        if (this.cmInput.getContent().trim().length > 0) {
+            this.cmInput.setContent(prompt);
+            this.cmInput.focus();
+            this.draftController?.scheduleSave();
+            return;
+        }
+
+        this.cmInput.setContent(prompt);
+        void this.handleSend();
     }
 
     /**

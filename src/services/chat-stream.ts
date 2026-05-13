@@ -460,6 +460,16 @@ export interface IChatAgent {
             allowedCapabilities?: ToolCapability[];
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
+            /**
+             * Called synchronously after the user message has been created
+             * and appended to the agent's message history, but before any
+             * provider work begins. Used by the view to render the user
+             * bubble using the agent's own message id (which it needs in
+             * order to support future operations like branching). Receives
+             * a shallow copy so callers can hold the reference without
+             * worrying about mutation from inside the agent.
+             */
+            onUserMessage?: (userMessage: ChatMessage) => void;
         },
     ): Promise<void>;
 
@@ -704,6 +714,12 @@ export class ChatStream implements IChatAgent {
             allowedCapabilities?: ToolCapability[];
             summarizer?: MinimalModelConfig,
             embedding?: MinimalModelConfig,
+            /**
+             * Synchronous notification fired after the user message is
+             * created and appended to history, before any provider work
+             * starts. See {@link IChatAgent.prompt} for rationale.
+             */
+            onUserMessage?: (userMessage: ChatMessage) => void,
         }
     ): Promise<void> {
         // Guard: prevent concurrent calls
@@ -728,6 +744,22 @@ export class ChatStream implements IChatAgent {
             turn: currentTurn,
         };
         this._messages.push(userMessage);
+
+        // Notify the caller that the user message now exists with a stable
+        // id. The view uses this to render the user bubble keyed by the
+        // agent's id (rather than a separately-minted "optimistic" id),
+        // which keeps follow-on operations like branching working. Pass a
+        // shallow copy so the caller can store the reference without risk
+        // of cross-mutation. Defer any handler exception so it cannot
+        // corrupt this prompt() call — the user message is already in
+        // history and the provider request must still go out.
+        if (options.onUserMessage) {
+            try {
+                options.onUserMessage({ ...userMessage });
+            } catch (err) {
+                console.error('[ChatStream] onUserMessage handler threw:', err);
+            }
+        }
 
         // Build the raw messages array for UI display and context reduction.
         // The system prompt (if configured) is prepended as the first message so

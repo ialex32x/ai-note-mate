@@ -403,3 +403,58 @@
         background: var(--interactive-accent-hover);
     }
 }
+
+/* ─────────────────────────────────────────────
+   Delete History Confirmation Modal
+   ───────────────────────────────────────────── */
+
+.delete-history-modal__body {
+    .flex-column();
+    gap: @spacing-md;
+    padding-top: @spacing-sm;
+    padding-bottom: @spacing-md;
+}
+
+.delete-history-modal__message {
+    margin: 0;
+    color: @text-primary;
+    font-size: 0.92em;
+    line-height: 1.45;
+}
+
+.delete-history-modal__busy-hint {
+    margin: 0;
+    color: @text-warning;
+    font-size: 0.88em;
+    line-height: 1.4;
+}
+
+.delete-history-modal__checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    margin-top: @spacing-xs;
+    cursor: pointer;
+    font-size: 0.9em;
+    color: @text-primary;
+    user-select: none;
+}
+
+.delete-history-modal__checkbox {
+    flex-shrink: 0;
+    cursor: pointer;
+    margin: 0;
+}
+
+.delete-history-modal__checkbox-text {
+    flex: 1;
+    line-height: 1.4;
+}
+
+.delete-history-modal__btn {
+    &.is-disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+}

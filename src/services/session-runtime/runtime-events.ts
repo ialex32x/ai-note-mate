@@ -1,4 +1,5 @@
 import type { ChatMessage } from '../chat-stream';
+import type { InsightCardState } from '../insights';
 
 /**
  * Discriminated union of all events that a {@link SessionRuntime} may
@@ -64,7 +65,22 @@ export type RuntimeEvent =
      * already recorded `messageId → resolve` in its pendingConfirmations
      * map, so listeners only need to render the Allow/Deny UI.
      */
-    | { type: 'confirm-tool-call'; messageId: string };
+    | { type: 'confirm-tool-call'; messageId: string }
+
+    /**
+     * The insight card state changed. Fired by the runtime when an
+     * extraction transitions phases (loading → results / empty /
+     * error), or when a new turn starts and the previous state is
+     * cleared (`state === null`). The runtime keeps the source of
+     * truth in `getInsightState()`; this event is just a refresh
+     * trigger for attached views.
+     *
+     * Listeners that miss this event (because no view was attached)
+     * can recover the latest state on next attach by calling
+     * `SessionRuntime.getInsightState()`. Terminal phases are also
+     * persisted into session metadata for cold-load recovery.
+     */
+    | { type: 'insight-update'; state: InsightCardState | null };
 
 /**
  * Listener signature. Listeners are pure event sinks — they MUST NOT

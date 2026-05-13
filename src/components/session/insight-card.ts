@@ -1,5 +1,5 @@
 import { App, setIcon, setTooltip, TFile } from 'obsidian';
-import type { ConversationInsight } from '../../services/insights';
+import type { ConversationInsight, InsightCardState } from '../../services/insights';
 import { t } from '../../i18n';
 
 /**
@@ -88,10 +88,19 @@ export class InsightCard {
      * feedback that extraction completed (rather than the card silently
      * disappearing). It will be cleared by the next user action that
      * triggers a fresh `showLoading` / `hide` on this card.
+     *
+     * Cold-start safe: when the card hasn't been mounted yet (or is
+     * bound to a different message id), this method tears down any
+     * stale mount and creates a fresh block in one shot. The runtime
+     * is the source of truth for "should this state be displayed",
+     * not the card's previous DOM presence.
      */
     showResults(messageId: string, insights: ConversationInsight[]): void {
-        // Stale callback (e.g. user already started a new turn).
-        if (!this.el || this.ownerMessageId !== messageId) return;
+        if (!this.el || this.ownerMessageId !== messageId) {
+            this.hide();
+            this.ownerMessageId = messageId;
+            this.el = this.parent.createEl('div', { cls: 'session-insight-card' });
+        }
 
         const block = this.el;
         block.removeClass('is-loading');
@@ -124,10 +133,15 @@ export class InsightCard {
 
     /**
      * Replace the block body with a non-blocking error state. Called when
-     * the extraction LLM call fails outright.
+     * the extraction LLM call fails outright. Cold-start safe (see
+     * {@link showResults} for the same rationale).
      */
     showError(messageId: string, message?: string): void {
-        if (!this.el || this.ownerMessageId !== messageId) return;
+        if (!this.el || this.ownerMessageId !== messageId) {
+            this.hide();
+            this.ownerMessageId = messageId;
+            this.el = this.parent.createEl('div', { cls: 'session-insight-card' });
+        }
         const block = this.el;
         block.removeClass('is-loading');
         block.addClass('is-error');
@@ -139,6 +153,36 @@ export class InsightCard {
             cls: 'session-insight-card__status-text',
             text: message ?? t('view.insightCardError'),
         });
+    }
+
+    /**
+     * Render the card from a runtime state object in one call. This is
+     * the high-level entry point used by SessionView both for live
+     * `insight-update` events and for replay on session-bind.
+     *
+     * Passing `null` is equivalent to {@link hide}.
+     */
+    applyState(state: InsightCardState | null): void {
+        if (state === null) {
+            this.hide();
+            return;
+        }
+        switch (state.phase) {
+            case 'loading':
+                this.showLoading(state.messageId);
+                return;
+            case 'results':
+                this.showResults(state.messageId, state.insights);
+                return;
+            case 'empty':
+                // showResults renders the "no insights" placeholder when
+                // the list is empty, so we route through the same path.
+                this.showResults(state.messageId, []);
+                return;
+            case 'error':
+                this.showError(state.messageId);
+                return;
+        }
     }
 
     /** Remove the block from the DOM if present. */

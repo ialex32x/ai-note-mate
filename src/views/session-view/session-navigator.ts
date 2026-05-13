@@ -33,6 +33,10 @@ export interface SessionNavigatorDeps {
     /**
      * Forcefully tear down a SessionRuntime in the pool, aborting its
      * chat regardless of busy state. Called on explicit user deletion.
+     * For batch "delete history sessions" we only call this for the
+     * subset of sessions the user actually agreed to drop — in
+     * particular, busy sessions are left running when the user opts
+     * out of including them.
      */
     evictRuntime: (sessionId: string) => void;
     /**
@@ -247,22 +251,49 @@ export class SessionNavigator {
             return;
         }
 
-        const confirmed = await new DeleteHistoryConfirmModal(
+        // Identify which history sessions are mid-turn. The runtime
+        // status lookup is cheap (Map.get) so we can do it inline.
+        // We treat only `busy` as "currently running"; `awaitingConfirm`
+        // is paused on user input and `idle`/`unloaded` are safe to drop.
+        const busyIds = new Set(
+            historySessions
+                .filter(s => this.deps.getSessionStatus(s.id) === 'busy')
+                .map(s => s.id),
+        );
+
+        const { confirmed, includeBusy } = await new DeleteHistoryConfirmModal(
             this.deps.app,
             historySessionsCount,
+            busyIds.size,
         ).waitForResult();
         if (!confirmed) return;
+
+        // Resolve which sessions are actually getting deleted in this
+        // run, based on the user's checkbox choice.
+        const targets = includeBusy
+            ? historySessions
+            : historySessions.filter(s => !busyIds.has(s.id));
+
+        if (targets.length === 0) {
+            // Possible when every history session is busy and the user
+            // left "include running" unticked. Treat as a no-op rather
+            // than surfacing the generic "delete failed" path.
+            new Notice(t('view.noHistorySessionsDeleted'));
+            return;
+        }
 
         // Forcibly evict every soon-to-be-deleted runtime first. Doing
         // this before the disk delete means a background turn can't
         // race in another saveSession() call after the metadata is
-        // already gone.
-        for (const s of historySessions) {
+        // already gone. Sessions we deliberately skipped (busy + opt-out)
+        // keep their runtimes intact.
+        for (const s of targets) {
             this.deps.evictRuntime(s.id);
         }
 
         try {
-            const deletedCount = await this.deps.sessionManager.deleteAllHistorySessions();
+            const excludeIds = includeBusy ? undefined : busyIds;
+            const deletedCount = await this.deps.sessionManager.deleteAllHistorySessions(excludeIds);
 
             if (deletedCount > 0) {
                 new Notice(t('view.historySessionsDeleted', { count: deletedCount }));

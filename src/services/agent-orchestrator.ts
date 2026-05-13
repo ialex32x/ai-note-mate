@@ -757,10 +757,28 @@ export class AgentOrchestrator implements IChatAgent {
             allowedCapabilities?: ToolCapability[];
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
+            /**
+             * Forwarded to the main agent so the view can render the user
+             * bubble using the agent's own message id. See
+             * {@link IChatAgent.prompt} for rationale.
+             */
+            onUserMessage?: (userMessage: ChatMessage) => void;
         },
     ): Promise<void> {
-        // Store options for sub-agent use during this prompt cycle
-        this._currentPromptOptions = options;
+        // Store options for sub-agent use during this prompt cycle.
+        // Note: sub-agents reuse the same options object (provider,
+        // thinkingLevel, capabilities, summarizer, embedding) but MUST NOT
+        // inherit the view-facing onUserMessage callback — that callback
+        // is tied to the top-level user turn, not to the synthetic "user"
+        // messages a delegated sub-agent assembles internally. Copy only
+        // the fields a sub-agent should see.
+        this._currentPromptOptions = {
+            provider: options.provider,
+            thinkingLevel: options.thinkingLevel,
+            allowedCapabilities: options.allowedCapabilities,
+            summarizer: options.summarizer,
+            embedding: options.embedding,
+        };
 
         try {
             await this._mainAgent.prompt(userInput, options);

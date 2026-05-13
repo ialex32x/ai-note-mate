@@ -46,6 +46,47 @@ export interface ExtractInsightsInput {
     assistantMessage: string;
 }
 
+/**
+ * Phase of the insight card lifecycle for a given assistant turn.
+ *
+ * - `loading`: extraction is in flight. Never persisted (transient).
+ * - `results`: extraction returned at least one insight.
+ * - `empty`: extraction completed but produced no insights.
+ * - `error`: extraction failed (network / parse error / no summarizer).
+ */
+export type InsightCardPhase = 'loading' | 'results' | 'empty' | 'error';
+
+/**
+ * Session-level state of the insight preview card, owned by the
+ * SessionRuntime and persisted (sans `loading` phase) into the session
+ * metadata so that switching away and back, or reloading the plugin,
+ * does not lose previously-extracted insights — mirroring the way
+ * unsent draft input is preserved at the session level.
+ *
+ * Bound to a specific assistant `messageId` so the view can detect
+ * staleness on replay (i.e. the persisted state belongs to an older
+ * turn that's no longer the tail of the conversation).
+ */
+export interface InsightCardState {
+    messageId: string;
+    phase: InsightCardPhase;
+    /**
+     * Insight entries. Only meaningful when `phase === 'results'`; an
+     * empty array for any other phase. Kept on the union shape rather
+     * than hidden behind a discriminator so consumers don't have to
+     * narrow before reading the length.
+     */
+    insights: ConversationInsight[];
+    /**
+     * Why this extraction was triggered. The view uses this to decide
+     * between gentle (`auto`, respect user scroll) and assertive
+     * (`manual`, always scroll the card into view) feedback. Persisted
+     * forms always carry `'auto'` after a reload — the manual gesture
+     * is, by definition, in the past.
+     */
+    cause: 'auto' | 'manual';
+}
+
 /** Options for {@link extractInsights}. */
 export interface ExtractInsightsOptions {
     /** Upper bound on the number of insights returned. Defaults to 3. */

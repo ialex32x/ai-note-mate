@@ -1,6 +1,7 @@
 import type { IChatAgent, ChatMessage } from '../chat-stream';
 import type { SessionManager } from '../../session-manager';
 import { ArtifactStore, type ArtifactStoreOptions } from '../artifact-store';
+import type { InsightCardState } from '../insights';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
 
 /**
@@ -93,6 +94,30 @@ export class SessionRuntime {
      * background-only entries. Pool sets this in `create()`.
      */
     onIdleNotifier?: () => void;
+
+    /**
+     * Live state of the insight preview card for this session. Owned
+     * by the runtime so that:
+     *   - background extraction (triggered by `onFinish` while no view
+     *     is attached) can still drive the state machine and persist
+     *     terminal phases into {@link SessionManager} metadata;
+     *   - a view re-attaching mid-extraction can read the current
+     *     state via {@link getInsightState} and render `loading`
+     *     immediately instead of waiting for the next emit;
+     *   - cold-loaded runtimes can be hydrated from persisted
+     *     metadata via {@link restoreInsightState}.
+     *
+     * `null` means "no card should be shown".
+     */
+    private _insightState: InsightCardState | null = null;
+
+    /**
+     * Monotonic counter incremented every time an extraction begins
+     * (auto or manual) or the state is cleared. Used by the helper in
+     * `insight-runner.ts` to drop in-flight LLM callbacks that have
+     * been superseded by a newer extraction or by a new turn starting.
+     */
+    private _insightGen = 0;
 
     /**
      * Per-session artifact store backing `delegate_task` envelopes
@@ -289,6 +314,89 @@ export class SessionRuntime {
             subAgentMessagesObj,
             chat.agentTokenBreakdown,
         );
+    }
+
+    // ── Insight card state ────────────────────────────────────────────
+
+    /**
+     * Read the current insight card state. Returns the in-memory copy
+     * the runtime keeps in sync with persisted metadata.
+     *
+     * Views call this on attach so they can render the latest known
+     * state without waiting for the next `insight-update` emit (which
+     * would never come for an already-terminal extraction).
+     */
+    getInsightState(): InsightCardState | null {
+        return this._insightState;
+    }
+
+    /**
+     * Begin a new extraction for the given assistant message id. Bumps
+     * the generation counter and switches the in-memory state to
+     * `loading`. Returns the generation id the caller must hand to
+     * {@link commitInsightResult} so stale callbacks can be dropped.
+     *
+     * The `loading` phase is emitted but deliberately NOT persisted —
+     * it's a transient runtime-only state.
+     */
+    beginInsightExtraction(messageId: string, cause: 'auto' | 'manual'): number {
+        this._insightGen++;
+        this._insightState = { messageId, phase: 'loading', insights: [], cause };
+        this.emit({ type: 'insight-update', state: this._insightState });
+        return this._insightGen;
+    }
+
+    /**
+     * Commit the result of a previously-begun extraction. The `gen`
+     * argument is the value returned by {@link beginInsightExtraction};
+     * if a newer extraction or a state-clear has happened in the
+     * meantime, this call is a no-op (the in-flight LLM result is
+     * stale and gets dropped).
+     *
+     * On success the terminal state is written to in-memory metadata
+     * via {@link SessionManager.setSessionLastInsights}; callers are
+     * responsible for flushing to disk afterwards.
+     */
+    commitInsightResult(gen: number, state: InsightCardState | null): void {
+        if (gen !== this._insightGen) return;
+        this._insightState = state;
+        if (state) {
+            this.sessionManager.setSessionLastInsights(this.sessionId, state);
+        } else {
+            this.sessionManager.clearSessionLastInsights(this.sessionId);
+        }
+        this.emit({ type: 'insight-update', state });
+    }
+
+    /**
+     * Clear both the in-memory state and the persisted metadata.
+     * Bumps the generation counter so any in-flight extraction
+     * becomes stale. Emits an `insight-update` with `null` state so
+     * attached views drop their card. Idempotent — no-op when the
+     * state is already `null` (no spurious emits).
+     */
+    clearInsightState(): void {
+        if (this._insightState === null) return;
+        this._insightGen++;
+        this._insightState = null;
+        this.sessionManager.clearSessionLastInsights(this.sessionId);
+        this.emit({ type: 'insight-update', state: null });
+    }
+
+    /**
+     * Initialise the in-memory state from persisted metadata. Used by
+     * SessionView's `hydrateRuntimeFromDisk` when binding a fresh
+     * runtime that hasn't yet been attached / has no extraction
+     * history of its own. Bumps the generation counter so any
+     * (impossible-but-defensive) leftover in-flight gen captured at
+     * the wrong instant cannot pollute the restored state.
+     *
+     * Does not emit — the caller (the view's replay pass) is expected
+     * to read via {@link getInsightState} and render directly.
+     */
+    restoreInsightState(state: InsightCardState): void {
+        this._insightGen++;
+        this._insightState = state;
     }
 
     /**

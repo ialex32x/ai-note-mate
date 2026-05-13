@@ -1,6 +1,7 @@
 import type { App } from 'obsidian';
 import type { ChatMessage, ConversationSummary, AgentTokenBreakdown } from './services/chat-stream';
 import type { TokenUsage } from './services/llm-provider';
+import type { InsightCardState } from './services/insights';
 
 type ReadonlyChatMessages = ReadonlyArray<ChatMessage>;
 
@@ -16,6 +17,17 @@ export interface SessionMetadata {
     updatedAt: number;
     /** Draft input content (unsent text in input box), restored when loading session */
     draftInput?: string;
+    /**
+     * Last terminal state of the insight preview card. Persisted by
+     * {@link SessionRuntime} after each successful (or failed) insight
+     * extraction so that switching away and back to the session — or
+     * reloading the plugin entirely — restores the card without
+     * re-running the LLM call. Bound to a specific assistant
+     * `messageId` so stale states are detectable on replay.
+     *
+     * `loading` is deliberately not persisted (it's transient).
+     */
+    lastInsights?: InsightCardState;
 }
 
 /** Messages file content (stored in sessions/${id}.json) */
@@ -242,6 +254,42 @@ export class SessionManager {
         if (meta) {
             meta.draftInput = draft;
         }
+    }
+
+    /**
+     * Get the persisted insight card state for a specific session, or
+     * undefined if none has been recorded (or the session no longer
+     * exists). Used by SessionRuntime on hydration / by the view on
+     * cold-load replay.
+     */
+    getSessionLastInsights(sessionId: string): InsightCardState | undefined {
+        return this.metadataMap.get(sessionId)?.lastInsights;
+    }
+
+    /**
+     * Record (or clear) the insight card state for a specific session.
+     * Pass `undefined` to clear. Calls with `state.phase === 'loading'`
+     * are ignored on purpose — loading is a transient runtime-only
+     * state that should never round-trip through disk.
+     *
+     * Only mutates in-memory metadata; callers should follow up with
+     * {@link saveMetadata} (or rely on the next {@link saveToCache})
+     * to flush to disk.
+     */
+    setSessionLastInsights(sessionId: string, state: InsightCardState | undefined): void {
+        const meta = this.metadataMap.get(sessionId);
+        if (!meta) return;
+        if (state && state.phase === 'loading') return;
+        if (state) {
+            meta.lastInsights = state;
+        } else {
+            delete meta.lastInsights;
+        }
+    }
+
+    /** Convenience: clear the insight card state for a specific session. */
+    clearSessionLastInsights(sessionId: string): void {
+        this.setSessionLastInsights(sessionId, undefined);
     }
 
     /** Get the first user message content from the active session */
@@ -499,19 +547,25 @@ export class SessionManager {
 
     /**
      * Delete all sessions except the current active session.
-     * Returns the number of sessions deleted.
+     *
+     * The currently active session is *always* preserved. When
+     * `excludeIds` is provided, those additional session IDs are also
+     * skipped — the typical use case is letting the user opt out of
+     * deleting sessions whose runtime is currently mid-turn (busy).
+     *
+     * Returns the number of sessions actually deleted.
      */
-    async deleteAllHistorySessions(): Promise<number> {
+    async deleteAllHistorySessions(excludeIds?: ReadonlySet<string>): Promise<number> {
         const sessionsToDelete = Array.from(this.metadataMap.keys()).filter(
-            id => id !== this._activeSessionId
+            id => id !== this._activeSessionId && !(excludeIds?.has(id))
         );
-        
+
         if (sessionsToDelete.length === 0) {
             return 0;
         }
 
         let deletedCount = 0;
-        
+
         for (const sessionId of sessionsToDelete) {
             await this.deleteSession(sessionId);
             // Check if session was successfully deleted by verifying it's no longer in metadataMap
