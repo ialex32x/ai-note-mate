@@ -276,10 +276,14 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                             items: { type: "string" },
                             minItems: 1,
                             description:
-                                "Hierarchical heading titles from outermost to innermost, " +
-                                "e.g. ['Chapter 2', 'Background']. The match locates the unique " +
-                                "heading whose ancestor chain equals this list. Use a single-element " +
-                                "array for a top-level heading.",
+                                "Heading titles, ordered outermost → innermost, that the target " +
+                                "heading's ancestor chain must END WITH. The full chain " +
+                                "['Chapter 2', 'Background'] and the shorter tail ['Background'] " +
+                                "both resolve to the same heading IF that tail is unique in the " +
+                                "file; otherwise the call fails as ambiguous and you must prepend " +
+                                "more ancestors. Intermediate ancestors must NOT be skipped " +
+                                "(['Chapter 1', 'Background'] is rejected when 'Background' " +
+                                "actually sits under 'Chapter 1 > Body').",
                         },
                         include_subsections: {
                             type: "boolean",

@@ -56,24 +56,47 @@ export type FindSectionResult =
 
 /**
  * Locate a heading in `headings` whose ancestor chain (outermost → innermost)
- * matches `headingPath` exactly (case-sensitive, trimmed comparison).
+ * is matched by `headingPath` (case-sensitive, trimmed comparison).
  *
- * Algorithm: walk the headings array linearly, maintaining a stack of
- * currently-open ancestors keyed by level. For each heading, pop ancestors
- * with `level >= current.level`, then check whether
- * `[...stack.map(h => h.heading), current.heading]` matches `headingPath`.
+ * ## Matching semantics — tail subsequence
  *
- * - "Matching is exact" — no fuzzy / case-insensitive matching: section
- *   anchoring is a hard scope constraint and silent widening to the wrong
- *   section would corrupt user data downstream (especially under the
- *   anchor-mode `replace_text` in P2).
- * - "Ambiguous" means two or more headings share the same ancestor chain.
- *   We do NOT auto-pick the first; we surface all candidates so the LLM
- *   can refine the path (e.g. add an extra ancestor or an index suffix
- *   we may add later).
+ * `headingPath` matches a heading H iff `headingPath` equals the **trailing
+ * contiguous slice** of H's ancestor chain (root → … → H itself). In other
+ * words: the path is anchored at the heading's bottom and may omit any number
+ * of leading ancestors, but must NOT skip intermediates.
+ *
+ * Examples — given `Chapter 1 > Body > Background`:
+ *   - `["Chapter 1", "Body", "Background"]`   → matches (full chain)
+ *   - `["Body", "Background"]`                → matches (tail, length 2)
+ *   - `["Background"]`                        → matches (tail, length 1)
+ *   - `["Chapter 1", "Background"]`           → does NOT match (skips "Body")
+ *
+ * ## Why tail subsequence rather than strict full chain
+ *
+ * In practice LLMs frequently submit just the leaf heading (and reasonably
+ * so — that's what users say in natural language). Strict full-chain matching
+ * forced costly re-reads and confusing "structure changed" retries even when
+ * the file had not changed at all. Accepting any unique tail is precise
+ * (mid-chain skips remain rejected) yet ergonomic.
+ *
+ * Safety is preserved by collision detection: if more than one heading shares
+ * the requested tail (in particular, when the same leaf name appears in
+ * multiple branches), we return `ambiguous` and force the caller to add more
+ * ancestors. So a short path is accepted ONLY when it resolves uniquely.
+ *
+ * ## Tie-break note
+ *
+ * Strict full-chain matches are conceptually equivalent to "tail of length =
+ * full chain depth", and naturally fall out of the same algorithm. There is
+ * no special preference for longer matches: the caller's path length is
+ * authoritative — multiple headings with the same tail-of-that-length are
+ * ambiguous regardless of whether one of them happens to be a full chain.
  *
  * @returns
- *   - `{ ok: true, section }` when there is exactly one match.
+ *   - `{ ok: true, index, ancestorsAtMatch }` when there is exactly one match.
+ *      `ancestorsAtMatch` is the FULL ancestor chain (excluding the matched
+ *      heading itself), so callers can echo a fully-qualified path back to
+ *      the LLM even when it submitted a short tail.
  *   - `{ ok: false, error: { kind: "no_headings" } }` if the file has no headings.
  *   - `{ ok: false, error: { kind: "empty_path" } }` if `headingPath` is empty.
  *   - `{ ok: false, error: { kind: "not_found", available } }` if zero matches.
@@ -110,9 +133,16 @@ export function findHeadingByPath(
             stack.pop();
         }
 
-        // Build the would-be path for this heading.
-        const path = [...stack.map((e) => e.heading.trim()), h.heading.trim()];
-        if (pathsEqual(path, wantedTrimmed)) {
+        // The full chain root → … → h itself.
+        const fullChain = [...stack.map((e) => e.heading.trim()), h.heading.trim()];
+
+        // Tail-subsequence test: the wanted path must equal the LAST
+        // `wantedTrimmed.length` entries of `fullChain` (and obviously the
+        // wanted path cannot be longer than the chain itself).
+        if (
+            wantedTrimmed.length <= fullChain.length
+            && pathsEqual(fullChain.slice(fullChain.length - wantedTrimmed.length), wantedTrimmed)
+        ) {
             matches.push({ index: i, ancestors: stack.map((e) => e.heading) });
         }
 
@@ -223,6 +253,8 @@ export function formatFindSectionError(
                 : "";
             return (
                 `heading_path ${pathStr} not found. ` +
+                `heading_path matches a heading whose ancestor chain ENDS WITH the given titles ` +
+                `(intermediates may NOT be skipped). ` +
                 `Available ancestor chains (sample): ${sample.join(" | ") || "(none)"}${more}.`
             );
         }
@@ -231,8 +263,8 @@ export function formatFindSectionError(
                 (m) => `line ${m.line} (level ${m.level}${m.ancestors.length > 0 ? `, under ${m.ancestors.join(" > ")}` : ""})`,
             ).join("; ");
             return (
-                `heading_path ${pathStr} is ambiguous — ${error.matches.length} headings share this ancestor chain: ${where}. ` +
-                `Add another ancestor level to disambiguate.`
+                `heading_path ${pathStr} is ambiguous — ${error.matches.length} headings end with this chain: ${where}. ` +
+                `Prepend more ancestors to disambiguate.`
             );
         }
     }

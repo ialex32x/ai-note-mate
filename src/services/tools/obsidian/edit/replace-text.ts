@@ -626,9 +626,11 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                                 items: { type: "string" },
                                                 minItems: 1,
                                                 description:
-                                                    "Hierarchical heading titles from outermost to innermost, " +
-                                                    "e.g. ['Chapter 2', 'Background']. Use a single-element array " +
-                                                    "for top-level headings.",
+                                                    "Heading titles, outermost → innermost, that the target heading's " +
+                                                    "ancestor chain must END WITH. A short tail (even a single leaf " +
+                                                    "title) is accepted IF it is unique in the file; otherwise the " +
+                                                    "call fails as ambiguous and you must prepend more ancestors. " +
+                                                    "Intermediate ancestors must NOT be skipped.",
                                             },
                                             where: {
                                                 type: "string",

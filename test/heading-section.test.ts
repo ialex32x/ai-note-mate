@@ -127,9 +127,47 @@ describe("findHeadingByPath", () => {
 
     it("rejects a partial chain that skips an intermediate ancestor", () => {
         // ["Chapter 1", "Background"] would skip "Body" — must NOT match.
+        // Tail-subsequence semantics still forbid mid-chain skips: the wanted
+        // path must equal a CONTIGUOUS suffix of the actual chain.
         const r = findHeadingByPath(SAMPLE_HEADINGS, ["Chapter 1", "Background"]);
         expect(r.ok).toBe(false);
         if (!r.ok) expect(r.error.kind).toBe("not_found");
+    });
+
+    it("matches a unique tail of the ancestor chain (single leaf title)", () => {
+        // 'Methods' appears only once, under Chapter 1 > Body. Submitting just
+        // ["Methods"] should resolve to that heading, with the FULL ancestor
+        // chain echoed back to the caller via `ancestorsAtMatch`.
+        const r = findHeadingByPath(SAMPLE_HEADINGS, ["Methods"]);
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+            expect(r.index).toBe(4); // line 25
+            expect(r.ancestorsAtMatch).toEqual(["Chapter 1", "Body"]);
+        }
+    });
+
+    it("matches a unique multi-level tail of the ancestor chain", () => {
+        // ["Body", "Background"] is the tail of ["Chapter 1", "Body", "Background"].
+        // 'Body' only ever appears inside Chapter 1, so the tail is unique.
+        const r = findHeadingByPath(SAMPLE_HEADINGS, ["Body", "Background"]);
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+            expect(r.index).toBe(3); // line 15
+            expect(r.ancestorsAtMatch).toEqual(["Chapter 1", "Body"]);
+        }
+    });
+
+    it("reports ambiguous when a short tail matches multiple branches", () => {
+        // 'Background' appears as a tail in BOTH "Chapter 1 > Body > Background"
+        // and "Chapter 2 > Background". The lone leaf must NOT auto-pick.
+        const r = findHeadingByPath(SAMPLE_HEADINGS, ["Background"]);
+        expect(r.ok).toBe(false);
+        if (!r.ok && r.error.kind === "ambiguous") {
+            expect(r.error.matches).toHaveLength(2);
+            expect(r.error.matches.map((m) => m.line).sort((x, y) => x - y)).toEqual([16, 41]);
+        } else {
+            throw new Error("expected ambiguous error");
+        }
     });
 });
 
@@ -252,7 +290,7 @@ describe("formatFindSectionError", () => {
         expect(msg).toContain("ambiguous");
         expect(msg).toContain("line 6");
         expect(msg).toContain("line 21");
-        expect(msg).toContain("Add another ancestor level");
+        expect(msg).toContain("Prepend more ancestors");
     });
 
     it("renders empty_path", () => {
