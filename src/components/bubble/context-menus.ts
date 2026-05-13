@@ -197,3 +197,46 @@ export function attachLinkContextMenu(
         link.addClass('session-link-clickable');
     });
 }
+
+/**
+ * Attach a context menu to a user message bubble that offers "Copy message"
+ * to place the raw message text on the clipboard.
+ *
+ * The menu is kept intentionally minimal: user bubbles don't have an action
+ * bar (unlike assistant replies), so right-click is the primary surface for
+ * copying. Bind to the bubble element rather than the content element so the
+ * hit area includes the role label and surrounding padding — matches user
+ * expectation that "right-click the bubble" works anywhere on it.
+ *
+ * Passes `showNotice: false` only when we want to suppress the default toast;
+ * here we keep it on so users get an explicit confirmation on both desktop
+ * and mobile (where no tooltip/icon-swap feedback is available).
+ */
+export function attachUserBubbleContextMenu(
+    bubble: HTMLElement,
+    content: string,
+): void {
+    bubble.addEventListener('contextmenu', (e: MouseEvent) => {
+        // Don't hijack context menus that originate from child widgets
+        // (file-ref chips, future inline controls). Those elements handle
+        // their own right-click — our handler should only fire for plain
+        // text areas of the bubble.
+        const target = e.target as HTMLElement | null;
+        if (target && target.closest('.bubble-file-ref')) {
+            return;
+        }
+
+        e.preventDefault();
+        const menu = new Menu();
+
+        menu.addItem((item) => {
+            item.setTitle(t('view.copyMessage'));
+            item.setIcon('copy');
+            item.onClick(async () => {
+                await copyToClipboard(content);
+            });
+        });
+
+        menu.showAtPosition({ x: e.clientX, y: e.clientY });
+    });
+}
