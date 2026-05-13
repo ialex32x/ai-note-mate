@@ -3,7 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: rename_or_move_file
@@ -81,16 +81,16 @@ export function vaultRenameFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             const isFolder = file instanceof TFolder;
 
-            // Use fileManager.renameFile to automatically update all links
-            await plugin.app.fileManager.renameFile(file, newPath);
-
-            recordVaultEdit(plugin, chatStream, {
+            const lockErr = await runVaultMutation(plugin, chatStream, {
                 kind: "rename",
                 path: newPath,
                 previousPath: path,
                 isFolder,
                 toolName: "rename_or_move_file",
+                // Use fileManager.renameFile to automatically update all links.
+                perform: async () => { await plugin.app.fileManager.renameFile(file, newPath); },
             });
+            if (lockErr) return lockErr;
 
             return {
                 success: true,

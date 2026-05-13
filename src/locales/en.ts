@@ -388,6 +388,18 @@ export const en: Record<string, string> = {
 	'editHistory.notice.stale': 'Target text was modified — rewrite was not applied.',
 	'editHistory.notice.emptyResponse': 'Model returned no content.',
 	'editHistory.notice.fileMissing': 'Original file is no longer available.',
+	'editHistory.notice.lockConflict': 'This file has unconfirmed AI changes in another session. Accept or discard them first.',
+	'view.checkpointsAriaLabel': 'AI file change checkpoints',
+	'view.checkpointEmpty': 'No file changes in this session yet.',
+	'view.checkpointEmptyFiles': 'No files captured in this round.',
+	'view.checkpointGoto': 'Go to',
+	'view.checkpointAccept': 'Accept',
+	'view.checkpointDiscard': 'Discard',
+	'view.checkpointStatusPending': 'Pending — file lock active',
+	'view.checkpointStatusAccepted': 'Accepted',
+	'view.checkpointStatusDiscarded': 'Discarded',
+	'view.checkpointNoSnapshot': 'No pre-edit snapshot was captured; discard will not restore this file.',
+	'view.checkpointActionFailed': 'Checkpoint action failed. See console for details.',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': 'Rewrites',

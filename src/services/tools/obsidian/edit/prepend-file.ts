@@ -3,7 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: prepend_file
@@ -72,8 +72,13 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     newContent = contentToPrepend + "\n" + existing;
                 }
 
-                await plugin.app.vault.modify(file, newContent);
-                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "prepend_file" });
+                const lockErr = await runVaultMutation(plugin, chatStream, {
+                    kind: "modify",
+                    path,
+                    toolName: "prepend_file",
+                    perform: async () => { await plugin.app.vault.modify(file, newContent); },
+                });
+                if (lockErr) return lockErr;
                 return { success: true, type: "object", content: { action: "prepended", path } };
             }
 
@@ -82,8 +87,13 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const extErr = requireFileExtension(path);
             if (extErr) return extErr;
             await ensureParentFolder(plugin.app, path);
-            await plugin.app.vault.create(path, contentToPrepend);
-            recordVaultEdit(plugin, chatStream, { kind: "create", path, toolName: "prepend_file" });
+            const lockErr = await runVaultMutation(plugin, chatStream, {
+                kind: "create",
+                path,
+                toolName: "prepend_file",
+                perform: async () => { await plugin.app.vault.create(path, contentToPrepend); },
+            });
+            if (lockErr) return lockErr;
             return { success: true, type: "object", content: { action: "created", path } };
         },
         requiresConfirmation: true,

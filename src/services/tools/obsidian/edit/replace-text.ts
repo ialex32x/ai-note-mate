@@ -7,7 +7,7 @@ import {
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "../heading-section";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: replace_text
@@ -909,8 +909,13 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             if (!dryRun) {
-                await plugin.app.vault.modify(file, working);
-                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "replace_text" });
+                const lockErr = await runVaultMutation(plugin, chatStream, {
+                    kind: "modify",
+                    path,
+                    toolName: "replace_text",
+                    perform: async () => { await plugin.app.vault.modify(file, working); },
+                });
+                if (lockErr) return lockErr;
             }
 
             const totalReplaced = summaries.reduce((s, r) => s + r.occurrences_replaced, 0);

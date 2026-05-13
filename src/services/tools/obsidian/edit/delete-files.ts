@@ -2,7 +2,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: delete_files
@@ -69,9 +69,18 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
                     continue;
                 }
                 try {
-                    await plugin.app.fileManager.trashFile(fileOrErr);
-                    deleted.push(path);
-                    recordVaultEdit(plugin, chatStream, { kind: "delete", path, toolName: "delete_files" });
+                    const lockErr = await runVaultMutation(plugin, chatStream, {
+                        kind: "delete",
+                        path,
+                        toolName: "delete_files",
+                        perform: async () => { await plugin.app.fileManager.trashFile(fileOrErr); },
+                    });
+                    if (lockErr) {
+                        const msg = typeof lockErr.content === "string" ? lockErr.content : "locked";
+                        failed.push({ path, error: msg });
+                    } else {
+                        deleted.push(path);
+                    }
                 } catch (e) {
                     failed.push({ path, error: e instanceof Error ? e.message : String(e) });
                 }

@@ -2,7 +2,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: write_file
@@ -206,8 +206,13 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const excerptTruncated = beforeExcerpts.truncated || afterExcerpts.truncated;
 
             if (!dryRun) {
-                await plugin.app.vault.modify(file, content);
-                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "write_file" });
+                const lockErr = await runVaultMutation(plugin, chatStream, {
+                    kind: "modify",
+                    path,
+                    toolName: "write_file",
+                    perform: async () => { await plugin.app.vault.modify(file, content); },
+                });
+                if (lockErr) return lockErr;
             }
 
             return {

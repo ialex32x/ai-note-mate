@@ -90,6 +90,9 @@ export class SessionRuntimePool {
      *
      * Decision matrix:
      *   - busy:                always retained (background continuation).
+     *   - pending checkpoints: always retained — evicting would
+     *     auto-accept the user's unconfirmed file modifications,
+     *     surprising them on the next attach.
      *   - idle, idle-count ≤ maxIdle:  retained (warm cache).
      *   - idle, idle-count > maxIdle:  evicted via LRU (the oldest
      *     idle runtime is dropped first, which may or may not be this
@@ -105,6 +108,11 @@ export class SessionRuntimePool {
         if (!rt) return;
         // Busy runtimes are kept regardless of capacity.
         if (rt.isBusy) return;
+        // Sessions with pending vault checkpoints are also kept: the
+        // checkpoint state is runtime-only, so evicting it implicitly
+        // auto-accepts the user's unconfirmed edits. We never want
+        // that to happen silently on a session switch.
+        if (rt.checkpointStore.hasPending) return;
         // Touch lastAttachedAt would lie about LRU; release means the
         // view JUST detached from this one, so the natural attach
         // timestamp is already up-to-date.
@@ -176,11 +184,19 @@ export class SessionRuntimePool {
      * runtime's `onIdleNotifier` when a background runtime
      * transitions from busy → idle (because that finish could push
      * the idle count over the cap).
+     *
+     * Runtimes that hold pending vault checkpoints are NOT counted
+     * toward the cap and are NEVER eligible for eviction here —
+     * letting LRU silently auto-accept unconfirmed file edits would
+     * be a footgun. They effectively pin the runtime alive until
+     * the user accepts or discards.
      */
     private compact(): void {
         const idles: SessionRuntime[] = [];
         for (const rt of this.runtimes.values()) {
-            if (!rt.isBusy) idles.push(rt);
+            if (rt.isBusy) continue;
+            if (rt.checkpointStore.hasPending) continue;
+            idles.push(rt);
         }
         if (idles.length <= this.maxIdle) return;
         // Sort ascending by lastAttachedAt — oldest first.

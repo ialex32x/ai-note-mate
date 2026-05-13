@@ -3,7 +3,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: append_file
@@ -49,8 +49,13 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const file = plugin.app.vault.getAbstractFileByPath(path);
 
             if (file instanceof TFile) {
-                await plugin.app.vault.append(file, content);
-                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "append_file" });
+                const lockErr = await runVaultMutation(plugin, chatStream, {
+                    kind: "modify",
+                    path,
+                    toolName: "append_file",
+                    perform: async () => { await plugin.app.vault.append(file, content); },
+                });
+                if (lockErr) return lockErr;
                 return { success: true, type: "object", content: { action: "appended", path } };
             }
 
@@ -59,8 +64,13 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const extErr = requireFileExtension(path);
             if (extErr) return extErr;
             await ensureParentFolder(plugin.app, path);
-            await plugin.app.vault.create(path, content);
-            recordVaultEdit(plugin, chatStream, { kind: "create", path, toolName: "append_file" });
+            const lockErr = await runVaultMutation(plugin, chatStream, {
+                kind: "create",
+                path,
+                toolName: "append_file",
+                perform: async () => { await plugin.app.vault.create(path, content); },
+            });
+            if (lockErr) return lockErr;
             return { success: true, type: "object", content: { action: "created", path } };
         },
         requiresConfirmation: true,

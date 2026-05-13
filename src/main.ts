@@ -12,6 +12,7 @@ import { VaultEditLogStore } from './edit-history/vault-edit-log-store';
 import { registerRewriteSelection, type AISubmenuItem } from './edit-history/rewrite-selection';
 import { SessionManager } from './session-manager';
 import { SessionRuntimePool } from './services/session-runtime';
+import { VaultMutator, GlobalFileLockManager, SnapshotManager } from './services/vault';
 
 export default class NoteAssistantPlugin extends Plugin {
 	settings!: NoteAssistantPluginSettings;
@@ -39,6 +40,30 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * not aborted just because the user navigated elsewhere.
 	 */
 	runtimePool!: SessionRuntimePool;
+	/**
+	 * Central gateway for all AI-driven vault mutations. Every edit tool
+	 * funnels through this instead of touching `app.vault.*` + the audit
+	 * log directly, so cross-cutting concerns (audit logging today; cross-
+	 * session file locking and per-checkpoint snapshotting in subsequent
+	 * steps) live in exactly one place.
+	 */
+	vaultMutator!: VaultMutator;
+	/**
+	 * Process-wide table of files currently locked by an active
+	 * session's pending checkpoint. Cross-session writes against a
+	 * locked file are refused by the {@link VaultMutator}; the AI Edit
+	 * rewrite path consults this table read-only before starting a
+	 * selection rewrite. Runtime-only state — never serialised.
+	 */
+	fileLockManager!: GlobalFileLockManager;
+	/**
+	 * On-disk blob store for pre-modification file snapshots. Used by
+	 * the per-session {@link CheckpointStore} when a file enters a
+	 * pending checkpoint for the first time, so the change can be
+	 * rolled back on discard. Runtime-only — startup cleanup wipes the
+	 * whole directory.
+	 */
+	snapshotManager!: SnapshotManager;
 
 	private readonly _settingsListeners: Array<() => void> = [];
 
@@ -105,6 +130,23 @@ export default class NoteAssistantPlugin extends Plugin {
 			persistPath: `${this.paths.cache()}/vault-edit-log.json`,
 		});
 		await this.vaultEditLog.load();
+		// Cross-session file lock table; consulted by VaultMutator (write
+		// path) and the AI Edit rewrite runner (read-only check before
+		// starting a selection rewrite). Pure in-memory state.
+		this.fileLockManager = new GlobalFileLockManager();
+		// Snapshot blob store for checkpoint rollback. Lives under cache/
+		// since the data is runtime-only. The clearAll() call here is the
+		// reliable cleanup point: anything left over from a previous
+		// session (clean exit or crash) is reaped before the new run can
+		// reference it.
+		this.snapshotManager = new SnapshotManager(this.app, {
+			rootDir: `${this.paths.cache()}/snapshots`,
+		});
+		await this.snapshotManager.clearAll();
+		// VaultMutator is the single gateway every AI edit tool calls into.
+		// Constructed AFTER `vaultEditLog` because it reads from
+		// `plugin.vaultEditLog` to record audit entries.
+		this.vaultMutator = new VaultMutator(this);
 		this.registerView(
 			EditHistoryView.VIEW_TYPE,
 			(leaf) => new EditHistoryView(leaf, this, this.editHistory, this.vaultEditLog),
@@ -239,6 +281,12 @@ export default class NoteAssistantPlugin extends Plugin {
 		void disposeGlobalEmbedder();
 		this.editHistory?.dispose();
 		this.vaultEditLog?.dispose();
+		// Snapshots are runtime-only — best-effort wipe on unload so the
+		// directory doesn't grow between launches in the happy-path
+		// case. `onunload` is synchronous, so this is fire-and-forget;
+		// the reliable cleanup happens at the NEXT startup via the
+		// `clearAll()` call in `onload`.
+		void this.snapshotManager?.clearAll().catch(() => { /* swallow */ });
 	}
 
 	private async createSessionView(activate: boolean) {

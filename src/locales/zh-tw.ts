@@ -388,6 +388,18 @@ export const zhTW: Record<string, string> = {
 	'editHistory.notice.stale': '目標內容已變更，未寫回編輯器。',
 	'editHistory.notice.emptyResponse': '模型未回傳任何內容。',
 	'editHistory.notice.fileMissing': '原始檔案已不存在。',
+	'editHistory.notice.lockConflict': '此檔案在另一個工作階段中有尚未確認的 AI 修改,請先接受或捨棄後再繼續。',
+	'view.checkpointsAriaLabel': 'AI 檔案變更檢查點',
+	'view.checkpointEmpty': '本工作階段尚未產生檔案變更。',
+	'view.checkpointEmptyFiles': '本輪未記錄任何檔案。',
+	'view.checkpointGoto': '跳至',
+	'view.checkpointAccept': '接受',
+	'view.checkpointDiscard': '捨棄',
+	'view.checkpointStatusPending': '待處理 — 檔案鎖生效中',
+	'view.checkpointStatusAccepted': '已接受',
+	'view.checkpointStatusDiscarded': '已捨棄',
+	'view.checkpointNoSnapshot': '未儲存修改前的快照,捨棄時無法還原此檔案。',
+	'view.checkpointActionFailed': '檢查點操作失敗,詳情請見主控台。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '重寫歷史',

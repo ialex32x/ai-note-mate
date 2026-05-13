@@ -32,6 +32,15 @@ const STREAM_UPDATE_THROTTLE_MS = 80;
 /**
  * Run a single edit task. Resolves when the task has reached a terminal
  * state. Never throws — all errors flow into the task's `error` field.
+ *
+ * Cross-session lock check: AI Edit rewrite operates at editor level
+ * (not via the vault gateway), so it does not participate in the
+ * checkpoint model. But it must still RESPECT active checkpoints —
+ * otherwise a user could rewrite a file that another session has
+ * pending modifications on, producing surprising state. The check
+ * runs once up-front; if the file is held by ANY session (including
+ * the user's own AI sessions), the task moves straight to `failed`
+ * with a clear diagnostic.
  */
 export async function runEditTask(
     plugin: NoteAssistantPlugin,
@@ -39,6 +48,20 @@ export async function runEditTask(
     task: EditTask,
     signal: AbortSignal,
 ): Promise<void> {
+    // Refuse early if the target file is currently locked by any AI
+    // session's pending checkpoint. The rewrite path has no session
+    // affiliation of its own, so any holder is "other".
+    if (task.filePath) {
+        const holder = plugin.fileLockManager?.getHolder(task.filePath);
+        if (holder) {
+            store.update(task.id, {
+                status: "failed",
+                error: t("editHistory.notice.lockConflict"),
+            });
+            return;
+        }
+    }
+
     store.update(task.id, { status: "running" });
 
     let pending = "";

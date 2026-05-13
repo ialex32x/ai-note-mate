@@ -4,6 +4,7 @@ import { maybeGenerateSessionTitle } from '../../views/session-view/session-titl
 import { deriveArtifactStoreOptions } from '../../settings/helpers';
 import { SessionRuntime } from './session-runtime';
 import { maybeExtractInsightsAfterFinish } from './insight-runner';
+import { CheckpointStore } from '../vault';
 import type { ChatMessage } from '../chat-stream';
 
 /**
@@ -55,9 +56,19 @@ export function createSessionRuntime(
     // would need re-balancing across the new caps, which is not
     // worth the complexity for a knob users touch rarely. New
     // sessions pick up the new values automatically.
+    // Per-session checkpoint state machine. Wired into every AI vault
+    // mutation via VaultMutator; auto-accepted on runtime dispose so
+    // tearing down a session never leaves cross-session locks dangling.
+    const checkpointStore = new CheckpointStore({
+        sessionId,
+        lockManager: plugin.fileLockManager,
+        snapshotManager: plugin.snapshotManager,
+        app: plugin.app,
+    });
     const runtime = new SessionRuntime(
         sessionId,
         plugin.sessionManager,
+        checkpointStore,
         deriveArtifactStoreOptions(plugin.settings),
     );
 

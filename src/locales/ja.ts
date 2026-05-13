@@ -388,6 +388,18 @@ export const ja: Record<string, string> = {
 	'editHistory.notice.stale': '対象テキストが変更されたため、書き戻しは行われませんでした。',
 	'editHistory.notice.emptyResponse': 'モデルから応答がありませんでした。',
 	'editHistory.notice.fileMissing': '元のファイルが見つかりません。',
+	'editHistory.notice.lockConflict': 'このファイルは別のセッションに未確定の AI 変更があります。先に承認または破棄してください。',
+	'view.checkpointsAriaLabel': 'AI ファイル変更チェックポイント',
+	'view.checkpointEmpty': 'このセッションではまだファイル変更がありません。',
+	'view.checkpointEmptyFiles': 'このラウンドで記録されたファイルはありません。',
+	'view.checkpointGoto': 'ジャンプ',
+	'view.checkpointAccept': '承認',
+	'view.checkpointDiscard': '破棄',
+	'view.checkpointStatusPending': '保留中 — ファイルロック有効',
+	'view.checkpointStatusAccepted': '承認済み',
+	'view.checkpointStatusDiscarded': '破棄済み',
+	'view.checkpointNoSnapshot': '編集前のスナップショットがありません。破棄してもこのファイルは復元されません。',
+	'view.checkpointActionFailed': 'チェックポイントの操作に失敗しました。詳細はコンソールを確認してください。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '書き直し履歴',

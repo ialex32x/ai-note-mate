@@ -1,0 +1,179 @@
+/* ─────────────────────────────────────────────
+   AI vault-mutation checkpoint dropdown (input-row selector)
+   ───────────────────────────────────────────── */
+
+// Selector button is hidden entirely when the session has no
+// checkpoints yet — Phase 1 keeps the input row uncluttered until
+// the user actually has something to manage.
+.session-checkpoint-selector--empty {
+    display: none !important;
+}
+
+// Highlight the count when there is at least one pending checkpoint
+// so users notice that decisions are pending.
+.session-checkpoint-selector--has-pending .session-dropdown-btn {
+    color: @text-accent;
+}
+
+// Fixed-width dropdown for the checkpoint list. The container
+// width is the hard cap that drives CSS ellipsis on long titles
+// and long file paths — JS no longer truncates either of them, so
+// the visual budget lives here.
+.session-dropdown-menu--checkpoints {
+    width: 320px;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: @spacing-xs 0;
+    box-sizing: border-box;
+}
+
+.checkpoint-section {
+    padding: @spacing-sm @spacing-md;
+    border-bottom: 1px solid @bg-modifier-border;
+
+    &:last-child { border-bottom: none; }
+
+    &--accepted { opacity: 0.65; }
+    &--discarded { opacity: 0.45; }
+}
+
+.checkpoint-section__header {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+}
+
+.checkpoint-section__status {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: @radius-sm;
+
+    &--pending  { color: @text-accent; }
+    &--accepted { color: @text-success; }
+    &--discarded { color: @text-secondary; }
+}
+
+.checkpoint-section__title {
+    flex: 1 1 auto;
+    // Flex children default to min-width: auto, which keeps them at
+    // their intrinsic content width and silently disables ellipsis
+    // when the text overflows the row. Forcing min-width: 0 lets
+    // the title shrink past its content width so the dropdown's
+    // fixed width drives the truncation point.
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.92em;
+    color: @text-primary;
+}
+
+// Inline icon-button cluster that sits at the right end of the
+// checkpoint header row, on the same line as the title.
+.checkpoint-section__actions {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-left: @spacing-xs;
+}
+
+.checkpoint-section__action-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: @radius-sm;
+    cursor: pointer;
+    background: transparent;
+    color: @text-secondary;
+    transition: background @duration-fast, color @duration-fast;
+
+    // Lucide icon glyph inside the button: scale a touch down so the
+    // button doesn't look heavy next to the title text.
+    .svg-icon {
+        width: 14px;
+        height: 14px;
+    }
+
+    &:hover:not(:disabled) {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.35;
+    }
+
+    &--accept:not(:disabled):hover {
+        color: @text-success;
+    }
+    &--discard:not(:disabled):hover {
+        color: @text-error;
+    }
+}
+
+.checkpoint-section__files {
+    margin-top: @spacing-xs;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.checkpoint-section__empty {
+    font-size: 0.85em;
+    color: @text-secondary;
+    font-style: italic;
+    padding-left: @spacing-sm;
+}
+
+.checkpoint-file {
+    display: flex;
+    align-items: center;
+    gap: @spacing-xs;
+    font-size: 0.85em;
+    color: @text-secondary;
+    padding: 2px 0;
+}
+
+.checkpoint-file__icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    color: @text-faint;
+}
+
+.checkpoint-file__path {
+    flex: 1 1 auto;
+    // Same rationale as `.checkpoint-section__title`: needed so the
+    // ellipsis kicks in instead of the row growing to fit the path.
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: @text-primary;
+}
+
+.checkpoint-file__kind {
+    flex: 0 0 auto;
+    font-size: 0.78em;
+    color: @text-faint;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+
+    &--no-snapshot {
+        color: @text-warning;
+    }
+}

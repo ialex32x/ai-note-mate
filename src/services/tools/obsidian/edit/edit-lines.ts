@@ -2,7 +2,7 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
-import { recordVaultEdit } from "./_log";
+import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: edit_lines
@@ -437,8 +437,13 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             const newTotalLines = working.length;
 
             if (!dryRun) {
-                await plugin.app.vault.modify(file, resultContent);
-                recordVaultEdit(plugin, chatStream, { kind: "modify", path, toolName: "edit_lines" });
+                const lockErr = await runVaultMutation(plugin, chatStream, {
+                    kind: "modify",
+                    path,
+                    toolName: "edit_lines",
+                    perform: async () => { await plugin.app.vault.modify(file, resultContent); },
+                });
+                if (lockErr) return lockErr;
             }
 
             // ── Build per-edit summaries and post-edit affected regions ────────

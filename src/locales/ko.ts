@@ -388,6 +388,18 @@ export const ko: Record<string, string> = {
 	'editHistory.notice.stale': '대상 텍스트가 변경되어 적용되지 않았습니다.',
 	'editHistory.notice.emptyResponse': '모델이 내용을 반환하지 않았습니다.',
 	'editHistory.notice.fileMissing': '원본 파일을 더 이상 사용할 수 없습니다.',
+	'editHistory.notice.lockConflict': '이 파일은 다른 세션에서 확정되지 않은 AI 수정이 있습니다. 먼저 적용하거나 취소하세요.',
+	'view.checkpointsAriaLabel': 'AI 파일 변경 체크포인트',
+	'view.checkpointEmpty': '이 세션에서 발생한 파일 변경이 없습니다.',
+	'view.checkpointEmptyFiles': '이 라운드에 기록된 파일이 없습니다.',
+	'view.checkpointGoto': '이동',
+	'view.checkpointAccept': '적용',
+	'view.checkpointDiscard': '취소',
+	'view.checkpointStatusPending': '대기 중 — 파일 잠금 활성',
+	'view.checkpointStatusAccepted': '적용됨',
+	'view.checkpointStatusDiscarded': '취소됨',
+	'view.checkpointNoSnapshot': '편집 전 스냅샷이 없어 취소해도 이 파일은 복원되지 않습니다.',
+	'view.checkpointActionFailed': '체크포인트 작업이 실패했습니다. 자세한 내용은 콘솔을 확인하세요.',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '재작성 기록',

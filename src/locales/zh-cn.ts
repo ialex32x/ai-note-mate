@@ -387,6 +387,18 @@ export const zhCN: Record<string, string> = {
 	'editHistory.notice.stale': '目标内容已被修改，未写回编辑器。',
 	'editHistory.notice.emptyResponse': '模型未返回任何内容。',
 	'editHistory.notice.fileMissing': '原文件已不存在。',
+	'editHistory.notice.lockConflict': '该文件在另一个会话中存在未确认的 AI 修改,请先接受或丢弃后再继续。',
+	'view.checkpointsAriaLabel': 'AI 文件变更检查点',
+	'view.checkpointEmpty': '本会话尚未产生文件变更。',
+	'view.checkpointEmptyFiles': '本轮未记录任何文件。',
+	'view.checkpointGoto': '跳转',
+	'view.checkpointAccept': '接受',
+	'view.checkpointDiscard': '丢弃',
+	'view.checkpointStatusPending': '待处理 — 文件锁生效中',
+	'view.checkpointStatusAccepted': '已接受',
+	'view.checkpointStatusDiscarded': '已丢弃',
+	'view.checkpointNoSnapshot': '未保存修改前的快照,丢弃时无法还原此文件。',
+	'view.checkpointActionFailed': '检查点操作失败,详情请见控制台。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '重写历史',

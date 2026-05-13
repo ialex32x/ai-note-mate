@@ -2,6 +2,7 @@ import type { IChatAgent, ChatMessage } from '../chat-stream';
 import type { SessionManager } from '../../session-manager';
 import { ArtifactStore, type ArtifactStoreOptions } from '../artifact-store';
 import type { InsightCardState } from '../insights';
+import type { CheckpointStore } from '../vault';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
 
 /**
@@ -144,15 +145,27 @@ export class SessionRuntime {
      */
     readonly artifactStore: ArtifactStore;
 
+    /**
+     * Per-session checkpoint state machine. Holds the runtime-only
+     * record of which AI mutations this session has performed, what
+     * cross-session locks it owns, and which files are pending
+     * user accept / discard. Lifetime is bound to the runtime —
+     * disposal silently accepts every pending checkpoint (see
+     * {@link dispose}).
+     */
+    readonly checkpointStore: CheckpointStore;
+
     private readonly sessionManager: SessionManager;
 
     constructor(
         sessionId: string,
         sessionManager: SessionManager,
+        checkpointStore: CheckpointStore,
         artifactStoreOptions?: ArtifactStoreOptions,
     ) {
         this.sessionId = sessionId;
         this.sessionManager = sessionManager;
+        this.checkpointStore = checkpointStore;
         this.lastAttachedAt = Date.now();
         this.artifactStore = new ArtifactStore(artifactStoreOptions);
     }
@@ -419,6 +432,16 @@ export class SessionRuntime {
         this.pendingConfirmations.clear();
         this.listeners.clear();
         this._isBusy = false;
+        // Auto-accept every pending checkpoint so cross-session locks
+        // don't leak past the runtime that owned them. On-disk
+        // mutations stay as-is — the user implicitly chose to commit
+        // them by deleting the session / closing the plugin.
+        // Fire-and-forget: dispose() is synchronous (it's called from
+        // SessionRuntimePool's evict / disposeAll, which onunload also
+        // hits), and snapshot deletion is best-effort cleanup.
+        void this.checkpointStore.acceptAllPending().catch(err => {
+            console.warn('[SessionRuntime] checkpoint auto-accept on dispose failed:', err);
+        });
         // Convert remaining live artifacts to `session_end` tombstones so
         // any racing `recall_artifact` resolves to a clear evicted reason
         // rather than a confusing pure miss. The whole runtime is about
