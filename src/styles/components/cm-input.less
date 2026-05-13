@@ -65,6 +65,13 @@
     vertical-align: baseline;
     margin: 0 1px;
     transition: background @duration-fast;
+    // Mobile: defend against ancestor flex/grid contexts (e.g. some
+    // Obsidian mobile styles) trying to stretch the chip to the full
+    // line width, which would also stretch the round delete button.
+    width: max-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
 
     &:hover {
         background: var(--interactive-hover);
@@ -89,21 +96,28 @@
     max-width: 150px;
 }
 
-// Delete button on file ref chip - always visible for mobile UX
+// Delete affordance on file ref chip - always visible for mobile UX.
+// Implemented as <span role="button"> rather than <button> to avoid
+// Obsidian Mobile's global <button> styles (which stretch the round
+// chip into an oval).
 .cm-file-ref__delete {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 0 0 auto;
+    box-sizing: border-box;
     width: 14px;
     height: 14px;
-    padding: 0;
+    min-width: 14px;
+    min-height: 14px;
     margin-left: @spacing-xs;
-    border: none;
     border-radius: 50%;
     background: transparent;
     color: @text-secondary;
     cursor: pointer;
     opacity: 0.5;
+    line-height: 1;
+    user-select: none;
     transition: background @duration-fast, color @duration-fast, opacity @duration-fast;
 
     &:hover {

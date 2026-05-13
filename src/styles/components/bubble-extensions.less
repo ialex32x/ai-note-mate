@@ -323,6 +323,12 @@
     vertical-align: baseline;
     margin: 0 1px;
     transition: background @duration-fast;
+    // Mobile: prevent ancestor flex/grid contexts from stretching the
+    // chip across the full row, which would distort its rounded shape.
+    width: max-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
 
     &:hover {
         background: var(--interactive-hover);

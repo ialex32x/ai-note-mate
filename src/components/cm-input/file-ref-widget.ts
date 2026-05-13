@@ -68,10 +68,16 @@ export class FileRefWidget extends WidgetType {
         // Add name
         container.createEl('span', { cls: 'cm-file-ref__name', text: name });
 
-        // Add delete button
+        // Add delete button.
+        // NOTE: We intentionally use <span role="button"> rather than a real
+        // <button>, because Obsidian Mobile injects aggressive global styles
+        // for <button> (min-width / padding / appearance) that override our
+        // 14x14 sizing and squash the round chip into an oval.
         if (this.onDelete) {
-            const deleteBtn = container.createEl('button', { cls: 'cm-file-ref__delete' });
-            deleteBtn.type = 'button';
+            const deleteBtn = container.createEl('span', {
+                cls: 'cm-file-ref__delete',
+                attr: { role: 'button', 'aria-label': 'Remove', tabindex: '-1' },
+            });
             setIcon(deleteBtn, 'x');
             deleteBtn.addEventListener('click', (e) => {
                 e.preventDefault();
