@@ -98,6 +98,13 @@ export class BubbleRenderer extends Component {
          * ancestors with transform/filter/contain).
          */
         private dropdownHost: HTMLElement = activeDocument.body,
+        /**
+         * Optional callback fired when the user selects "Branch from here"
+         * on a user message bubble. The host (session view) should fork the
+         * current session at this message and drive the usual session-switch
+         * flow. When omitted, the menu item is not shown.
+         */
+        private onBranchFromMessage?: (msg: ChatMessage) => void,
     ) {
         super();
         this.ctx = {
@@ -379,7 +386,12 @@ export class BubbleRenderer extends Component {
             }
         } else if (msg.role === 'user') {
             renderUserContent(this.ctx, contentEl, msg.content);
-            attachUserBubbleContextMenu(bubble, msg.content);
+            const branchHandler = this.onBranchFromMessage;
+            attachUserBubbleContextMenu(
+                bubble,
+                msg.content,
+                branchHandler ? () => branchHandler(msg) : undefined,
+            );
         } else {
             contentEl.setText(msg.content);
         }

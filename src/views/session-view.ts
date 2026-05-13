@@ -492,6 +492,7 @@ export class SessionView extends ItemView {
                 // container so they don't leak onto document.body and are
                 // cleaned up naturally when the view is detached.
                 this.containerEl,
+                (msg) => { void this.handleBranchFromMessage(msg); },
             );
             this.addChild(this.bubbleRenderer);
 
@@ -770,6 +771,57 @@ export class SessionView extends ItemView {
             await this.sessionManager.ensureMessagesLoaded(targetId);
             this.clearViewDOM();
             await this.bindActiveSessionRuntime();
+        } finally {
+            this.isSwitchingSession = false;
+        }
+    }
+
+    /**
+     * Branch the current session from a specific user message: fork into a
+     * new session that contains every message BEFORE the anchor, populate
+     * the input with the anchor's text so the user can edit and resend, and
+     * leave all other session state (token usage, summaries, sub-agent
+     * messages, title) at the defaults of a freshly-created session.
+     *
+     * Busy guard: if a turn is streaming we refuse, because branching while
+     * the assistant is still writing would surface a confusing "new session
+     * but token counter still climbing" state in the UI — the source
+     * session's runtime keeps counting even after we switch away.
+     */
+    private async handleBranchFromMessage(msg: ChatMessage): Promise<void> {
+        if (msg.role !== 'user') return;
+        if (this.isStreaming) {
+            new Notice(t('view.branchWhileStreamingBlocked'));
+            return;
+        }
+        if (!this.guardSwitchSession()) return;
+
+        const sourceId = this.sessionManager.activeSessionId;
+
+        this.isSwitchingSession = true;
+        try {
+            await this.draftController.flush();
+
+            const result = await this.sessionManager.branchSession(sourceId, msg.id);
+            if (!result) return;
+
+            // Mirror the handleSwitchSession flow so the view's runtime, DOM,
+            // and input state are rebuilt exactly as they would be after a
+            // manual session switch.
+            this.detachFromCurrentRuntime();
+            await this.sessionManager.switchTo(result.newSessionId);
+            await this.sessionManager.ensureMessagesLoaded(result.newSessionId);
+            this.clearViewDOM();
+            await this.bindActiveSessionRuntime();
+
+            // Seed the input with the branched message so the user can
+            // refine it before resending. draftController picks this up
+            // through its scheduled save, matching the follow-up flow.
+            this.cmInput.setContent(result.draftInput);
+            this.cmInput.focus();
+            this.draftController?.scheduleSave();
+
+            new Notice(t('view.sessionBranched'));
         } finally {
             this.isSwitchingSession = false;
         }

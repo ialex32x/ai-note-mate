@@ -365,6 +365,72 @@ export class SessionManager {
         return this.summariesCache.get(sessionId) ?? [];
     }
 
+    /**
+     * Branch off a new session from an existing session at a given user-message
+     * anchor. The new session is initialised with the prefix of messages that
+     * appear BEFORE the anchor (so the anchor's user input goes back into the
+     * draft, ready to be edited and resent), and every other piece of session
+     * state — token usage, summaries, sub-agent messages, agent token
+     * breakdown, title, firstUserMessage — starts fresh, exactly as if the
+     * user had created a brand-new session.
+     *
+     * The newly-created session is registered in {@link metadataMap} but is
+     * NOT made the active session here. The caller is expected to drive the
+     * usual switch flow (detach old runtime → `switchTo(newId)` → bind),
+     * which keeps the view layer in charge of UI transitions.
+     *
+     * @returns `{ newSessionId, draftInput }` on success, or `null` when the
+     *          source session is missing or the anchor is not a user message
+     *          inside it.
+     */
+    async branchSession(
+        sourceId: string,
+        anchorMessageId: string,
+    ): Promise<{ newSessionId: string; draftInput: string } | null> {
+        const sourceMeta = this.metadataMap.get(sourceId);
+        if (!sourceMeta) return null;
+
+        // Ensure source messages are available before slicing.
+        await this.loadMessages(sourceId);
+        const sourceMessages = this.messagesCache.get(sourceId) ?? [];
+
+        const anchorIdx = sourceMessages.findIndex(m => m.id === anchorMessageId);
+        if (anchorIdx < 0) return null;
+        const anchor = sourceMessages[anchorIdx]!;
+        if (anchor.role !== 'user') return null;
+
+        // Slice messages BEFORE the anchor; the anchor itself goes to draft.
+        // Shallow-clone each entry and force `streaming: false` so the new
+        // session never shares mutable state with the source.
+        const prefix = sourceMessages.slice(0, anchorIdx).map(m => ({
+            ...m,
+            streaming: false,
+        }));
+
+        // Snapshot active id around createSession() — that helper sets itself
+        // active as a side effect, but branchSession promises only to create
+        // the session, leaving switching to the caller.
+        const prevActive = this._activeSessionId;
+        const newId = this.createSession();
+        this._activeSessionId = prevActive;
+
+        // Seed the new session with the prefix and the draft.
+        const newMeta = this.metadataMap.get(newId);
+        if (newMeta) {
+            newMeta.draftInput = anchor.content;
+            if (prefix.length > 0) {
+                const firstUserMsg = prefix.find(m => m.role === 'user');
+                if (firstUserMsg) {
+                    newMeta.firstUserMessage = firstUserMsg.content.slice(0, 100);
+                }
+            }
+        }
+        this.messagesCache.set(newId, prefix);
+        this.loadedMessages.add(newId);
+
+        return { newSessionId: newId, draftInput: anchor.content };
+    }
+
     /** Switch to a different session by ID. Returns true if successful. */
     async switchTo(targetId: string): Promise<boolean> {
         if (this.metadataMap.has(targetId) && targetId !== this._activeSessionId) {
