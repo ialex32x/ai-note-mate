@@ -210,7 +210,7 @@ export class SessionNavigator {
 
         // Remove from dropdown with animation
         itemEl.addClass('session-dropdown__item--deleting');
-        setTimeout(() => {
+        window.setTimeout(() => {
             itemEl.remove();
             this.updateButtonVisibility();
             // Show empty placeholder if the list became empty

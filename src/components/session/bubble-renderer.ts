@@ -87,7 +87,7 @@ export class BubbleRenderer extends Component {
         /**
          * Mount point for floating UI (e.g. the tool-confirm and voice
          * dropdowns) that must escape its bubble's clipping ancestors. When
-         * omitted, falls back to `document.body` to preserve legacy behavior.
+         * omitted, falls back to `activeDocument.body` to preserve legacy behavior.
          *
          * Hosts should pass the view's container (e.g. `ItemView.containerEl`)
          * so floating elements are scoped to the view and get cleaned up
@@ -97,7 +97,7 @@ export class BubbleRenderer extends Component {
          * on `position: fixed` (whose containing block can be hijacked by
          * ancestors with transform/filter/contain).
          */
-        private dropdownHost: HTMLElement = document.body,
+        private dropdownHost: HTMLElement = activeDocument.body,
     ) {
         super();
         this.ctx = {

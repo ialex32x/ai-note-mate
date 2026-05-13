@@ -378,7 +378,7 @@ class NewFolderPromptModal extends Modal {
         });
 
         // Auto-focus input
-        setTimeout(() => this.input.focus(), 50);
+        window.setTimeout(() => this.input.focus(), 50);
     }
 
     onClose() {

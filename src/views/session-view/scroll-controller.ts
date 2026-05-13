@@ -67,7 +67,7 @@ export class ScrollController {
                 this.userScrolledUp = true;
             } else if (deltaY < -10) {
                 // Finger moved down — check if they reached the bottom
-                requestAnimationFrame(() => {
+                window.requestAnimationFrame(() => {
                     if (this.isNearBottom()) {
                         this.userScrolledUp = false;
                     }
@@ -191,7 +191,7 @@ export class ScrollController {
         } else if (e.deltaY > 0) {
             // User scrolled down — if they reached the bottom,
             // resume auto-scrolling.
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 if (this.isNearBottom()) {
                     this.userScrolledUp = false;
                 }

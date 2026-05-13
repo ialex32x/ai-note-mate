@@ -103,7 +103,7 @@ async function onCopy(copyBtn: HTMLButtonElement, content: string): Promise<void
     const ok = await copyToClipboard(content, { showNotice: false });
     if (!ok) return;
     setIcon(copyBtn, 'check');
-    setTimeout(() => {
+    window.setTimeout(() => {
         setIcon(copyBtn, 'copy');
     }, 1500);
 }

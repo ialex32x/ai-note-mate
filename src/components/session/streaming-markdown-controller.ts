@@ -33,8 +33,8 @@ export class StreamingMarkdownController {
     /** Timestamp (ms) when the last render completed. */
     private lastRenderTime = 0;
 
-    /** ID of the pending setTimeout, or null if none. */
-    private pendingTimer: ReturnType<typeof setTimeout> | null = null;
+    /** ID of the pending window.setTimeout, or null if none. */
+    private pendingTimer: number | null = null;
 
     /** True while a MarkdownRenderer.render() call is in-flight. */
     private isRendering = false;
@@ -145,7 +145,7 @@ export class StreamingMarkdownController {
             void this.doRender();
         } else {
             // Schedule a delayed render for the remaining interval
-            this.pendingTimer = setTimeout(() => {
+            this.pendingTimer = window.setTimeout(() => {
                 this.pendingTimer = null;
                 if (!this.disposed) {
                     void this.doRender();
@@ -217,7 +217,7 @@ export class StreamingMarkdownController {
 
     private clearPendingTimer(): void {
         if (this.pendingTimer !== null) {
-            clearTimeout(this.pendingTimer);
+            window.clearTimeout(this.pendingTimer);
             this.pendingTimer = null;
         }
     }

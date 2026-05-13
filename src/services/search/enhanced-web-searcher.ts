@@ -44,7 +44,7 @@ export class EnhancedWebSearcher {
         const results: SearchResult[] = [];
         try {
             const headers = this._getHeaders();
-            await withAbort(signal, () => new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000)));
+            await withAbort(signal, () => new Promise(resolve => window.setTimeout(resolve, 500 + Math.random() * 1000)));
 
             const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${limit}`;
             const resp = await withAbort(signal, () => requestUrl({ url: searchUrl, method: 'GET', headers }));
@@ -78,7 +78,7 @@ export class EnhancedWebSearcher {
         const results: SearchResult[] = [];
         try {
             const headers = this._getHeaders();
-            await withAbort(signal, () => new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000)));
+            await withAbort(signal, () => new Promise(resolve => window.setTimeout(resolve, 500 + Math.random() * 1000)));
 
             const searchUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${limit}`;
             const resp = await withAbort(signal, () => requestUrl({ url: searchUrl, method: 'GET', headers }));
@@ -112,7 +112,7 @@ export class EnhancedWebSearcher {
         const results: SearchResult[] = [];
         try {
             const headers = this._getHeaders();
-            await withAbort(signal, () => new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 1000)));
+            await withAbort(signal, () => new Promise(resolve => window.setTimeout(resolve, 1000 + Math.random() * 1000)));
 
             const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
             const resp = await withAbort(signal, () => requestUrl({ url: searchUrl, method: 'GET', headers }));

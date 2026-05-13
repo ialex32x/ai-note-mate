@@ -976,7 +976,7 @@ export class SessionView extends ItemView {
             await this.bindActiveSessionRuntime();
 
             // Scroll to the specific message
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 this.scrollToMessage(result.messageId);
             });
         } finally {
@@ -992,7 +992,7 @@ export class SessionView extends ItemView {
 
             // Add a brief highlight effect
             bubble.addClass('session-bubble--highlight');
-            setTimeout(() => {
+            window.setTimeout(() => {
                 bubble.removeClass('session-bubble--highlight');
             }, 2000);
         }

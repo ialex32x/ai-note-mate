@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import { getLanguage, setIcon } from 'obsidian';
 import { t } from '../../i18n';
 import type { BubbleContext } from './bubble-context';
 
@@ -80,6 +80,7 @@ export class SpeechController {
         // re-renders.
         let voiceDropdown: HTMLElement | null = null;
         let outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
+        let outsideClickDoc: Document | null = null;
         let voicesChangedHandler: (() => void) | null = null;
 
         // Walk up to the enclosing bubble so we can pin the action bar
@@ -127,8 +128,9 @@ export class SpeechController {
                 voicesChangedHandler = null;
             }
             if (outsideClickHandler) {
-                document.removeEventListener('click', outsideClickHandler);
+                (outsideClickDoc ?? activeDocument).removeEventListener('click', outsideClickHandler);
                 outsideClickHandler = null;
+                outsideClickDoc = null;
             }
             if (voiceDropdown) {
                 voiceDropdown.remove();
@@ -175,7 +177,7 @@ export class SpeechController {
             voiceDropdown.addClass('session-dropdown-menu--open');
             findBubble()?.addClass('session-bubble--actions-pinned');
 
-            requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
                 if (!voiceDropdown) return;
                 // Edge-clamp using viewport coords (the user-visible
                 // window), then translate the corrected x back into
@@ -193,7 +195,8 @@ export class SpeechController {
                     closeVoiceDropdown();
                 }
             };
-            document.addEventListener('click', outsideClickHandler);
+            outsideClickDoc = activeDocument;
+            outsideClickDoc.addEventListener('click', outsideClickHandler);
         };
 
         voicePickerBtn.addEventListener('click', (e) => {
@@ -362,7 +365,7 @@ export class SpeechController {
         if (cjkCount > 0) return 'zh-CN';
 
         // Default: use the Obsidian locale if available, otherwise 'en'
-        const locale = window.localStorage.getItem('language') || 'en';
+        const locale = getLanguage() || 'en';
         return locale;
     }
 }

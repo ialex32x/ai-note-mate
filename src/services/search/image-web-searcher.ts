@@ -54,7 +54,7 @@ export class ImageWebSearcher {
                 "Cache-Control": "max-age=0"
             };
 
-            await withAbort(signal, () => new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000)));
+            await withAbort(signal, () => new Promise(resolve => window.setTimeout(resolve, 1000 + Math.random() * 2000)));
 
             const resp = await withAbort(signal, () => requestUrl({
                 url: `https://duckduckgo.com/?q=${encodeURIComponent(query)}`,
@@ -95,7 +95,7 @@ export class ImageWebSearcher {
             "p": "1",
         });
 
-        await withAbort(signal, () => new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000)));
+        await withAbort(signal, () => new Promise(resolve => window.setTimeout(resolve, 500 + Math.random() * 1000)));
 
         const resp = await withAbort(signal, () => requestUrl({
             url: `https://duckduckgo.com/i.js?${params.toString()}`,

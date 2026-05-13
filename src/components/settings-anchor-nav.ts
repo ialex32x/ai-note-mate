@@ -24,7 +24,7 @@ const NAV_SECTION_GAP = 24;
  */
 function findScrollContainer(start: HTMLElement): HTMLElement {
 	let current: HTMLElement | null = start;
-	while (current && current !== document.documentElement) {
+	while (current && current !== activeDocument.documentElement) {
 		const style = window.getComputedStyle(current);
 		const overflowY = style.overflowY;
 		if (overflowY === "auto" || overflowY === "scroll") {

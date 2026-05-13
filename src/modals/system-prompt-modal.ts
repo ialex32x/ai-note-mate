@@ -77,7 +77,7 @@ export class SystemPromptModal extends Modal {
 		});
 
 		// Auto-focus textarea
-		setTimeout(() => this.textarea.focus(), 50);
+		window.setTimeout(() => this.textarea.focus(), 50);
 	}
 
 	onClose() {

@@ -36,7 +36,7 @@ export function showInitializationError(
             const ok = await copyToClipboard(errorText, { showNotice: false });
             if (!ok) return;
             copyBtn.setText('Copied!');
-            setTimeout(() => copyBtn.setText('Copy error'), 2000);
+            window.setTimeout(() => copyBtn.setText('Copy error'), 2000);
         })();
     });
 

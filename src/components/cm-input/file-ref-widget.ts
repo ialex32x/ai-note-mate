@@ -43,7 +43,7 @@ export class FileRefWidget extends WidgetType {
     }
 
     toDOM(): HTMLElement {
-        const container = document.createElement('span');
+        const container = activeDocument.createElement('span');
         const exists = this.fileExists();
         const displayPath = this.getDisplayPath();
         container.className = exists ? 'cm-file-ref' : 'cm-file-ref cm-file-ref--missing';

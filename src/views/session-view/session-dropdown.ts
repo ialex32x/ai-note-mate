@@ -107,7 +107,7 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         const textWrapper = item.createEl('span', { cls: 'session-dropdown__item-body' });
         const titleRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-text' });
         const displayTitle = session.title || session.firstUserMessage || t('view.newChat');
-        titleRow.appendChild(document.createTextNode(displayTitle));
+        titleRow.appendChild(activeDocument.createTextNode(displayTitle));
 
         const metaRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-meta' });
         metaRow.createEl('span', { cls: 'session-dropdown__item-time' })

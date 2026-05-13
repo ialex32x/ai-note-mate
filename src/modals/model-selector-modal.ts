@@ -84,7 +84,7 @@ export class ModelSelectorModal extends Modal {
 		});
 
 		// Focus search input
-		requestAnimationFrame(() => searchInput.focus());
+		window.requestAnimationFrame(() => searchInput.focus());
 	}
 
 	onClose() {

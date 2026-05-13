@@ -116,7 +116,7 @@ export class SessionSearchModal extends Modal {
         });
 
         // Auto-focus input
-        setTimeout(() => this.inputEl.focus(), 50);
+        window.setTimeout(() => this.inputEl.focus(), 50);
     }
 
     onClose() {

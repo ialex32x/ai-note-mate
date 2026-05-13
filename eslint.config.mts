@@ -30,17 +30,6 @@ export default tseslint.config(
 		},
 	},
 	...obsidianmd.configs.recommended,
-	{
-		// Node-side build/dev scripts are not part of the plugin bundle and
-		// run under Node, not the browser sandbox. Give them Node globals so
-		// `process`, `__dirname` etc. are recognised.
-		files: ["scripts/**/*.{js,mjs,cjs,ts,mts,cts}"],
-		languageOptions: {
-			globals: {
-				...globals.node,
-			},
-		},
-	},
 	globalIgnores([
 		"node_modules",
 		"dist",
@@ -53,5 +42,9 @@ export default tseslint.config(
 		// fail with "file was not found by the project service".
 		"test",
 		"vitest.config.ts",
+		// JSON files are not source code. The typescript-eslint parser cannot
+		// parse JSON syntax and would produce spurious "Unexpected token :"
+		// parse errors when linting the whole repo (npm run lint = `eslint .`).
+		"**/*.json"
 	]),
 );

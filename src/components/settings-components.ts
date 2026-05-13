@@ -238,7 +238,7 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 	});
 
 	// Initial state – hide both buttons if tabs don't overflow
-	requestAnimationFrame(updateScrollBtns);
+	window.requestAnimationFrame(updateScrollBtns);
 
 	// Add button
 	if (onAdd) {

@@ -96,7 +96,7 @@ export class Embedder {
     /** True when in-memory state has diverged from the on-disk file. */
     private dirty = false;
     /** Pending debounced flush timer. */
-    private flushTimer: ReturnType<typeof setTimeout> | null = null;
+    private flushTimer: number | null = null;
     /** In-flight flush promise, for serializing writes. */
     private flushPromise: Promise<void> | null = null;
 
@@ -246,7 +246,7 @@ export class Embedder {
     /** Persist pending changes to disk immediately. No-op if not dirty. */
     async flush(): Promise<void> {
         if (this.flushTimer) {
-            clearTimeout(this.flushTimer);
+            window.clearTimeout(this.flushTimer);
             this.flushTimer = null;
         }
         if (!this.dirty) {
@@ -347,7 +347,7 @@ export class Embedder {
         this.dirty = true;
         if (this.flushDebounceMs <= 0) return;
         if (this.flushTimer) return;
-        this.flushTimer = setTimeout(() => {
+        this.flushTimer = window.setTimeout(() => {
             this.flushTimer = null;
             // Fire-and-forget; errors are logged inside doFlush.
             void this.doFlush();

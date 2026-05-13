@@ -190,7 +190,7 @@ export class CMInput {
                 // Must be placed BEFORE autocompletion for the config to take effect
                 tooltips({
                     position: 'fixed',
-                    parent: document.body,
+                    parent: activeDocument.body,
                 }),
 
                 // Autocompletion for file references
@@ -201,7 +201,7 @@ export class CMInput {
                     addToOptions: [
                         {
                             render: (completion) => {
-                                const el = document.createElement('span');
+                                const el = activeDocument.createElement('span');
                                 el.className = 'cm-completion-icon';
                                 const iconName = completion.type === 'note' ? 'file-text'
                                     : completion.type === 'folder' ? 'folder'
@@ -296,7 +296,7 @@ export class CMInput {
                         if (foundTrigger) {
                             // Use requestAnimationFrame to ensure the state is fully updated
                             // before triggering completion
-                            requestAnimationFrame(() => {
+                            window.requestAnimationFrame(() => {
                                 startCompletion(update.view);
                             });
                         }
@@ -328,7 +328,7 @@ export class CMInput {
 
         if (!hasContent && placeholder && !this.placeholderEl) {
             // Add placeholder
-            this.placeholderEl = document.createElement('div');
+            this.placeholderEl = activeDocument.createElement('div');
             this.placeholderEl.className = 'cm-placeholder';
             this.placeholderEl.textContent = placeholder;
             this.placeholderEl.style.cssText = `
@@ -400,7 +400,7 @@ export class CMInput {
 
         // Trigger completion popup on next frame, after the state update
         // is fully committed (mirrors the existing [[ auto-trigger path).
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
             startCompletion(this.view);
         });
     }

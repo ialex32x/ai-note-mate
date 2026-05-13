@@ -8,6 +8,7 @@ import type { DropdownItem, DropdownSection } from './types';
 export class DropdownManager {
     private activePopup: { wrapper: HTMLElement; close: () => void } | null = null;
     private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
+    private outsideClickDoc: Document | null = null;
 
     /**
      * Close the currently active popup
@@ -18,8 +19,9 @@ export class DropdownManager {
             this.activePopup = null;
         }
         if (this.outsideClickHandler) {
-            document.removeEventListener('click', this.outsideClickHandler);
+            (this.outsideClickDoc ?? activeDocument).removeEventListener('click', this.outsideClickHandler);
             this.outsideClickHandler = null;
+            this.outsideClickDoc = null;
         }
     }
 
@@ -61,7 +63,8 @@ export class DropdownManager {
                     this.closeActive();
                 }
             };
-            document.addEventListener('click', this.outsideClickHandler);
+            this.outsideClickDoc = activeDocument;
+            this.outsideClickDoc.addEventListener('click', this.outsideClickHandler);
             
             this.activePopup = {
                 wrapper,
@@ -69,8 +72,9 @@ export class DropdownManager {
                     dropdown.removeClass(this.getOpenClass(dropdown));
                     onClose?.();
                     if (this.outsideClickHandler) {
-                        document.removeEventListener('click', this.outsideClickHandler);
+                        (this.outsideClickDoc ?? activeDocument).removeEventListener('click', this.outsideClickHandler);
                         this.outsideClickHandler = null;
+                        this.outsideClickDoc = null;
                     }
                 },
             };

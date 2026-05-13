@@ -239,7 +239,7 @@ function renderToolConfirmPending(
     const finalize = (approved: boolean) => {
         closeDropdown();
         dropdown.remove();
-        document.removeEventListener('click', outsideClickHandler);
+        (outsideClickDoc ?? activeDocument).removeEventListener('click', outsideClickHandler);
         const resolve = pendingConfirmations.get(messageId);
         if (resolve) {
             pendingConfirmations.delete(messageId);
@@ -296,8 +296,10 @@ function renderToolConfirmPending(
             closeDropdown();
         }
     };
-    requestAnimationFrame(() => {
-        document.addEventListener('click', outsideClickHandler);
+    let outsideClickDoc: Document | null = null;
+    window.requestAnimationFrame(() => {
+        outsideClickDoc = activeDocument;
+        outsideClickDoc.addEventListener('click', outsideClickHandler);
     });
 }
 
