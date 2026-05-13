@@ -1,5 +1,5 @@
 import { FOLLOWUP_HEADERS, SINGLE_QUESTION_HINTS } from './triggers';
-import type { ExtractOptions, SuggestedAction } from './types';
+import type { ExtractOptions, SuggestedAction, SuggestedClientAction } from './types';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
 import { truncate } from '../../utils/string-truncate';
 
@@ -61,9 +61,22 @@ function parseStructuredBlock(markdown: string): SuggestedAction[] {
     const body = m[1] ?? '';
     const out: SuggestedAction[] = [];
 
+    // Internal accumulator. We collect raw `action` / `path` strings and
+    // only attempt to construct a `SuggestedClientAction` at flush time,
+    // so that ordering of the lines inside one entry doesn't matter.
+    interface Entry {
+        label?: string;
+        prompt?: string;
+        action?: string;
+        path?: string;
+    }
+
     // Split into entries by lines that start with "- label:".
     const lines = body.split(/\r?\n/);
-    let current: Partial<SuggestedAction> | null = null;
+    let current: Entry | null = null;
+    /** Tracks which field of `current` was last set, so continuation lines
+     * (indented follow-up lines) can be appended to the right field. */
+    let lastField: 'prompt' | 'path' | null = null;
 
     const flush = () => {
         if (current && current.label && current.prompt) {
@@ -78,10 +91,15 @@ function parseStructuredBlock(markdown: string): SuggestedAction[] {
             // the structured path — the heuristic fallback legitimately reuses
             // the same text for label and prompt and must not be affected.
             if (label && prompt && !equalsIgnoreCaseAndSpace(label, prompt)) {
-                out.push({ label, prompt });
+                const clientAction = buildClientAction(current.action, current.path);
+                const entry: SuggestedAction = clientAction
+                    ? { label, prompt, action: clientAction }
+                    : { label, prompt };
+                out.push(entry);
             }
         }
         current = null;
+        lastField = null;
     };
 
     for (const raw of lines) {
@@ -90,20 +108,82 @@ function parseStructuredBlock(markdown: string): SuggestedAction[] {
         if (labelM) {
             flush();
             current = { label: (labelM[1] ?? '').trim() };
+            lastField = null;
             continue;
         }
         const promptM = /^\s*prompt\s*:\s*(.+)$/i.exec(line);
         if (promptM && current) {
             current.prompt = (promptM[1] ?? '').trim();
+            lastField = 'prompt';
             continue;
         }
-        // Allow continuation for prompt over multiple indented lines.
-        if (current && current.prompt !== undefined && /^\s{2,}\S/.test(line)) {
-            current.prompt = `${current.prompt} ${line.trim()}`;
+        const actionM = /^\s*action\s*:\s*(.+)$/i.exec(line);
+        if (actionM && current) {
+            current.action = (actionM[1] ?? '').trim();
+            // `action` is a single token (e.g. "open-note") — never spans
+            // multiple lines, so we don't track it for continuation.
+            lastField = null;
+            continue;
+        }
+        const pathM = /^\s*path\s*:\s*(.+)$/i.exec(line);
+        if (pathM && current) {
+            current.path = (pathM[1] ?? '').trim();
+            lastField = 'path';
+            continue;
+        }
+        // Allow continuation for prompt / path over multiple indented lines.
+        if (current && lastField && /^\s{2,}\S/.test(line)) {
+            const cont = line.trim();
+            if (lastField === 'prompt' && current.prompt !== undefined) {
+                current.prompt = `${current.prompt} ${cont}`;
+            } else if (lastField === 'path' && current.path !== undefined) {
+                // Paths shouldn't normally span multiple lines, but if the
+                // model wraps a long subfolder path we concatenate without
+                // inserting a space.
+                current.path = `${current.path}${cont}`;
+            }
         }
     }
     flush();
     return out;
+}
+
+/**
+ * Translate the raw `action` / `path` strings parsed from the structured
+ * block into a typed `SuggestedClientAction`. Unknown action kinds, or
+ * entries missing the data the kind requires, return `undefined` — the
+ * caller then falls back to a plain prompt-only suggestion.
+ */
+function buildClientAction(
+    action: string | undefined,
+    path: string | undefined,
+): SuggestedClientAction | undefined {
+    if (!action) return undefined;
+    const kind = action.toLowerCase();
+    if (kind === 'open-note' || kind === 'open_note' || kind === 'opennote') {
+        const p = (path ?? '').trim();
+        if (!p) return undefined;
+        // Strip wrapping wiki-link / markdown-link decorations the model may
+        // accidentally add: [[Foo]], [[Foo|Bar]], "Foo", 'Foo', `Foo`.
+        const cleaned = stripPathDecorations(p);
+        if (!cleaned) return undefined;
+        return { kind: 'open-note', path: cleaned };
+    }
+    return undefined;
+}
+
+function stripPathDecorations(p: string): string {
+    let s = p.trim();
+    // Wiki-link form: [[Path|Display]] or [[Path]]
+    const wiki = /^\[\[([^\]]+)\]\]$/.exec(s);
+    if (wiki) {
+        const inner = wiki[1] ?? '';
+        // Drop alias after '|'.
+        s = inner.split('|')[0]?.trim() ?? '';
+    }
+    // Strip surrounding quotes / backticks.
+    s = s.replace(/^['"`]+|['"`]+$/g, '').trim();
+    return s;
 }
 
 // ─── Heuristic parsing ─────────────────────────────────────────────────
@@ -266,7 +346,13 @@ function normalize(
         const key = label.toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
-        out.push({ label, prompt });
+        // Preserve the optional client action verbatim — its payload is
+        // structured data (e.g. a path) that must not be touched by the
+        // text-cleanup pipeline above.
+        const entry: SuggestedAction = raw.action
+            ? { label, prompt, action: raw.action }
+            : { label, prompt };
+        out.push(entry);
         if (out.length >= limit) break;
     }
     return out;

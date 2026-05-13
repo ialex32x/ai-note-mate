@@ -25,6 +25,25 @@ Rules:
 - Do NOT also ask a closing meta-question in the visible reply (e.g. "Would you like me to ... or ...?", "需要我帮你...吗？"). The suggestions block replaces such questions; let the buttons speak for themselves.
 - The comment block MUST be the very last thing in your reply.
 
+### Optional client-side actions
+An entry MAY additionally specify a client-side action that is executed directly inside Obsidian when the button is clicked, instead of sending the prompt back to you. Currently supported:
+
+- \`open-note\` — open an existing note in the vault. Requires a \`path\` field with the note's vault path (with or without the ".md" extension; subfolder paths are fine; do NOT wrap the value in \`[[...]]\`).
+
+Format with an action:
+
+<!--suggestions
+- label: Open Project plan
+  prompt: Open the note "Project plan".
+  action: open-note
+  path: Projects/Project plan.md
+-->
+
+Rules for actions:
+- Use \`open-note\` whenever opening a specific note is a natural next step. You do NOT need to verify that the note exists — if it doesn't, Obsidian will follow its usual wiki-link behaviour (by default it creates a new empty note at that path), which is the user's responsibility to configure.
+- The \`prompt\` field is still REQUIRED on every entry (it remains the user-visible intent and is reused if the user later re-runs the suggestion as a plain message).
+- Prefer the exact path the user or a recent tool result referred to. When only a basename is available, that is fine — Obsidian will resolve it the same way it resolves \`[[...]]\` links.
+
 Example (good):
 <!--suggestions
 - label: Delete the orphan attachments

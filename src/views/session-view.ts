@@ -26,8 +26,9 @@ import {
     FollowUpBar,
     InsightCard,
 } from '../components/session';
-import { extractSuggestions } from '../services/suggestions';
+import { extractSuggestions, type SuggestedAction } from '../services/suggestions';
 import { collectVaultTags } from '../services/insights';
+import { openFileInWorkspace } from '../utils/workspace-utils';
 import {
     createProfileSelector, type ProfileSelectorHandle,
     createCapabilitiesSelector, type CapabilitiesSelectorHandle,
@@ -1229,11 +1230,22 @@ export class SessionView extends ItemView {
     /**
      * Handle a click on a follow-up suggestion button.
      *
-     * Default behaviour: prefill the input editor with the full prompt and
-     * focus it, so the user can review/edit before sending. When the
-     * "auto-send on click" option is enabled, the prompt is sent immediately.
+     * Behavior:
+     * - If the suggestion carries a client-side `action` (e.g. `open-note`),
+     *   try to execute it directly. On success we stop there — the action is
+     *   self-explanatory and does not require a chat turn.
+     * - If the client action cannot be carried out (unknown kind, note not
+     *   found in the vault, ...), we transparently fall back to the default
+     *   prompt-based flow so the user still gets a useful response.
+     * - Default flow: prefill the input editor with the full prompt and
+     *   focus it, so the user can review/edit before sending. When the
+     *   "auto-send on click" option is enabled, the prompt is sent
+     *   immediately instead.
      */
-    private handleFollowUpPick(action: { label: string; prompt: string }): void {
+    private handleFollowUpPick(action: SuggestedAction): void {
+        if (action.action && this.tryRunClientAction(action.action)) {
+            return;
+        }
         const autoSend = this.plugin.settings.followUpSuggestionsAutoSend === true;
         if (autoSend) {
             // Replace any in-progress draft with the picked prompt and send.
@@ -1244,6 +1256,46 @@ export class SessionView extends ItemView {
         this.cmInput.setContent(action.prompt);
         this.cmInput.focus();
         this.draftController?.scheduleSave();
+    }
+
+    /**
+     * Attempt to execute a client-side suggestion action. Returns `true` when
+     * the action was carried out (caller should stop), `false` when the
+     * caller should fall back to the prompt-based flow.
+     *
+     * Kept small and synchronous on purpose — each branch is expected to be a
+     * thin wrapper around an Obsidian API call. When more kinds are added,
+     * split this into a dispatcher module under `services/suggestions/`.
+     */
+    private tryRunClientAction(action: NonNullable<SuggestedAction['action']>): boolean {
+        switch (action.kind) {
+            case 'open-note': {
+                // Resolve using the metadata cache so bare basenames, paths
+                // with or without ".md", and subfolder paths all work. The
+                // second arg (source path) is the file *from which* links are
+                // being resolved; an empty string uses the vault root, which
+                // matches the behaviour we want for LLM-provided paths.
+                const dest = this.app.metadataCache.getFirstLinkpathDest(action.path, '');
+                if (dest) {
+                    // Reuse an existing leaf when the note is already open so we
+                    // don't stack duplicate tabs on repeated picks.
+                    openFileInWorkspace(this.app, dest);
+                } else {
+                    // Note doesn't exist — defer to Obsidian's standard
+                    // wiki-link behaviour. With the default "Automatically
+                    // create new linked notes" setting this creates an empty
+                    // note at the requested path; otherwise Obsidian shows
+                    // its usual "unresolved link" handling. Either way the
+                    // outcome matches what users get from clicking [[link]],
+                    // which is exactly the contract documented to the model.
+                    void this.app.workspace.openLinkText(action.path, '', 'tab');
+                }
+                return true;
+            }
+            default:
+                // Exhaustiveness: unknown kinds fall back to prompt flow.
+                return false;
+        }
     }
 
     /**
