@@ -18,6 +18,7 @@ import { renderUserContent } from '../bubble/user-content';
 import {
     attachImageContextMenu,
     attachLinkContextMenu,
+    attachUserBubbleContextMenu,
 } from '../bubble/context-menus';
 import { renderToolCallContent as renderToolCallContentImpl } from '../bubble/tool-call';
 import { SpeechController } from '../bubble/speech-controller';
@@ -378,6 +379,7 @@ export class BubbleRenderer extends Component {
             }
         } else if (msg.role === 'user') {
             renderUserContent(this.ctx, contentEl, msg.content);
+            attachUserBubbleContextMenu(bubble, msg.content);
         } else {
             contentEl.setText(msg.content);
         }

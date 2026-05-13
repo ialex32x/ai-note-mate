@@ -167,19 +167,62 @@ export default class NoteAssistantPlugin extends Plugin {
 			callback: () => { void this.revealEditHistoryView(); },
 		});
 
-		// Register file context menu handler for "Send to AI Session"
+		// Command-palette equivalent of the file-menu "Send to AI Session"
+		// entry. Acts on the currently active file (the menu version receives
+		// its target from the right-click context, which the palette has no
+		// access to). `checkCallback` hides the command when there is no
+		// active file so it doesn't show up as a dead entry.
+		this.addCommand({
+			id: 'send-active-file-to-ai-session',
+			name: t('view.sendToSession'),
+			checkCallback: (checking) => {
+				const file = this.app.workspace.getActiveFile();
+				if (!file) return false;
+				if (!checking) {
+					void this.sendFileToSession(file);
+				}
+				return true;
+			},
+		});
+
+		// Register file context menu handler. Uses a two-level "AI" submenu
+		// (mirroring the editor-menu structure built in registerRewriteSelection)
+		// so file-scoped AI actions stay grouped under one parent entry
+		// instead of cluttering the top level of the file menu.
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (!(file instanceof TAbstractFile)) return;
 
 				menu.addItem((item) => {
 					item
-						.setTitle(t('view.sendToSession'))
-						.setIcon('send')
-						.setSection('action')
-						.onClick(() => {
+						.setTitle(t('editHistory.menu.aiSubmenu'))
+						.setIcon('sparkles')
+						.setSection('action');
+					// `setSubmenu()` is exposed at runtime but missing from
+					// Obsidian's public typings — narrow it locally, the
+					// same pattern is used by registerRewriteSelection.
+					const sub = (item as unknown as { setSubmenu: () => {
+						addItem: (cb: (s: {
+							setTitle: (n: string) => unknown;
+							setIcon: (n: string) => unknown;
+							onClick: (cb: () => void) => unknown;
+						}) => void) => unknown;
+					} }).setSubmenu();
+
+					sub.addItem((s) => {
+						s.setTitle(t('view.sendToSession'));
+						s.setIcon('send');
+						s.onClick(() => {
 							void this.sendFileToSession(file);
 						});
+					});
+					sub.addItem((s) => {
+						s.setTitle(t('view.sendToNewSession'));
+						s.setIcon('message-square-plus');
+						s.onClick(() => {
+							void this.sendFileToNewSession(file);
+						});
+					});
 				});
 			})
 		);
@@ -338,6 +381,28 @@ export default class NoteAssistantPlugin extends Plugin {
 				view.cmInput.focus();
 			}
 		}
+	}
+
+	/**
+	 * Like {@link sendFileToSession}, but starts a brand-new session before
+	 * inserting the file reference. Mirrors {@link sendEditorContextToNewSession}:
+	 * if the active session can't be switched right now (mid-stream or another
+	 * switch in flight) the SessionView surfaces a Notice and we abort without
+	 * touching the existing chat.
+	 */
+	private async sendFileToNewSession(file: TAbstractFile): Promise<void> {
+		await this.createSessionView(true);
+		const view = this.getActiveSessionView();
+		if (!view || !view.cmInput) return;
+
+		// Bail out (the SessionView already showed a Notice) when busy —
+		// silently falling back to the existing session would contradict
+		// the user's "new session" intent.
+		const ok = await view.startNewSession();
+		if (!ok) return;
+
+		view.cmInput.insertFileRef(file);
+		view.cmInput.focus();
 	}
 
 	/**
