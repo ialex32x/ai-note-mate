@@ -1,6 +1,108 @@
 /* ─────────────────────────────────────────────
-   AI vault-mutation checkpoint dropdown (input-row selector)
+   AI vault-mutation checkpoint (top-of-input dock)
    ───────────────────────────────────────────── */
+
+// First row inside `.session-input-container` (SessionView). The
+// checkpoint trigger stretches the full width of the compose card.
+// Stacking context keeps the upward popup above the editor row.
+.session-checkpoint-row {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+// Always size the wrapper; when empty, `.session-checkpoint-selector--empty`
+// still wins with `display: none !important` (higher priority than flex).
+.session-checkpoint-row > .session-checkpoint-selector {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+.session-checkpoint-row > .session-checkpoint-selector:not(.session-checkpoint-selector--empty) {
+    margin-bottom: @spacing-xs;
+}
+
+// Trigger row: left label + list opener, right bulk actions.
+.session-checkpoint-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: @spacing-sm;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+// Opens the checkpoint list (inherits `.session-dropdown-btn` chrome).
+.session-checkpoint-bar__open.session-dropdown-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 32px;
+    box-sizing: border-box;
+    justify-content: flex-start;
+    background: @bg-primary !important;
+    border: 1px solid @bg-modifier-border !important;
+    color: @text-secondary;
+}
+
+// Label row: left-aligned copy inside the list opener.
+.session-checkpoint-bar__open .session-dropdown-btn-text {
+    text-align: left;
+}
+
+.session-checkpoint-bar__bulk {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+}
+
+.session-checkpoint-bar__bulk-btn {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: @radius-sm;
+    cursor: pointer;
+    border: 1px solid @bg-modifier-border !important;
+    background: @bg-primary !important;
+    color: @text-secondary;
+    transition: background @duration-fast, color @duration-fast, border-color @duration-fast;
+
+    svg {
+        .icon-size(14px);
+    }
+
+    &:hover:not(:disabled) {
+        background: @bg-modifier-hover !important;
+        color: @text-primary;
+        border-color: @text-secondary !important;
+    }
+
+    &:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+    }
+
+    &--accept:hover:not(:disabled) {
+        color: @text-success;
+    }
+
+    &--discard:hover:not(:disabled) {
+        color: @text-error;
+    }
+}
 
 // Selector button is hidden entirely when the session has no
 // checkpoints yet — Phase 1 keeps the input row uncluttered until
@@ -9,22 +111,33 @@
     display: none !important;
 }
 
-// Highlight the count when there is at least one pending checkpoint
-// so users notice that decisions are pending.
-.session-checkpoint-selector--has-pending .session-dropdown-btn {
+// Highlight when at least one checkpoint is still pending.
+.session-checkpoint-selector--has-pending .session-checkpoint-bar__open.session-dropdown-btn {
     color: @text-accent;
 }
 
-// Fixed-width dropdown for the checkpoint list. The container
-// width is the hard cap that drives CSS ellipsis on long titles
-// and long file paths — JS no longer truncates either of them, so
-// the visual budget lives here.
-.session-dropdown-menu--checkpoints {
-    width: 320px;
-    max-height: 60vh;
-    overflow-y: auto;
+// Same pattern as `.session-session-selector`: escape the inner
+// `.session-selector { position: relative }` so the popup is
+// positioned against `.session-input-container` (see input-area.less).
+.session-checkpoint-selector.session-selector {
+    position: static;
+}
+
+// Full-width list; opens upward from the top of `.session-input-container`
+// (anchor: bottom edge of panel flush with the card top + small gap).
+.session-dropdown.session-checkpoint-dropdown {
+    top: auto;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    margin-top: 0;
+    margin-bottom: @spacing-xs;
     padding: @spacing-xs 0;
     box-sizing: border-box;
+    border-radius: @radius-lg @radius-lg @radius-sm @radius-sm;
 }
 
 .checkpoint-section {

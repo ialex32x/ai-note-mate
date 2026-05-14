@@ -160,6 +160,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                             start_line: 1,
                             end_line: totalLines,
                             total_lines: totalLines,
+                            mtime: file.stat.mtime,
                         },
                     };
                 }
@@ -181,6 +182,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     content: {
                         path,
                         total_lines: totalLines,
+                        mtime: file.stat.mtime,
                         notice:
                             `This file is large (${totalLines} lines). Showing outline and first ${previewEnd} lines as preview. ` +
                             `Use start_line and end_line to read specific sections.`,
@@ -224,6 +226,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     start_line: startLine,
                     end_line: effectiveEndLine,
                     total_lines: totalLines,
+                    mtime: file.stat.mtime,
                 },
             };
         },
@@ -389,6 +392,7 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                     total_lines: totalLines,
                     include_subsections: includeSubsections,
                     content: sliced,
+                    mtime: file.stat.mtime,
                 },
             };
         },

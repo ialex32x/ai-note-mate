@@ -568,6 +568,14 @@ export class SessionView extends ItemView {
             // ── Input container ───────────────────────────────────────────────────────
             const inputContainer = root.createEl('div', { cls: 'session-input-container' });
 
+            // Checkpoint list control — full-width row docked to the top of the
+            // compose card (dropdown opens as a sheet from the top edge).
+            const checkpointRow = inputContainer.createEl('div', { cls: 'session-checkpoint-row' });
+            this.checkpointSelector = createCheckpointSelector(checkpointRow, this.dropdownManager, {
+                app: this.app,
+                onGotoMessage: (messageId) => { this.scrollToMessage(messageId); },
+            });
+
             // Input area with CodeMirror 6 editor
             const inputRow = inputContainer.createEl('div', { cls: 'session-input-row' });
             const cmContainer = inputRow.createEl('div', { cls: 'session-cm-input' });
@@ -650,17 +658,6 @@ export class SessionView extends ItemView {
                 this.capabilitiesSelector.setAllowed(this.plugin.settings.allowedCapabilities);
             };
             this.plugin.onSettingsChange(this.onSettingsChangedForCapabilities);
-
-            // ── Checkpoint selector (vault mutation rollback control) ─────────
-            // Empty (no checkpoints) is the default state — the button stays
-            // hidden via CSS until the active runtime produces its first
-            // round of vault mutations. setRuntime() is called from
-            // bindActiveSessionRuntime/detachFromCurrentRuntime to track
-            // the currently-bound runtime's checkpoint store.
-            this.checkpointSelector = createCheckpointSelector(thinkingRow, this.dropdownManager, {
-                app: this.app,
-                onGotoMessage: (messageId) => { this.scrollToMessage(messageId); },
-            });
 
             // Reflect live MCP connection state in the session-status panel
             // while it is open. The panel is also refreshed on demand from

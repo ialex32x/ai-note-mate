@@ -93,7 +93,7 @@ describe("countLines", () => {
 // write path adds three decisions on top:
 //
 //  1. File not found → suggest `create_file`.
-//  2. `expected_pre_edit_size` mismatch → refuse with actual vs expected.
+//  2. `expected_pre_edit_mtime` mismatch → refuse with actual vs expected.
 //  3. `dry_run: true` → don't call `vault.modify`, still return envelope.
 //
 // (1) and (2) are pure-string checks that would require setting up an

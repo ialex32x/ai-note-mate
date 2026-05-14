@@ -403,6 +403,11 @@ export const en: Record<string, string> = {
 	'view.checkpointAcceptConfirmMessage': 'Accepting will also accept every earlier pending checkpoint in this session, release their locks, and remove their snapshots.',
 	'view.checkpointDiscardConfirmTitle': 'Discard this checkpoint?',
 	'view.checkpointDiscardConfirmMessage': 'Discarding will also discard every later pending checkpoint and restore vault files from stored snapshots (from newest to oldest).',
+	'view.checkpointBarLabel': 'Checkpoints: {count} pending.',
+	'view.checkpointAcceptAll': 'Accept all',
+	'view.checkpointDiscardAll': 'Discard all',
+	'view.checkpointAcceptAllHint': 'Accepts the newest pending checkpoint, which accepts every earlier pending checkpoint too.',
+	'view.checkpointDiscardAllHint': 'Discards the oldest pending checkpoint, which discards every later pending checkpoint and restores from snapshots.',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': 'Rewrites',

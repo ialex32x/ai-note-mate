@@ -402,6 +402,11 @@ export const zhCN: Record<string, string> = {
 	'view.checkpointAcceptConfirmMessage': '接受后,将自动接受此检查点之前所有仍处于待处理状态的检查点,并释放对应的文件锁与快照。',
 	'view.checkpointDiscardConfirmTitle': '确认丢弃此检查点？',
 	'view.checkpointDiscardConfirmMessage': '丢弃后,将自动撤销此检查点之后所有仍处于待处理状态的检查点,并按从新到旧的顺序用快照还原库内文件。',
+	'view.checkpointBarLabel': '检查点：{count} 个待处理。',
+	'view.checkpointAcceptAll': '全部接受',
+	'view.checkpointDiscardAll': '全部丢弃',
+	'view.checkpointAcceptAllHint': '接受最新的待处理检查点，同时接受其之前的所有待处理检查点。',
+	'view.checkpointDiscardAllHint': '丢弃最早的待处理检查点，同时丢弃其之后的所有待处理检查点，并从快照还原文件。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '重写历史',

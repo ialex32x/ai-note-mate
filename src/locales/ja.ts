@@ -403,6 +403,11 @@ export const ja: Record<string, string> = {
 	'view.checkpointAcceptConfirmMessage': '承認すると、このチェックポイントより前の保留中チェックポイントもすべて承認され、ロックが解除されスナップショットが削除されます。',
 	'view.checkpointDiscardConfirmTitle': 'このチェックポイントを破棄しますか？',
 	'view.checkpointDiscardConfirmMessage': '破棄すると、このチェックポイントより後の保留中チェックポイントもすべて破棄され、保存済みスナップショットに基づきボールト内ファイルが復元されます（新しい順に処理）。',
+	'view.checkpointBarLabel': 'チェックポイント: {count} 件が保留中。',
+	'view.checkpointAcceptAll': 'すべて承認',
+	'view.checkpointDiscardAll': 'すべて破棄',
+	'view.checkpointAcceptAllHint': '最新の保留中チェックポイントを承認します。それより前の保留中もまとめて承認されます。',
+	'view.checkpointDiscardAllHint': '最も古い保留中チェックポイントを破棄します。それより後の保留中もまとめて破棄され、スナップショットから復元されます。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '書き直し履歴',

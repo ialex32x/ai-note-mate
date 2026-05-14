@@ -11,7 +11,7 @@ import { RESULT_VALIDATORS } from '../src/services/result-validators';
 // Static surface checks for the `vault_editor` sub-agent.
 //
 // The editor's BEHAVIOUR (does it actually refuse multi-file tasks?
-// does it really call write_file with expected_pre_edit_size?) can only
+// does it really call write_file with expected_pre_edit_mtime?) can only
 // be exercised against a real LLM, and that's covered by the manual
 // smoke steps in docs/vault-editor-subagent-plan.md §10. What CAN drift
 // silently without a test is the static surface — which tools the
@@ -93,7 +93,7 @@ describe('VAULT_EDITOR_PROMPT — key anchors', () => {
         { pattern: 'noop', why: 'ensures no-op path is covered' },
         { pattern: 'write_file', why: 'surfaces the wholesale-rewrite tool choice' },
         { pattern: 'replace_text', why: 'surfaces the surgical tool choice' },
-        { pattern: 'expected_pre_edit_size', why: 'race guard is mentioned' },
+        { pattern: 'expected_pre_edit_mtime', why: 'race guard is mentioned' },
         { pattern: 'do NOT', why: 'retain the refusal-style anti-patterns section' },
     ];
 

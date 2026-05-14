@@ -106,11 +106,15 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "\n\n" +
                     "The file MUST exist; this tool refuses to create new files. Use `create_file` for that. " +
                     "\n\n" +
-                    "OPTIONAL SAFETY CHECK: pass `expected_pre_edit_size` with the byte length the caller " +
-                    "believes the file currently has (obtained from `get_file_state` or a prior `read_file`). " +
-                    "If provided and it doesn't match the actual on-disk size, the call fails — this catches " +
-                    "the case where the file was modified between the caller's read and this write. " +
-                    "Recommended whenever you have the info.",
+                    "OPTIONAL SAFETY CHECK: pass `expected_pre_edit_mtime` with the file's `mtime` " +
+                    "(Unix ms timestamp) as observed by the caller — `read_file`, `read_section`, " +
+                    "and `get_file_state` all return `mtime` in their envelopes, and prior write " +
+                    "tools return `new_mtime` you can chain. If provided and the actual on-disk " +
+                    "`mtime` differs, the call fails — this catches the case where the file was " +
+                    "modified between the caller's read and this write. Use the file's `mtime` " +
+                    "rather than its size: character count and on-disk byte count can legitimately " +
+                    "differ (CRLF normalization, multi-byte UTF-8, BOM stripping) and would yield " +
+                    "false-positive race errors. Recommended whenever you have the info.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -124,13 +128,15 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "The FULL new content of the file. This replaces the existing content " +
                                 "verbatim (no implicit newline added / stripped).",
                         },
-                        expected_pre_edit_size: {
+                        expected_pre_edit_mtime: {
                             type: "integer",
                             minimum: 0,
                             description:
-                                "Optional byte length the caller believes the file currently has. If provided, " +
-                                "the call fails with a clear diagnostic when the actual size differs. " +
-                                "Use this to guard against concurrent modifications.",
+                                "Optional Unix timestamp in milliseconds that the caller believes is the file's " +
+                                "current `mtime` (obtainable from `read_file` / `read_section` / `get_file_state`, " +
+                                "or chained from a prior write tool's `new_mtime`). If provided and the actual " +
+                                "on-disk `mtime` differs, the call fails — use this to guard against concurrent " +
+                                "external modifications.",
                         },
                         dry_run: {
                             type: "boolean",
@@ -148,7 +154,7 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const path = args["path"] as string;
             const content = args["content"] as string;
             const dryRun = (args["dry_run"] as boolean) ?? false;
-            const expectedPreEditSize = args["expected_pre_edit_size"] as number | undefined;
+            const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
             if (typeof content !== "string") {
                 return {
@@ -181,23 +187,31 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
             }
             const file = fileOrErr;
 
-            const original = await plugin.app.vault.read(file);
-            const previousSize = original.length;
-            const previousLineCount = countLines(original);
+            // mtime is the race-detection signal. Snapshot BEFORE reading
+            // the body so the value we report and compare against is the
+            // pre-mutation one even if Obsidian were to refresh stat in
+            // the middle (it doesn't today, but we don't want this to be
+            // a latent issue if that ever changes).
+            const previousMtime = file.stat.mtime;
 
             if (
-                expectedPreEditSize !== undefined &&
-                expectedPreEditSize !== previousSize
+                expectedPreEditMtime !== undefined &&
+                expectedPreEditMtime !== previousMtime
             ) {
                 return {
                     success: false,
                     type: "text",
                     content:
-                        `\`expected_pre_edit_size\` mismatch: caller believes file is ${expectedPreEditSize} bytes, ` +
-                        `but actual size is ${previousSize} bytes. This usually means the file was modified ` +
-                        `between your read and this write. Re-read the file and retry with the updated content.`,
+                        `\`expected_pre_edit_mtime\` mismatch: caller believes file mtime is ${expectedPreEditMtime}, ` +
+                        `but actual mtime is ${previousMtime}. This usually means the file was modified ` +
+                        `between your read and this write. Re-read the file (its envelope reports the new mtime) ` +
+                        `and retry with the updated content.`,
                 };
             }
+
+            const original = await plugin.app.vault.read(file);
+            const previousSize = original.length;
+            const previousLineCount = countLines(original);
 
             const newSize = content.length;
             const newLineCount = countLines(content);
@@ -215,6 +229,12 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 if (lockErr) return lockErr;
             }
 
+            // After modify(), Obsidian updates `file.stat` in place. For
+            // dry_run we keep the same value as `previous_mtime` so the
+            // chained value the caller may pass into a follow-up call is
+            // still accurate.
+            const newMtime = dryRun ? previousMtime : file.stat.mtime;
+
             return {
                 success: true,
                 type: "object",
@@ -225,6 +245,8 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     new_size: newSize,
                     previous_line_count: previousLineCount,
                     new_line_count: newLineCount,
+                    previous_mtime: previousMtime,
+                    new_mtime: newMtime,
                     dry_run: dryRun,
                     before_excerpt_head: beforeExcerpts.head,
                     before_excerpt_tail: beforeExcerpts.tail,

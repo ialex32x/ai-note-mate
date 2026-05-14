@@ -9,11 +9,17 @@ export class DropdownManager {
     private activePopup: { wrapper: HTMLElement; close: () => void } | null = null;
     private outsideClickHandler: ((e: MouseEvent) => void) | null = null;
     private outsideClickDoc: Document | null = null;
+    /** Defers outside-click so the opening interaction cannot close the menu. */
+    private outsideClickAttachTimer: number | null = null;
 
     /**
      * Close the currently active popup
      */
     closeActive(): void {
+        if (this.outsideClickAttachTimer !== null) {
+            window.clearTimeout(this.outsideClickAttachTimer);
+            this.outsideClickAttachTimer = null;
+        }
         if (this.activePopup) {
             this.activePopup.close();
             this.activePopup = null;
@@ -40,9 +46,18 @@ export class DropdownManager {
         button: HTMLElement;
         dropdown: HTMLElement;
         onOpen?: () => void;
+        /**
+         * Runs after the dropdown's `--open` class is applied and this
+         * toggle is registered as the active popup, so code that checks
+         * {@link DropdownManager.isActive} or measures visible layout
+         * (e.g. checkpoint fixed positioning) runs in a consistent state.
+         * Outside-click handling is attached on the next macrotask so the
+         * opening pointer/click cannot immediately close the menu.
+         */
+        onAfterOpen?: () => void;
         onClose?: () => void;
     }): void {
-        const { wrapper, button, dropdown, onOpen, onClose } = config;
+        const { wrapper, button, dropdown, onOpen, onAfterOpen, onClose } = config;
 
         const handleToggle = (e: Event) => {
             e.stopPropagation();
@@ -56,28 +71,39 @@ export class DropdownManager {
             onOpen?.();
             
             dropdown.addClass(this.getOpenClass(dropdown));
-            
-            // Setup outside click handler
-            this.outsideClickHandler = (ev: MouseEvent) => {
+
+            const close = () => {
+                dropdown.removeClass(this.getOpenClass(dropdown));
+                onClose?.();
+                if (this.outsideClickHandler) {
+                    (this.outsideClickDoc ?? activeDocument).removeEventListener('click', this.outsideClickHandler);
+                    this.outsideClickHandler = null;
+                    this.outsideClickDoc = null;
+                }
+            };
+            this.activePopup = { wrapper, close };
+
+            onAfterOpen?.();
+
+            const doc = activeDocument;
+            const handler = (ev: MouseEvent) => {
                 if (!wrapper.contains(ev.target as Node)) {
                     this.closeActive();
                 }
             };
-            this.outsideClickDoc = activeDocument;
-            this.outsideClickDoc.addEventListener('click', this.outsideClickHandler);
-            
-            this.activePopup = {
-                wrapper,
-                close: () => {
-                    dropdown.removeClass(this.getOpenClass(dropdown));
-                    onClose?.();
-                    if (this.outsideClickHandler) {
-                        (this.outsideClickDoc ?? activeDocument).removeEventListener('click', this.outsideClickHandler);
-                        this.outsideClickHandler = null;
-                        this.outsideClickDoc = null;
-                    }
-                },
-            };
+            if (this.outsideClickAttachTimer !== null) {
+                window.clearTimeout(this.outsideClickAttachTimer);
+                this.outsideClickAttachTimer = null;
+            }
+            this.outsideClickAttachTimer = window.setTimeout(() => {
+                this.outsideClickAttachTimer = null;
+                if (!this.activePopup || this.activePopup.wrapper !== wrapper) {
+                    return;
+                }
+                this.outsideClickHandler = handler;
+                this.outsideClickDoc = doc;
+                doc.addEventListener('click', handler);
+            }, 0);
         };
 
         button.addEventListener('click', handleToggle);

@@ -21,6 +21,11 @@ import type { Checkpoint, CheckpointFileEntry } from '../../../services/vault';
  * {@link CheckpointSelectorHandle.setRuntime} on every bind /
  * detach so the button count and dropdown contents stay in sync
  * across session switches.
+ *
+ * Popup shell uses {@link DropdownManager} + `.session-dropdown`; the
+ * trigger is mounted in `.session-checkpoint-row` at the top of the
+ * compose card; the open panel is full width and opens **upward** from
+ * that row (see checkpoint.less).
  */
 export interface CheckpointSelectorOptions {
     app: App;
@@ -72,6 +77,23 @@ function discardAffectsLaterPending(checkpoints: readonly Checkpoint[], id: stri
     return false;
 }
 
+/** Oldest pending checkpoint in session order (array index ascending). */
+function firstPendingCheckpoint(checkpoints: readonly Checkpoint[]): Checkpoint | undefined {
+    for (const c of checkpoints) {
+        if (c.status === 'pending') return c;
+    }
+    return undefined;
+}
+
+/** Newest pending checkpoint in session order (array index descending). */
+function lastPendingCheckpoint(checkpoints: readonly Checkpoint[]): Checkpoint | undefined {
+    for (let i = checkpoints.length - 1; i >= 0; i--) {
+        const c = checkpoints[i];
+        if (c?.status === 'pending') return c;
+    }
+    return undefined;
+}
+
 export function createCheckpointSelector(
     parent: HTMLElement,
     dropdownManager: DropdownManager,
@@ -80,16 +102,42 @@ export function createCheckpointSelector(
     const wrapper = parent.createEl('span', {
         cls: 'session-selector session-checkpoint-selector session-checkpoint-selector--empty',
     });
-    const { button, textEl } = DropdownManager.createButton({
-        parent: wrapper,
-        cls: 'session-dropdown-btn',
-        ariaLabel: t('view.checkpointsAriaLabel'),
-        icon: 'list-checks',
-    });
-    setTooltip(button, t('view.checkpointsAriaLabel'));
 
+    const bar = wrapper.createEl('div', { cls: 'session-checkpoint-bar' });
+    const openBtn = bar.createEl('button', {
+        type: 'button',
+        cls: 'session-dropdown-btn session-checkpoint-bar__open',
+        attr: { 'aria-label': t('view.checkpointsAriaLabel') },
+    });
+    const openIcon = openBtn.createEl('span', { cls: 'session-dropdown-btn-icon' });
+    setIcon(openIcon, 'list-checks');
+    const labelEl = openBtn.createEl('span', {
+        cls: 'session-dropdown-btn-text',
+    });
+    const openArrow = openBtn.createEl('span', { cls: 'session-dropdown-btn-arrow' });
+    setIcon(openArrow, 'chevron-up');
+    setTooltip(openBtn, t('view.checkpointsAriaLabel'));
+
+    const bulk = bar.createEl('div', { cls: 'session-checkpoint-bar__bulk' });
+    const acceptAllBtn = bulk.createEl('button', {
+        type: 'button',
+        cls: 'session-checkpoint-bar__bulk-btn session-checkpoint-bar__bulk-btn--accept',
+        attr: { 'aria-label': t('view.checkpointAcceptAll') },
+    });
+    setIcon(acceptAllBtn, 'check-check');
+    const discardAllBtn = bulk.createEl('button', {
+        type: 'button',
+        cls: 'session-checkpoint-bar__bulk-btn session-checkpoint-bar__bulk-btn--discard',
+        attr: { 'aria-label': t('view.checkpointDiscardAll') },
+    });
+    setIcon(discardAllBtn, 'trash-2');
+    setTooltip(acceptAllBtn, t('view.checkpointAcceptAllHint'));
+    setTooltip(discardAllBtn, t('view.checkpointDiscardAllHint'));
+
+    // First token must be `session-dropdown` so DropdownManager's
+    // `--open` class matches `.session-dropdown--open` (same as session list).
     const dropdownEl = wrapper.createEl('div', {
-        cls: 'session-dropdown-menu session-dropdown-menu--checkpoints',
+        cls: 'session-dropdown session-checkpoint-dropdown',
     });
 
     let runtime: SessionRuntime | undefined;
@@ -101,12 +149,17 @@ export function createCheckpointSelector(
         const totalCount = cps.length;
         if (totalCount === 0) {
             wrapper.addClass('session-checkpoint-selector--empty');
-            textEl.setText('');
+            labelEl.setText('');
+            acceptAllBtn.disabled = true;
+            discardAllBtn.disabled = true;
             return;
         }
         wrapper.removeClass('session-checkpoint-selector--empty');
-        textEl.setText(pendingCount > 0 ? String(pendingCount) : String(totalCount));
+        labelEl.setText(t('view.checkpointBarLabel', { count: pendingCount }));
         wrapper.toggleClass('session-checkpoint-selector--has-pending', pendingCount > 0);
+        const bulkDisabled = pendingCount === 0 || !runtime;
+        acceptAllBtn.disabled = bulkDisabled;
+        discardAllBtn.disabled = bulkDisabled;
     };
 
     /**
@@ -288,7 +341,7 @@ export function createCheckpointSelector(
         const cps = runtime?.checkpointStore.checkpoints ?? [];
         if (cps.length === 0) {
             dropdownEl.createEl('div', {
-                cls: 'session-dropdown-empty',
+                cls: 'session-dropdown__empty',
                 text: t('view.checkpointEmpty'),
             });
             return;
@@ -302,9 +355,63 @@ export function createCheckpointSelector(
         }
     };
 
+    acceptAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (acceptAllBtn.disabled || !runtime) return;
+        const store = runtime.checkpointStore;
+        const list = store.checkpoints;
+        const target = lastPendingCheckpoint(list);
+        if (!target) return;
+        dropdownManager.closeActive();
+        void (async () => {
+            const needsConfirm = acceptAffectsEarlierPending(list, target.id);
+            if (needsConfirm) {
+                const confirmed = await new CheckpointActionConfirmModal(
+                    options.app,
+                    t('view.checkpointAcceptConfirmTitle'),
+                    t('view.checkpointAcceptConfirmMessage'),
+                    t('view.checkpointAccept'),
+                    'accept',
+                ).waitForResult();
+                if (!confirmed) return;
+            }
+            void store.accept(target.id).catch((err: unknown) => {
+                console.error('[checkpoint-selector] accept all failed', err);
+                new Notice(t('view.checkpointActionFailed'));
+            });
+        })();
+    });
+
+    discardAllBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (discardAllBtn.disabled || !runtime) return;
+        const store = runtime.checkpointStore;
+        const list = store.checkpoints;
+        const target = firstPendingCheckpoint(list);
+        if (!target) return;
+        dropdownManager.closeActive();
+        void (async () => {
+            const needsConfirm = discardAffectsLaterPending(list, target.id);
+            if (needsConfirm) {
+                const confirmed = await new CheckpointActionConfirmModal(
+                    options.app,
+                    t('view.checkpointDiscardConfirmTitle'),
+                    t('view.checkpointDiscardConfirmMessage'),
+                    t('view.checkpointDiscard'),
+                    'discard',
+                ).waitForResult();
+                if (!confirmed) return;
+            }
+            void store.discard(target.id).catch((err: unknown) => {
+                console.error('[checkpoint-selector] discard all failed', err);
+                new Notice(t('view.checkpointActionFailed'));
+            });
+        })();
+    });
+
     dropdownManager.registerToggle({
         wrapper,
-        button,
+        button: openBtn,
         dropdown: dropdownEl,
         onOpen: rebuildDropdown,
     });

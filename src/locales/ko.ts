@@ -403,6 +403,11 @@ export const ko: Record<string, string> = {
 	'view.checkpointAcceptConfirmMessage': '적용하면 이 체크포인트보다 앞선 대기 중인 체크포인트도 모두 적용되며, 잠금이 해제되고 스냅샷이 삭제됩니다.',
 	'view.checkpointDiscardConfirmTitle': '이 체크포인트를 취소할까요?',
 	'view.checkpointDiscardConfirmMessage': '취소하면 이 체크포인트보다 뒤의 대기 중인 체크포인트도 모두 취소되며, 저장된 스냅샷을 기준으로 볼트 내 파일이 복원됩니다(최신부터 순서대로).',
+	'view.checkpointBarLabel': '체크포인트: {count}개 대기 중.',
+	'view.checkpointAcceptAll': '모두 수락',
+	'view.checkpointDiscardAll': '모두 취소',
+	'view.checkpointAcceptAllHint': '가장 최근의 대기 중 체크포인트를 수락합니다. 그보다 이전의 대기 중 체크포인트도 함께 수락됩니다.',
+	'view.checkpointDiscardAllHint': '가장 오래된 대기 중 체크포인트를 취소합니다. 그보다 이후의 대기 중 체크포인트도 함께 취소되며 스냅샷으로 복원됩니다.',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '재작성 기록',

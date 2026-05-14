@@ -403,6 +403,11 @@ export const zhTW: Record<string, string> = {
 	'view.checkpointAcceptConfirmMessage': '接受後,將自動接受此檢查點之前所有仍為待處理的檢查點,並釋放對應的檔案鎖與快照。',
 	'view.checkpointDiscardConfirmTitle': '確認捨棄此檢查點？',
 	'view.checkpointDiscardConfirmMessage': '捨棄後,將自動撤銷此檢查點之後所有仍為待處理的檢查點,並依由新到舊的順序以快照還原儲存庫內檔案。',
+	'view.checkpointBarLabel': '檢查點：{count} 個待處理。',
+	'view.checkpointAcceptAll': '全部接受',
+	'view.checkpointDiscardAll': '全部捨棄',
+	'view.checkpointAcceptAllHint': '接受最新的待處理檢查點，同時接受其之前的所有待處理檢查點。',
+	'view.checkpointDiscardAllHint': '捨棄最早的待處理檢查點，同時捨棄其之後的所有待處理檢查點，並從快照還原檔案。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '重寫歷史',
