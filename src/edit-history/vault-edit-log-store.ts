@@ -129,15 +129,6 @@ export class VaultEditLogStore {
         this.schedulePersist();
     }
 
-    /** Remove a single entry by id. */
-    remove(id: string): void {
-        const idx = this._entries.findIndex(e => e.id === id);
-        if (idx < 0) return;
-        this._entries.splice(idx, 1);
-        this.emit();
-        this.schedulePersist();
-    }
-
     // ── Events ───────────────────────────────────────────────────────────
 
     on(event: "change", cb: ChangeListener): () => void {

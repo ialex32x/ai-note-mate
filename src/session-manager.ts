@@ -150,6 +150,23 @@ export class SessionManager {
         return this.metadataToSnapshot(meta);
     }
 
+    /**
+     * One-line display label from in-memory metadata only (no messages file read).
+     * Same rule as the session toolbar: non-empty `title`, else non-empty `firstUserMessage`,
+     * else `""` when the session exists but has no label yet.
+     *
+     * @returns `undefined` if `sessionId` is not in the registry (e.g. session removed).
+     */
+    getSessionMetadataDisplayLine(sessionId: string): string | undefined {
+        const meta = this.metadataMap.get(sessionId);
+        if (!meta) return undefined;
+        const title = meta.title.trim();
+        if (title.length > 0) return title;
+        const first = meta.firstUserMessage.trim();
+        if (first.length > 0) return first;
+        return "";
+    }
+
     /** Get the active session snapshot (loads messages if not cached) */
     async getActiveSession(): Promise<SessionSnapshot | undefined> {
         return this.getSession(this._activeSessionId);

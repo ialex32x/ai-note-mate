@@ -1,6 +1,7 @@
-import { setIcon, setTooltip, Notice } from 'obsidian';
+import { App, setIcon, setTooltip, Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
+import { CheckpointActionConfirmModal } from '../../../modals/checkpoint-action-confirm-modal';
 import type { SessionRuntime } from '../../../services/session-runtime';
 import type { Checkpoint, CheckpointFileEntry } from '../../../services/vault';
 
@@ -22,6 +23,7 @@ import type { Checkpoint, CheckpointFileEntry } from '../../../services/vault';
  * across session switches.
  */
 export interface CheckpointSelectorOptions {
+    app: App;
     /** Scrolls the chat to the message with the given id. */
     onGotoMessage: (messageId: string) => void;
 }
@@ -49,6 +51,26 @@ const STATUS_LABEL_KEY: Record<Checkpoint['status'], string> = {
     accepted: 'view.checkpointStatusAccepted',
     discarded: 'view.checkpointStatusDiscarded',
 };
+
+/** True when `accept(id)` would also accept an earlier pending checkpoint. */
+function acceptAffectsEarlierPending(checkpoints: readonly Checkpoint[], id: string): boolean {
+    const targetIdx = checkpoints.findIndex(c => c.id === id);
+    if (targetIdx <= 0) return false;
+    for (let i = 0; i < targetIdx; i++) {
+        if (checkpoints[i]?.status === 'pending') return true;
+    }
+    return false;
+}
+
+/** True when `discard(id)` would also discard a later pending checkpoint. */
+function discardAffectsLaterPending(checkpoints: readonly Checkpoint[], id: string): boolean {
+    const targetIdx = checkpoints.findIndex(c => c.id === id);
+    if (targetIdx < 0 || targetIdx >= checkpoints.length - 1) return false;
+    for (let i = targetIdx + 1; i < checkpoints.length; i++) {
+        if (checkpoints[i]?.status === 'pending') return true;
+    }
+    return false;
+}
 
 export function createCheckpointSelector(
     parent: HTMLElement,
@@ -199,10 +221,25 @@ export function createCheckpointSelector(
             cp.status === 'pending',
             () => {
                 if (!runtime) return;
-                void runtime.checkpointStore.accept(cp.id).catch((err: unknown) => {
-                    console.error('[checkpoint-selector] accept failed', err);
-                    new Notice(t('view.checkpointActionFailed'));
-                });
+                dropdownManager.closeActive();
+                void (async () => {
+                    const list = runtime.checkpointStore.checkpoints;
+                    const needsConfirm = acceptAffectsEarlierPending(list, cp.id);
+                    if (needsConfirm) {
+                        const confirmed = await new CheckpointActionConfirmModal(
+                            options.app,
+                            t('view.checkpointAcceptConfirmTitle'),
+                            t('view.checkpointAcceptConfirmMessage'),
+                            t('view.checkpointAccept'),
+                            'accept',
+                        ).waitForResult();
+                        if (!confirmed) return;
+                    }
+                    void runtime.checkpointStore.accept(cp.id).catch((err: unknown) => {
+                        console.error('[checkpoint-selector] accept failed', err);
+                        new Notice(t('view.checkpointActionFailed'));
+                    });
+                })();
             },
         );
         buildActionIcon(
@@ -210,10 +247,25 @@ export function createCheckpointSelector(
             cp.status === 'pending',
             () => {
                 if (!runtime) return;
-                void runtime.checkpointStore.discard(cp.id).catch((err: unknown) => {
-                    console.error('[checkpoint-selector] discard failed', err);
-                    new Notice(t('view.checkpointActionFailed'));
-                });
+                dropdownManager.closeActive();
+                void (async () => {
+                    const list = runtime.checkpointStore.checkpoints;
+                    const needsConfirm = discardAffectsLaterPending(list, cp.id);
+                    if (needsConfirm) {
+                        const confirmed = await new CheckpointActionConfirmModal(
+                            options.app,
+                            t('view.checkpointDiscardConfirmTitle'),
+                            t('view.checkpointDiscardConfirmMessage'),
+                            t('view.checkpointDiscard'),
+                            'discard',
+                        ).waitForResult();
+                        if (!confirmed) return;
+                    }
+                    void runtime.checkpointStore.discard(cp.id).catch((err: unknown) => {
+                        console.error('[checkpoint-selector] discard failed', err);
+                        new Notice(t('view.checkpointActionFailed'));
+                    });
+                })();
             },
         );
 

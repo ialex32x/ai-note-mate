@@ -376,7 +376,6 @@ export const en: Record<string, string> = {
 	'editHistory.button.retry': 'Retry',
 	'editHistory.button.remove': 'Remove',
 	'editHistory.button.clearFinished': 'Clear finished',
-	'editHistory.button.cancelAll': 'Cancel all',
 	'editHistory.preview.after': 'After',
 	'editHistory.menu.copyOriginal': 'Copy original',
 	'editHistory.menu.copyResult': 'Copy result',
@@ -400,6 +399,10 @@ export const en: Record<string, string> = {
 	'view.checkpointStatusDiscarded': 'Discarded',
 	'view.checkpointNoSnapshot': 'No pre-edit snapshot was captured; discard will not restore this file.',
 	'view.checkpointActionFailed': 'Checkpoint action failed. See console for details.',
+	'view.checkpointAcceptConfirmTitle': 'Accept this checkpoint?',
+	'view.checkpointAcceptConfirmMessage': 'Accepting will also accept every earlier pending checkpoint in this session, release their locks, and remove their snapshots.',
+	'view.checkpointDiscardConfirmTitle': 'Discard this checkpoint?',
+	'view.checkpointDiscardConfirmMessage': 'Discarding will also discard every later pending checkpoint and restore vault files from stored snapshots (from newest to oldest).',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': 'Rewrites',
@@ -412,7 +415,5 @@ export const en: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': 'from {0}',
 	'editHistory.fileChanges.deletedHint': 'Deleted — cannot open',
 	'editHistory.fileChanges.clearAll': 'Clear all',
-	'editHistory.fileChanges.removeEntry': 'Remove entry',
-	'editHistory.fileChanges.sessionGroup': 'Session {0}',
 	'editHistory.fileChanges.sessionUnknown': 'Unattributed changes',
 };

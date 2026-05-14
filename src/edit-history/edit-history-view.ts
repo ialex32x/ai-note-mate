@@ -54,6 +54,12 @@ const KIND_ICONS: Record<VaultEditKind, IconName> = {
 /** Which tab is currently showing. Held only in memory (not persisted). */
 type ActiveTab = "rewrites" | "fileChanges";
 
+/** Tab switcher icons (labels come from `t("editHistory.tab.*")` via tooltips). */
+const TAB_ICONS: Record<ActiveTab, IconName> = {
+    rewrites: "pen-line",
+    fileChanges: "folder-tree",
+};
+
 /**
  * Subset of `EditTask` fields that, when changed, force the row to be
  * fully rebuilt (different buttons, different status border, etc.).
@@ -190,17 +196,12 @@ export class EditHistoryView extends ItemView {
         left.createEl("div", { cls: "ai-edit-history-title", text: t("editHistory.title") });
 
         const tabs = left.createEl("div", { cls: "ai-edit-history-tabs" });
-        this.makeTabButton(tabs, "rewrites", t("editHistory.tab.rewrites"));
-        this.makeTabButton(tabs, "fileChanges", t("editHistory.tab.fileChanges"));
+        this.makeTabButton(tabs, "rewrites", TAB_ICONS.rewrites, t("editHistory.tab.rewrites"));
+        this.makeTabButton(tabs, "fileChanges", TAB_ICONS.fileChanges, t("editHistory.tab.fileChanges"));
 
         // Toolbar on the right (tab-specific).
         const actions = header.createEl("div", { cls: "ai-edit-history-header-actions" });
         if (this.activeTab === "rewrites") {
-            const cancelAllBtn = actions.createEl("button", { cls: "clickable-icon" });
-            setIcon(cancelAllBtn, "square");
-            setTooltip(cancelAllBtn, t("editHistory.button.cancelAll"));
-            cancelAllBtn.addEventListener("click", () => this.store.cancelAll());
-
             const clearBtn = actions.createEl("button", { cls: "clickable-icon" });
             setIcon(clearBtn, "trash-2");
             setTooltip(clearBtn, t("editHistory.button.clearFinished"));
@@ -213,11 +214,13 @@ export class EditHistoryView extends ItemView {
         }
     }
 
-    private makeTabButton(host: HTMLElement, id: ActiveTab, label: string): HTMLElement {
+    private makeTabButton(host: HTMLElement, id: ActiveTab, icon: IconName, tooltipLabel: string): HTMLElement {
         const btn = host.createEl("button", {
             cls: `ai-edit-history-tab${this.activeTab === id ? " is-active" : ""}`,
-            text: label,
+            attr: { "aria-label": tooltipLabel, type: "button" },
         });
+        setIcon(btn, icon);
+        setTooltip(btn, tooltipLabel);
         btn.addEventListener("click", () => {
             if (this.activeTab === id) return;
             this.activeTab = id;
@@ -582,16 +585,16 @@ export class EditHistoryView extends ItemView {
         }
 
         for (const group of groups) {
-            // Short id suffix in the header keeps the label readable while
-            // still letting power users tell sessions apart. The full id is
-            // in the tooltip for anyone who needs it.
             if (group.sessionId) {
-                const shortId = group.sessionId.slice(-6);
+                const sid = group.sessionId;
+                const metaLine = this.plugin.sessionManager.getSessionMetadataDisplayLine(sid);
+                const tooltipText =
+                    metaLine !== undefined && metaLine.length > 0 ? metaLine : sid;
                 const header = list.createEl("div", {
                     cls: "ai-edit-history-group-title",
-                    text: t("editHistory.fileChanges.sessionGroup", { 0: shortId }),
+                    text: sid,
                 });
-                setTooltip(header, group.sessionId);
+                setTooltip(header, tooltipText);
             } else {
                 list.createEl("div", {
                     cls: "ai-edit-history-group-title",
@@ -636,12 +639,6 @@ export class EditHistoryView extends ItemView {
         } else {
             setTooltip(fileEl, t("editHistory.fileChanges.deletedHint"));
         }
-
-        const buttonRow = head.createEl("div", { cls: "ai-edit-history-buttons" });
-        this.makeIconButton(buttonRow, "trash", t("editHistory.fileChanges.removeEntry"), (ev) => {
-            ev.stopPropagation();
-            this.logStore.remove(entry.id);
-        });
 
         // Secondary line: tool name + timestamp (+ previous path for renames).
         const meta = el.createEl("div", { cls: "ai-edit-history-preview-line" });

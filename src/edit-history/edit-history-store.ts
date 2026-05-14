@@ -220,13 +220,6 @@ export class EditHistoryStore {
         }
     }
 
-    /** Cancel every still-running task in one go. */
-    cancelAll(): void {
-        for (const id of [...this._abortControllers.keys()]) {
-            this.cancel(id);
-        }
-    }
-
     /** Remove a single task. No-op if it's still running (cancel first). */
     remove(id: string): void {
         const idx = this._tasks.findIndex(t => t.id === id);

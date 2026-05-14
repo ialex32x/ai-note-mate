@@ -658,6 +658,7 @@ export class SessionView extends ItemView {
             // bindActiveSessionRuntime/detachFromCurrentRuntime to track
             // the currently-bound runtime's checkpoint store.
             this.checkpointSelector = createCheckpointSelector(thinkingRow, this.dropdownManager, {
+                app: this.app,
                 onGotoMessage: (messageId) => { this.scrollToMessage(messageId); },
             });
 

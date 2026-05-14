@@ -376,7 +376,6 @@ export const ko: Record<string, string> = {
 	'editHistory.button.retry': '재시도',
 	'editHistory.button.remove': '제거',
 	'editHistory.button.clearFinished': '완료된 항목 정리',
-	'editHistory.button.cancelAll': '모두 취소',
 	'editHistory.preview.after': '다시 쓴 결과',
 	'editHistory.menu.copyOriginal': '원문 복사',
 	'editHistory.menu.copyResult': '결과 복사',
@@ -400,6 +399,10 @@ export const ko: Record<string, string> = {
 	'view.checkpointStatusDiscarded': '취소됨',
 	'view.checkpointNoSnapshot': '편집 전 스냅샷이 없어 취소해도 이 파일은 복원되지 않습니다.',
 	'view.checkpointActionFailed': '체크포인트 작업이 실패했습니다. 자세한 내용은 콘솔을 확인하세요.',
+	'view.checkpointAcceptConfirmTitle': '이 체크포인트를 적용할까요?',
+	'view.checkpointAcceptConfirmMessage': '적용하면 이 체크포인트보다 앞선 대기 중인 체크포인트도 모두 적용되며, 잠금이 해제되고 스냅샷이 삭제됩니다.',
+	'view.checkpointDiscardConfirmTitle': '이 체크포인트를 취소할까요?',
+	'view.checkpointDiscardConfirmMessage': '취소하면 이 체크포인트보다 뒤의 대기 중인 체크포인트도 모두 취소되며, 저장된 스냅샷을 기준으로 볼트 내 파일이 복원됩니다(최신부터 순서대로).',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '재작성 기록',
@@ -412,7 +415,5 @@ export const ko: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '이전 경로 {0}',
 	'editHistory.fileChanges.deletedHint': '삭제됨 — 열 수 없음',
 	'editHistory.fileChanges.clearAll': '모두 지우기',
-	'editHistory.fileChanges.removeEntry': '항목 삭제',
-	'editHistory.fileChanges.sessionGroup': '세션 {0}',
 	'editHistory.fileChanges.sessionUnknown': '귀속되지 않은 변경',
 };

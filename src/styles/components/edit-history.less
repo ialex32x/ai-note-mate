@@ -61,13 +61,23 @@
 }
 
 .ai-edit-history-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 1px solid transparent;
-    padding: 2px @spacing-sm;
+    min-width: 28px;
+    min-height: 28px;
+    padding: 4px;
     border-radius: @radius-sm;
     font-size: var(--font-ui-smaller);
     color: @text-secondary;
     cursor: pointer;
+
+    // Icon from `setIcon` — keep stroke aligned with tab chrome.
+    svg {
+        display: block;
+    }
 
     &:hover {
         background: @bg-modifier-hover;

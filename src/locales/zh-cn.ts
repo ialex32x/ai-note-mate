@@ -375,7 +375,6 @@ export const zhCN: Record<string, string> = {
 	'editHistory.button.retry': '重试',
 	'editHistory.button.remove': '移除',
 	'editHistory.button.clearFinished': '清理已完成',
-	'editHistory.button.cancelAll': '取消全部',
 	'editHistory.preview.after': '改写后',
 	'editHistory.menu.copyOriginal': '复制原文',
 	'editHistory.menu.copyResult': '复制结果',
@@ -399,6 +398,10 @@ export const zhCN: Record<string, string> = {
 	'view.checkpointStatusDiscarded': '已丢弃',
 	'view.checkpointNoSnapshot': '未保存修改前的快照,丢弃时无法还原此文件。',
 	'view.checkpointActionFailed': '检查点操作失败,详情请见控制台。',
+	'view.checkpointAcceptConfirmTitle': '确认接受此检查点？',
+	'view.checkpointAcceptConfirmMessage': '接受后,将自动接受此检查点之前所有仍处于待处理状态的检查点,并释放对应的文件锁与快照。',
+	'view.checkpointDiscardConfirmTitle': '确认丢弃此检查点？',
+	'view.checkpointDiscardConfirmMessage': '丢弃后,将自动撤销此检查点之后所有仍处于待处理状态的检查点,并按从新到旧的顺序用快照还原库内文件。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '重写历史',
@@ -411,7 +414,5 @@ export const zhCN: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '原路径 {0}',
 	'editHistory.fileChanges.deletedHint': '已删除 — 无法打开',
 	'editHistory.fileChanges.clearAll': '全部清空',
-	'editHistory.fileChanges.removeEntry': '移除此项',
-	'editHistory.fileChanges.sessionGroup': '会话 {0}',
 	'editHistory.fileChanges.sessionUnknown': '未归属的改动',
 };

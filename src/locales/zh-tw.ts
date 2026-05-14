@@ -376,7 +376,6 @@ export const zhTW: Record<string, string> = {
 	'editHistory.button.retry': '重試',
 	'editHistory.button.remove': '移除',
 	'editHistory.button.clearFinished': '清理已完成',
-	'editHistory.button.cancelAll': '全部取消',
 	'editHistory.preview.after': '改寫後',
 	'editHistory.menu.copyOriginal': '複製原文',
 	'editHistory.menu.copyResult': '複製結果',
@@ -400,6 +399,10 @@ export const zhTW: Record<string, string> = {
 	'view.checkpointStatusDiscarded': '已捨棄',
 	'view.checkpointNoSnapshot': '未儲存修改前的快照,捨棄時無法還原此檔案。',
 	'view.checkpointActionFailed': '檢查點操作失敗,詳情請見主控台。',
+	'view.checkpointAcceptConfirmTitle': '確認接受此檢查點？',
+	'view.checkpointAcceptConfirmMessage': '接受後,將自動接受此檢查點之前所有仍為待處理的檢查點,並釋放對應的檔案鎖與快照。',
+	'view.checkpointDiscardConfirmTitle': '確認捨棄此檢查點？',
+	'view.checkpointDiscardConfirmMessage': '捨棄後,將自動撤銷此檢查點之後所有仍為待處理的檢查點,並依由新到舊的順序以快照還原儲存庫內檔案。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '重寫歷史',
@@ -412,7 +415,5 @@ export const zhTW: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '原路徑 {0}',
 	'editHistory.fileChanges.deletedHint': '已刪除 — 無法開啟',
 	'editHistory.fileChanges.clearAll': '全部清除',
-	'editHistory.fileChanges.removeEntry': '移除此項目',
-	'editHistory.fileChanges.sessionGroup': '會話 {0}',
 	'editHistory.fileChanges.sessionUnknown': '未歸屬的變更',
 };

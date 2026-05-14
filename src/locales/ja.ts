@@ -376,7 +376,6 @@ export const ja: Record<string, string> = {
 	'editHistory.button.retry': '再試行',
 	'editHistory.button.remove': '削除',
 	'editHistory.button.clearFinished': '完了分をクリア',
-	'editHistory.button.cancelAll': 'すべてキャンセル',
 	'editHistory.preview.after': '書き換え後',
 	'editHistory.menu.copyOriginal': '元のテキストをコピー',
 	'editHistory.menu.copyResult': '書き換え結果をコピー',
@@ -400,6 +399,10 @@ export const ja: Record<string, string> = {
 	'view.checkpointStatusDiscarded': '破棄済み',
 	'view.checkpointNoSnapshot': '編集前のスナップショットがありません。破棄してもこのファイルは復元されません。',
 	'view.checkpointActionFailed': 'チェックポイントの操作に失敗しました。詳細はコンソールを確認してください。',
+	'view.checkpointAcceptConfirmTitle': 'このチェックポイントを承認しますか？',
+	'view.checkpointAcceptConfirmMessage': '承認すると、このチェックポイントより前の保留中チェックポイントもすべて承認され、ロックが解除されスナップショットが削除されます。',
+	'view.checkpointDiscardConfirmTitle': 'このチェックポイントを破棄しますか？',
+	'view.checkpointDiscardConfirmMessage': '破棄すると、このチェックポイントより後の保留中チェックポイントもすべて破棄され、保存済みスナップショットに基づきボールト内ファイルが復元されます（新しい順に処理）。',
 
 	// ── AI Edit History: File changes tab ────────────────
 	'editHistory.tab.rewrites': '書き直し履歴',
@@ -412,7 +415,5 @@ export const ja: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '元のパス {0}',
 	'editHistory.fileChanges.deletedHint': '削除済み — 開けません',
 	'editHistory.fileChanges.clearAll': 'すべてクリア',
-	'editHistory.fileChanges.removeEntry': 'この項目を削除',
-	'editHistory.fileChanges.sessionGroup': 'セッション {0}',
 	'editHistory.fileChanges.sessionUnknown': '未紐付けの変更',
 };
