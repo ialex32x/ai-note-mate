@@ -30,6 +30,14 @@ export interface SessionDropdownDeps {
      * busy / waiting for confirmation.
      */
     getStatus?: (sessionId: string) => SessionRuntimeStatus;
+    /**
+     * Resolve the pending-checkpoint count for a session. When > 0
+     * the dropdown renders a small icon+number badge to the left of
+     * the title so the user can spot sessions that still hold
+     * unresolved vault edits. Captured once at render time — the
+     * dropdown does not subscribe to checkpoint-store changes.
+     */
+    getPendingCheckpoints?: (sessionId: string) => number;
 }
 
 interface StatusIconSpec {
@@ -106,8 +114,32 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
 
         const textWrapper = item.createEl('span', { cls: 'session-dropdown__item-body' });
         const titleRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-text' });
+
+        // Optional pending-checkpoint badge (icon + count). Sits to the
+        // LEFT of the title so it never gets clipped by the title's
+        // ellipsis. Hidden entirely when there are no pending checkpoints
+        // — see `getPendingCheckpoints` contract.
+        const pendingCount = deps.getPendingCheckpoints?.(session.id) ?? 0;
+        if (pendingCount > 0) {
+            const pendingEl = titleRow.createEl('span', {
+                cls: 'session-dropdown__item-pending-checkpoints',
+            });
+            const pendingIcon = pendingEl.createEl('span', {
+                cls: 'session-dropdown__item-pending-checkpoints-icon',
+            });
+            setIcon(pendingIcon, 'list-checks');
+            pendingEl.createEl('span', {
+                cls: 'session-dropdown__item-pending-checkpoints-count',
+                text: String(pendingCount),
+            });
+            const pendingTooltip = t('view.sessionPendingCheckpoints', { count: pendingCount });
+            setTooltip(pendingEl, pendingTooltip);
+            pendingEl.setAttr('aria-label', pendingTooltip);
+        }
+
+        const titleEl = titleRow.createEl('span', { cls: 'session-dropdown__item-title' });
         const displayTitle = session.title || session.firstUserMessage || t('view.newChat');
-        titleRow.appendChild(activeDocument.createTextNode(displayTitle));
+        titleEl.setText(displayTitle);
 
         const metaRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-meta' });
         metaRow.createEl('span', { cls: 'session-dropdown__item-time' })

@@ -15,6 +15,7 @@ export const zhTW: Record<string, string> = {
 	'view.sessionStatusIdle': '已載入 · 閒置',
 	'view.sessionStatusBusy': '已載入 · AI 正在回覆',
 	'view.sessionStatusAwaitingConfirm': '已載入 · 等待工具確認',
+	'view.sessionPendingCheckpoints': '此會話有 {count} 個待處理檢查點。',
 	'view.noSessions': '暫無對話。',
 	'view.deleteSession': '刪除對話',
 	'view.sessionDeleted': '對話已刪除。',

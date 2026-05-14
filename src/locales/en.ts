@@ -15,6 +15,7 @@ export const en: Record<string, string> = {
 	'view.sessionStatusIdle': 'Loaded · idle',
 	'view.sessionStatusBusy': 'Loaded · AI is responding',
 	'view.sessionStatusAwaitingConfirm': 'Loaded · awaiting tool confirmation',
+	'view.sessionPendingCheckpoints': '{count} pending checkpoint(s) in this session.',
 	'view.noSessions': 'No sessions yet.',
 	'view.deleteSession': 'Delete session',
 	'view.sessionDeleted': 'Session deleted.',

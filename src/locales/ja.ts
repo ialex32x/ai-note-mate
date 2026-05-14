@@ -15,6 +15,7 @@ export const ja: Record<string, string> = {
 	'view.sessionStatusIdle': '読み込み済み · アイドル',
 	'view.sessionStatusBusy': '読み込み済み · AI が応答中',
 	'view.sessionStatusAwaitingConfirm': '読み込み済み · ツール確認待ち',
+	'view.sessionPendingCheckpoints': 'このセッションには {count} 件の保留中チェックポイントがあります。',
 	'view.noSessions': 'セッションはまだありません。',
 	'view.deleteSession': 'セッションを削除',
 	'view.sessionDeleted': 'セッションが削除されました。',

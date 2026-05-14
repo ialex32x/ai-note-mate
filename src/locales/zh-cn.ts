@@ -15,6 +15,7 @@ export const zhCN: Record<string, string> = {
 	'view.sessionStatusIdle': '已加载 · 空闲',
 	'view.sessionStatusBusy': '已加载 · AI 正在响应',
 	'view.sessionStatusAwaitingConfirm': '已加载 · 等待工具确认',
+	'view.sessionPendingCheckpoints': '此会话有 {count} 个待处理检查点。',
 	'view.noSessions': '暂无会话。',
 	'view.deleteSession': '删除会话',
 	'view.sessionDeleted': '会话已删除。',

@@ -31,6 +31,20 @@ export interface SessionNavigatorDeps {
      */
     getSessionStatus: (sessionId: string) => SessionRuntimeStatus;
     /**
+     * Resolve the pending-checkpoint count for the given session.
+     * Used by the dropdown to render a small badge to the left of
+     * the title when the session still has unresolved vault
+     * checkpoints. Returns 0 for sessions whose runtime is not
+     * currently warm (pending checkpoints can only exist in memory
+     * on a live SessionRuntime).
+     *
+     * The badge is rendered once per dropdown open — there is no
+     * live subscription, so toggling pending counts in another
+     * session won't update an already-open dropdown until it is
+     * reopened.
+     */
+    getSessionPendingCheckpoints: (sessionId: string) => number;
+    /**
      * Forcefully tear down a SessionRuntime in the pool, aborting its
      * chat regardless of busy state. Called on explicit user deletion.
      * For batch "delete history sessions" we only call this for the
@@ -170,6 +184,7 @@ export class SessionNavigator {
                 void this.handleDeleteSession(id, itemEl, isActive);
             },
             getStatus: (id) => this.deps.getSessionStatus(id),
+            getPendingCheckpoints: (id) => this.deps.getSessionPendingCheckpoints(id),
         });
     }
 

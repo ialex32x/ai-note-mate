@@ -152,6 +152,15 @@ export class CheckpointStore {
         return this._checkpoints.some(c => c.status === "pending");
     }
 
+    /** Number of checkpoints currently in `pending` status. */
+    get pendingCount(): number {
+        let n = 0;
+        for (const c of this._checkpoints) {
+            if (c.status === "pending") n++;
+        }
+        return n;
+    }
+
     // ── Round / checkpoint lifecycle ─────────────────────────────────────
 
     /**

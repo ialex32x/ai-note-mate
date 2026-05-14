@@ -388,6 +388,18 @@ export class SessionView extends ItemView {
                     if (rt.isBusy) return 'busy';
                     return 'idle';
                 },
+                getSessionPendingCheckpoints: (id) => {
+                    // Pending-checkpoint state is runtime-only (the
+                    // CheckpointStore lives on the SessionRuntime). Sessions
+                    // without a warm runtime in the pool are guaranteed
+                    // to have zero pending — they were either never
+                    // loaded this session, or were released back to the
+                    // pool only after every checkpoint was resolved
+                    // (release() refuses to evict runtimes whose store
+                    // still has pending checkpoints).
+                    const rt = this.plugin.runtimePool.get(id);
+                    return rt?.checkpointStore.pendingCount ?? 0;
+                },
                 evictRuntime: (id) => this.plugin.runtimePool.evict(id),
                 clearActiveDraftTimer: () => this.draftController.clearTimer(),
                 onSwitchSession: (id) => { void this.handleSwitchSession(id); },

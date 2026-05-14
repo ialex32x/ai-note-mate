@@ -15,6 +15,7 @@ export const ko: Record<string, string> = {
 	'view.sessionStatusIdle': '로드됨 · 유휴',
 	'view.sessionStatusBusy': '로드됨 · AI 응답 중',
 	'view.sessionStatusAwaitingConfirm': '로드됨 · 도구 확인 대기 중',
+	'view.sessionPendingCheckpoints': '이 세션에 대기 중인 체크포인트가 {count}개 있습니다.',
 	'view.noSessions': '세션이 없습니다.',
 	'view.deleteSession': '세션 삭제',
 	'view.sessionDeleted': '세션이 삭제되었습니다.',
