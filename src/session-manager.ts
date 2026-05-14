@@ -209,38 +209,6 @@ export class SessionManager {
         return id;
     }
 
-    /**
-     * Save the current session state (messages + token usage) and switch to another session.
-     * If targetId is undefined, creates a new session.
-     * Returns the ID of the now-active session.
-     */
-    async saveAndSwitch(
-        currentMessages: ReadonlyChatMessages,
-        currentTokenUsage: TokenUsage,
-        summaries?: ConversationSummary[],
-        targetId?: string,
-    ): Promise<string> {
-        // Update the current session snapshot
-        await this.saveCurrentSession(currentMessages, currentTokenUsage, summaries);
-
-        if (targetId && this.metadataMap.has(targetId)) {
-            if (targetId === this._activeSessionId) {
-                // Already on this session, do nothing
-                return this._activeSessionId;
-            }
-            // Switch to the target session
-            this._activeSessionId = targetId;
-            await this.saveListFile();
-        } else {
-            // Create new session (when targetId is missing or not found)
-            const newId = this.createSession();
-            this._activeSessionId = newId;
-            await this.saveListFile();
-        }
-
-        return this._activeSessionId;
-    }
-
     /** Set the title of the active session */
     setTitle(title: string): void {
         this.setSessionTitle(this._activeSessionId, title);
@@ -315,24 +283,6 @@ export class SessionManager {
         if (!messages) return null;
         const firstUserMsg = messages.find(m => m.role === 'user');
         return firstUserMsg?.content ?? null;
-    }
-
-    /** Save the current session's state without switching */
-    async saveCurrentSession(
-        currentMessages: ReadonlyChatMessages,
-        currentTokenUsage: TokenUsage,
-        summaries?: ConversationSummary[],
-        subAgentMessages?: Record<string, ChatMessage[]>,
-        agentTokenBreakdown?: AgentTokenBreakdown,
-    ): Promise<void> {
-        await this.saveSession(
-            this._activeSessionId,
-            currentMessages,
-            currentTokenUsage,
-            summaries,
-            subAgentMessages,
-            agentTokenBreakdown,
-        );
     }
 
     /**

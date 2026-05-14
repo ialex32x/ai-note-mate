@@ -763,11 +763,19 @@ export class SessionView extends ItemView {
             // creating the new session, so the runtime's own onFinish can
             // still write into its session file even if the user never
             // comes back to it.
+            //
+            // Critically: do NOT pipe an empty snapshot of "current chat"
+            // into SessionManager here. The previous active session's
+            // messages / token usage / sub-agent data are owned by its
+            // SessionRuntime (which persists per turn), and SessionManager's
+            // own `messagesCache` already mirrors the last persisted state.
+            // Calling something like `saveCurrentSession([], 0, [])` would
+            // unconditionally overwrite that cache with empty messages and
+            // zero tokens; the next `saveToCache()` then flushes the wiped
+            // state to disk, silently destroying the session's history.
             this.detachFromCurrentRuntime();
-            // Snapshot list.json + create the new active session.
-            await this.sessionManager.saveAndSwitch(
-                [], { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, [],
-            );
+            this.sessionManager.createSession();
+            await this.sessionManager.saveMetadata();
             this.clearViewDOM();
             await this.bindActiveSessionRuntime();
             new Notice(t('view.newSessionCreated'));

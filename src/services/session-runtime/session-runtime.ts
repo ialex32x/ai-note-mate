@@ -32,8 +32,9 @@ import type { RuntimeEvent, RuntimeListener } from './runtime-events';
  * Persistence model:
  *   - On turn finish / abort / error, the runtime persists snapshots
  *     to disk via {@link SessionManager.saveSession} keyed by its OWN
- *     sessionId — never via `saveCurrentSession`, which would write to
- *     whichever session happens to be active in the view right now.
+ *     sessionId — never via the active-session shortcut, which would
+ *     write to whichever session happens to be active in the view
+ *     right now.
  *   - This is the only mechanism that lets a background runtime
  *     correctly accumulate into its own session file after the user
  *     has switched away.
