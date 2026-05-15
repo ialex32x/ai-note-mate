@@ -111,9 +111,10 @@
     display: none !important;
 }
 
-// Highlight when at least one checkpoint is still pending.
+// When at least one checkpoint is still pending, surface the trigger
+// text in the normal foreground color (not the accent highlight).
 .session-checkpoint-selector--has-pending .session-checkpoint-bar__open.session-dropdown-btn {
-    color: @text-accent;
+    color: @text-primary;
 }
 
 // Same pattern as `.session-session-selector`: escape the inner
