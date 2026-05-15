@@ -8,8 +8,8 @@
  * - Extract file references from content
  */
 
-import { EditorView, keymap, drawSelection, dropCursor, highlightSpecialChars, Decoration, DecorationSet, tooltips } from '@codemirror/view';
-import { EditorState, StateField, RangeSetBuilder, Prec, RangeSet } from '@codemirror/state';
+import { EditorView, keymap, drawSelection, dropCursor, highlightSpecialChars, Decoration, DecorationSet, tooltips, placeholder } from '@codemirror/view';
+import { EditorState, StateField, RangeSetBuilder, Prec } from '@codemirror/state';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { autocompletion, startCompletion, completionKeymap, completionStatus } from '@codemirror/autocomplete';
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from '@codemirror/language';
@@ -54,7 +54,16 @@ export function extractFileRefs(content: string): Array<{ start: number; end: nu
 
 /**
  * Build decorations from document content.
- * Finds all [[path]] patterns and creates widget decorations.
+ * Finds all [[path]] patterns and creates replace decorations that render
+ * each match as an inline chip widget.
+ *
+ * We use `Decoration.replace` (not `Decoration.widget`) because the chip
+ * spans a real range in the source (`[[path]]`) and should hide that text.
+ * `Decoration.widget` is meant for zero-length insertions; using it with
+ * a non-zero range bypasses CM's `range()` validation and causes the
+ * widget rangeset to drift out of sync with the document during edits
+ * (which surfaces as `Position N is out of range for changeset of length 0`
+ * crashes when CM remaps decorations on backspace-deletion of a chip).
  */
 function buildDecorations(
     state: EditorState,
@@ -67,29 +76,11 @@ function buildDecorations(
     const refs = extractFileRefs(content);
 
     for (const ref of refs) {
-        const widget = Decoration.widget({
+        const chip = Decoration.replace({
             widget: new FileRefWidget(ref.path, app, onFileRefClick, onDeleteFileRef),
-            side: 1,
+            inclusive: false,
         });
-        builder.add(ref.start, ref.end, widget);
-    }
-
-    return builder.finish();
-}
-
-/**
- * Build atomic ranges for file references.
- * This makes the cursor jump over file references instead of entering them.
- */
-function buildAtomicRanges(state: EditorState): RangeSet<Decoration> {
-    const builder = new RangeSetBuilder<Decoration>();
-    const content = state.doc.toString();
-    const refs = extractFileRefs(content);
-
-    for (const ref of refs) {
-        // Use mark decoration with class but no visual effect
-        // The atomicRanges facet will pick this up
-        builder.add(ref.start, ref.end, Decoration.mark({ class: 'cm-file-ref-atomic' }));
+        builder.add(ref.start, ref.end, chip);
     }
 
     return builder.finish();
@@ -102,6 +93,10 @@ export class CMInput {
     private view: EditorView;
     private app: App;
     private onEnterCallback?: (view: EditorView) => boolean | void;
+    /** rAF handle for a pending `startCompletion` call; cleared on destroy. */
+    private pendingCompletionRAF: number | null = null;
+    /** Set to true once `destroy()` runs so deferred callbacks can bail out. */
+    private destroyed = false;
 
     constructor(parent: HTMLElement, options: CMInputOptions) {
         this.app = options.app;
@@ -113,6 +108,11 @@ export class CMInput {
             options.onDeleteFileRef?.(path);
         };
 
+        // Single source of truth for file-ref ranges. The same DecorationSet
+        // drives both the visual chip rendering and the atomic-range behavior
+        // (cursor jumps over chips, backspace deletes the whole chip), so the
+        // two stay in lockstep across transactions. This mirrors the pattern
+        // shown in the official CodeMirror decoration example.
         const decorationField = StateField.define<DecorationSet>({
             create: (state) => buildDecorations(state, this.app, options.onFileRefClick, handleDeleteFileRef),
             update: (decorations, tr) => {
@@ -121,17 +121,10 @@ export class CMInput {
                 }
                 return decorations;
             },
-            provide: (f) => EditorView.decorations.from(f),
-        });
-
-        // Atomic ranges for file references - cursor jumps over them
-        // Always compute fresh ranges from current state to avoid stale position errors
-        const atomicRangesField = StateField.define<null>({
-            create: () => null,
-            update: () => null,
-            provide: () => EditorView.atomicRanges.of((view: EditorView) => {
-                return buildAtomicRanges(view.state);
-            }),
+            provide: (f) => [
+                EditorView.decorations.from(f),
+                EditorView.atomicRanges.of((view) => view.state.field(f, false) ?? Decoration.none),
+            ],
         });
 
         const enterHandler = Prec.highest(keymap.of([{
@@ -180,11 +173,9 @@ export class CMInput {
                 // Syntax highlighting
                 syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
 
-                // File reference decorations
+                // File reference decorations (also provides atomic ranges
+                // for cursor motion / backspace deletion of chips)
                 decorationField,
-
-                // Atomic ranges - cursor jumps over file references
-                atomicRangesField,
 
                 // Use fixed positioning for tooltips to avoid clipping by parent overflow
                 // Must be placed BEFORE autocompletion for the config to take effect
@@ -264,42 +255,36 @@ export class CMInput {
                     },
                 }),
 
-                // Placeholder support
-                EditorView.updateListener.of((update) => {
-                    this.updatePlaceholder(update.view, options.placeholder);
-                }),
+                // Placeholder (built-in CM6 extension; renders inline as a
+                // widget with class `cm-placeholder`, styled via our theme).
+                options.placeholder ? placeholder(options.placeholder) : [],
 
                 // Trigger completion on [[ input or when cursor is inside [[ ]]
                 EditorView.updateListener.of((update) => {
-                    if (update.docChanged) {
-                        const doc = update.state.doc.toString();
-                        const pos = update.state.selection.main.head;
+                    if (!update.docChanged) return;
+                    const doc = update.state.doc.toString();
+                    const pos = update.state.selection.main.head;
 
-                        // Check if we're inside a [[ ]] pair (after typing [[ or closeBrackets auto-inserted )
-                        // Look backwards for [[
-                        let foundTrigger = false;
-                        for (let i = pos - 1; i >= 0; i--) {
-                            const char = doc[i];
-                            if (char === ']' && i > 0 && doc[i - 1] === ']') {
-                                // Found closing ]] before cursor, stop
-                                break;
-                            }
-                            if (char === '[' && i > 0 && doc[i - 1] === '[') {
-                                foundTrigger = true;
-                                break;
-                            }
-                            if (char === '\n' || char === ' ' || char === '\t') {
-                                break;
-                            }
+                    // Check if we're inside a [[ ]] pair (after typing [[ or closeBrackets auto-inserted )
+                    // Look backwards for [[
+                    let foundTrigger = false;
+                    for (let i = pos - 1; i >= 0; i--) {
+                        const char = doc[i];
+                        if (char === ']' && i > 0 && doc[i - 1] === ']') {
+                            // Found closing ]] before cursor, stop
+                            break;
                         }
+                        if (char === '[' && i > 0 && doc[i - 1] === '[') {
+                            foundTrigger = true;
+                            break;
+                        }
+                        if (char === '\n' || char === ' ' || char === '\t') {
+                            break;
+                        }
+                    }
 
-                        if (foundTrigger) {
-                            // Use requestAnimationFrame to ensure the state is fully updated
-                            // before triggering completion
-                            window.requestAnimationFrame(() => {
-                                startCompletion(update.view);
-                            });
-                        }
+                    if (foundTrigger) {
+                        this.scheduleCompletion();
                     }
                 }),
 
@@ -316,34 +301,26 @@ export class CMInput {
             state,
             parent,
         });
-
-        // Set initial placeholder
-        this.updatePlaceholder(this.view, options.placeholder);
     }
 
-    private placeholderEl: HTMLElement | null = null;
-
-    private updatePlaceholder(view: EditorView, placeholder?: string) {
-        const hasContent = view.state.doc.length > 0;
-
-        if (!hasContent && placeholder && !this.placeholderEl) {
-            // Add placeholder
-            this.placeholderEl = activeDocument.createElement('div');
-            this.placeholderEl.className = 'cm-placeholder';
-            this.placeholderEl.textContent = placeholder;
-            this.placeholderEl.style.cssText = `
-                position: absolute;
-                top: 4px;
-                left: 4px;
-                pointer-events: none;
-                color: var(--text-faint);
-            `;
-            view.contentDOM.parentElement?.appendChild(this.placeholderEl);
-        } else if (hasContent && this.placeholderEl) {
-            // Remove placeholder
-            this.placeholderEl.remove();
-            this.placeholderEl = null;
+    /**
+     * Schedule a `startCompletion` call on the next animation frame.
+     *
+     * We defer to rAF so the editor state from the triggering transaction
+     * is fully committed before the completion plugin reads it. The handle
+     * is tracked so {@link destroy} can cancel it; if the view is torn
+     * down between scheduling and execution, the callback bails out
+     * instead of poking a destroyed view (which would crash CM internals).
+     */
+    private scheduleCompletion(): void {
+        if (this.pendingCompletionRAF !== null) {
+            window.cancelAnimationFrame(this.pendingCompletionRAF);
         }
+        this.pendingCompletionRAF = window.requestAnimationFrame(() => {
+            this.pendingCompletionRAF = null;
+            if (this.destroyed) return;
+            startCompletion(this.view);
+        });
     }
 
     /** Get the current content (includes [[path]] for file references) */
@@ -383,11 +360,17 @@ export class CMInput {
         this.view.focus();
         const { state } = this.view;
         const selection = state.selection.main;
-        const doc = state.doc.toString();
-        const beforeCursor = doc.slice(Math.max(0, selection.head - 2), selection.head);
 
-        if (beforeCursor !== '[[') {
-            // Insert `[[` at cursor (replacing any active selection)
+        // Only treat a preceding `[[` as "already there" when there is no
+        // active selection — otherwise that `[[` could actually be inside
+        // the selection (selection.head can be either end of the range).
+        let alreadyHasBrackets = false;
+        if (selection.empty) {
+            const beforeCursor = state.doc.sliceString(Math.max(0, selection.head - 2), selection.head);
+            alreadyHasBrackets = beforeCursor === '[[';
+        }
+
+        if (!alreadyHasBrackets) {
             this.view.dispatch({
                 changes: {
                     from: selection.from,
@@ -398,41 +381,33 @@ export class CMInput {
             });
         }
 
-        // Trigger completion popup on next frame, after the state update
-        // is fully committed (mirrors the existing [[ auto-trigger path).
-        window.requestAnimationFrame(() => {
-            startCompletion(this.view);
-        });
+        this.scheduleCompletion();
     }
 
     /** Insert a file reference at current cursor position */
     insertFileRef(file: TAbstractFile): void {
         const { state } = this.view;
         const selection = state.selection.main;
+        const insertText = `[[${file.path}]]`;
 
-        // Check if we're inside a [[ trigger, replace it
-        const doc = state.doc.toString();
-        const beforeCursor = doc.slice(Math.max(0, selection.head - 2), selection.head);
+        // Default to replacing the current selection (or, if empty, inserting
+        // at the cursor). Using `selection.from` / `selection.to` (not
+        // `selection.head`) keeps reverse-direction selections correct.
+        let from = selection.from;
+        const to = selection.to;
 
-        let insertText = `[[${file.path}]]`;
-        let insertPos = selection.head;
-
-        // If we have [[ right before cursor, replace it
-        if (beforeCursor === '[[') {
-            insertPos = selection.head - 2;
-            insertText = `[[${file.path}]]`;
-        } else if (selection.from !== selection.to) {
-            // Replace selection
-            insertPos = selection.from;
+        // If the cursor is right after a `[[` trigger (no selection), absorb
+        // those two characters so we don't end up with `[[[[file]]`.
+        if (selection.empty) {
+            const beforeCursor = state.doc.sliceString(Math.max(0, selection.head - 2), selection.head);
+            if (beforeCursor === '[[') {
+                from = selection.head - 2;
+            }
         }
 
         this.view.dispatch({
-            changes: {
-                from: insertPos,
-                to: selection.head,
-                insert: insertText,
-            },
-            selection: { anchor: insertPos + insertText.length },
+            changes: { from, to, insert: insertText },
+            selection: { anchor: from + insertText.length },
         });
 
         this.view.focus();
@@ -496,6 +471,11 @@ export class CMInput {
 
     /** Destroy the editor */
     destroy(): void {
+        this.destroyed = true;
+        if (this.pendingCompletionRAF !== null) {
+            window.cancelAnimationFrame(this.pendingCompletionRAF);
+            this.pendingCompletionRAF = null;
+        }
         this.view.destroy();
     }
 

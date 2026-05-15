@@ -6,7 +6,7 @@
 
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorView } from '@codemirror/view';
-import { App, MarkdownView, TAbstractFile, TFile, TFolder } from 'obsidian';
+import { App, FileView, TAbstractFile, TFile, TFolder } from 'obsidian';
 
 /**
  * Create a completion source for file references.
@@ -125,26 +125,35 @@ export function fileRefCompletionSource(app: App) {
         const sortedFiles = [...filteredFiles].sort((a, b) => getBoostScore(b) - getBoostScore(a));
         const limitedFiles = sortedFiles.slice(0, 50);
 
-        // Create completions with boost for sorting
+        // Create completions with boost for sorting.
+        //
+        // IMPORTANT: the `from`/`to` parameters passed to `apply` are CM6's
+        // mapped-to-current-state positions for `result.from` / `result.to`
+        // (mapped through any transactions that happened while the popup was
+        // open). We must use those, NOT the `triggerStart` / `pos` / `doc`
+        // captured at completion-source time — those become stale the moment
+        // `validFor` keeps the popup open across further typing, and using
+        // them would leave any user-typed-since-popup characters orphaned
+        // (e.g. typing `[[hel` → popup → type `lo` → accept produces
+        // `[[file.md]]lo`).
         const completions: Completion[] = limitedFiles.map((file) => ({
             // Use full path as label so CM6's built-in filter matches against the path,
             // and the dropdown shows the complete path instead of just the file name.
             label: file.path,
             displayLabel: file.path,
             boost: getBoostScore(file),
-            apply: (view: EditorView, completion: Completion, from: number, to: number) => {
-                // Check if there's ]] right after cursor position (auto-inserted by closeBrackets)
-                const docAfterPos = doc.slice(pos, pos + 2);
-                const hasAutoClose = docAfterPos === ']]';
-
-                // Replace from [[ to current position (and include ]] if auto-closed)
+            apply: (view: EditorView, _completion: Completion, from: number, to: number) => {
+                const docNow = view.state.doc;
+                // Back up over the opening `[[` if it's still right before `from`.
+                const beforeFrom = docNow.sliceString(Math.max(0, from - 2), from);
+                const replaceFrom = beforeFrom === '[[' ? from - 2 : from;
+                // Absorb any auto-closed `]]` right after `to` (closeBrackets path).
+                const afterTo = docNow.sliceString(to, Math.min(docNow.length, to + 2));
+                const replaceTo = afterTo === ']]' ? to + 2 : to;
+                const insert = `[[${file.path}]]`;
                 view.dispatch({
-                    changes: {
-                        from: triggerStart,
-                        to: hasAutoClose ? pos + 2 : pos,
-                        insert: `[[${file.path}]]`,
-                    },
-                    selection: { anchor: triggerStart + file.path.length + 4 },
+                    changes: { from: replaceFrom, to: replaceTo, insert },
+                    selection: { anchor: replaceFrom + insert.length },
                 });
             },
             type: file instanceof TFolder ? 'folder' : (file instanceof TFile && file.extension === 'md' ? 'note' : 'attachment'),
@@ -154,56 +163,46 @@ export function fileRefCompletionSource(app: App) {
             from: triggerStart + 2,
             to: pos,
             options: completions,
-            // Keep completion open as long as we're inside [[ ]]
-            // Return true if the text between [[ and cursor doesn't contain ]]
-            validFor: (text: string, from: number, to: number) => {
-                // If text contains ]], we're no longer inside a file ref
-                if (text.includes(']]')) return false;
-                // Otherwise, keep the completion open
-                return true;
-            },
+            // Keep completion open as long as we're still inside the [[ ]]
+            // pair — i.e. the text between [[ and cursor doesn't contain ]].
+            validFor: (text: string) => !text.includes(']]'),
         };
     };
 }
 
 /**
  * Get all files and folders from the vault.
+ *
+ * Delegates to Obsidian's internally-maintained flat list rather than
+ * walking the folder tree ourselves — both are O(N) but the native call
+ * has a much smaller constant factor (no recursion, no de-dup Set).
+ *
+ * `getAllLoadedFiles()` includes the root folder in its result; we strip
+ * it here to match what a suggestion popup would meaningfully reference
+ * (you can't `[[]]`-link the vault root).
  */
 function getAllFiles(app: App): TAbstractFile[] {
-    const files: TAbstractFile[] = [];
-    const seen = new Set<string>();
-
-    const traverse = (folder: TFolder) => {
-        for (const child of folder.children) {
-            if (seen.has(child.path)) continue;
-            seen.add(child.path);
-            files.push(child);
-            if (child instanceof TFolder) {
-                traverse(child);
-            }
-        }
-    };
-
-    traverse(app.vault.getRoot());
-    return files;
+    return app.vault.getAllLoadedFiles().filter(
+        (f) => !(f instanceof TFolder && f.isRoot())
+    );
 }
 
 /**
- * Get all opened file paths (excluding the active file).
+ * Get the set of file paths that are currently open in any workspace leaf
+ * (main area, floating, or sidebar) — used to boost frequently-accessed
+ * files in completion ranking.
+ *
+ * Covers any `FileView` subclass (markdown / canvas / pdf / image /
+ * attachment / etc.), not just markdown, so a user actively working with
+ * non-note content still gets the "opened" priority bump for it.
  */
 function getOpenedFiles(app: App): Set<string> {
     const openedFiles = new Set<string>();
-    const leaves = app.workspace.getLeavesOfType('markdown');
-    const activeFile = app.workspace.getActiveFile();
-
-    for (const leaf of leaves) {
+    app.workspace.iterateAllLeaves((leaf) => {
         const view = leaf.view;
-        if (view instanceof MarkdownView) {
-            const file = view.file;
-            if (file && file.path !== activeFile?.path) {
-                openedFiles.add(file.path);
-            }
+        if (view instanceof FileView && view.file) {
+            openedFiles.add(view.file.path);
         }
-    }
+    });
     return openedFiles;
 }
