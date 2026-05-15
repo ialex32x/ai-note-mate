@@ -6,8 +6,8 @@ import { safeSliceHead } from '../../utils/string-safe';
 
 export interface AppendErrorBubbleOptions {
     messagesEl: HTMLElement;
-    /** Called after the bubble is appended so the singleton typing indicator stays pinned to tail. */
-    pinTypingIndicatorToEnd: () => void;
+    /** Called after the bubble is appended so the singleton streaming loader stays pinned to tail. */
+    pinStreamingLoaderToEnd: () => void;
     /** Optional auto-scroll trigger. */
     maybeScrollToBottom: () => void;
 }
@@ -77,9 +77,9 @@ export function appendErrorBubble(message: string, opts: AppendErrorBubbleOption
         menu.showAtMouseEvent(ev);
     });
 
-    // Keep singleton typing indicator pinned to tail even when we insert
+    // Keep singleton streaming loader pinned to tail even when we insert
     // an error bubble via a different code path than `appendBubble`.
-    opts.pinTypingIndicatorToEnd();
+    opts.pinStreamingLoaderToEnd();
     opts.maybeScrollToBottom();
     // Always log the full message so it remains debuggable from the dev console.
     console.error('Error:', message);

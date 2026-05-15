@@ -41,7 +41,7 @@ import {
 import { CMInput } from '../components/cm-input';
 import {
     ScrollController,
-    TypingIndicator,
+    StreamingLoader,
     showInitializationError,
     appendErrorBubble,
     updateSessionTitle as renderSessionTitle,
@@ -68,8 +68,8 @@ export class SessionView extends ItemView {
     private sessionStatusEl!: HTMLElement;
     private sessionStatusMainEl!: HTMLElement;
     private sessionStatusPanelEl!: HTMLElement;
-    /** Singleton typing indicator manager (see TypingIndicator for rationale). */
-    private typingIndicator!: TypingIndicator;
+    /** Singleton trailing "AI is working" loader (see StreamingLoader for rationale). */
+    private streamingLoader!: StreamingLoader;
     /** Scroll container controller (user-scrolled-up tracking + scroll-to-bottom button). */
     private scroller!: ScrollController;
     /** Flag to prevent concurrent session switches */
@@ -231,30 +231,23 @@ export class SessionView extends ItemView {
         switch (ev.type) {
             case 'start':
                 this.setInputLocked(true);
-                this.showTypingIndicator();
+                this.showStreamingLoader();
                 break;
             case 'message-update':
-                // Hide typing indicator once visible content is being
-                // streamed; the bubble's own cursor takes over.
-                if (this.isMessageProducingVisibleContent(ev.msg)) {
-                    this.hideTypingIndicator();
-                }
                 this.handleMessageUpdate(ev.msg);
                 break;
             case 'sub-agent-message-update':
-                if (this.isMessageProducingVisibleContent(ev.msg)) {
-                    this.hideTypingIndicator();
-                }
                 this.handleSubAgentMessageUpdate(ev.msg);
                 break;
             case 'tool-call-end':
-                // Tool execution completed — re-show typing dots while
-                // the AI prepares its next response (possibly thinking).
-                this.showTypingIndicator();
+                // No-op for the view: the trailing loader stays visible
+                // for the entire busy turn, so we don't need to retoggle
+                // anything between tool calls. Kept as an explicit case
+                // so an exhaustiveness check would catch a missing branch.
                 break;
             case 'finish':
                 this.scroller.clearUserScrolledUp();
-                this.hideTypingIndicator();
+                this.hideStreamingLoader();
                 this.setInputLocked(false);
                 // Persistence + title generation + insight extraction
                 // are all owned by the runtime; the view only needs to
@@ -267,7 +260,7 @@ export class SessionView extends ItemView {
                 break;
             case 'abort':
                 this.scroller.clearUserScrolledUp();
-                this.hideTypingIndicator();
+                this.hideStreamingLoader();
                 this.handleAbort(ev.msg);
                 break;
             case 'usage-update':
@@ -276,7 +269,7 @@ export class SessionView extends ItemView {
             case 'error':
                 console.warn('ChatStream error:', ev.err);
                 this.scroller.clearUserScrolledUp();
-                this.hideTypingIndicator();
+                this.hideStreamingLoader();
                 this.setInputLocked(false);
                 this.appendErrorBubble(ev.err.message);
                 break;
@@ -530,12 +523,12 @@ export class SessionView extends ItemView {
             const messagesWrapper = root.createEl('div', { cls: 'session-messages-wrapper' });
             this.messagesEl = messagesWrapper.createEl('div', { cls: 'session-messages' });
 
-            // Create the singleton typing indicator as the last child of
+            // Create the singleton trailing loader as the last child of
             // messagesEl. It stays in the DOM for the view's lifetime; we
-            // toggle its visibility via `session-typing-indicator--hidden`
+            // toggle its visibility via `session-streaming-loader--hidden`
             // and move it back to the tail after any bubble append.
-            this.typingIndicator = new TypingIndicator(this.messagesEl);
-            this.typingIndicator.mount();
+            this.streamingLoader = new StreamingLoader(this.messagesEl);
+            this.streamingLoader.mount();
 
             // Initialize BubbleRenderer with messagesEl
             this.bubbleRenderer = new BubbleRenderer(
@@ -721,9 +714,9 @@ export class SessionView extends ItemView {
         }
         this.dropdownManager.closeActive();
         this.messageBubbles.clear();
-        // Drop the singleton typing indicator reference; its DOM node is
+        // Drop the singleton streaming loader reference; its DOM node is
         // inside contentEl which will be torn down by the parent ItemView.
-        this.typingIndicator?.dispose();
+        this.streamingLoader?.dispose();
     }
 
     /**
@@ -907,7 +900,7 @@ export class SessionView extends ItemView {
         if ('speechSynthesis' in window && speechSynthesis.speaking) speechSynthesis.cancel();
         this.bubbleRenderer?.cancelSpeech();
         this.scroller.resetScrollIntent();
-        this.hideTypingIndicator();
+        this.hideStreamingLoader();
         this.setInputLocked(false);
 
         // Clear draft save timer and reset draft state
@@ -918,12 +911,12 @@ export class SessionView extends ItemView {
         // SessionRuntime and stored in session metadata) survive the
         // switch so they reappear when the user returns to this session.
         this.insightCard?.hide();
-        // Detach the singleton typing indicator before emptying, then
+        // Detach the singleton streaming loader before emptying, then
         // reattach so it remains the sole instance and still lives at
         // the tail of messagesEl.
-        this.typingIndicator.detach();
+        this.streamingLoader.detach();
         this.messagesEl.empty();
-        this.typingIndicator.reattachAfterEmpty();
+        this.streamingLoader.reattachAfterEmpty();
         this.messageBubbles.clear();
         this.abortedMessageIds.clear();
 
@@ -1054,12 +1047,12 @@ export class SessionView extends ItemView {
         this.renderInsightFromRuntimeState(this.runtime?.getInsightState() ?? null);
 
         // If we just bound a busy runtime (background turn still in
-        // flight), bring the typing indicator + locked input back so
+        // flight), bring the streaming loader + locked input back so
         // the UI reflects the real state. Subsequent message-update
         // events will continue updating the bubbles in place.
         if (opts.fromCache && runtime.isBusy) {
             this.setInputLocked(true);
-            this.showTypingIndicator();
+            this.showStreamingLoader();
         }
     }
 
@@ -1242,9 +1235,9 @@ export class SessionView extends ItemView {
             });
 
             this.messageBubbles.set(msg.id, bubble);
-            // Keep the singleton typing indicator pinned to the tail of messagesEl
+            // Keep the singleton streaming loader pinned to the tail of messagesEl
             // so it never ends up visually stranded between bubbles.
-            this.typingIndicator.pinToEnd();
+            this.streamingLoader.pinToEnd();
             this.updateNewChatBtnState();
             return bubble;
         });
@@ -1525,29 +1518,13 @@ export class SessionView extends ItemView {
         // The send button becomes a stop button when locked
     }
 
-    /**
-     * Returns true iff this message update represents the assistant (or a
-     * sub-agent) having started to emit something the user can see — thinking
-     * text, streaming content, or a streaming tool_call. In those states the
-     * global typing indicator should step aside in favour of the bubble's own
-     * in-place cursor (`▍`).
-     */
-    private isMessageProducingVisibleContent(msg: ChatMessage): boolean {
-        if (msg.role === 'assistant') {
-            if (msg.thinkingContent && !msg.thinkingComplete) return true;
-            if (msg.streaming && msg.content) return true;
-        }
-        if (msg.role === 'tool_call' && msg.streaming) return true;
-        return false;
-    }
-
-    private showTypingIndicator() {
-        this.typingIndicator.show();
+    private showStreamingLoader() {
+        this.streamingLoader.show();
         this.maybeScrollToBottom();
     }
 
-    private hideTypingIndicator() {
-        this.typingIndicator.hide();
+    private hideStreamingLoader() {
+        this.streamingLoader.hide();
     }
 
     private hasUserMessages(): boolean {
@@ -1648,7 +1625,7 @@ export class SessionView extends ItemView {
     private appendErrorBubble(message: string) {
         appendErrorBubble(message, {
             messagesEl: this.messagesEl,
-            pinTypingIndicatorToEnd: () => this.typingIndicator.pinToEnd(),
+            pinStreamingLoaderToEnd: () => this.streamingLoader.pinToEnd(),
             maybeScrollToBottom: () => this.maybeScrollToBottom(),
         });
     }

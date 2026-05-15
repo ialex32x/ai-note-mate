@@ -57,19 +57,16 @@ export function renderToolCallContent(
         headerRow.createEl('span', { cls: statusCls, text: statusIcon });
     }
 
-    // Confirmation UI or streaming cursor
+    // Confirmation UI (per-bubble streaming cursors removed: the single
+    // trailing `…` loader at the tail of the message list is the global
+    // "AI is working" indicator now). Long-running tool calls — e.g.
+    // image generation that has already been approved — still register
+    // visually because the runtime stays busy and the trailing loader
+    // remains visible until the whole turn finishes.
     if (msg.confirmationState === 'pending' && msg.streaming) {
         renderToolConfirmPending(ctx, contentEl, msg.id, pendingConfirmations);
     } else if (msg.confirmationState === 'allowed' || msg.confirmationState === 'rejected') {
         renderToolConfirmBadge(contentEl, msg.confirmationState);
-        // After user approval, the tool is still executing — surface a
-        // blinking cursor so the UI clearly conveys an in-progress state
-        // (e.g. long-running image generation).
-        if (msg.confirmationState === 'allowed' && msg.streaming) {
-            contentEl.createEl('span', { cls: 'session-bubble__cursor', text: '▍' });
-        }
-    } else if (msg.streaming) {
-        contentEl.createEl('span', { cls: 'session-bubble__cursor', text: '▍' });
     }
 
     // Collapsible detail section

@@ -282,23 +282,12 @@ export class BubbleRenderer extends Component {
             }
         }
 
-        // Feed content to the streaming controller (throttled + sanitized)
+        // Feed content to the streaming controller (throttled + sanitized).
+        // The trailing `…` loader at the tail of the message list is the
+        // single global "AI is working" indicator now — bubbles no longer
+        // host their own per-message streaming cursor.
         const controller = this.getOrCreateController(msg.id);
         controller.update(contentEl, msg.content);
-
-        // Update streaming cursor.
-        // The cursor is placed as a sibling AFTER contentEl (not inside it)
-        // so that doRender()'s contentEl.empty() won't destroy it.
-        const existingCursor = bubble.querySelector('.session-bubble__cursor');
-        let cursor: HTMLElement | null = existingCursor instanceof HTMLElement ? existingCursor : null;
-        if (msg.streaming) {
-            if (!cursor) {
-                cursor = createEl('span', { cls: 'session-bubble__cursor', text: '▍' });
-                contentEl.insertAdjacentElement('afterend', cursor);
-            }
-        } else if (cursor) {
-            cursor.remove();
-        }
 
         this.onScrollNeeded();
     }
@@ -394,13 +383,6 @@ export class BubbleRenderer extends Component {
             );
         } else {
             contentEl.setText(msg.content);
-        }
-
-        // Streaming cursor — placed as a sibling after contentEl so that
-        // the controller's contentEl.empty() won't destroy it.
-        if (msg.streaming && msg.role !== 'tool_call') {
-            const cursor = createEl('span', { cls: 'session-bubble__cursor', text: '▍' });
-            contentEl.insertAdjacentElement('afterend', cursor);
         }
 
         // Action bar (assistant messages only, and only if content is non-empty)

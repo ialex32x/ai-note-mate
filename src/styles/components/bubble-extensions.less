@@ -233,18 +233,6 @@
     display: block;
 }
 
-// Cursor animation
-.session-bubble__cursor {
-    display: inline-block;
-    animation: blink 0.8s step-end infinite;
-    margin-left: 1px;
-}
-
-@keyframes blink {
-    0%, 100% { opacity: 1; }
-    50%       { opacity: 0; }
-}
-
 // Bubble file references (user messages)
 .session-bubble__refs {
     display: flex;
@@ -366,45 +354,47 @@
     }
 }
 
-// Typing indicator (shown while waiting for AI response).
-// This node is a singleton created once in SessionView#onOpen and lives
-// permanently as the last child of `.session-messages`. Visibility is
-// toggled via the `--hidden` modifier; the node is never removed/recreated
-// during a session's lifetime, which prevents stale indicators from getting
-// stranded between bubbles when callback paths forget to hide it.
-.session-typing-indicator {
+// Trailing "AI is working" loader — a simple `...` placeholder pinned
+// to the tail of `.session-messages`. This singleton node is created
+// once in SessionView#onOpen and lives permanently as the last child;
+// visibility is toggled via the `--hidden` modifier. It is the single
+// global cue for "the runtime is still busy" — bubbles no longer host
+// their own per-message streaming cursor.
+.session-streaming-loader {
     display: flex;
-    align-items: center;
-    justify-content: flex-start;
-    padding: @spacing-md @spacing-lg;
-    margin-bottom: @spacing-sm;
+    align-items: flex-end;
+    gap: 3px;
+    padding: @spacing-xs @spacing-lg @spacing-md;
+    color: @text-faint;
+    font-size: 1.4em;
+    line-height: 1;
 }
 
-.session-typing-indicator--hidden {
+.session-streaming-loader--hidden {
     display: none;
 }
 
-.session-typing-indicator__dots {
-    display: flex;
-    align-items: center;
-    gap: @spacing-xs;
-    font-size: 1.5em;
-    line-height: 1;
-    color: @text-secondary;
+// Each dot rides the same keyframe with a staggered start offset so the
+// trio reads as a left-to-right wave rather than a synchronous blink.
+.session-streaming-loader__dot {
+    display: inline-block;
+    line-height: 0.6;
+    animation: streaming-loader-wave 1.2s ease-in-out infinite;
+
+    &:nth-child(1) { animation-delay: 0s; }
+    &:nth-child(2) { animation-delay: 0.18s; }
+    &:nth-child(3) { animation-delay: 0.36s; }
 }
 
-.session-typing-indicator__dot {
-    animation: typing-bounce 1.4s ease-in-out infinite;
-    animation-delay: calc(var(--i, 0) * 0.16s);
-
-    &:nth-child(1) { --i: 0; }
-    &:nth-child(2) { --i: 1; }
-    &:nth-child(3) { --i: 2; }
-}
-
-@keyframes typing-bounce {
-    0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-    30% { transform: translateY(-4px); opacity: 1; }
+@keyframes streaming-loader-wave {
+    0%, 60%, 100% {
+        transform: translateY(0);
+        opacity: 0.35;
+    }
+    30% {
+        transform: translateY(-4px);
+        opacity: 1;
+    }
 }
 
 // Clickable images in message bubbles

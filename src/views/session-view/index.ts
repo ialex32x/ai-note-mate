@@ -2,7 +2,7 @@
 // plugin API — callers outside `views/` should keep importing from
 // `views/session-view` instead.
 export { ScrollController } from './scroll-controller';
-export { TypingIndicator } from './typing-indicator';
+export { StreamingLoader } from './streaming-loader';
 export { showInitializationError } from './init-error-screen';
 export { appendErrorBubble } from './error-bubble';
 export {

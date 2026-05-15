@@ -183,11 +183,8 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
         renderDelegateInputsCollapsible(bubble, inputs);
     }
 
-    // Streaming cursor while the delegate_task is in-flight.
-    if (msg.streaming) {
-        const cursor = createEl('span', { cls: 'session-bubble__cursor', text: '▍' });
-        contentEl.insertAdjacentElement('afterend', cursor);
-    }
+    // No per-bubble streaming cursor: the single trailing `…` loader at
+    // the tail of the message list is the global "AI is working" cue.
 }
 
 /**
