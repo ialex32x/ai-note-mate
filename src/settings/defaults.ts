@@ -65,7 +65,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	toolConfirmMode: 'auto',
 	mcpServers: [],
 	skillSearchPaths: [],
-	embeddingEnabled: true,
+	embeddingEnabled: false,
 	embeddingConfigs: [],
 	activeEmbeddingId: '',
 	memoryEnabled: true,
@@ -73,7 +73,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	followUpSuggestionsEnabled: true,
 	followUpSuggestionsStructured: false,
 	followUpSuggestionsAutoSend: false,
-	insightExtractionEnabled: false,
+	insightExtractionEnabled: true,
 	insightExtractionMinReplyChars: 400,
 	// Mirrors ARTIFACT_STORE_DEFAULTS (1 MB / 128 KB / 30 min). Kept as
 	// literals here rather than `import { ARTIFACT_STORE_DEFAULTS }` to
