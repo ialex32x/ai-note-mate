@@ -232,11 +232,19 @@
 
 // ── Details panel ───────────────────────────────────────────────────────
 
+// Error box shown in the expanded details panel of a failed task.
+// Uses a neutral panel background (same as the "After" preview) with an
+// error-tinted left border, so the red text remains legible across both
+// light and dark Obsidian themes. The previous design painted red text
+// over an error-tinted background, which collapsed contrast to near zero
+// in dark themes.
 .ai-edit-history-error {
     margin-bottom: @spacing-sm;
     padding: @spacing-sm;
+    border: 1px solid @bg-modifier-border;
+    border-left: 3px solid @text-error;
     border-radius: @radius-sm;
-    background: var(--background-modifier-error);
+    background: @bg-primary;
     color: @text-error;
     font-size: var(--font-ui-smaller);
     white-space: pre-wrap;

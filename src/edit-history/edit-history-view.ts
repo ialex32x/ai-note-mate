@@ -373,7 +373,14 @@ export class EditHistoryView extends ItemView {
             cls: `ai-edit-history-status-icon ai-edit-history-status-icon--${task.status}`,
         });
         setIcon(statusIcon, STATUS_ICONS[task.status]);
-        setTooltip(statusIcon, t(`editHistory.status.${task.status}`));
+        // For failed tasks, append the captured error reason to the tooltip
+        // so hovering the status icon reveals the cause without forcing the
+        // user to expand the row.
+        const statusLabel = t(`editHistory.status.${task.status}`);
+        const statusTooltip = task.status === "failed" && task.error
+            ? `${statusLabel}: ${task.error}`
+            : statusLabel;
+        setTooltip(statusIcon, statusTooltip);
 
         if (task.status === "running" || task.status === "pending") {
             this.makeIconButton(buttonRow, "x", t("editHistory.button.cancel"), () => {

@@ -54,10 +54,9 @@ export async function runEditTask(
     if (task.filePath) {
         const holder = plugin.fileLockManager?.getHolder(task.filePath);
         if (holder) {
-            store.update(task.id, {
-                status: "failed",
-                error: t("editHistory.notice.lockConflict"),
-            });
+            const reason = t("editHistory.notice.lockConflict");
+            store.update(task.id, { status: "failed", error: reason });
+            notifyFailure(reason);
             return;
         }
     }
@@ -103,10 +102,9 @@ export async function runEditTask(
         const finalTask = store.get(task.id);
         const rewritten = finalTask?.rewrittenText ?? "";
         if (!rewritten) {
-            store.update(task.id, {
-                status: "failed",
-                error: t("editHistory.notice.emptyResponse"),
-            });
+            const reason = t("editHistory.notice.emptyResponse");
+            store.update(task.id, { status: "failed", error: reason });
+            notifyFailure(reason);
             return;
         }
 
@@ -124,7 +122,21 @@ export async function runEditTask(
         }
         const message = err instanceof Error ? err.message : String(err);
         store.update(task.id, { status: "failed", error: message });
+        notifyFailure(message);
     }
+}
+
+/**
+ * Surface a rewrite failure to the user as a transient Notice so the
+ * cause is visible immediately, without having to open the AI Edit
+ * History view and expand the failed row. The Notice runs slightly
+ * longer than the default so longer provider messages remain readable.
+ */
+function notifyFailure(reason: string): void {
+    const text = reason && reason.trim()
+        ? t("editHistory.notice.failed", { 0: reason })
+        : t("editHistory.status.failed");
+    new Notice(text, 8000);
 }
 
 type WriteResult = "ok" | "stale";
