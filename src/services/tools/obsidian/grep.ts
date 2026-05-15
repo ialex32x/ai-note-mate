@@ -152,7 +152,11 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "number",
                             description:
                                 "Cap on total matches returned across all queries. Defaults to " + DEFAULT_MAX_MATCHES + ". " +
-                                "If the cap is hit, `truncated: true` is set in the response.",
+                                "The response always echoes this cap as `max_matches` and sets `has_more: true` " +
+                                "when the cap is reached (i.e. additional matches may exist beyond what was returned). " +
+                                "Treat `has_more` as a normal pagination hint, not an error: ignore it when the current " +
+                                "results are sufficient for the task; only narrow the queries (or raise this cap) when " +
+                                "you genuinely need the omitted matches.",
                         },
                     },
                     required: ["path", "queries"],
@@ -263,7 +267,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             // ── Scan ────────────────────────────────────────────────────────
             const matches: GrepMatch[] = [];
-            let truncated = false;
+            let hasMore = false;
 
             outer: for (let i = scanStart - 1; i < scanEnd && i < lines.length; i++) {
                 const line = lines[i]!;
@@ -282,7 +286,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         }
                         matches.push(m);
                         if (matches.length >= maxMatches) {
-                            truncated = true;
+                            hasMore = true;
                             break outer;
                         }
                         // First-matching-query wins for this line; don't double-report
@@ -310,7 +314,8 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         : null,
                     matches,
                     match_count: matches.length,
-                    truncated,
+                    max_matches: maxMatches,
+                    has_more: hasMore,
                 },
             };
         },
