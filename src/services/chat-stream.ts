@@ -330,7 +330,7 @@ export interface ChatStreamConfig {
      * of the ChatStream.
      */
     compressionOptions?: Pick<ContextReduceOptions,
-        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
+        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
     >;
 
     /**

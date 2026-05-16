@@ -17,7 +17,13 @@ export function createDefaultProfile(): ProviderProfile {
 		name: 'DeepSeek',
 		provider: 'openai',
 		baseUrl: 'https://api.deepseek.com',
-		model: 'deepseek-chat',
+		// V4-flash is the current cost-effective default with a 1M
+		// context window (replaces the older `deepseek-chat` /
+		// `deepseek-reasoner` aliases, both of which are scheduled to
+		// retire on 2026-07-24 — see DeepSeek API changelog 2026-04-24).
+		// Existing user profiles are unaffected; this only seeds
+		// fresh installs and newly-added profiles.
+		model: 'deepseek-v4-flash',
 		apiKey: '',
 		modalities: ['image'],
 		maxTokens: 0,

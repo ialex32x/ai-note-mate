@@ -140,6 +140,27 @@ export interface ContextReduceOptions {
      * mode (which never produces envelopes anyway).
      */
     artifactStore?: ArtifactStore | null;
+    /**
+     * Real-token context window of the target model, used by
+     * {@link ContextReducer.emergencyShrink} to compute an adaptive
+     * emergency line: the shrink is triggered at
+     * `min(threshold × 1.5, modelContextWindow × 0.85 / 1.2)`, so
+     * small-window models (e.g. legacy GPT-3.5 16k, Llama-2 4k) get
+     * the safety net **before** the prompt overflows even when the
+     * user's threshold is set for a much larger model.
+     *
+     * Conventions:
+     *   - Value is the model's **real** context window (not estimated
+     *     `estimateTokens()` units); the reducer applies the standard
+     *     ~1.2× drift factor internally.
+     *   - `<= 0` / `undefined` falls back to the original "threshold
+     *     × 1.5 only" rule. Useful for tests and ad-hoc callers that
+     *     don't have model metadata handy.
+     *   - Producers typically use the helper in
+     *     `src/services/model-context-window.ts` to derive this from
+     *     the profile's model identifier.
+     */
+    modelContextWindow?: number;
 }
 
 export interface HistoryMessage {
@@ -756,6 +777,12 @@ export class ContextReducer {
         // storage. `null` is treated identically to `undefined` —
         // disables spilling, falls back to the legacy generic truncation.
         const artifactStore = options?.artifactStore ?? null;
+        // Model-aware emergency line. `<=0` (incl. undefined) keeps the
+        // pre-existing "threshold × 1.5 only" behaviour — see
+        // {@link emergencyShrink} for the math.
+        const modelContextWindow = options?.modelContextWindow && options.modelContextWindow > 0
+            ? options.modelContextWindow
+            : 0;
 
         // ── 1. Separate system messages (always preserved) ────────────────
         const systemMessages = rawMessages.filter(msg => msg.role === "system");
@@ -881,7 +908,7 @@ export class ContextReducer {
 
             const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend);
             const { messages: postEmergencyNoCompress, shrunk: emergencyShrunkNoCompress } =
-                ContextReducer.emergencyShrink(sanitizedNoCompress, accessoryTokens, threshold, artifactStore);
+                ContextReducer.emergencyShrink(sanitizedNoCompress, accessoryTokens, threshold, artifactStore, modelContextWindow);
             return {
                 messagesToSend: postEmergencyNoCompress,
                 newSummary: null,
@@ -951,7 +978,7 @@ export class ContextReducer {
             ] as T[];
             const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled);
             const { messages: postEmergencyFitsWindow, shrunk: emergencyShrunkFitsWindow } =
-                ContextReducer.emergencyShrink(sanitizedFitsWindow, accessoryTokens, threshold, artifactStore);
+                ContextReducer.emergencyShrink(sanitizedFitsWindow, accessoryTokens, threshold, artifactStore, modelContextWindow);
             return {
                 messagesToSend: postEmergencyFitsWindow,
                 newSummary: null,
@@ -1022,7 +1049,7 @@ export class ContextReducer {
             ] as T[];
             const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled);
             const { messages: postEmergencyFallback, shrunk: emergencyShrunkFallback } =
-                ContextReducer.emergencyShrink(sanitizedFallback, accessoryTokens, threshold, artifactStore);
+                ContextReducer.emergencyShrink(sanitizedFallback, accessoryTokens, threshold, artifactStore, modelContextWindow);
             return {
                 messagesToSend: postEmergencyFallback,
                 newSummary: null,
@@ -1078,7 +1105,7 @@ export class ContextReducer {
 
         const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend);
         const { messages: postEmergencyCompressed, shrunk: emergencyShrunkCompressed } =
-            ContextReducer.emergencyShrink(sanitizedCompressed, accessoryTokens, threshold, artifactStore);
+            ContextReducer.emergencyShrink(sanitizedCompressed, accessoryTokens, threshold, artifactStore, modelContextWindow);
         return {
             messagesToSend: postEmergencyCompressed,
             newSummary,
@@ -1090,8 +1117,8 @@ export class ContextReducer {
 
     /**
      * Last-resort budget recovery — applied to the fully-assembled
-     * messages list when its estimated token count still exceeds
-     * 1.5× threshold after primary compression.
+     * messages list when its estimated token count exceeds the
+     * **adaptive emergency line**.
      *
      * Why this exists: primary compression operates on the **history**
      * portion of the prompt (everything older than the recent window).
@@ -1107,6 +1134,23 @@ export class ContextReducer {
      *      boundary snap keeps the whole turn intact, even when that
      *      means the "compressed" prompt is barely smaller than the
      *      uncompressed one.
+     *
+     * Adaptive emergency line:
+     *   `min(threshold × 1.5, modelContextWindow × 0.85 / 1.2)`
+     *
+     *   - `threshold × 1.5` — the user-tunable knob. Fires when the
+     *     post-compression prompt is **clearly** above the configured
+     *     trigger point.
+     *   - `modelContextWindow × 0.85 / 1.2` — model-aware safety floor:
+     *     0.85 leaves 15% of the real window for the response and
+     *     provider-side overhead; the /1.2 converts the real-token
+     *     ceiling back into the reducer's estimated-token unit. So a
+     *     16k-window model fires emergency shrink at ~11k estimated
+     *     tokens regardless of how high the user's threshold is.
+     *
+     *   When `modelContextWindow <= 0` (no metadata supplied — e.g.
+     *   tests, unknown model) the model floor is omitted and only
+     *   `threshold × 1.5` applies, preserving the original behaviour.
      *
      * Strategy: re-run `shrinkLargeToolResults` with `forceShrinkAll=true`
      * so the unconsumed-tail exemption is bypassed. The envelope spill
@@ -1133,9 +1177,23 @@ export class ContextReducer {
         accessoryTokens: number,
         threshold: number,
         store: ArtifactStore | null,
+        modelContextWindow: number,
     ): { messages: T[]; shrunk: boolean } {
         const total = estimateMessagesTokens(messages) + accessoryTokens;
-        if (total <= threshold * 1.5) return { messages, shrunk: false };
+
+        // Compute the adaptive emergency line. See JSDoc above for the
+        // math; here we just min two upper bounds, omitting the model
+        // floor when no metadata was supplied (the historical path).
+        const thresholdCeiling = threshold * 1.5;
+        // 0.85 / 1.2 ≈ 0.708 — derived constants kept inline to avoid
+        // a tiny helper file; they're tuned in tandem and only used here.
+        const modelCeiling = modelContextWindow > 0
+            ? (modelContextWindow * 0.85) / 1.2
+            : Number.POSITIVE_INFINITY;
+        const emergencyLine = Math.min(thresholdCeiling, modelCeiling);
+        const limitedByModel = modelCeiling < thresholdCeiling;
+
+        if (total <= emergencyLine) return { messages, shrunk: false };
 
         const shrunkMessages = this.shrinkLargeToolResults(
             messages,
@@ -1148,28 +1206,34 @@ export class ContextReducer {
         // something oversized in the tail; if everything was already
         // shrunk in the primary pass, this is a no-op.
         if (newTotal === total) {
+            const guidance = limitedByModel
+                ? `model context window ~${modelContextWindow} is the limiting factor — ` +
+                  `lower the compression threshold or switch to a larger-context model.`
+                : `consider raising the threshold, switching to a larger-context model, ` +
+                  `or trimming the active tool set.`;
             console.warn(
                 `[ContextReducer] emergency shrink found nothing left to shrink: ` +
-                `${total} estimated tokens, threshold ${threshold}. ` +
-                `Prompt size is dominated by summaries or short messages — ` +
-                `consider raising the threshold, switching to a larger-context model, ` +
-                `or trimming the active tool set.`,
+                `${total} estimated tokens, emergency line ${Math.floor(emergencyLine)} ` +
+                `(threshold ${threshold}${limitedByModel ? `, model ${modelContextWindow}` : ""}). ` +
+                guidance,
             );
             return { messages, shrunk: false };
         }
 
-        if (newTotal > threshold * 1.5) {
+        if (newTotal > emergencyLine) {
             console.warn(
                 `[ContextReducer] emergency shrink applied but prompt is still over budget: ` +
-                `${total} → ${newTotal} estimated tokens (threshold ${threshold}). ` +
+                `${total} → ${newTotal} estimated tokens (limit ${Math.floor(emergencyLine)}` +
+                `${limitedByModel ? `, capped by model window ${modelContextWindow}` : ""}). ` +
                 `Provider may return a 400 if the model window is exceeded.`,
             );
         } else {
             console.warn(
                 `[ContextReducer] emergency shrink applied: ${total} → ${newTotal} ` +
-                `estimated tokens (threshold ${threshold}). Some recently-returned ` +
-                `tool results were truncated to fit the budget; their original ` +
-                `content remains recoverable via the artifact store when available.`,
+                `estimated tokens (limit ${Math.floor(emergencyLine)}` +
+                `${limitedByModel ? `, capped by model window ${modelContextWindow}` : ""}). ` +
+                `Some recently-returned tool results were truncated to fit the budget; ` +
+                `their original content remains recoverable via the artifact store when available.`,
             );
         }
         return { messages: shrunkMessages, shrunk: true };

@@ -18,6 +18,7 @@ import { createSkillTools } from '../../services/tools/skill-toolcall';
 import { createImageTool } from '../../services/tools/image-toolcall';
 import { createConversationTools } from '../../services/tools/conversation-toolcall';
 import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
+import { inferModelContextWindow } from '../../services/model-context-window';
 
 /** Resolve the summarizer model config from settings (if any). */
 export function createSummarizerConfig(plugin: NoteAssistantPlugin): MinimalModelConfig | undefined {
@@ -134,12 +135,20 @@ export function createChatAgent(
     // stays small) so the same struct is also injected into every
     // SubAgentConfig below.
     const activeProfile = getActiveProfile(settings);
+    // Inferred from the active profile's model identifier — no user
+    // input required. The reducer uses this to derive an adaptive
+    // emergency line so small-window models (e.g. legacy GPT-3.5 16k)
+    // get force-shrunk **before** the prompt exceeds the model window,
+    // even when the user's `compressionThreshold` is set for a much
+    // larger model. Unknown models fall back to a conservative 32k
+    // floor (see `inferModelContextWindow` / `SAFE_FALLBACK_TOKENS`).
     const compressionOptions: Pick<ContextReduceOptions,
-        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
+        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
     > = {
         compressionThreshold: activeProfile.contextCompressionThreshold,
         slidingWindowSize: activeProfile.slidingWindowSize,
         maxSummariesThreshold: activeProfile.maxSummariesThreshold,
+        modelContextWindow: inferModelContextWindow(activeProfile.model),
     };
 
     const chatStreamConfig = {
