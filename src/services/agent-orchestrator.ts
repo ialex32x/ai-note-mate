@@ -364,8 +364,9 @@ export class InvalidDelegateInputError extends Error {
 /**
  * Build the initial exchange store for a `delegate_task` dispatch from the
  * main agent's `inputs` argument. Each (key, value) pair becomes a
- * pre-populated entry the sub-agent can read via `exchange.get(key)` /
- * `exchange.list()` before deciding how to act.
+ * pre-populated entry the sub-agent can read via `exchange.get` (single
+ * key OR `keys: string[]` for a batched lookup) / `exchange.list()` before
+ * deciding how to act.
  *
  * Validation rules (mirrored from the exchange tool's `put` path so the
  * main → sub direction has the same safety guarantees as the sub → sub

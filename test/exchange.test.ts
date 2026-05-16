@@ -247,6 +247,154 @@ describe("exchange tool — get", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// op: get (batch via `keys` array)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("exchange tool — get (batch)", () => {
+    it("returns all found values keyed by the requested key", async () => {
+        const store: ExchangeStore = new Map([
+            ["source", ["a.md", "b.md"]],
+            ["user_focus", "fix typos"],
+            ["target_language", "en"],
+        ]);
+        const r = await runOp(store, {
+            op: "get",
+            keys: ["source", "user_focus"],
+        });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({
+            values: {
+                source: ["a.md", "b.md"],
+                user_focus: "fix typos",
+            },
+            missing: [],
+        });
+    });
+
+    it("partitions hits and misses into `values` and `missing`", async () => {
+        const store: ExchangeStore = new Map([
+            ["path", "Notes/a.md"],
+            ["style_rules", { tone: "formal" }],
+        ]);
+        const r = await runOp(store, {
+            op: "get",
+            keys: ["path", "style_rules", "target_language"],
+        });
+        expect(r.success).toBe(true);
+        const content = r.content as {
+            values: Record<string, unknown>;
+            missing: string[];
+            available_keys?: string[];
+        };
+        expect(content.values).toEqual({
+            path: "Notes/a.md",
+            style_rules: { tone: "formal" },
+        });
+        expect(content.missing).toEqual(["target_language"]);
+        expect(content.available_keys?.sort()).toEqual(["path", "style_rules"]);
+    });
+
+    it("omits `available_keys` when every requested key is found", async () => {
+        const store: ExchangeStore = new Map([["k", 1]]);
+        const r = await runOp(store, { op: "get", keys: ["k"] });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ values: { k: 1 }, missing: [] });
+    });
+
+    it("reports every requested key in `missing` when store is empty", async () => {
+        const store: ExchangeStore = new Map();
+        const r = await runOp(store, { op: "get", keys: ["a", "b"] });
+        expect(r.success).toBe(true);
+        const content = r.content as {
+            values: Record<string, unknown>;
+            missing: string[];
+            available_keys?: string[];
+        };
+        expect(content.values).toEqual({});
+        expect(content.missing.sort()).toEqual(["a", "b"]);
+        expect(content.available_keys).toEqual([]);
+    });
+
+    it("trims and deduplicates requested keys", async () => {
+        const store: ExchangeStore = new Map([
+            ["result", { ok: true }],
+            ["candidates", [1, 2]],
+        ]);
+        const r = await runOp(store, {
+            op: "get",
+            keys: ["  result  ", "result", "candidates"],
+        });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({
+            values: { result: { ok: true }, candidates: [1, 2] },
+            missing: [],
+        });
+    });
+
+    it("preserves explicit null values (not collapsed into `missing`)", async () => {
+        // The put path accepts `null`; batch get must treat it as a real
+        // present value rather than reporting the key as missing.
+        const store: ExchangeStore = new Map([["maybe", null]]);
+        const r = await runOp(store, { op: "get", keys: ["maybe"] });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ values: { maybe: null }, missing: [] });
+    });
+
+    it("rejects when both `key` and `keys` are provided", async () => {
+        const store: ExchangeStore = new Map([["k", 1]]);
+        const r = await runOp(store, { op: "get", key: "k", keys: ["k"] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/either.*key.*or.*keys/i);
+    });
+
+    it("rejects a non-array `keys` argument", async () => {
+        const store: ExchangeStore = new Map();
+        const r = await runOp(store, { op: "get", keys: "result" });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/array/i);
+    });
+
+    it("rejects an empty `keys` array (with hint to use list)", async () => {
+        const store: ExchangeStore = new Map();
+        const r = await runOp(store, { op: "get", keys: [] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/at least one/i);
+    });
+
+    it("rejects non-string entries in `keys`", async () => {
+        const store: ExchangeStore = new Map();
+        const r = await runOp(store, { op: "get", keys: ["a", 42] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/keys\[1\].*string/i);
+    });
+
+    it("rejects empty / whitespace-only entries in `keys`", async () => {
+        const store: ExchangeStore = new Map();
+        const r = await runOp(store, { op: "get", keys: ["a", "   "] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/keys\[1\].*empty/i);
+    });
+
+    it("rejects `keys` exceeding the hard limit", async () => {
+        const store: ExchangeStore = new Map();
+        const tooMany = Array.from({ length: 33 }, (_, i) => `k${i}`);
+        const r = await runOp(store, { op: "get", keys: tooMany });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/Too many keys/i);
+    });
+
+    it("the existing single-key path is unaffected by adding `keys`", async () => {
+        // Regression guard: callers using only `key` should see the
+        // exact same response shape as before (no `values` / `missing`
+        // batch envelope mixed in).
+        const store: ExchangeStore = new Map([["result", { ok: true }]]);
+        const r = await runOp(store, { op: "get", key: "result" });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ value: { ok: true } });
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // op: list
 // ─────────────────────────────────────────────────────────────────────────────
 

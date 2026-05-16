@@ -153,15 +153,28 @@ export function estimateValueSize(value: unknown): number {
 
 const TOOL_NAME = "exchange";
 
+/**
+ * Upper bound on `keys.length` for a batch `get`. The store is sized for
+ * a handful of dispatch inputs (paths, focus strings, rule objects); a
+ * batch larger than this is almost certainly a model bug and would also
+ * inflate the tool_result payload past what a single LLM turn should
+ * absorb. 32 is comfortably above the real-world maximum we observe in
+ * the prompts (≤ 5 input keys) while still being a recognisable round
+ * cap if a model ever brushes against it.
+ */
+const GET_KEYS_HARD_LIMIT = 32;
+
 const TOOL_DESCRIPTION =
     "Read or write a small structured key/value store shared with the calling main agent. " +
     "Use this to RETURN STRUCTURED DATA: after completing your task, call " +
     "exchange({op:'put', key:'result', value:<your structured result>}) BEFORE producing " +
     "your final text reply. The main agent will receive both your text reply and the " +
     "value(s) you stored here, so it can act on them programmatically without re-parsing " +
-    "your prose. Values must be JSON-serializable (string, number, boolean, null, plain " +
-    "array, or plain object). Functions, Date, Map, Set, BigInt, and class instances are " +
-    "not allowed.";
+    "your prose. For reading multiple preloaded inputs, prefer a single batch get — " +
+    "exchange({op:'get', keys:['k1','k2',...]}) — over several single-key gets, to save " +
+    "tool-call overhead. Values must be JSON-serializable (string, number, boolean, null, " +
+    "plain array, or plain object). Functions, Date, Map, Set, BigInt, and class instances " +
+    "are not allowed.";
 
 /**
  * Build the `exchange` tool bound to the given store source.
@@ -204,8 +217,19 @@ export function createExchangeTool(source: ExchangeStoreSource): RegisteredTool 
                         key: {
                             type: "string",
                             description:
-                                "Key name. Required for 'put' and 'get'. " +
+                                "Single key name. Required for 'put'. " +
+                                "For 'get', use either `key` (single lookup) OR `keys` (batch lookup), not both. " +
                                 "Use 'result' for the canonical structured return value.",
+                        },
+                        keys: {
+                            type: "array",
+                            items: { type: "string" },
+                            description:
+                                "Multiple keys to fetch in a single call (op='get' only; mutually exclusive with `key`). " +
+                                `Up to ${GET_KEYS_HARD_LIMIT} keys. ` +
+                                "Returns `{values: {k1: v1, ...}, missing: [<keys not in store>]}`. " +
+                                "PREFER this over calling get one key at a time when you need several " +
+                                "preloaded inputs — each separate tool call costs an extra LLM round-trip.",
                         },
                         value: {
                             description:
@@ -288,10 +312,37 @@ function execPut(store: ExchangeStore, args: Record<string, unknown>): ToolCallR
     };
 }
 
+/**
+ * Dispatch entry for op='get'. Accepts either a single `key` or a `keys`
+ * array (mutually exclusive). The branch is selected by which argument
+ * is present; this keeps the JSON schema flat (no `oneOf` polymorphism
+ * that weaker models struggle to parse) and the response shape diverges
+ * by branch so the model never has to guess what came back.
+ */
 function execGet(store: ExchangeStore, args: Record<string, unknown>): ToolCallResult {
+    const hasKey = "key" in args && args["key"] !== undefined;
+    const hasKeys = "keys" in args && args["keys"] !== undefined;
+
+    if (hasKey && hasKeys) {
+        return errorResult(
+            "Provide either `key` (single lookup) OR `keys` (batch lookup) for op='get', not both.",
+        );
+    }
+
+    if (hasKeys) {
+        return execGetBatch(store, args["keys"]);
+    }
+
+    return execGetSingle(store, args);
+}
+
+function execGetSingle(store: ExchangeStore, args: Record<string, unknown>): ToolCallResult {
     const key = args["key"];
     if (typeof key !== "string" || !key.trim()) {
-        return errorResult("`key` is required for op='get' and must be a non-empty string.");
+        return errorResult(
+            "`key` is required for op='get' and must be a non-empty string. " +
+            "Use `keys: [...]` instead to fetch several values in one call.",
+        );
     }
 
     const trimmed = key.trim();
@@ -311,6 +362,75 @@ function execGet(store: ExchangeStore, args: Record<string, unknown>): ToolCallR
         success: true,
         type: "object",
         content: { value: store.get(trimmed) },
+    };
+}
+
+/**
+ * Batch lookup. Returns the values for every requested key that exists,
+ * plus a `missing` array listing keys that were not in the store (empty
+ * when every requested key was found). `available_keys` is attached
+ * ONLY when at least one key is missing, mirroring the single-key path
+ * so the model gets a corrective hint exactly when it would help.
+ *
+ * Keys are trimmed and deduplicated; the response uses the trimmed form
+ * so the caller can reliably index into `values`.
+ */
+function execGetBatch(store: ExchangeStore, rawKeys: unknown): ToolCallResult {
+    if (!Array.isArray(rawKeys)) {
+        return errorResult("`keys` must be an array of non-empty strings.");
+    }
+    if (rawKeys.length === 0) {
+        return errorResult(
+            "`keys` must contain at least one entry. " +
+            "For a no-arg discovery, use op='list' instead.",
+        );
+    }
+    if (rawKeys.length > GET_KEYS_HARD_LIMIT) {
+        return errorResult(
+            `Too many keys (${rawKeys.length}); maximum is ${GET_KEYS_HARD_LIMIT}. ` +
+            "Split into multiple calls or narrow the request.",
+        );
+    }
+
+    const seen = new Set<string>();
+    const requested: string[] = [];
+    // Treat the narrowed array as `unknown[]` rather than `any[]`
+    // (Array.isArray narrows to `any[]`, which would let non-string
+    // entries through the `typeof` guard at compile time).
+    const items: readonly unknown[] = rawKeys as readonly unknown[];
+    for (let i = 0; i < items.length; i++) {
+        const raw: unknown = items[i];
+        if (typeof raw !== "string") {
+            return errorResult(`keys[${i}] must be a string; got ${typeof raw}.`);
+        }
+        const trimmed = raw.trim();
+        if (!trimmed) {
+            return errorResult(`keys[${i}] is empty or whitespace-only.`);
+        }
+        if (!seen.has(trimmed)) {
+            seen.add(trimmed);
+            requested.push(trimmed);
+        }
+    }
+
+    const values: Record<string, unknown> = {};
+    const missing: string[] = [];
+    for (const k of requested) {
+        if (store.has(k)) {
+            values[k] = store.get(k);
+        } else {
+            missing.push(k);
+        }
+    }
+
+    const content: Record<string, unknown> = { values, missing };
+    if (missing.length > 0) {
+        content["available_keys"] = Array.from(store.keys());
+    }
+    return {
+        success: true,
+        type: "object",
+        content,
     };
 }
 

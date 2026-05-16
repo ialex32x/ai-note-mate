@@ -18,13 +18,20 @@
  */
 export const READING_INPUTS_SECTION = `
 ## Reading structured inputs from the main agent
-The main agent may pre-load structured data into your \`exchange\` store via the \`inputs\` argument of \`delegate_task\`. To inspect what's there:
+The main agent may pre-load structured data into your \`exchange\` store via the \`inputs\` argument of \`delegate_task\`. Your sub-agent's workflow above lists the input keys you should expect for this dispatch — those keys ARE the input contract.
 
-  exchange({ op: "list" })          // returns the keys with their value sizes
-  exchange({ op: "get", key: "..." }) // returns the value for one key
+PREFER a single batch read over multiple single-key gets:
 
-- ALWAYS check \`exchange.list\` early in your task if the main agent's request mentions data it has already collected (paths, candidates, prior results, constraints, configuration). It is more reliable than trying to parse the same data out of the task prose.
-- The main agent is encouraged to use the key \`source\` for "the thing you should operate on" (e.g. a path or list of paths). Keys you see are part of your input contract for this dispatch.
+  exchange({ op: "get", keys: ["source", "user_focus", ...expected keys for this sub-agent...] })
+  // → { values: { source: ..., user_focus: ... }, missing: ["..."] }
+  // Missing keys land in \`missing\`; that's fine, it just means the main agent didn't supply that one.
+
+Each separate \`get\` call adds a full LLM round-trip. Batching is strictly cheaper. Use the single-key form \`{ op: "get", key: "..." }\` only when you genuinely need just one value.
+
+\`exchange({ op: "list" })\` (returns keys + sizes, no values) is a fallback for the rare case where you suspect the main agent has pre-loaded keys that are NOT in your sub-agent's expected set. In normal operation you do not need it — your workflow's expected key set is authoritative.
+
+- ALWAYS prefer these AUTHORITATIVE preloaded inputs over re-parsing the same data from the task prose.
+- The main agent is encouraged to use the key \`source\` for "the thing you should operate on" (e.g. a path or list of paths).
 - You may overwrite or extend these keys via \`exchange.put\` — your writes flow back to the main agent through the same store (see below). Be deliberate: overwriting \`result\` is normal; overwriting other input keys may confuse the main agent's downstream logic.`;
 
 /**
@@ -133,7 +140,7 @@ Mode B applies even when there is only **one** path. A single-path digest is the
 If the task is genuinely "give me the bytes" (e.g. "read X and return its content", "show me the raw text of X", "I need the full file to edit it"), that's Mode A — put the full content under \`result\` as a string. The distinguishing question is: *does the main agent need the text itself, or an understanding of it?*
 
 Workflow:
-1. Call \`exchange.list\` to discover preloaded inputs. The main agent typically pre-loads the path list under \`source\` (or \`paths\`) and the user's question under \`user_focus\`. Read these via \`exchange.get\` rather than re-extracting them from the task prose — they are authoritative.
+1. Batch-read preloaded inputs in ONE call: \`exchange({ op: "get", keys: ["source", "paths", "user_focus"] })\`. The main agent typically pre-loads the path list under \`source\` (or \`paths\`) and the user's question under \`user_focus\`; missing keys come back in the \`missing\` array — that just means main agent didn't supply that one, not an error. These values are AUTHORITATIVE; do NOT re-extract paths or questions from the task prose when the store has them.
 2. For each path, call \`get_metadata\` (cheap; gives you headings + tags + links). Batch all paths in a single \`get_metadata\` call.
 3. Use the heading outline to decide which sections actually matter for the user's question. Call \`read_section\` to load only those sections — do NOT \`read_file\` whole files unless the file is small (< 200 lines) AND every part is plausibly relevant.
 4. Produce ONE digest object per input path with this exact shape:
@@ -306,7 +313,7 @@ Mix is allowed when truly necessary, but minimize tool calls. Each extra call co
 If your chosen strategy ends up making zero changes (the file already matches what was asked), STILL emit a result with \`strategy: "noop"\` and \`edits_applied: 0\` — the main agent needs a positive signal that you verified and concluded no-op is correct.
 
 ## Workflow
-1. Discover preloaded inputs: call \`exchange\` with \`{ op: "list" }\`, then \`{ op: "get", key: "..." }\` for keys like \`path\`, \`style_rules\`, \`target_language\`. These are AUTHORITATIVE — do NOT re-extract paths or rules from the task prose when they are also in \`inputs\`. If \`path\` is missing, abort: put \`result = { error: "missing inputs.path" }\` and return.
+1. Batch-read preloaded inputs in ONE call: \`exchange({ op: "get", keys: ["path", "style_rules", "target_language"] })\`. These are AUTHORITATIVE — do NOT re-extract paths or rules from the task prose when the store has them. If \`path\` is in the response's \`missing\` array (or its value is empty), abort: put \`result = { error: "missing inputs.path" }\` and return. Optional keys (\`style_rules\`, \`target_language\`) being missing is fine — just proceed without them.
 2. Read the file ONCE via \`read_file\` (or \`read_section\` / \`grep_file\` when you only need a slice). Do NOT re-read between edits unless the file was modified externally.
 3. Choose a strategy (see above) and call the appropriate write tool(s). Pass \`expected_pre_edit_mtime\` with \`write_file\` whenever you can (the read tools return \`mtime\` in their envelopes for exactly this purpose).
 4. Assemble your result from the write tools' OWN envelope fields. Do NOT paraphrase the diff; the \`before_excerpt\` / \`after_excerpt\` fields in each tool's response are the ground truth samples:
