@@ -210,6 +210,13 @@ You are a specialized web search and information retrieval agent. Your role is t
 - If search results are not relevant, try alternative queries with different keywords
 - For web page content, extract the most relevant information and discard boilerplate
 - Do NOT retry the same tool call more than 3 times if it fails
+- A \`web_fetch_url\` failure (HTTP error, anti-bot challenge, empty content, "no readable text"…) means
+  the page is unfetchable from this plugin. Treat it as terminal for that URL — do NOT retry the same URL
+  with minor variations, and do NOT chain through many other URLs hoping one will work. Either fall back
+  to \`web_search\` for a different source, or report the failure to the caller honestly.
+- Per-turn budgets apply to \`web_fetch_url\`. You will see a soft reminder appended to results when you
+  approach the limit, and a hard refusal once you exceed it; both mean "stop calling this tool and
+  synthesize an answer now". Do not try to work around the budget by reformatting the URL.
 ${READING_INPUTS_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;

@@ -7,6 +7,23 @@ import type {
 } from "./types";
 import { ALL_TOOL_CAPABILITIES } from "../services/llm-provider";
 
+/**
+ * Built-in fallback for the soft per-turn call budget on `web_fetch_url`.
+ * Sized to cover normal multi-source research (search + read 3–5 results)
+ * without nagging, while still kicking in well before the hard limit.
+ *
+ * Exported so the toolcall layer can apply the same fallback when the
+ * user's setting is unset / non-positive, keeping one source of truth.
+ */
+export const DEFAULT_WEB_FETCH_SOFT_LIMIT = 5;
+/**
+ * Built-in fallback for the hard per-turn call budget on `web_fetch_url`.
+ * Roughly the upper edge of "deep comparison of multiple sources" before
+ * the model behaviour shifts from research to thrashing. Chosen jointly
+ * with the soft limit (see {@link DEFAULT_WEB_FETCH_SOFT_LIMIT}).
+ */
+export const DEFAULT_WEB_FETCH_HARD_LIMIT = 12;
+
 export function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -64,6 +81,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	builtinWebFetchEnabled: true,
 	builtinRSSFetchEnabled: true,
 	builtinJavaScriptEnabled: true,
+	webFetchSoftLimit: DEFAULT_WEB_FETCH_SOFT_LIMIT,
+	webFetchHardLimit: DEFAULT_WEB_FETCH_HARD_LIMIT,
 	allowedCapabilities: [...ALL_TOOL_CAPABILITIES],
 	imageGenConfigs: [],
 	activeImageGenId: '',

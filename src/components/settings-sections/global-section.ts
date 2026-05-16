@@ -74,6 +74,39 @@ export class GlobalSettingsSection implements SettingsSection {
 			sessionRestartRequired: true,
 		});
 
+		// Per-turn budget for web_fetch_url. Both knobs are session-restart
+		// dependent because `maxCallsPerTurn` is captured into the tool
+		// definition at registration time (createWebFetchTools), not read
+		// per call. Values <= 0 fall back to plugin defaults at use-site
+		// (see resolveBudget in web-fetch-toolcall.ts).
+		createTextField({
+			container,
+			name: t('settings.webFetchSoftLimit'),
+			desc: t('settings.webFetchSoftLimitDesc'),
+			placeholder: '5',
+			value: String(plugin.settings.webFetchSoftLimit),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.webFetchSoftLimit = isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
+		createTextField({
+			container,
+			name: t('settings.webFetchHardLimit'),
+			desc: t('settings.webFetchHardLimitDesc'),
+			placeholder: '12',
+			value: String(plugin.settings.webFetchHardLimit),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.webFetchHardLimit = isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
 		// Built-in RSS fetch tool toggle
 		createToggleField({
 			container,

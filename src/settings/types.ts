@@ -137,6 +137,27 @@ export interface NoteAssistantPluginSettings {
 	builtinJavaScriptEnabled: boolean;
 
 	/**
+	 * Per-turn call budget for the built-in `web_fetch_url` tool.
+	 * Each user turn resets the counter (sub-agents have their own
+	 * counter — they do not share the main agent's budget).
+	 *
+	 * - `webFetchSoftLimit`: once exceeded, fetch results are tagged
+	 *   with a reminder line nudging the model to stop fetching and
+	 *   start synthesizing. Values <= 0 fall back to the built-in
+	 *   default (`DEFAULT_WEB_FETCH_SOFT_LIMIT`, currently 5).
+	 * - `webFetchHardLimit`: once exceeded, the tool is refused and
+	 *   the model receives a synthetic error telling it to stop.
+	 *   Values <= 0 fall back to the built-in default
+	 *   (`DEFAULT_WEB_FETCH_HARD_LIMIT`, currently 12).
+	 *
+	 * Defaults intentionally leave plenty of room for normal multi-source
+	 * research while still hard-blocking the pathological "model keeps
+	 * fetching random URLs because the fetcher returned empty" loop.
+	 */
+	webFetchSoftLimit: number;
+	webFetchHardLimit: number;
+
+	/**
 	 * Tool capabilities currently allowed for the assistant.
 	 * Persisted across sessions and editable from both the session toolbar
 	 * and the global settings section. Defaults to all capabilities.

@@ -192,6 +192,29 @@ export interface RegisteredTool {
      */
     requiresConfirmation?: boolean;
     /**
+     * Optional per-turn call budget for this tool. Enforced by
+     * {@link ChatStream.prompt}; counters reset at the start of every
+     * `prompt()` call (i.e. one user turn).
+     *
+     * - `soft`: once exceeded, the tool still runs but its result is
+     *   suffixed with a reminder line nudging the model to stop. Use
+     *   this as a polite hint for "you have probably gathered enough".
+     * - `hard`: once exceeded, the tool is **not** invoked at all and
+     *   the model receives a synthetic error result instructing it to
+     *   stop calling this tool and synthesize an answer from what it
+     *   already has. Use this as a safety belt against runaway loops
+     *   (e.g. the model retrying a flaky fetch tool indefinitely).
+     *
+     * Either field may be omitted independently. Setting only `soft`
+     * yields warnings without ever hard-blocking; setting only `hard`
+     * silently lets the model run up to the limit and then blocks.
+     * When both are set they should normally satisfy `soft < hard`.
+     */
+    maxCallsPerTurn?: {
+        soft?: number;
+        hard?: number;
+    };
+    /**
      * Execute the tool and return a structured result.
      * ChatStream will serialise object results automatically.
      * The first parameter is the ChatStream instance that invoked this tool,
@@ -879,6 +902,14 @@ export class ChatStream implements IChatAgent {
         try {
             let finalMessage: ChatMessage | null = null;
 
+            // Per-turn tool-call counter, used to enforce each tool's
+            // `maxCallsPerTurn` budget (see RegisteredTool). Scoped to this
+            // single prompt() invocation so the counter resets cleanly when
+            // the user sends the next message. Sub-agents have their own
+            // ChatStream → their own counter, so their budgets don't share
+            // with the main agent's.
+            const toolCallCounts = new Map<string, number>();
+
             // Tool-call loop: keep requesting until no more tool calls
             while (true) {
                 const toolSchemas = filteredTools.map((t) => t.schema);
@@ -1026,10 +1057,41 @@ export class ChatStream implements IChatAgent {
                             return t.schema.function.name === toolName;
                         });
 
+                        // ── Per-turn call-budget enforcement ────────────────
+                        // Bump the counter *before* dispatch so that hard
+                        // blocks see consistent numbers across the parse-error
+                        // and dispatch paths. Counting parse-error attempts is
+                        // intentional: it prevents a tool that keeps emitting
+                        // malformed args from spinning forever.
+                        const callCountAfter = (toolCallCounts.get(toolName) ?? 0) + 1;
+                        toolCallCounts.set(toolName, callCountAfter);
+                        const budget = registered?.maxCallsPerTurn;
+                        const hardLimit = budget?.hard;
+                        const softLimit = budget?.soft;
+                        const hardBlocked = typeof hardLimit === 'number' && callCountAfter > hardLimit;
+                        const softTripped = !hardBlocked
+                            && typeof softLimit === 'number'
+                            && callCountAfter > softLimit;
+                        // Pre-compose the reminder once so we can append it
+                        // uniformly on whichever success path executes below.
+                        const softReminder = softTripped
+                            ? `\n\n[Note: tool "${toolName}" has been called ${callCountAfter} times in this turn` +
+                              (typeof hardLimit === 'number' ? ` (hard limit ${hardLimit})` : '') +
+                              `. You very likely have enough material now — synthesize an answer from what you already have instead of calling this tool again.]`
+                            : null;
+
                         let toolResult: string;
                         let mediaAttachment: MediaAttachment | null = null;
 
-                        if (argParseError) {
+                        if (hardBlocked) {
+                            // Refuse to invoke the tool at all. The synthetic
+                            // error gives the model a concrete instruction so
+                            // it stops re-trying (instead of inferring "the
+                            // tool just failed, let me call it once more").
+                            toolResult = `Error: Tool "${toolName}" reached its per-turn call limit (${hardLimit}). ` +
+                                `Do NOT call this tool again in this turn. Synthesize an answer from the results you already have, ` +
+                                `try a different approach, or ask the user to clarify.`;
+                        } else if (argParseError) {
                             // Skip handler dispatch entirely when arguments are unparseable —
                             // there is nothing meaningful to execute. Report the error back
                             // to the model so it can retry with corrected arguments.
@@ -1111,6 +1173,14 @@ export class ChatStream implements IChatAgent {
                         // Determine result status
                         const isError = toolResult.startsWith('Error:');
                         const resultStatus: 'success' | 'warning' | 'error' = isError ? 'error' : 'success';
+
+                        // Soft-budget reminder: only attach on success so we
+                        // don't dilute error messages, and so the model sees
+                        // the nudge in the same payload as the data it just
+                        // collected.
+                        if (softReminder && !isError) {
+                            toolResult = toolResult + softReminder;
+                        }
 
                         // Mark the tool_call message as complete, update content with elapsed time
                         const toolCallElapsed = Date.now() - toolCallStartTime;

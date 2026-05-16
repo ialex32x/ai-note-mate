@@ -44,6 +44,18 @@ export interface ContentElement {
 }
 
 /**
+ * Outcome of trying to extract readable text from a fetched page.
+ * Lets the calling tool tell the model the difference between
+ * "the page is empty" (unlikely, but possible) and "we couldn't
+ * extract anything useful — don't bother retrying the same URL".
+ */
+export type ExtractionStatus =
+    | 'ok'                  // structured regions or body fallback produced usable text
+    | 'empty'               // page fetched but no readable text after all heuristics
+    | 'anti_bot_challenge'  // page looks like a CF/Akamai challenge or similar
+    | 'http_error';         // non-2xx response from the server
+
+/**
  * Crawl result interface
  */
 export interface WebPageContent {
@@ -61,6 +73,22 @@ export interface WebPageContent {
 
     depth: number;
     timestamp: string;
+
+    /**
+     * Outcome of extraction. Only set when extraction returned something
+     * other than the happy path; the toolcall layer uses this to convert
+     * the result into a `success: false` for the model, so it stops
+     * retrying URLs the plugin demonstrably cannot read.
+     */
+    extractionStatus?: ExtractionStatus;
+    /** HTTP status code returned by the server. */
+    httpStatus?: number;
+    /**
+     * Total readable character count across all extracted blocks. Used
+     * by the toolcall layer to apply the "too small to be real content"
+     * threshold uniformly across structured / body-fallback paths.
+     */
+    totalTextLength?: number;
 }
 
 /**
@@ -92,6 +120,49 @@ const DEFAULT_OPTIONS: PageFetchOptions = {
     userAgent: undefined,
     excludePatterns: [],
 };
+
+/**
+ * Heuristic signatures of anti-bot challenge pages (Cloudflare, Akamai,
+ * Sucuri, etc.). When the visible body text is short AND contains one
+ * of these, we treat it as an extraction failure rather than passing
+ * the noise to the LLM as "page content".
+ *
+ * Lowercase, matched case-insensitively after collapsing whitespace.
+ */
+const ANTI_BOT_SIGNATURES: readonly string[] = [
+    'just a moment',
+    'checking your browser',
+    'verify you are human',
+    'verify you are a human',
+    'enable javascript and cookies',
+    'cf-browser-verification',
+    'cf-challenge',
+    'attention required! | cloudflare',
+    'access denied',
+    'pardon our interruption',
+    'are you a robot',
+];
+
+/** Minimum extracted text length below which a page is considered empty. */
+export const EMPTY_PAGE_THRESHOLD = 200;
+
+/**
+ * Module-level URL normalizer. Strips fragments and common tracking
+ * params so the toolcall dedupe layer can compare two textually-different
+ * URLs that point at the same resource. Returns the input unchanged on
+ * any parsing error so callers never see normalization mask a typo.
+ */
+export function normalizeUrl(url: string): string {
+    try {
+        const urlObj = new URL(url);
+        urlObj.hash = "";
+        const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"];
+        trackingParams.forEach(param => urlObj.searchParams.delete(param));
+        return urlObj.href;
+    } catch {
+        return url;
+    }
+}
 
 /**
  * Simple web crawler class
@@ -188,13 +259,32 @@ export class UrlContentFetcher {
     }
 
     /**
-     * Fetch and parse page
+     * Fetch and parse a single page.
+     *
+     * Failure modes are surfaced via the returned `WebPageContent.extractionStatus`
+     * (rather than thrown) so the toolcall layer can distinguish:
+     *   - HTTP errors (4xx/5xx),
+     *   - anti-bot challenge pages,
+     *   - structurally empty / JS-rendered pages,
+     * from a genuine "the page is healthy and empty". This is the key
+     * fix for the "model retries fetching a flaky URL forever" loop:
+     * an `extractionStatus !== 'ok'` will be reported back to the LLM
+     * as `success: false` with an instruction to stop retrying.
+     *
+     * Returns `null` only on a thrown / aborted request that we
+     * genuinely cannot represent (network exception); the outer
+     * crawler logs and continues.
      */
     private async fetchAndParse(url: string, depth: number, signal?: AbortSignal): Promise<WebPageContent | null> {
         try {
             const params: RequestUrlParam = {
                 url,
                 method: 'GET',
+                // Obsidian's requestUrl defaults to throwing on 4xx/5xx; opt out so
+                // we can attach the real HTTP status to the structured result and
+                // tell the model "this URL is not fetchable" instead of dropping
+                // the round-trip on the floor.
+                throw: false,
                 headers: {
                     "User-Agent": this.options.userAgent || getUserAgent(),
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -204,29 +294,118 @@ export class UrlContentFetcher {
 
             const response = await withAbort(signal, () => requestUrl(params));
 
+            const httpStatus = response.status;
+            const baseResult = {
+                url,
+                depth,
+                timestamp: new Date().toISOString(),
+                httpStatus,
+            } as const;
+
+            // HTTP-level failure: bail with a structured marker. We
+            // intentionally do NOT try to parse the body — error pages
+            // are usually short error blurbs that would confuse the model
+            // into "great, I got content".
+            if (httpStatus < 200 || httpStatus >= 300) {
+                return {
+                    ...baseResult,
+                    title: `HTTP ${httpStatus}`,
+                    contents: [],
+                    links: [],
+                    extractionStatus: 'http_error',
+                    totalTextLength: 0,
+                };
+            }
+
             const html = response.text;
             const $ = cheerioLoad(html);
-
-            // Extract title
             const title = $("title").text().trim() || $("h1").first().text().trim() || "No Title";
 
-            // Extract structured content
-            const contents = this.extractContent($);
+            // Structured-region extraction is the primary path. When it
+            // returns nothing we fall back to body text (covers pages
+            // that don't expose recognisable region selectors but still
+            // have readable content in nested wrappers).
+            let contents = this.extractContent($);
+            let totalTextLength = sumBlockText(contents);
 
-            // Extract links
+            if (totalTextLength === 0) {
+                const fallback = this.extractBodyTextFallback($);
+                if (fallback) {
+                    contents = [fallback];
+                    totalTextLength = sumBlockText(contents);
+                }
+            }
+
             const links = this.extractLinks($, url);
 
+            // Anti-bot challenge detection: short body + a known
+            // challenge marker. We check this AFTER extraction so the
+            // marker phrase has a chance to land in `contents`.
+            if (totalTextLength < EMPTY_PAGE_THRESHOLD * 4 && looksLikeAntiBotPage($)) {
+                return {
+                    ...baseResult,
+                    title,
+                    contents: [],
+                    links,
+                    extractionStatus: 'anti_bot_challenge',
+                    totalTextLength: 0,
+                };
+            }
+
+            // Empty / under-threshold extraction → mark as empty so the
+            // toolcall layer can convert it to a failure result. We still
+            // return whatever links we could parse, in case the caller
+            // can use them for a deeper crawl.
+            if (totalTextLength < EMPTY_PAGE_THRESHOLD) {
+                return {
+                    ...baseResult,
+                    title,
+                    contents,
+                    links,
+                    extractionStatus: 'empty',
+                    totalTextLength,
+                };
+            }
+
             return {
-                url,
+                ...baseResult,
                 title,
                 contents,
                 links,
-                depth,
-                timestamp: new Date().toISOString(),
+                extractionStatus: 'ok',
+                totalTextLength,
             };
         } catch (error) {
             throw new Error(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
         }
+    }
+
+    /**
+     * Last-ditch fallback when the structured-region path returns nothing.
+     * Collapses the body's whitespace into paragraphs separated by blank
+     * lines. Deliberately permissive (no per-block length filtering) —
+     * we'd rather hand the model a noisy "OK-ish" result than say "the
+     * page is empty" when it isn't.
+     */
+    private extractBodyTextFallback($: CheerioAPI): ContentElement | null {
+        const $body = $('body');
+        if ($body.length === 0) return null;
+        // Strip JS/CSS/nav noise inline rather than mutating shared state.
+        $body.find('script, style, noscript, nav, header, footer, aside').remove();
+        const raw = $body.text();
+        if (!raw) return null;
+        // Normalize whitespace: collapse runs of spaces, but keep
+        // paragraph breaks so the output isn't a 5KB single line.
+        const lines = raw
+            .split(/\n+/)
+            .map(line => line.replace(/[ \t\r\f\v]+/g, ' ').trim())
+            .filter(line => line.length > 0);
+        if (lines.length === 0) return null;
+        return {
+            name: 'body-fallback',
+            selector: 'body',
+            blocks: lines.map(text => ({ type: 'text', text })),
+        };
     }
 
     /**
@@ -497,19 +676,34 @@ export class UrlContentFetcher {
     }
 
     /**
-     * Normalize URL
+     * Normalize URL. Thin instance wrapper around the module-level
+     * {@link normalizeUrl} so the toolcall layer and the crawler share
+     * one implementation; keeps the existing call sites unchanged.
      */
     private normalizeUrl(url: string): string {
-        try {
-            const urlObj = new URL(url);
-            // Remove hash and certain query parameters
-            urlObj.hash = "";
-            // Remove common tracking parameters
-            const trackingParams = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "fbclid", "gclid"];
-            trackingParams.forEach(param => urlObj.searchParams.delete(param));
-            return urlObj.href;
-        } catch {
-            return url;
+        return normalizeUrl(url);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Module-level helpers used by fetchAndParse
+// ─────────────────────────────────────────────────────────────────────────────
+
+function sumBlockText(regions: ContentElement[]): number {
+    let total = 0;
+    for (const region of regions) {
+        for (const block of region.blocks) {
+            total += block.text.length;
         }
     }
+    return total;
+}
+
+function looksLikeAntiBotPage($: CheerioAPI): boolean {
+    // Sample the visible body text once and search for any known
+    // signature. Lower-cased + whitespace-collapsed to keep matches
+    // robust against minor layout/casing variants.
+    const sample = $('body').text().replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 2000);
+    if (!sample) return false;
+    return ANTI_BOT_SIGNATURES.some(sig => sample.includes(sig));
 }
