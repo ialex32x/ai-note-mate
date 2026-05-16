@@ -299,6 +299,22 @@ export interface ChatStreamConfig {
     onContextCompressed?: () => void;
 
     /**
+     * Called when the context reducer's emergency shrink ran on this
+     * turn — i.e. the assembled prompt was still above 1.5× threshold
+     * after primary compression, and one or more freshly-returned
+     * tool_results had to be truncated to fit the budget.
+     *
+     * Separate from {@link onContextCompressed} because the user-facing
+     * implications are different: regular compression is invisible
+     * (older messages already had their gist captured in summaries),
+     * while emergency shrink drops detail the model hasn't read yet,
+     * which can affect this turn's reply quality. The runtime/view
+     * layer uses this to surface a one-shot Notice so the user can
+     * raise their threshold or pick a larger-context model.
+     */
+    onEmergencyShrink?: () => void;
+
+    /**
      * Per-profile overrides for the context reducer.
      *
      * Populated by the factory that constructs a ChatStream for a particular
@@ -909,6 +925,9 @@ export class ChatStream implements IChatAgent {
                     // Notify that context compression occurred
                     if (reduceResult.compressed) {
                         this._config.onContextCompressed?.();
+                    }
+                    if (reduceResult.emergencyShrunk) {
+                        this._config.onEmergencyShrink?.();
                     }
                 } else {
                     // console.log("no summarizer configured, skipping context reduction");

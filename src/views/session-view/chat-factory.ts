@@ -77,6 +77,7 @@ export interface ChatAgentCallbacks {
     onUsageUpdate(): void;
     onError(err: Error): void;
     onContextCompressed(): void;
+    onEmergencyShrink(): void;
     onSubAgentMessageUpdate(agentName: string, msg: ChatMessage): void;
     /** Registered only when tool confirmation is in "always" mode. */
     onConfirmToolCall?: (messageId: string) => Promise<boolean>;
@@ -211,6 +212,10 @@ export function createChatAgent(
         onContextCompressed: () => {
             if (!callbacks.generationMatches()) return;
             callbacks.onContextCompressed();
+        },
+        onEmergencyShrink: () => {
+            if (!callbacks.generationMatches()) return;
+            callbacks.onEmergencyShrink();
         },
     };
 

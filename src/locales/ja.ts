@@ -107,6 +107,7 @@ export const ja: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '削除する履歴セッションがありません。',
 	'view.noHistorySessionsDeleted': '履歴セッションは削除されませんでした。',
 	'view.deleteHistorySessionsFailed': '履歴セッションの削除に失敗しました。',
+	'view.contextEmergencyShrink': 'コンテキスト予算超過：今ターンの新規ツール結果の一部が切り詰められました。プロファイルで圧縮しきい値を上げるか、より大きなコンテキストのモデルに切り替えてください。',
 
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentVaultInspector': 'Vault インスペクター',
@@ -166,7 +167,7 @@ export const ja: Record<string, string> = {
 	'settings.maxTokensDesc': 'セッションごとのトークン予算上限（表示用）。0 で無制限。',
 	'settings.contextCompression': 'コンテキスト圧縮',
 	'settings.contextCompressionThreshold': '圧縮しきい値',
-	'settings.contextCompressionThresholdDesc': '圧縮を発動するトークン数。0 = プラグインのデフォルト（32000）を使用。モデルのコンテキストウィンドウの 50–60% 程度を推奨。',
+	'settings.contextCompressionThresholdDesc': '圧縮を発動するトークン数。0 = プラグインのデフォルト（48000）を使用。モデルのコンテキストウィンドウの 50% 程度を推奨。ツールを多く有効にしている場合は下げてください。',
 	'settings.slidingWindowSize': 'スライディングウィンドウサイズ',
 	'settings.slidingWindowSizeDesc': '圧縮後に残す最近メッセージ数の下限。ツール呼び出しのターンを完全に保つため実際の保持数はこれより多くなる場合があります。0 = プラグインのデフォルト（10）を使用。',
 	'settings.maxSummariesThreshold': '要約の最大数',

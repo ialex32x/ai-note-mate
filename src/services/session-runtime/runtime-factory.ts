@@ -166,6 +166,19 @@ export function createSessionRuntime(
             runtime.hasContextCompressed = true;
             runtime.emit({ type: 'context-compressed' });
         },
+        onEmergencyShrink: () => {
+            // Always forward the event so listeners that care (e.g. a
+            // future telemetry sink) can observe every occurrence. The
+            // `hasEmergencyShrunk` flag is the per-session "have we
+            // already told the user?" gate consulted by the view layer
+            // — it is NOT a guard on the emit itself.
+            const firstTime = !runtime.hasEmergencyShrunk;
+            runtime.hasEmergencyShrunk = true;
+            runtime.emit({ type: 'emergency-shrink-applied' });
+            if (firstTime) {
+                console.warn('[SessionRuntime] emergency shrink triggered for the first time in this session');
+            }
+        },
         onConfirmToolCall: (messageId: string) => {
             // Build a promise pinned to the runtime's pending map. The
             // chat awaits this promise; if no view is attached the

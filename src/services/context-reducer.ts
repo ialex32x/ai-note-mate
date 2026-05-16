@@ -23,19 +23,37 @@ import type { ArtifactStore } from "./artifact-store";
 
 /**
  * Token threshold that triggers context compression.
- * When the estimated token count of non-system messages exceeds this value,
- * the reducer will summarize older messages and keep recent ones.
+ * When the estimated token count of the effective payload (system + history
+ * + summaries + tool schemas) exceeds this value, the reducer will summarize
+ * older messages and keep recent ones.
  *
- * Sized for modern mainstream models (64k+ context windows). The actual
- * payload sent to the provider is roughly:
- *   threshold (history+summary) + ~2k (system prompt + tool schemas) + input
- * Plus an estimation drift of ~20% from `estimateTokens` being a coarse
- * char-based heuristic. So 32000 here corresponds to ~45k real tokens at the
- * upper bound — well within the 128k window of current flagship models, while
- * still leaving headroom for older 64k models. Profiles targeting 32k-or-less
- * windows should override this via per-profile config.
+ * Sized for modern flagship models (128k+ context windows). Intentionally
+ * **conservative** at ~45% of a 128k window so that:
+ *   - tool-schema-heavy sessions still have room to grow before compression
+ *     fires (a 10–15k schema budget eats meaningfully into the threshold);
+ *   - TTFT and prompt-cache hit rates stay better than at higher thresholds
+ *     (most providers' first-token latency scales gently with input size);
+ *   - the {@link emergencyShrink} safety net at 1.5× threshold lands well
+ *     inside the model window rather than at its edge.
+ *
+ * Reality calibration:
+ *   - `estimateTokens` uses 4 chars/token for non-CJK, 1.5 for CJK; modern
+ *     tokenizers come out 15–25% denser, so real tokens ≈ threshold × 1.2.
+ *   - 48000 here ≈ ~57–60k real tokens, i.e. ~45% of a 128k window.
+ *   - Add ~10k tool schemas + ~8k response budget and the no-compression
+ *     ceiling is ~75–78k real tokens — leaves ~50k headroom on 128k models.
+ *   - The 1.5× emergency line (72000 estimated ≈ ~86k real) is the point
+ *     where `emergencyShrink` force-collapses every oversized tool_result,
+ *     including the otherwise-exempt unconsumed tail.
+ *
+ * Verified comfortable on: DeepSeek-V3 (128k), GPT-4.1 (1M), Claude Sonnet
+ * /Opus (200k), Gemini 2.x/3.x (1M+), Qwen3 (128k+), Kimi K2 (128k+).
+ *
+ * **Profiles targeting ≤64k context windows MUST override this downward**
+ * via per-profile `contextCompressionThreshold`, otherwise compression
+ * fires too late or the assembled prompt may exceed the model window.
  */
-const DEFAULT_CONTEXT_COMPRESSION_THRESHOLD = 32000;
+const DEFAULT_CONTEXT_COMPRESSION_THRESHOLD = 48000;
 
 /**
  * Minimum number of most recent messages to retain after compression
@@ -681,6 +699,11 @@ function shrinkEnvelopeForPrompt(
  * - compressed: Whether any compression was performed
  * - lastMessageIndex: The index in rawMessages up to which has been summarized.
  *                     Only meaningful when compressed is true.
+ * - emergencyShrunk: Whether the {@link ContextReducer.emergencyShrink}
+ *                    safety net actually rewrote any tool_result on this
+ *                    turn. Surfaces upward so the caller can show a one-
+ *                    shot Notice / event (the underlying content loss is
+ *                    a user-perceivable trade-off, not a silent fix).
  */
 export interface ContextReduceResult<T extends HistoryMessage> {
     messagesToSend: T[];
@@ -688,6 +711,8 @@ export interface ContextReduceResult<T extends HistoryMessage> {
     compressed: boolean;
     /** Index of the last message in rawMessages that is now covered by summaries */
     lastMessageIndex: number;
+    /** True if emergency shrink force-collapsed the unconsumed tool tail to fit budget. */
+    emergencyShrunk: boolean;
 }
 
 export class ContextReducer {
@@ -855,12 +880,14 @@ export class ContextReducer {
             ] as T[];
 
             const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend);
-            ContextReducer.checkFinalBudget(sanitizedNoCompress, accessoryTokens, threshold);
+            const { messages: postEmergencyNoCompress, shrunk: emergencyShrunkNoCompress } =
+                ContextReducer.emergencyShrink(sanitizedNoCompress, accessoryTokens, threshold, artifactStore);
             return {
-                messagesToSend: sanitizedNoCompress,
+                messagesToSend: postEmergencyNoCompress,
                 newSummary: null,
                 compressed: existingSummaries.length > 0,
                 lastMessageIndex: cutoffIndex,
+                emergencyShrunk: emergencyShrunkNoCompress,
             };
         }
 
@@ -923,12 +950,14 @@ export class ContextReducer {
                 ...messagesToSummarize,
             ] as T[];
             const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled);
-            ContextReducer.checkFinalBudget(sanitizedFitsWindow, accessoryTokens, threshold);
+            const { messages: postEmergencyFitsWindow, shrunk: emergencyShrunkFitsWindow } =
+                ContextReducer.emergencyShrink(sanitizedFitsWindow, accessoryTokens, threshold, artifactStore);
             return {
-                messagesToSend: sanitizedFitsWindow,
+                messagesToSend: postEmergencyFitsWindow,
                 newSummary: null,
                 compressed: existingSummaries.length > 0,
                 lastMessageIndex: cutoffIndex,
+                emergencyShrunk: emergencyShrunkFitsWindow,
             };
         }
 
@@ -992,12 +1021,14 @@ export class ContextReducer {
                 ...this.ensureToolSequenceIntegrity(fallbackShrunk),
             ] as T[];
             const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled);
-            ContextReducer.checkFinalBudget(sanitizedFallback, accessoryTokens, threshold);
+            const { messages: postEmergencyFallback, shrunk: emergencyShrunkFallback } =
+                ContextReducer.emergencyShrink(sanitizedFallback, accessoryTokens, threshold, artifactStore);
             return {
-                messagesToSend: sanitizedFallback,
+                messagesToSend: postEmergencyFallback,
                 newSummary: null,
                 compressed: existingSummaries.length > 0,
                 lastMessageIndex: cutoffIndex,
+                emergencyShrunk: emergencyShrunkFallback,
             };
         }
 
@@ -1046,43 +1077,102 @@ export class ContextReducer {
         ] as T[];
 
         const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend);
-        ContextReducer.checkFinalBudget(sanitizedCompressed, accessoryTokens, threshold);
+        const { messages: postEmergencyCompressed, shrunk: emergencyShrunkCompressed } =
+            ContextReducer.emergencyShrink(sanitizedCompressed, accessoryTokens, threshold, artifactStore);
         return {
-            messagesToSend: sanitizedCompressed,
+            messagesToSend: postEmergencyCompressed,
             newSummary,
             compressed: true,
             lastMessageIndex: newSummaryLastIndex,
+            emergencyShrunk: emergencyShrunkCompressed,
         };
         }
 
     /**
-     * Observability hook — emit a `console.warn` when the assembled
-     * `messagesToSend` clearly exceeds the configured threshold even after
-     * compression. This is a soft signal: we deliberately do **not** retrigger
-     * a second summarization pass here because (a) it would double the
-     * latency of a turn that is already over budget, and (b) the provider
-     * already errors out cleanly when the prompt is too large for the model
-     * window. The warning is meant for the user / developer to notice that
-     * the configured threshold is too high for the model in use, and lower
-     * it (or upgrade the model) accordingly.
+     * Last-resort budget recovery — applied to the fully-assembled
+     * messages list when its estimated token count still exceeds
+     * 1.5× threshold after primary compression.
      *
-     * Uses a 1.5× multiplier as the "obviously over" line so we don't spam
-     * warnings on the normal case where the post-compression payload sits
-     * just slightly above the threshold (which is expected — the threshold
-     * is the trigger point, not a hard budget).
+     * Why this exists: primary compression operates on the **history**
+     * portion of the prompt (everything older than the recent window).
+     * Two narrow paths leak past it:
+     *   1. A single `tool_result` in the **unconsumed tail** (newer than
+     *      the last assistant message) that happens to be huge — e.g. a
+     *      delegate-task envelope or a large file read. This is exempt
+     *      from {@link shrinkLargeToolResults} by design because the
+     *      LLM hasn't read it yet, but on a tight model window the
+     *      exemption can push the prompt over the model's context limit.
+     *   2. A recent window whose **last turn** alone is enormous (long
+     *      tool chain in a single turn). Primary compression's turn-
+     *      boundary snap keeps the whole turn intact, even when that
+     *      means the "compressed" prompt is barely smaller than the
+     *      uncompressed one.
+     *
+     * Strategy: re-run `shrinkLargeToolResults` with `forceShrinkAll=true`
+     * so the unconsumed-tail exemption is bypassed. The envelope spill
+     * path still preserves recall via the artifact store, so a user
+     * who really needs the dropped detail can recover it with
+     * `recall_artifact` on the next turn. The structural assistant→
+     * tool_result pairing is preserved, so no re-sanitization is needed.
+     *
+     * Returns the possibly-rewritten messages array (the original is
+     * never mutated). The `shrunk` flag in the return value signals to
+     * the caller that emergency shrinking actually ran, so a Notice /
+     * event can be surfaced once per session.
+     *
+     * No second LLM summarization is attempted here on purpose:
+     *   - it would double the latency of an already-over-budget turn;
+     *   - the structural shrink alone is usually enough to bring the
+     *     prompt back inside the window;
+     *   - if it isn't, the provider's own 400 with a clear "too long"
+     *     message is more actionable than a silently-double-compressed
+     *     turn whose summary may have dropped the key fact.
      */
-    private static checkFinalBudget<T extends HistoryMessage>(
+    private static emergencyShrink<T extends HistoryMessage>(
         messages: T[],
         accessoryTokens: number,
         threshold: number,
-    ): void {
+        store: ArtifactStore | null,
+    ): { messages: T[]; shrunk: boolean } {
         const total = estimateMessagesTokens(messages) + accessoryTokens;
-        if (total > threshold * 1.5) {
+        if (total <= threshold * 1.5) return { messages, shrunk: false };
+
+        const shrunkMessages = this.shrinkLargeToolResults(
+            messages,
+            store,
+            /* forceShrinkAll */ true,
+        );
+
+        const newTotal = estimateMessagesTokens(shrunkMessages) + accessoryTokens;
+        // No actual change? `forceShrinkAll` only helps when there is
+        // something oversized in the tail; if everything was already
+        // shrunk in the primary pass, this is a no-op.
+        if (newTotal === total) {
             console.warn(
-                `[ContextReducer] final messagesToSend estimate ${total} tokens exceeds 1.5x threshold ${threshold}. ` +
-                `Consider lowering the threshold or upgrading to a larger-context model.`,
+                `[ContextReducer] emergency shrink found nothing left to shrink: ` +
+                `${total} estimated tokens, threshold ${threshold}. ` +
+                `Prompt size is dominated by summaries or short messages — ` +
+                `consider raising the threshold, switching to a larger-context model, ` +
+                `or trimming the active tool set.`,
+            );
+            return { messages, shrunk: false };
+        }
+
+        if (newTotal > threshold * 1.5) {
+            console.warn(
+                `[ContextReducer] emergency shrink applied but prompt is still over budget: ` +
+                `${total} → ${newTotal} estimated tokens (threshold ${threshold}). ` +
+                `Provider may return a 400 if the model window is exceeded.`,
+            );
+        } else {
+            console.warn(
+                `[ContextReducer] emergency shrink applied: ${total} → ${newTotal} ` +
+                `estimated tokens (threshold ${threshold}). Some recently-returned ` +
+                `tool results were truncated to fit the budget; their original ` +
+                `content remains recoverable via the artifact store when available.`,
             );
         }
+        return { messages: shrunkMessages, shrunk: true };
     }
 
     /**
@@ -1299,10 +1389,20 @@ export class ContextReducer {
      * `tool_result.toolCallId` is used as the namespace prefix
      * (`auto:<toolCallId>:<field>`). Without a store, the legacy generic
      * truncation path runs.
+     *
+     * **`forceShrinkAll`** disables the unconsumed-tail exemption. Used
+     * exclusively by {@link emergencyShrink} as a last-resort budget
+     * recovery when the assembled prompt still exceeds 1.5× threshold
+     * after primary compression. The caller accepts the per-turn fidelity
+     * loss on freshly-returned tool results because the alternative is
+     * a provider 400 (over-window request). Envelope-aware spilling is
+     * still attempted first so the content remains recallable via
+     * `recall_artifact`.
      */
     private static shrinkLargeToolResults<T extends HistoryMessage>(
         messages: T[],
         store?: ArtifactStore | null,
+        forceShrinkAll: boolean = false,
     ): T[] {
         if (messages.length === 0) return messages;
 
@@ -1313,6 +1413,10 @@ export class ContextReducer {
         // tool_result, so the entire slice is treated as unconsumed and
         // nothing gets shrunk. This is the safe default — without an
         // assistant anchor we cannot prove the model has read anything yet.
+        //
+        // When `forceShrinkAll` is true the exemption is bypassed entirely;
+        // computing `lastAssistantIdx` is harmless in that case and keeps
+        // the per-iteration condition uniform.
         let lastAssistantIdx = -1;
         for (let i = messages.length - 1; i >= 0; i--) {
             if (messages[i]!.role === 'assistant') {
@@ -1326,8 +1430,9 @@ export class ContextReducer {
             const msg = messages[i]!;
             if (msg.role === 'tool_result' && typeof msg.content === 'string' && msg.content.length > 0) {
                 // Exempt the unconsumed tail: tool_results after the last
-                // assistant haven't been read by the model yet.
-                if (i > lastAssistantIdx) {
+                // assistant haven't been read by the model yet. Bypassed
+                // when the caller is the emergency shrink path.
+                if (!forceShrinkAll && i > lastAssistantIdx) {
                     result.push(msg);
                     continue;
                 }

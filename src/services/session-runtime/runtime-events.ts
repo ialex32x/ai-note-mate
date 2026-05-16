@@ -53,6 +53,17 @@ export type RuntimeEvent =
     | { type: 'context-compressed' }
 
     /**
+     * Emergency shrink fired this turn — the assembled prompt was still
+     * above 1.5× the configured compression threshold even after primary
+     * compression, so one or more freshly-returned `tool_result` payloads
+     * had to be force-truncated to fit the budget. Listeners typically
+     * surface a one-shot Notice ("we trimmed some content this turn —
+     * consider raising the threshold or switching to a larger-context
+     * model"); the runtime's `hasEmergencyShrunk` flag is used to dedupe.
+     */
+    | { type: 'emergency-shrink-applied' }
+
+    /**
      * The session's auto-generated title was just persisted. Emitted
      * by the runtime after a successful post-finish title generation
      * pass, so an attached view can refresh its title display. The

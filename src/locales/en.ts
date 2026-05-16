@@ -107,6 +107,7 @@ export const en: Record<string, string> = {
 	'view.noHistorySessionsToDelete': 'No history sessions to delete.',
 	'view.noHistorySessionsDeleted': 'No history sessions were deleted.',
 	'view.deleteHistorySessionsFailed': 'Failed to delete history sessions.',
+	'view.contextEmergencyShrink': 'Context budget exceeded: some recent tool results were truncated this turn. Raise the compression threshold in your profile, or switch to a larger-context model.',
 
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentVaultInspector': 'Vault Inspector',
@@ -166,7 +167,7 @@ export const en: Record<string, string> = {
 	'settings.maxTokensDesc': 'Maximum token budget per session for display. Set to 0 for unlimited.',
 	'settings.contextCompression': 'Context compression',
 	'settings.contextCompressionThreshold': 'Compression threshold',
-	'settings.contextCompressionThresholdDesc': "Token count that triggers compression. 0 = use plugin default (32000). Recommend ~50–60% of your model's context window.",
+	'settings.contextCompressionThresholdDesc': "Token count that triggers compression. 0 = use plugin default (48000). Recommend ~50% of your model's context window; lower it when many tools are enabled.",
 	'settings.slidingWindowSize': 'Sliding window size',
 	'settings.slidingWindowSizeDesc': 'Minimum recent messages to keep after compression. The real number may be larger to keep tool-call turns intact. 0 = use plugin default (10).',
 	'settings.maxSummariesThreshold': 'Max summaries',

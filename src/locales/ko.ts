@@ -107,6 +107,7 @@ export const ko: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '삭제할 히스토리 세션이 없습니다.',
 	'view.noHistorySessionsDeleted': '히스토리 세션이 삭제되지 않았습니다.',
 	'view.deleteHistorySessionsFailed': '히스토리 세션 삭제에 실패했습니다.',
+	'view.contextEmergencyShrink': '컨텍스트 예산 초과: 이번 턴의 새 도구 결과 일부가 잘렸습니다. 프로필에서 압축 임곗값을 높이거나 컨텍스트가 더 큰 모델로 전환하세요.',
 
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentVaultInspector': 'Vault 인스펙터',
@@ -166,7 +167,7 @@ export const ko: Record<string, string> = {
 	'settings.maxTokensDesc': '세션당 토큰 예산 상한 (표시용). 0이면 무제한.',
 	'settings.contextCompression': '컨텍스트 압축',
 	'settings.contextCompressionThreshold': '압축 임계값',
-	'settings.contextCompressionThresholdDesc': '압축을 트리거하는 토큰 수. 0 = 플러그인 기본값(32000) 사용. 모델 컨텍스트 윈도우의 약 50–60%를 권장합니다.',
+	'settings.contextCompressionThresholdDesc': '압축을 트리거하는 토큰 수. 0 = 플러그인 기본값(48000) 사용. 모델 컨텍스트 윈도우의 약 50%를 권장하며, 활성화된 도구가 많을 때는 낮추세요.',
 	'settings.slidingWindowSize': '슬라이딩 윈도우 크기',
 	'settings.slidingWindowSizeDesc': '압축 후 유지할 최근 메시지의 최소 개수. 도구 호출 턴을 온전히 유지하기 위해 실제 개수는 더 많아질 수 있습니다. 0 = 플러그인 기본값(10) 사용.',
 	'settings.maxSummariesThreshold': '최대 요약 개수',

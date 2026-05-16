@@ -107,6 +107,7 @@ export const zhTW: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '沒有歷史對話可刪除。',
 	'view.noHistorySessionsDeleted': '沒有刪除任何歷史對話。',
 	'view.deleteHistorySessionsFailed': '刪除歷史對話失敗。',
+	'view.contextEmergencyShrink': '上下文預算超限：本輪部分新返回的工具結果被截斷。請在配置方案中提高壓縮閾值, 或切換至上下文更大的模型。',
 
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentVaultInspector': 'Vault 瀏覽員',
@@ -166,7 +167,7 @@ export const zhTW: Record<string, string> = {
 	'settings.maxTokensDesc': '每個對話的 Token 預算上限，用於介面顯示。設為 0 表示不限制。',
 	'settings.contextCompression': '上下文壓縮',
 	'settings.contextCompressionThreshold': '壓縮觸發閾值',
-	'settings.contextCompressionThresholdDesc': '觸發上下文壓縮的 token 數。0 = 使用外掛預設值（32000）。建議設為模型上下文視窗的 50–60% 左右。',
+	'settings.contextCompressionThresholdDesc': '觸發上下文壓縮的 token 數。0 = 使用外掛預設值（48000）。建議設為模型上下文視窗的約 50%; 啟用較多工具時請適當下調。',
 	'settings.slidingWindowSize': '滑動視窗大小',
 	'settings.slidingWindowSizeDesc': '壓縮後保留的最近訊息數下限。為了讓工具呼叫回合保持完整，實際保留數可能更多。0 = 使用外掛預設值（10）。',
 	'settings.maxSummariesThreshold': '最大摘要數',

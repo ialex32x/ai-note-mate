@@ -91,6 +91,15 @@ export class SessionView extends ItemView {
     /** Detach fn returned by `runtime.attach(...)`. Cleared after detach. */
     private detachRuntime?: () => void;
 
+    /**
+     * View-local once-per-attach guard for the emergency-shrink Notice.
+     * Kept on the view (not the runtime) so a background continuation
+     * that already tripped the shrink while detached still surfaces the
+     * Notice the first time the user opens / switches back to the view.
+     * Reset on `bindToSession` so each session-switch starts fresh.
+     */
+    private _shownEmergencyShrinkNotice = false;
+
     private plugin!: NoteAssistantPlugin;
 
     // ── Session management ──────────────────────────────────────────────────
@@ -218,6 +227,17 @@ export class SessionView extends ItemView {
         // Point the checkpoint dropdown at this runtime's store so its
         // count badge and dropdown contents reflect the new session.
         this.checkpointSelector?.setRuntime(runtime);
+        // The emergency-shrink Notice gate resets per attach: each
+        // session deserves an independent "have we told the user yet?"
+        // budget. If the runtime was already in the shrunk state when
+        // we attached (background continuation tripped it while the
+        // view was elsewhere), surface the Notice once on attach so
+        // the warning isn't lost.
+        this._shownEmergencyShrinkNotice = false;
+        if (runtime.hasEmergencyShrunk) {
+            this._shownEmergencyShrinkNotice = true;
+            new Notice(t('view.contextEmergencyShrink'), 8000);
+        }
     }
 
     /**
@@ -278,6 +298,22 @@ export class SessionView extends ItemView {
                 // nothing extra to render here, but keep the case
                 // explicit so an exhaustiveness check would catch a
                 // missing branch.
+                break;
+            case 'emergency-shrink-applied':
+                // Only surface the toast the first time it happens in a
+                // session — the same warning would otherwise repeat on
+                // every subsequent over-budget turn and become noise.
+                // The runtime's `hasEmergencyShrunk` flag is flipped
+                // BEFORE this event is emitted, so we use the local
+                // `_shownEmergencyShrinkNotice` guard instead to detect
+                // "first arrival at this view instance" — that way a
+                // background-continuation session that previously
+                // tripped the shrink will still notify the user the
+                // first time they actually look at it.
+                if (!this._shownEmergencyShrinkNotice) {
+                    this._shownEmergencyShrinkNotice = true;
+                    new Notice(t('view.contextEmergencyShrink'), 8000);
+                }
                 break;
             case 'title-updated':
                 // Runtime finished a post-turn title-generation pass;

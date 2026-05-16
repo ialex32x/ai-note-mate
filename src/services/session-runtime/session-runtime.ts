@@ -69,6 +69,16 @@ export class SessionRuntime {
     hasContextCompressed = false;
 
     /**
+     * True once the context reducer's emergency shrink has fired at
+     * least once in this session. Drives single-Notice deduplication so
+     * a long session that repeatedly trips the safety net only nags the
+     * user once rather than spamming on every turn. Resets only on
+     * session reload (not preserved across cold starts because it is a
+     * UX hint, not state worth persisting).
+     */
+    hasEmergencyShrunk = false;
+
+    /**
      * Tool-call confirmations awaiting user decision, keyed by the
      * `tool_call` message id that triggered them. Owned by the runtime
      * (not the view) so a background chat can correctly block on user

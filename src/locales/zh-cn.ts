@@ -107,6 +107,7 @@ export const zhCN: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '没有历史会话可删除。',
 	'view.noHistorySessionsDeleted': '没有删除任何历史会话。',
 	'view.deleteHistorySessionsFailed': '删除历史会话失败。',
+	'view.contextEmergencyShrink': '上下文预算超限：本轮部分新返回的工具结果被截断。请在配置方案中提高压缩阈值, 或切换至上下文更大的模型。',
 
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentVaultInspector': 'Vault 浏览员',
@@ -165,7 +166,7 @@ export const zhCN: Record<string, string> = {
 	'settings.maxTokensDesc': '每个会话的 Token 预算上限，用于界面显示。设为 0 表示不限制。',
 	'settings.contextCompression': '上下文压缩',
 	'settings.contextCompressionThreshold': '压缩触发阈值',
-	'settings.contextCompressionThresholdDesc': '触发上下文压缩的 token 数。0 = 使用插件默认值（32000）。推荐设为模型上下文窗口的 50–60% 左右。',
+	'settings.contextCompressionThresholdDesc': '触发上下文压缩的 token 数。0 = 使用插件默认值（48000）。推荐设为模型上下文窗口的约 50%; 启用较多工具时请适当下调。',
 	'settings.slidingWindowSize': '滑动窗口大小',
 	'settings.slidingWindowSizeDesc': '压缩后保留的最近消息数下限。为了让工具调用回合保持完整，实际保留数可能更多。0 = 使用插件默认值（10）。',
 	'settings.maxSummariesThreshold': '最大摘要数',
