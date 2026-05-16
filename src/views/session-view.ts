@@ -246,7 +246,7 @@ export class SessionView extends ItemView {
                 // so an exhaustiveness check would catch a missing branch.
                 break;
             case 'finish':
-                this.scroller.clearUserScrolledUp();
+                this.scroller.restoreAutoFollow();
                 this.hideStreamingLoader();
                 this.setInputLocked(false);
                 // Persistence + title generation + insight extraction
@@ -259,7 +259,7 @@ export class SessionView extends ItemView {
                 this.updateNewChatBtnState();
                 break;
             case 'abort':
-                this.scroller.clearUserScrolledUp();
+                this.scroller.restoreAutoFollow();
                 this.hideStreamingLoader();
                 this.handleAbort(ev.msg);
                 break;
@@ -268,7 +268,7 @@ export class SessionView extends ItemView {
                 break;
             case 'error':
                 console.warn('ChatStream error:', ev.err);
-                this.scroller.clearUserScrolledUp();
+                this.scroller.restoreAutoFollow();
                 this.hideStreamingLoader();
                 this.setInputLocked(false);
                 this.appendErrorBubble(ev.err.message);
@@ -717,6 +717,10 @@ export class SessionView extends ItemView {
         // Drop the singleton streaming loader reference; its DOM node is
         // inside contentEl which will be torn down by the parent ItemView.
         this.streamingLoader?.dispose();
+        // Disconnect the scroll controller's MutationObserver /
+        // ResizeObserver / visualViewport listener so they do not keep
+        // the (detached) messagesEl alive after the view closes.
+        this.scroller?.detach();
     }
 
     /**

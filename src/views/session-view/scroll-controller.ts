@@ -1,31 +1,108 @@
 import { setIcon } from 'obsidian';
 
 /**
- * Encapsulates all scroll-related state and behaviour for the message list
- * inside {@link SessionView}:
+ * Owns all scroll-related state and behaviour for the message list inside
+ * {@link SessionView}.
  *
- *   - the scroll container (`messagesEl`)
- *   - the floating "scroll to bottom" button
- *   - the `userScrolledUp` flag (set via wheel/touch events so programmatic
- *     scrolls cannot flip it)
- *   - the helpers `isNearBottom` / `maybeScrollToBottom` / `forceScrollToBottom`
+ * ## Model: explicit `autoFollow` state machine
  *
- * Extracted from SessionView to reduce its size while preserving exact
- * behaviour. See the comments on `userScrolledUp` in the original code
- * for the rationale behind the wheel/touch detection strategy.
+ * Auto-scroll is driven by a single boolean `autoFollow` flag.
+ *
+ * - When `true`, every content mutation (sync or async) re-pins the view to
+ *   the tail of the message list — unconditionally, regardless of how much
+ *   the content grew in one shot.
+ * - When `false`, the view stays put. While a turn is in flight the
+ *   floating "scroll to bottom" button is shown so the user can rejoin
+ *   manually.
+ *
+ * State transitions are driven ONLY by explicit user gestures:
+ *
+ *   - `wheel` deltaY < 0                              → autoFollow = false
+ *   - `wheel` deltaY > 0 landing near bottom          → autoFollow = true
+ *   - `touchmove` accumulating > THRESHOLD upward     → autoFollow = false
+ *   - `touchmove` accumulating > THRESHOLD downward
+ *     AND user landed near bottom                     → autoFollow = true
+ *   - `keydown` PageUp / Home / ArrowUp               → autoFollow = false
+ *   - `keydown` PageDown / End / ArrowDown
+ *     landing near bottom                             → autoFollow = true
+ *   - click on the floating button                    → autoFollow = true
+ *   - session switch / turn finish / abort / error    → autoFollow = true
+ *
+ * The `scroll` event itself NEVER writes the flag. It only adjusts the
+ * floating button's visibility. This decoupling is the key to robust
+ * behaviour on mobile, where the scroll event from a programmatic
+ * `scrollTop = scrollHeight` may be coalesced and dispatched a frame or
+ * two later — at which point `scrollHeight` has typically grown further
+ * (streaming markdown rendered, image loaded, virtual keyboard pushed
+ * layout, ...). Treating that delayed event as a user upward scroll —
+ * which the previous implementation did — would incorrectly latch
+ * `userScrolledUp = true` and disable auto-scroll for the rest of the
+ * turn. We avoid this entire failure mode by sourcing intent only from
+ * actual user-gesture events.
+ *
+ * ## Programmatic-scroll guard
+ *
+ * Every programmatic scroll bumps a guard counter, decremented two RAFs
+ * later. While the counter is non-zero the scroll handler is a no-op.
+ * Two RAFs cover iOS WKWebView's habit of coalescing scroll events into
+ * the next frame.
+ *
+ * ## Safety net: MutationObserver + ResizeObserver
+ *
+ * Any DOM mutation under `messagesEl` (new bubble, streaming markdown
+ * re-render via `replaceChildren`, late-mounted Obsidian embed, image
+ * `src` swap, character-data change, ...) schedules a single
+ * `onAsyncContentChanged()` for the next animation frame. When
+ * `autoFollow` is on, this re-pins to the bottom — so callers no longer
+ * need to manually plumb `onScrollNeeded()` into every async render
+ * callback for correctness; the per-callsite calls remain only as a
+ * fast path (they bring the pin forward by ~1 frame).
+ *
+ * Container size changes (`ResizeObserver` on `messagesEl`,
+ * `visualViewport.resize`) are treated the same way: when `autoFollow`
+ * is on we re-pin, otherwise we just leave it.
+ *
+ * ## Relative threshold for "near bottom"
+ *
+ * Only used by user gesture handlers to decide whether scrolling
+ * downward should re-enable `autoFollow`. Computed as
+ * `max(120, clientHeight * 0.25)` so narrow mobile viewports — where
+ * each line of content adds 40+ CSS px to `scrollHeight` — get a
+ * proportionally larger tolerance. The old fixed 100 px constant
+ * was too tight for typical mobile streaming markdown jumps.
+ *
+ * The follow logic itself does NOT consult `isNearBottom()` — only the
+ * explicit `autoFollow` flag does. The threshold thus cannot cause the
+ * "we were pinned then a tall mutation pushed us past the threshold so
+ * auto-scroll silently stops" failure mode that motivated the original
+ * `runWithAutoFollow` workaround.
  */
 export class ScrollController {
-    private static readonly SCROLL_THRESHOLD = 100;
+    private static readonly TOUCH_GESTURE_THRESHOLD = 30;
+    private static readonly KEY_UP = new Set(['PageUp', 'Home', 'ArrowUp']);
+    private static readonly KEY_DOWN = new Set(['PageDown', 'End', 'ArrowDown']);
+
+    private autoFollow = true;
 
     /**
-     * Set to true when the user manually scrolls up during streaming.
-     * While true, auto-scroll-to-bottom is suppressed so the user can
-     * read earlier content without being pulled back down on every
-     * message update (especially during the thinking phase where tokens
-     * arrive frequently but produce no visible output).
+     * Non-zero while a programmatic scroll's coalesced `scroll` event is
+     * still in flight. Bumped before every programmatic scroll and
+     * decremented two RAFs later.
      */
-    private userScrolledUp = false;
+    private programmaticScrollGuard = 0;
+
+    /** Y of the most recent `touchstart`, used to compute incremental drag delta. */
     private touchStartY = 0;
+    /** Accumulated drag delta across `touchmove` events of the current gesture. */
+    private touchAccumulatedDeltaY = 0;
+
+    private mutationObserver: MutationObserver | null = null;
+    private resizeObserver: ResizeObserver | null = null;
+    private viewportResizeListener: (() => void) | null = null;
+    private boundKeydown: ((e: KeyboardEvent) => void) | null = null;
+
+    /** Pending RAF handle for {@link scheduleAsyncCheck}; `0` when none. */
+    private pendingFollowFrame = 0;
 
     constructor(
         private readonly messagesEl: HTMLElement,
@@ -33,106 +110,117 @@ export class ScrollController {
         private readonly isStreamingProvider: () => boolean,
     ) {}
 
-    /**
-     * Attach scroll / wheel / touch event handlers on the message list and
-     * wire up the floating "scroll to bottom" button. Call once during
-     * view initialization.
-     */
     attach(): void {
         setIcon(this.scrollToBottomBtn, 'chevrons-down');
         this.scrollToBottomBtn.hide();
-        this.scrollToBottomBtn.addEventListener('click', () => {
-            this.userScrolledUp = false;
-            this.scrollToBottomBtn.hide();
-            this.messagesEl.scrollTo({ top: this.messagesEl.scrollHeight, behavior: 'smooth' });
-        });
+        this.scrollToBottomBtn.addEventListener('click', () => this.handleButtonClick());
         this.messagesEl.addEventListener('scroll', () => this.onMessagesScroll());
 
-        // Detect user scroll intent via wheel / touch events.
-        // These are guaranteed user-initiated and cannot be confused
-        // with programmatic scrollTop changes (unlike the scroll event).
-        this.messagesEl.addEventListener('wheel', (e: WheelEvent) => this.onMessagesWheel(e), { passive: true });
+        this.messagesEl.addEventListener(
+            'wheel',
+            (e: WheelEvent) => this.onUserWheel(e),
+            { passive: true },
+        );
 
-        this.messagesEl.addEventListener('touchstart', (e: TouchEvent) => {
-            const touch = e.touches[0];
-            if (touch) this.touchStartY = touch.clientY;
-        }, { passive: true });
-        this.messagesEl.addEventListener('touchmove', (e: TouchEvent) => {
-            if (!this.isStreamingProvider()) return;
-            const touch = e.touches[0];
-            if (!touch) return;
-            const deltaY = this.touchStartY - touch.clientY;
-            if (deltaY > 10) {
-                // Finger moved up → user wants to scroll up
-                this.userScrolledUp = true;
-            } else if (deltaY < -10) {
-                // Finger moved down — check if they reached the bottom
-                window.requestAnimationFrame(() => {
-                    if (this.isNearBottom()) {
-                        this.userScrolledUp = false;
-                    }
-                });
-            }
-            this.touchStartY = touch.clientY;
-        }, { passive: true });
+        this.messagesEl.addEventListener(
+            'touchstart',
+            (e: TouchEvent) => {
+                const touch = e.touches[0];
+                if (!touch) return;
+                this.touchStartY = touch.clientY;
+                this.touchAccumulatedDeltaY = 0;
+            },
+            { passive: true },
+        );
+        this.messagesEl.addEventListener(
+            'touchmove',
+            (e: TouchEvent) => this.onUserTouchMove(e),
+            { passive: true },
+        );
+
+        // Keyboard fallback for desktop Page-Up/Down etc. Make the
+        // message list focusable so these keys actually reach it when
+        // the user clicks on the list area.
+        if (!this.messagesEl.hasAttribute('tabindex')) {
+            this.messagesEl.setAttribute('tabindex', '-1');
+        }
+        this.boundKeydown = (e: KeyboardEvent) => this.onUserKey(e);
+        this.messagesEl.addEventListener('keydown', this.boundKeydown);
+
+        // MutationObserver: catches every DOM mutation under messagesEl
+        // (new bubble append, streaming markdown replaceChildren, late
+        // image src swap, embed mount, ...) and schedules a single
+        // follow check on the next frame.
+        if (typeof MutationObserver !== 'undefined') {
+            this.mutationObserver = new MutationObserver(() => this.scheduleAsyncCheck());
+            this.mutationObserver.observe(this.messagesEl, {
+                childList: true,
+                subtree: true,
+                characterData: true,
+            });
+        }
+
+        // ResizeObserver: catches container size changes (window resize,
+        // mobile keyboard, URL-bar show/hide affecting clientHeight via
+        // padding-bottom on the view root, ...).
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => this.scheduleAsyncCheck());
+            this.resizeObserver.observe(this.messagesEl);
+        }
+
+        // VisualViewport: explicit signal for virtual keyboard / URL bar
+        // visibility on mobile — fires earlier than the indirect
+        // clientHeight change picked up by ResizeObserver.
+        const vv = window.visualViewport;
+        if (vv) {
+            this.viewportResizeListener = () => this.scheduleAsyncCheck();
+            vv.addEventListener('resize', this.viewportResizeListener);
+        }
+    }
+
+    /**
+     * Tear down observers and external listeners. Safe to call multiple
+     * times. Should be invoked from {@link SessionView.onClose} so that
+     * a backgrounded session does not keep these references alive past
+     * the view's lifetime.
+     */
+    detach(): void {
+        this.mutationObserver?.disconnect();
+        this.mutationObserver = null;
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = null;
+        if (this.pendingFollowFrame !== 0) {
+            window.cancelAnimationFrame(this.pendingFollowFrame);
+            this.pendingFollowFrame = 0;
+        }
+        const vv = window.visualViewport;
+        if (vv && this.viewportResizeListener) {
+            vv.removeEventListener('resize', this.viewportResizeListener);
+            this.viewportResizeListener = null;
+        }
+        if (this.boundKeydown) {
+            this.messagesEl.removeEventListener('keydown', this.boundKeydown);
+            this.boundKeydown = null;
+        }
     }
 
     isNearBottom(): boolean {
         const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
-        return scrollHeight - scrollTop - clientHeight < ScrollController.SCROLL_THRESHOLD;
-    }
-
-    maybeScrollToBottom(): void {
-        if (this.userScrolledUp) {
-            // User intentionally scrolled up — show the button so they
-            // can jump back when ready, but don't force-scroll.
-            if (this.isStreamingProvider()) {
-                this.scrollToBottomBtn.show();
-            }
-            return;
-        }
-        if (this.isNearBottom()) {
-            this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-            this.scrollToBottomBtn.hide();
-        } else if (this.isStreamingProvider()) {
-            this.scrollToBottomBtn.show();
-        }
+        return scrollHeight - scrollTop - clientHeight < this.scrollThreshold();
     }
 
     /**
-     * Run a DOM-mutating callback while preserving "auto-follow" semantics.
-     *
-     * The default {@link maybeScrollToBottom} only inspects the *post*-mutation
-     * scroll state, which breaks for any single mutation that grows the
-     * scrollable content by more than {@link SCROLL_THRESHOLD} pixels at
-     * once — typical examples being tool-call bubbles being created with
-     * their (often tall) confirmation/detail UI, or sub-agent bubbles
-     * appearing with collapsibles + badges. In those cases, even if the
-     * user *was* pinned to the bottom right before the mutation, the new
-     * scrollHeight delta pushes `isNearBottom()` over the threshold, and
-     * the auto-scroll branch is silently skipped.
-     *
-     * This helper captures the "was near bottom" intent *before* the
-     * mutation runs, then unconditionally re-pins to the bottom afterwards
-     * (assuming the user has not manually scrolled away). Programmatic
-     * scrollTop writes do not flip `userScrolledUp` (it is only set by
-     * wheel/touch/keyboard handlers), so this is safe.
+     * Run a synchronous DOM-mutating callback while preserving the
+     * auto-follow contract: if `autoFollow` was on going in, re-pin to
+     * the bottom after `fn()` returns regardless of how much the content
+     * grew. This is the fast path; the MutationObserver safety net
+     * would catch the same growth one frame later.
      */
     runWithAutoFollow<T>(fn: () => T): T {
-        const wasNearBottom = !this.userScrolledUp && this.isNearBottom();
+        const shouldFollow = this.autoFollow;
         const result = fn();
-        if (this.userScrolledUp) {
-            if (this.isStreamingProvider()) {
-                this.scrollToBottomBtn.show();
-            }
-            return result;
-        }
-        if (wasNearBottom) {
-            // Pre-mutation snapshot said we were pinned — re-pin regardless
-            // of how much the content grew during fn().
-            this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
-            this.scrollToBottomBtn.hide();
-        } else if (this.isNearBottom()) {
+        if (shouldFollow) {
+            this.programmaticScrollToBottom();
             this.scrollToBottomBtn.hide();
         } else if (this.isStreamingProvider()) {
             this.scrollToBottomBtn.show();
@@ -140,60 +228,165 @@ export class ScrollController {
         return result;
     }
 
+    /**
+     * Called from async render callbacks AND from the
+     * Mutation/Resize/VisualViewport observers. Re-pins when
+     * `autoFollow` is on. Otherwise updates button visibility.
+     *
+     * Retains the historical name as the public API for callsites that
+     * already wire into it (e.g. `BubbleRenderer.onScrollNeeded`,
+     * `appendErrorBubble`).
+     */
+    maybeScrollToBottom(): void {
+        this.onAsyncContentChanged();
+    }
+
+    /** Force-pin to the bottom AND re-enable auto-follow. */
     forceScrollToBottom(): void {
-        this.userScrolledUp = false;
-        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        this.autoFollow = true;
+        this.programmaticScrollToBottom();
         this.scrollToBottomBtn.hide();
     }
 
     /**
-     * Clear the "user scrolled up" flag without touching the message list or
-     * the scroll-to-bottom button. Called on stream end / abort / error so
-     * the next auto-scroll is not suppressed. Button visibility will be
-     * recomputed the next time `maybeScrollToBottom` runs.
+     * Re-enable `autoFollow` without forcing a scroll. The next mutation
+     * (or the safety-net observers) will pick it up. Called on stream
+     * finish / abort / error.
      */
-    clearUserScrolledUp(): void {
-        this.userScrolledUp = false;
+    restoreAutoFollow(): void {
+        this.autoFollow = true;
+        if (this.isNearBottom()) this.scrollToBottomBtn.hide();
     }
 
-    /** Clear the scrolled-up flag and hide the button. Used on session switch. */
+    /** Reset to default (autoFollow on, button hidden). Used on session switch. */
     resetScrollIntent(): void {
-        this.userScrolledUp = false;
+        this.autoFollow = true;
         this.scrollToBottomBtn.hide();
     }
 
+    // ── Internals ──────────────────────────────────────────────────────────
+
     /**
-     * Scroll-event handler.  Only updates button visibility and
-     * detects keyboard-based scroll-up during streaming.
+     * Threshold used by user-gesture handlers to decide whether a downward
+     * scroll has reached the tail closely enough to re-enable
+     * `autoFollow`. Relative to viewport height to stay sane on narrow
+     * mobile screens where a single content jump can easily exceed the
+     * old 100 px constant.
      */
-    private onMessagesScroll(): void {
-        if (this.isNearBottom()) {
+    private scrollThreshold(): number {
+        return Math.max(120, this.messagesEl.clientHeight * 0.25);
+    }
+
+    private onAsyncContentChanged(): void {
+        if (this.autoFollow) {
+            this.programmaticScrollToBottom();
             this.scrollToBottomBtn.hide();
-        } else if (this.isStreamingProvider()) {
+            return;
+        }
+        if (this.isStreamingProvider() && !this.isNearBottom()) {
             this.scrollToBottomBtn.show();
-            // Also set the flag here as a fallback for keyboard
-            // scrolling (Page-Up, Arrow-Up, etc.) which does NOT
-            // fire wheel events.
-            this.userScrolledUp = true;
         }
     }
 
     /**
-     * Wheel-event handler for detecting user scroll intent.
-     * Wheel events are guaranteed to be user-initiated, so they
-     * cannot be confused with programmatic scrollTop changes.
+     * Coalesce many synchronous mutations into one follow check per frame.
+     * MutationObserver fires in a microtask, before layout — RAF'ing
+     * defers the geometry read to after layout has settled.
      */
-    private onMessagesWheel(e: WheelEvent): void {
-        if (!this.isStreamingProvider()) return;
+    private scheduleAsyncCheck(): void {
+        if (this.pendingFollowFrame !== 0) return;
+        this.pendingFollowFrame = window.requestAnimationFrame(() => {
+            this.pendingFollowFrame = 0;
+            this.onAsyncContentChanged();
+        });
+    }
+
+    private handleButtonClick(): void {
+        this.autoFollow = true;
+        this.scrollToBottomBtn.hide();
+        this.programmaticScrollGuard++;
+        this.messagesEl.scrollTo({
+            top: this.messagesEl.scrollHeight,
+            behavior: 'smooth',
+        });
+        // Smooth scroll dispatches many scroll events across its
+        // animation; cover the window generously before allowing
+        // user-gesture writes again.
+        window.setTimeout(() => {
+            this.programmaticScrollGuard = Math.max(0, this.programmaticScrollGuard - 1);
+        }, 500);
+    }
+
+    private programmaticScrollToBottom(): void {
+        this.programmaticScrollGuard++;
+        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        // Two RAFs cover iOS WebView's habit of coalescing the scroll
+        // event for a programmatic write into the next frame.
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            this.programmaticScrollGuard = Math.max(0, this.programmaticScrollGuard - 1);
+        }));
+    }
+
+    private onMessagesScroll(): void {
+        // Programmatic scrolls never update intent. Short-circuit the
+        // whole handler so the coalesced scroll event for our own
+        // `scrollTop = scrollHeight` does not toggle the button to a
+        // stale state either.
+        if (this.programmaticScrollGuard > 0) return;
+        if (this.autoFollow || this.isNearBottom()) {
+            this.scrollToBottomBtn.hide();
+        } else if (this.isStreamingProvider()) {
+            this.scrollToBottomBtn.show();
+        }
+    }
+
+    private onUserWheel(e: WheelEvent): void {
         if (e.deltaY < 0) {
-            // User scrolled up → suppress auto-scroll
-            this.userScrolledUp = true;
+            this.autoFollow = false;
+            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
         } else if (e.deltaY > 0) {
-            // User scrolled down — if they reached the bottom,
-            // resume auto-scrolling.
+            // RAF so layout has settled before we check geometry.
             window.requestAnimationFrame(() => {
                 if (this.isNearBottom()) {
-                    this.userScrolledUp = false;
+                    this.autoFollow = true;
+                    this.scrollToBottomBtn.hide();
+                }
+            });
+        }
+    }
+
+    private onUserTouchMove(e: TouchEvent): void {
+        const touch = e.touches[0];
+        if (!touch) return;
+        // Per-frame delta is small and noisy on iOS (sub-pixel reports
+        // during momentum decel). Accumulate so brief unintentional
+        // jitter cannot flip autoFollow.
+        const deltaY = this.touchStartY - touch.clientY;
+        this.touchAccumulatedDeltaY += deltaY;
+        this.touchStartY = touch.clientY;
+
+        if (this.touchAccumulatedDeltaY > ScrollController.TOUCH_GESTURE_THRESHOLD) {
+            this.autoFollow = false;
+            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+        } else if (this.touchAccumulatedDeltaY < -ScrollController.TOUCH_GESTURE_THRESHOLD) {
+            window.requestAnimationFrame(() => {
+                if (this.isNearBottom()) {
+                    this.autoFollow = true;
+                    this.scrollToBottomBtn.hide();
+                }
+            });
+        }
+    }
+
+    private onUserKey(e: KeyboardEvent): void {
+        if (ScrollController.KEY_UP.has(e.key)) {
+            this.autoFollow = false;
+            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+        } else if (ScrollController.KEY_DOWN.has(e.key)) {
+            window.requestAnimationFrame(() => {
+                if (this.isNearBottom()) {
+                    this.autoFollow = true;
+                    this.scrollToBottomBtn.hide();
                 }
             });
         }
