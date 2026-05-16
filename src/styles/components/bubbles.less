@@ -25,6 +25,15 @@
     align-self: flex-end;
     background: @bg-modifier-hover;
     color: @text-primary;
+
+    // User messages are plain text (not markdown-rendered), so preserve
+    // newlines and runs of whitespace exactly as the user typed them.
+    // Assistant bubbles go through markdown rendering and intentionally
+    // keep the default white-space handling.
+    .session-bubble__content {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+    }
 }
 
 // Assistant message bubble (full width)
