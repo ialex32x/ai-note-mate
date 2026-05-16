@@ -455,12 +455,16 @@ export default class NoteAssistantPlugin extends Plugin {
 
 	/**
 	 * Send the active editor's context (file reference + cursor position or
-	 * selection range) to the AI session input at its current cursor position.
+	 * selection range, plus a short preview of the selected text when
+	 * present) to the AI session input at its current cursor position.
 	 *
-	 * Only the file reference and cursor coordinates are inserted — the
-	 * selected text itself is intentionally NOT included; downstream
-	 * file-ref expansion / tools can fetch the actual content from the
-	 * referenced file when needed, which keeps the input compact.
+	 * For selections the snippet also carries up to
+	 * {@link SELECTION_PREVIEW_CODEPOINT_LIMIT} code points of the selected
+	 * text as a markdown blockquote — this saves the model a `read_file`
+	 * round-trip for short selections and snapshots the user's intent at
+	 * send-time (the file may be edited before the model resolves the
+	 * range). Larger selections are truncated with a parenthetical hint and
+	 * the model is expected to fall back to `read_file` for the rest.
 	 *
 	 * Format produced by `formatEditorContextSnippet` (line/column numbers
 	 * are 1-based to match what users see in editors):
@@ -476,8 +480,15 @@ export default class NoteAssistantPlugin extends Plugin {
 	 *                                          → (Ln <A> - Ln <B>)
 	 * - Any other selection falls back to the full form:
 	 *     [[path]] (Ln <l1>, Col <c1> - Ln <l2>, Col <c2>)
+	 * - When a non-whitespace selection exists, the range is followed by
+	 *   the selection preview on its own line(s), each line prefixed with
+	 *   `> ` (markdown blockquote). Truncated selections end with
+	 *   `... (+N chars omitted)` immediately after the quoted body.
 	 *
-	 * A trailing space is appended so the user can keep typing immediately.
+	 * A trailer is appended so the user can keep typing immediately —
+	 * a single space for the single-line variant, or a blank line for
+	 * snippets that carry a multi-line preview block (otherwise the
+	 * next keystroke would extend the final `> ...` line).
 	 */
 	private async sendEditorContextToSession(
 		editor: Editor,
@@ -491,7 +502,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		const view = this.getActiveSessionView();
 		if (!view || !view.cmInput) return;
 
-		view.cmInput.insertText(`${ctx.snippet} `);
+		view.cmInput.insertText(`${ctx.snippet}${snippetTrailer(ctx.snippet)}`);
 		view.cmInput.focus();
 	}
 
@@ -525,7 +536,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		const ok = await view.startNewSession();
 		if (!ok) return;
 
-		view.cmInput.insertText(`${ctx.snippet} `);
+		view.cmInput.insertText(`${ctx.snippet}${snippetTrailer(ctx.snippet)}`);
 		view.cmInput.focus();
 	}
 
@@ -540,8 +551,11 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * the menu wiring).
 	 *
 	 * Prompt shape (English, hard-coded — this is content for the LLM, not
-	 * UI copy, and the wikilink + range syntax mirrors `Send to AI Session`):
+	 * UI copy, and the wikilink + range syntax mirrors `Send to AI Session`).
+	 * When the selection fits in the inline preview budget, the snippet
+	 * also carries a quoted preview block immediately under the file ref:
 	 *     Please explain the text in [[path]] (Ln A - Ln B)
+	 *     > <selection preview...>
 	 */
 	private async explainEditorSelection(
 		editor: Editor,
@@ -621,7 +635,95 @@ export default class NoteAssistantPlugin extends Plugin {
 			rangeDesc = `Ln ${lnA}, Col ${from.ch + 1} - Ln ${lnB}, Col ${to.ch + 1}`;
 		}
 
-		return { filePath, snippet: `[[${filePath}]] (${rangeDesc})` };
+		let snippet = `[[${filePath}]] (${rangeDesc})`;
+		if (hasSelection) {
+			const preview = buildSelectionPreviewBlock(editor.getSelection());
+			if (preview) snippet = `${snippet}\n${preview}`;
+		}
+		return { filePath, snippet };
 	}
 
+}
+
+/**
+ * Maximum number of Unicode code points carried inline as a selection
+ * preview. Sized intentionally small: the goal is to let the model see a
+ * couple of sentences (CJK) or a paragraph fragment (Latin) without
+ * having to call `read_file`, while keeping the input area readable and
+ * the user-message payload tiny. Anything longer is truncated and the
+ * model is expected to fall back to `read_file` for the rest.
+ *
+ * Counted in code points (`Array.from(str).length`), not UTF-16 code
+ * units — `String.prototype.length` and `slice` are unsafe across
+ * surrogate pairs (most emoji, some CJK extensions) and can produce
+ * lone surrogates when truncated mid-pair.
+ */
+const SELECTION_PREVIEW_CODEPOINT_LIMIT = 100;
+
+/**
+ * Minimum number of (trimmed) Unicode code points required to emit a
+ * preview block at all. Single-character selections are almost always
+ * either a misclick or a single punctuation mark — the `> x`
+ * blockquote line adds visual noise without giving the model anything
+ * it couldn't recover from the file ref's line/column range plus one
+ * `read_file`. CJK-aware threshold: kept tight at 2 (drop only N≤1) so
+ * legitimate 2-char CJK words like "机器" / "你好" still get previewed.
+ */
+const SELECTION_PREVIEW_MIN_CODEPOINTS = 2;
+
+/**
+ * Build a markdown-blockquoted preview of a selected snippet, suitable
+ * for inlining into the chat input next to a `[[path]] (range)` file
+ * reference. Returns `null` when there is nothing meaningful to show —
+ * either an empty / all-whitespace selection, or one whose trimmed
+ * length is below {@link SELECTION_PREVIEW_MIN_CODEPOINTS} — so callers
+ * can drop the preview line entirely instead of emitting a stray `> `.
+ *
+ * Truncation operates on Unicode code points to avoid splitting
+ * surrogate pairs (most emoji, supplementary CJK). It does NOT split on
+ * extended grapheme clusters — a ZWJ-joined emoji like 👨‍👩‍👧‍👦 may be
+ * cut in the middle in pathological cases — but the result is still
+ * well-formed Unicode (no lone surrogates) and the preview is purely
+ * informational, so the loss of cosmetic fidelity is acceptable in
+ * exchange for not pulling in `Intl.Segmenter`.
+ */
+function buildSelectionPreviewBlock(selection: string): string | null {
+	// Length gate is measured against the trimmed selection so that, e.g.,
+	// `"  AI  "` (6 code units, but only 2 visible characters) is dropped
+	// the same as a bare `"AI"`.
+	if (Array.from(selection.trim()).length < SELECTION_PREVIEW_MIN_CODEPOINTS) {
+		return null;
+	}
+
+	const codepoints = Array.from(selection);
+	let body: string;
+	let suffix = '';
+	if (codepoints.length > SELECTION_PREVIEW_CODEPOINT_LIMIT) {
+		body = codepoints.slice(0, SELECTION_PREVIEW_CODEPOINT_LIMIT).join('');
+		const omitted = codepoints.length - SELECTION_PREVIEW_CODEPOINT_LIMIT;
+		suffix = `... (+${omitted} ${omitted === 1 ? 'char' : 'chars'} omitted)`;
+	} else {
+		body = selection;
+	}
+
+	// Drop leading/trailing newlines so the quoted block doesn't open with
+	// an empty `> ` line (common when the selection starts at end-of-line)
+	// or end with the truncation suffix dangling on its own stray "> " line.
+	body = body.replace(/^\n+/, '').replace(/\n+$/, '');
+	if (!body) return null;
+
+	const quoted = body.split('\n').map(line => `> ${line}`).join('\n');
+	return suffix ? `${quoted}${suffix}` : quoted;
+}
+
+/**
+ * Choose the whitespace to drop after a context snippet when inserting
+ * it into the chat input. A single-line snippet keeps the legacy
+ * trailing space so the user can keep typing inline; multi-line snippets
+ * (those carrying a quoted selection preview) get a blank line instead,
+ * so the user's next keystroke starts fresh below the blockquote
+ * instead of being absorbed into the last `> ...` line.
+ */
+function snippetTrailer(snippet: string): string {
+	return snippet.includes('\n') ? '\n\n' : ' ';
 }
