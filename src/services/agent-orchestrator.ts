@@ -531,7 +531,7 @@ export class AgentOrchestrator implements IChatAgent {
                     return config.onToolCall(args);
                 }
 
-                const { toolName, toolArgs, toolCallId } = args;
+                const { toolName, toolArgs, toolCallId, message } = args;
 
                 // Case 1: tool name matches a known sub-agent → treat it as a
                 // delegate_task call with the corresponding agent.
@@ -569,7 +569,44 @@ export class AgentOrchestrator implements IChatAgent {
                     return result.content;
                 }
 
-                // Case 2: genuinely unknown tool — return an error tool_result
+                // Case 2: tool name matches a real tool registered on the main
+                // agent (static or dynamic) that just happened to be filtered
+                // out of this iteration's embedding-based on-demand subset.
+                // Dispatch it via the main agent so the model's deliberate
+                // choice to call this tool wins over the heuristic filter's
+                // score — returning "Unknown tool" here would force the model
+                // into a useless retry loop (the tool name is still in
+                // conversation history, so it would keep trying the same call
+                // next turn).
+                //
+                // The same situation can arise across turns: a tool used in
+                // turn N stays in the history and may be re-called in turn
+                // N+1 even though the new turn's filter query no longer scores
+                // it high enough. The within-turn case is also covered by the
+                // sticky-on-demand mechanism inside ChatStream (so this
+                // fallback usually doesn't fire mid-turn), but the
+                // cross-turn case can only be caught here.
+                const mainAgentTool = this._mainAgent.findRegisteredTool(toolName);
+                if (mainAgentTool) {
+                    console.debug(
+                        `[AgentOrchestrator] Tool "${toolName}" was registered on the main ` +
+                        `agent but filtered out of this turn's tool surface; executing via ` +
+                        `fallback so the model doesn't get a spurious "Unknown tool" error.`,
+                    );
+                    try {
+                        const execResult = await this._mainAgent.invokeRegisteredTool(
+                            toolName,
+                            toolArgs,
+                            { toolCallId, toolCallMessage: message },
+                        );
+                        return ChatStream.serialiseToolResult(execResult);
+                    } catch (err) {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        return `Error executing tool "${toolName}": ${msg}`;
+                    }
+                }
+
+                // Case 3: genuinely unknown tool — return an error tool_result
                 // so the LLM can self-correct on the next turn instead of
                 // bringing down the whole conversation.
                 const available = [

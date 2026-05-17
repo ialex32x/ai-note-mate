@@ -819,6 +819,60 @@ export class ChatStream implements IChatAgent {
     }
 
     /**
+     * Find a registered tool (static or dynamic) by its schema name.
+     *
+     * Returns `undefined` if no tool with that name is currently registered.
+     * Dynamic tools are recomputed on every call via `config.dynamicTools()`
+     * so callers always see the latest set (matches what `prompt()` itself
+     * resolves against).
+     *
+     * Intended for external coordinators — notably
+     * `AgentOrchestrator.onToolCall` — that need to dispatch a tool the
+     * embedding-based on-demand filter happened to hide from the model
+     * this iteration: without this lookup the coordinator would have to
+     * refuse the call (returning "Unknown tool"), even though we have a
+     * perfectly good handler sitting one layer down.
+     */
+    findRegisteredTool(name: string): RegisteredTool | undefined {
+        const staticHit = this._tools.find(t => t.schema.function.name === name);
+        if (staticHit) return staticHit;
+        const dynamics = this._config.dynamicTools?.() ?? [];
+        return dynamics.find(t => t.schema.function.name === name);
+    }
+
+    /**
+     * Dispatch a registered tool by name using this ChatStream's current
+     * abort controller, returning the raw {@link ToolCallResult} (callers
+     * are responsible for serialisation via
+     * {@link ChatStream.serialiseToolResult}).
+     *
+     * Throws if no tool with that name is registered (see
+     * {@link findRegisteredTool} for the lookup contract).
+     *
+     * This deliberately bypasses the per-turn call-budget enforcement and
+     * confirmation flow that the main `prompt()` loop runs around
+     * `registered.exec`: those policies live in the loop because they're
+     * scoped to a single user-message turn that the loop owns. A
+     * fallback dispatch from outside the loop (e.g.
+     * `AgentOrchestrator.onToolCall`) has no clean way to participate in
+     * that bookkeeping, and an MCP / web-search tool slipping past the
+     * budget is strictly better UX than refusing the call with a stale
+     * "Unknown tool" error. If you need budgeted dispatch, route through
+     * `prompt()` instead.
+     */
+    async invokeRegisteredTool(
+        name: string,
+        args: Record<string, unknown>,
+        context: { toolCallId: string; toolCallMessage: ChatMessage },
+    ): Promise<ToolCallResult> {
+        const tool = this.findRegisteredTool(name);
+        if (!tool) {
+            throw new Error(`No registered tool named "${name}".`);
+        }
+        return tool.exec(this, args, this._abortController?.signal, context);
+    }
+
+    /**
      * Send a user message and trigger the AI response flow.
      *
      * - Appends the user message to history
@@ -1015,6 +1069,23 @@ export class ChatStream implements IChatAgent {
             // loop so error reporting (filteredTools.find for handler lookup,
             // etc.) can reference the latest value.
             let filteredTools: RegisteredTool[] = capabilityFilteredTools;
+            // Sticky on-demand tools: schema names of on-demand tools the
+            // model has actually invoked at least once during this turn.
+            // Once a tool is used, it gets re-added to `filteredTools` on
+            // every subsequent iteration regardless of embedding-filter
+            // score. Rationale: the model's deliberate choice to call a
+            // tool is a far stronger signal than any future iteration's
+            // similarity query (which mixes user input with assistant
+            // narration that has likely drifted toward "discuss the
+            // result" rather than "describe the tool"). Without this,
+            // a tool that was relevant on round 1 can silently disappear
+            // on round 2, leaving the model with the tool name still in
+            // its conversation history and no handler to dispatch to —
+            // exactly the "Unknown tool" loop we want to avoid.
+            //
+            // Only on-demand tools are tracked; always-on tools are never
+            // filtered to begin with, so stickiness would be a no-op.
+            const stickyOndemandToolNames = new Set<string>();
 
             // Tool-call loop: keep requesting until no more tool calls
             while (true) {
@@ -1027,12 +1098,26 @@ export class ChatStream implements IChatAgent {
                 const filterQuery = lastAssistantText
                     ? `${userInput}\n${lastAssistantText.slice(0, 300)}`
                     : userInput;
-                filteredTools = await this._getBestMatchedTools(
+                const matchedTools = await this._getBestMatchedTools(
                     options.embedding,
                     filterQuery,
                     capabilityFilteredTools,
                     options.embeddingFilter,
                 );
+
+                // Re-add any sticky on-demand tools the embedding filter
+                // dropped this round. See `stickyOndemandToolNames` doc
+                // above for rationale; this is the enforcement step.
+                if (stickyOndemandToolNames.size > 0) {
+                    const matchedNames = new Set(matchedTools.map(t => t.schema.function.name));
+                    for (const tool of capabilityFilteredTools) {
+                        const name = tool.schema.function.name;
+                        if (stickyOndemandToolNames.has(name) && !matchedNames.has(name)) {
+                            matchedTools.push(tool);
+                        }
+                    }
+                }
+                filteredTools = matchedTools;
 
                 const toolSchemas = filteredTools.map((t) => t.schema);
                 const activeProvider = options?.provider;
@@ -1178,6 +1263,22 @@ export class ChatStream implements IChatAgent {
                         const registered = filteredTools.find((t) => {
                             return t.schema.function.name === toolName;
                         });
+
+                        // ── Sticky on-demand bookkeeping ───────────────────
+                        // The model has now invoked this tool — mark it
+                        // sticky so the next iteration's embedding filter
+                        // cannot drop it out from under us. We mark on the
+                        // *registered hit* (not after successful exec) so
+                        // budget-blocked / arg-parse-error attempts still
+                        // count: the model demonstrated interest, and
+                        // keeping the tool visible lets it retry with
+                        // corrected args instead of hallucinating around
+                        // a now-invisible schema. Always-on tools never
+                        // need stickiness (they're never filtered) so
+                        // gate on `ondemand`.
+                        if (registered?.ondemand) {
+                            stickyOndemandToolNames.add(toolName);
+                        }
 
                         // ── Filter-miss telemetry ──────────────────────────
                         // When the model calls a tool that is *registered* on
