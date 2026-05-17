@@ -81,7 +81,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	builtinWebSearchEnabled: true,
 	builtinWebFetchEnabled: true,
 	builtinRSSFetchEnabled: true,
-	builtinJavaScriptEnabled: true,
+	builtinJavaScriptEnabled: false,
 	webFetchSoftLimit: DEFAULT_WEB_FETCH_SOFT_LIMIT,
 	webFetchHardLimit: DEFAULT_WEB_FETCH_HARD_LIMIT,
 	allowedCapabilities: [...ALL_TOOL_CAPABILITIES],

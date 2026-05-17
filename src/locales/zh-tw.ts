@@ -379,6 +379,10 @@ export const zhTW: Record<string, string> = {
 	'settings.sessionRestartRequired': '切換至新對話後生效',
 	'settings.sessionRestartHint': '需切換對話',
 
+	// ── Experimental feature indicator ────────────────────
+	'settings.experimental': '試驗功能；行為與安全保證在後續版本可能發生變化。',
+	'settings.experimentalHint': '試驗性',
+
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '開啟對話',
 

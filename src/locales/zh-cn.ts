@@ -378,6 +378,10 @@ export const zhCN: Record<string, string> = {
 	'settings.sessionRestartRequired': '切换至新会话后生效',
 	'settings.sessionRestartHint': '需切换会话',
 
+	// ── Experimental feature indicator ────────────────────
+	'settings.experimental': '试验功能；行为与安全保证在后续版本可能发生变化。',
+	'settings.experimentalHint': '试验性',
+
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '打开会话',
 

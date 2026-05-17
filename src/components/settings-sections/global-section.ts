@@ -131,6 +131,7 @@ export class GlobalSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 			sessionRestartRequired: true,
+			experimental: true,
 		});
 
 		// Follow-up suggestions master toggle

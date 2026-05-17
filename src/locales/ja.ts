@@ -379,6 +379,10 @@ export const ja: Record<string, string> = {
 	'settings.sessionRestartRequired': '新しいセッションに切り替えると有効になります',
 	'settings.sessionRestartHint': 'セッション切替が必要',
 
+	// ── Experimental feature indicator ────────────────────
+	'settings.experimental': '実験的機能。動作と安全性は今後のバージョンで変更される可能性があります。',
+	'settings.experimentalHint': '実験的',
+
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': 'チャットを開く',
 

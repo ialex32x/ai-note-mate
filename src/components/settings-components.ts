@@ -82,6 +82,8 @@ export interface ApiKeyFieldOptions {
 	onChange: (value: string) => void | Promise<void>;
 	/** Whether this setting requires a session restart to take effect */
 	sessionRestartRequired?: boolean;
+	/** Whether this setting controls an experimental feature */
+	experimental?: boolean;
 }
 
 /** Options for creating a text field */
@@ -100,6 +102,8 @@ export interface TextFieldOptions {
 	onChange: (value: string) => void | Promise<void>;
 	/** Whether this setting requires a session restart to take effect */
 	sessionRestartRequired?: boolean;
+	/** Whether this setting controls an experimental feature */
+	experimental?: boolean;
 }
 
 /** Options for creating a toggle field */
@@ -116,6 +120,8 @@ export interface ToggleFieldOptions {
 	onChange: (value: boolean) => void | Promise<void>;
 	/** Whether this setting requires a session restart to take effect */
 	sessionRestartRequired?: boolean;
+	/** Whether this setting controls an experimental feature */
+	experimental?: boolean;
 }
 
 /** Options for creating a dropdown field */
@@ -134,6 +140,8 @@ export interface DropdownFieldOptions {
 	onChange: (value: string) => void | Promise<void>;
 	/** Whether this setting requires a session restart to take effect */
 	sessionRestartRequired?: boolean;
+	/** Whether this setting controls an experimental feature */
+	experimental?: boolean;
 }
 
 /** Return type for createTabBar */
@@ -378,6 +386,25 @@ export function markSettingRequiresSessionRestart(setting: Setting): void {
 	hint.textContent = t('settings.sessionRestartHint');
 }
 
+/**
+ * Adds a visual indicator to a setting to show it controls an experimental
+ * feature whose behavior and safety guarantees may change in future versions.
+ *
+ * Layer 1: A `flask-conical` icon badge appended to the setting name, with a
+ *          tooltip describing the experimental status.
+ * Layer 2: A small text hint appended to the setting description.
+ */
+export function markSettingExperimental(setting: Setting): void {
+	// Layer 1: Icon badge
+	const badge = setting.nameEl.createSpan({ cls: 'oap-experimental-badge' });
+	setIcon(badge, 'flask-conical');
+	setTooltip(badge, t('settings.experimental'));
+
+	// Layer 2: Text hint in description
+	const hint = setting.descEl.createSpan({ cls: 'oap-experimental-hint' });
+	hint.textContent = t('settings.experimentalHint');
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Field Factories
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,7 +413,7 @@ export function markSettingRequiresSessionRestart(setting: Setting): void {
  * Creates an API key field with SecretComponent.
  */
 export function createApiKeyField(options: ApiKeyFieldOptions): Setting {
-	const { container, app, name, desc, value, onChange, sessionRestartRequired } = options;
+	const { container, app, name, desc, value, onChange, sessionRestartRequired, experimental } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -404,6 +431,9 @@ export function createApiKeyField(options: ApiKeyFieldOptions): Setting {
 	if (sessionRestartRequired) {
 		markSettingRequiresSessionRestart(setting);
 	}
+	if (experimental) {
+		markSettingExperimental(setting);
+	}
 
 	return setting;
 }
@@ -412,7 +442,7 @@ export function createApiKeyField(options: ApiKeyFieldOptions): Setting {
  * Creates a text input field.
  */
 export function createTextField(options: TextFieldOptions): Setting {
-	const { container, name, desc, placeholder, value, onChange, sessionRestartRequired } = options;
+	const { container, name, desc, placeholder, value, onChange, sessionRestartRequired, experimental } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -434,6 +464,9 @@ export function createTextField(options: TextFieldOptions): Setting {
 	if (sessionRestartRequired) {
 		markSettingRequiresSessionRestart(setting);
 	}
+	if (experimental) {
+		markSettingExperimental(setting);
+	}
 
 	return setting;
 }
@@ -442,7 +475,7 @@ export function createTextField(options: TextFieldOptions): Setting {
  * Creates a toggle field.
  */
 export function createToggleField(options: ToggleFieldOptions): Setting {
-	const { container, name, desc, value, onChange, sessionRestartRequired } = options;
+	const { container, name, desc, value, onChange, sessionRestartRequired, experimental } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -461,6 +494,9 @@ export function createToggleField(options: ToggleFieldOptions): Setting {
 	if (sessionRestartRequired) {
 		markSettingRequiresSessionRestart(setting);
 	}
+	if (experimental) {
+		markSettingExperimental(setting);
+	}
 
 	return setting;
 }
@@ -469,7 +505,7 @@ export function createToggleField(options: ToggleFieldOptions): Setting {
  * Creates a dropdown field.
  */
 export function createDropdownField(options: DropdownFieldOptions): Setting {
-	const { container, name, desc, options: dropdownOptions, value, onChange, sessionRestartRequired } = options;
+	const { container, name, desc, options: dropdownOptions, value, onChange, sessionRestartRequired, experimental } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -490,6 +526,9 @@ export function createDropdownField(options: DropdownFieldOptions): Setting {
 
 	if (sessionRestartRequired) {
 		markSettingRequiresSessionRestart(setting);
+	}
+	if (experimental) {
+		markSettingExperimental(setting);
 	}
 
 	return setting;

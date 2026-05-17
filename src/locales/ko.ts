@@ -379,6 +379,10 @@ export const ko: Record<string, string> = {
 	'settings.sessionRestartRequired': '새 세션으로 전환한 후 적용됩니다',
 	'settings.sessionRestartHint': '세션 전환 필요',
 
+	// ── Experimental feature indicator ────────────────────
+	'settings.experimental': '실험적 기능입니다. 동작과 안전성은 향후 버전에서 변경될 수 있습니다.',
+	'settings.experimentalHint': '실험적',
+
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '채팅 열기',
 

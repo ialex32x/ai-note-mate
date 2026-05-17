@@ -379,6 +379,10 @@ export const en: Record<string, string> = {
 	'settings.sessionRestartRequired': 'Takes effect after switching to a new session',
 	'settings.sessionRestartHint': 'New session required',
 
+	// ── Experimental feature indicator ────────────────────
+	'settings.experimental': 'Experimental feature; behavior and safety guarantees may change in future versions.',
+	'settings.experimentalHint': 'Experimental',
+
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': 'Open Chat',
 
