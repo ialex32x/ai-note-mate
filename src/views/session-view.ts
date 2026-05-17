@@ -115,6 +115,16 @@ export class SessionView extends ItemView {
     /** Set of message IDs that were aborted by the user */
     private abortedMessageIds: Set<string> = new Set();
 
+    /**
+     * Singleton reference to the inline "continue" button on the *current*
+     * tail error bubble, when one exists. Invariant: at most one such
+     * button is alive at any time, and it lives only on the conversation
+     * tail. Anything that pushes new content past that error tail
+     * (a new chat bubble, a fresh error replacing it, a session switch)
+     * must call {@link clearLastErrorContinueBtn} before mutating the DOM.
+     */
+    private lastErrorContinueBtn: HTMLElement | null = null;
+
     // ── Draft input debounce ────────────────────────────────────────────────
     private draftController!: DraftInputController;
 
@@ -751,6 +761,9 @@ export class SessionView extends ItemView {
         }
         this.dropdownManager.closeActive();
         this.messageBubbles.clear();
+        // Drop the dangling continue-button reference too — the DOM is
+        // about to be torn down by the parent ItemView.
+        this.lastErrorContinueBtn = null;
         // Drop the singleton streaming loader reference; its DOM node is
         // inside contentEl which will be torn down by the parent ItemView.
         this.streamingLoader?.dispose();
@@ -960,6 +973,9 @@ export class SessionView extends ItemView {
         this.streamingLoader.reattachAfterEmpty();
         this.messageBubbles.clear();
         this.abortedMessageIds.clear();
+        // The DOM node is already gone via messagesEl.empty(); just drop
+        // the dangling reference so the next session starts clean.
+        this.lastErrorContinueBtn = null;
 
         this.cmInput.clear();
         this.scrollToBottomBtn.hide();
@@ -1169,12 +1185,30 @@ export class SessionView extends ItemView {
         // Clear draft input since message is being sent
         this.draftController.clearDraft();
 
-        // The user bubble is rendered from inside chat.prompt()'s
-        // synchronous onUserMessage callback so it can be keyed by the
-        // agent's real message id (not a separately-minted optimistic
-        // id). This is what keeps the message branch-able afterwards —
-        // SessionManager.branchSession looks up the anchor by id in the
-        // agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
+        await this.sendPrompt(text);
+    }
+
+    /**
+     * Send a user prompt to the active runtime's chat agent. Thin wrapper
+     * around `chat.prompt(text, ...)` that injects the per-turn options
+     * shared by every entry point that submits a user message — the
+     * primary input box (`handleSend`), follow-up suggestion clicks, and
+     * the inline "continue" button on the tail error bubble.
+     *
+     * Does NOT touch `cmInput` or the draft controller — those are
+     * responsibilities of input-bound entry points like `handleSend`.
+     * Also does NOT guard against `isStreaming`; callers that have
+     * abort-on-streaming semantics (e.g. the send button) must handle
+     * that themselves before calling.
+     *
+     * The user bubble is rendered from inside chat.prompt()'s
+     * synchronous onUserMessage callback so it can be keyed by the
+     * agent's real message id (not a separately-minted optimistic
+     * id). This is what keeps the message branch-able afterwards —
+     * SessionManager.branchSession looks up the anchor by id in the
+     * agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
+     */
+    private async sendPrompt(text: string): Promise<void> {
         await this.ensureRuntimeAttached().chat.prompt(text, {
             allowedCapabilities: (() => {
                 const allowed = this.capabilitiesSelector.getAllowed();
@@ -1252,6 +1286,10 @@ export class SessionView extends ItemView {
         // (e.g. during replay, where no runtime emit happens).
         this.followUpBar?.hide();
         this.insightCard?.hide();
+        // A new chat bubble means the conversation has moved past the
+        // last error tail (if any), so the inline "continue" affordance
+        // is no longer applicable to that historical error.
+        this.clearLastErrorContinueBtn();
 
         let statusCls = '';
         if (msg.role === 'tool_call' && msg.toolCallResult) {
@@ -1669,11 +1707,45 @@ export class SessionView extends ItemView {
     }
 
     private appendErrorBubble(message: string) {
-        appendErrorBubble(message, {
+        // A new error bubble becomes the new conversation tail; the
+        // previous tail's continue button (if any) must be removed
+        // BEFORE we render the next bubble so the invariant "only the
+        // tail error carries a continue button" holds even briefly.
+        this.clearLastErrorContinueBtn();
+
+        const { continueBtn } = appendErrorBubble(message, {
             messagesEl: this.messagesEl,
             pinStreamingLoaderToEnd: () => this.streamingLoader.pinToEnd(),
             maybeScrollToBottom: () => this.maybeScrollToBottom(),
+            onContinue: () => {
+                // Defensive: errors transition the runtime to idle, so
+                // this should normally be safe; but if a fresh turn was
+                // somehow kicked off in between (e.g. from another view
+                // attached to the same runtime), bail rather than have
+                // chat.prompt() throw "already streaming".
+                if (this.isStreaming) return;
+                // No need to manually clear the button here: sendPrompt
+                // delivers the user message via onUserMessage →
+                // appendBubble, which clears the singleton as part of
+                // its normal "new tail" handling.
+                void this.sendPrompt(t('view.continueAfterError'));
+            },
         });
+
+        this.lastErrorContinueBtn = continueBtn;
+    }
+
+    /**
+     * Detach the inline "continue" button from the previous tail error
+     * bubble, if any. Idempotent. The error bubble itself is preserved
+     * (it stays in history); only the action button is removed since the
+     * conversation has moved past the error.
+     */
+    private clearLastErrorContinueBtn(): void {
+        if (this.lastErrorContinueBtn) {
+            this.lastErrorContinueBtn.remove();
+            this.lastErrorContinueBtn = null;
+        }
     }
 
     // ── Export session ──────────────────────────────────────────────────────

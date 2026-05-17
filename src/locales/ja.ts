@@ -43,6 +43,7 @@ export const ja: Record<string, string> = {
 	'view.copyToolArgs': '引数をコピー',
 	'view.copyToolResult': '結果をコピー',
 	'view.copyError': 'エラーをコピー',
+	'view.continueAfterError': '続行',
 	'view.copied': 'クリップボードにコピーしました',
 	'view.openInBrowser': 'ブラウザで開く',
 	'view.openInSystemBrowser': 'システムブラウザで開く',

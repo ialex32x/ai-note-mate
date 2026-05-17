@@ -43,6 +43,7 @@ export const zhCN: Record<string, string> = {
 	'view.copyToolArgs': '复制参数',
 	'view.copyToolResult': '复制结果',
 	'view.copyError': '复制错误信息',
+	'view.continueAfterError': '继续',
 	'view.copied': '已复制到剪贴板',
 	'view.openInBrowser': '在浏览器中打开',
 	'view.openInSystemBrowser': '在系统浏览器中打开',

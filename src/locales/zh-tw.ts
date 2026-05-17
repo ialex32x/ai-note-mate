@@ -43,6 +43,7 @@ export const zhTW: Record<string, string> = {
 	'view.copyToolArgs': '複製參數',
 	'view.copyToolResult': '複製結果',
 	'view.copyError': '複製錯誤訊息',
+	'view.continueAfterError': '繼續',
 	'view.copied': '已複製到剪貼簿',
 	'view.openInBrowser': '在瀏覽器中開啟',
 	'view.openInSystemBrowser': '在系統瀏覽器中開啟',

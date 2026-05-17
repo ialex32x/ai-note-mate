@@ -43,6 +43,7 @@ export const ko: Record<string, string> = {
 	'view.copyToolArgs': '인자 복사',
 	'view.copyToolResult': '결과 복사',
 	'view.copyError': '오류 메시지 복사',
+	'view.continueAfterError': '계속',
 	'view.copied': '클립보드에 복사되었습니다',
 	'view.openInBrowser': '브라우저에서 열기',
 	'view.openInSystemBrowser': '시스템 브라우저에서 열기',

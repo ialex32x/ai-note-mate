@@ -10,6 +10,26 @@ export interface AppendErrorBubbleOptions {
     pinStreamingLoaderToEnd: () => void;
     /** Optional auto-scroll trigger. */
     maybeScrollToBottom: () => void;
+    /**
+     * When provided, render an inline "continue" action that resends a
+     * user prompt to resume the interrupted turn. The handler runs on
+     * click; the caller is responsible for the "only the latest error
+     * bubble carries this button" invariant — see {@link AppendErrorBubbleResult}.
+     */
+    onContinue?: () => void;
+}
+
+export interface AppendErrorBubbleResult {
+    /** The bubble element appended to the message list. */
+    bubble: HTMLElement;
+    /**
+     * The continue-button element when `onContinue` was provided, else null.
+     * Callers track this reference so they can detach it the moment the
+     * conversation moves past this error (i.e. any new bubble appends or
+     * a fresh error replaces it). Detaching is what enforces "the button
+     * appears only on the conversation-tail error bubble".
+     */
+    continueBtn: HTMLElement | null;
 }
 
 /**
@@ -26,7 +46,10 @@ const ERROR_DISPLAY_MAX_CHARS = 100;
 /**
  * Append an error bubble to the message list. Extracted from SessionView.
  */
-export function appendErrorBubble(message: string, opts: AppendErrorBubbleOptions): void {
+export function appendErrorBubble(
+    message: string,
+    opts: AppendErrorBubbleOptions,
+): AppendErrorBubbleResult {
     const fullText = prettifyIfJson(message);
     // Surrogate-aware truncation: never split an emoji / non-BMP character
     // pair when chopping the display string.
@@ -51,6 +74,24 @@ export function appendErrorBubble(message: string, opts: AppendErrorBubbleOption
     });
 
     const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
+
+    let continueBtn: HTMLElement | null = null;
+    if (opts.onContinue) {
+        // Rendered before the copy button so the primary recovery
+        // affordance reads first in the action row.
+        const onContinue = opts.onContinue;
+        continueBtn = actions.createEl('button', {
+            cls: 'session-bubble__action-btn session-bubble__action-btn--primary',
+            attr: { 'aria-label': t('view.continueAfterError') },
+        });
+        setIcon(continueBtn, 'play');
+        setTooltip(continueBtn, t('view.continueAfterError'));
+        continueBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            onContinue();
+        });
+    }
+
     const copyBtn = actions.createEl('button', {
         cls: 'session-bubble__action-btn',
         attr: { 'aria-label': t('view.copyError') },
@@ -83,6 +124,8 @@ export function appendErrorBubble(message: string, opts: AppendErrorBubbleOption
     opts.maybeScrollToBottom();
     // Always log the full message so it remains debuggable from the dev console.
     console.error('Error:', message);
+
+    return { bubble, continueBtn };
 }
 
 export async function copyErrorToClipboard(text: string): Promise<void> {
