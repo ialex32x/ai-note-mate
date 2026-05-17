@@ -253,6 +253,10 @@ export const ko: Record<string, string> = {
 	'settings.embeddingModel': '모델',
 	'settings.embeddingModelDesc': '텍스트 임베딩에 사용할 모델.',
 	'settings.embeddingEmpty': '임베딩이 설정되지 않았습니다. 추가하여 임베딩 기능을 활성화하세요.',
+	'settings.toolFilterSimilarityThreshold': '도구 필터: 유사도 임계값',
+	'settings.toolFilterSimilarityThresholdDesc': '온디맨드 도구가 유지되기 위한 최소 코사인 유사도 (0–1). 값이 작을수록 더 관대해집니다. 임베딩 모델에 맞춰 조정하세요. 0 으로 설정하면 임계값 필터가 비활성화됩니다.',
+	'settings.toolFilterTopK': '도구 필터: 상위 K',
+	'settings.toolFilterTopKDesc': '필터링 후 모델에 노출되는 온디맨드 도구의 최대 개수 (1–30). 상시 도구는 이 상한에 포함되지 않습니다.',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP 서버',

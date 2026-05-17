@@ -253,6 +253,10 @@ export const en: Record<string, string> = {
 	'settings.embeddingModel': 'Model',
 	'settings.embeddingModelDesc': 'Model used for text embedding.',
 	'settings.embeddingEmpty': 'No embedding configured. Add one to enable embedding functionality.',
+	'settings.toolFilterSimilarityThreshold': 'Tool filter: similarity threshold',
+	'settings.toolFilterSimilarityThresholdDesc': 'Minimum cosine similarity (0–1) for an on-demand tool to be kept. Lower = more inclusive. Tune per embedding model; 0 disables the threshold.',
+	'settings.toolFilterTopK': 'Tool filter: top-K',
+	'settings.toolFilterTopKDesc': 'Maximum number of on-demand tools surfaced to the model after filtering (1–30). Always-on tools are not counted toward this cap.',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP Servers',

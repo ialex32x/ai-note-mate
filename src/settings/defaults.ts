@@ -24,6 +24,22 @@ export const DEFAULT_WEB_FETCH_SOFT_LIMIT = 5;
  */
 export const DEFAULT_WEB_FETCH_HARD_LIMIT = 12;
 
+/**
+ * Default cosine similarity threshold for embedding-based on-demand tool
+ * filtering. Tuned for `text-embedding-3-small` whose meaningful matches
+ * typically land in the 0.3–0.6 range; users with other embedding models
+ * may need to retune via the setting. Exported so the same fallback is
+ * used wherever the setting is consumed (settings UI, runtime, tests).
+ */
+export const DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD = 0.3;
+/**
+ * Default cap on the number of on-demand tools that pass the embedding
+ * filter. Combined with the always-on tool set (~6 entries), this keeps
+ * the per-turn schema list under ~15 tools, which is comfortable even on
+ * smaller-context models.
+ */
+export const DEFAULT_TOOL_FILTER_TOP_K = 9;
+
 export function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -94,6 +110,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	embeddingEnabled: false,
 	embeddingConfigs: [],
 	activeEmbeddingId: '',
+	toolFilterSimilarityThreshold: DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
+	toolFilterTopK: DEFAULT_TOOL_FILTER_TOP_K,
 	memoryEnabled: true,
 	memories: [],
 	followUpSuggestionsEnabled: true,

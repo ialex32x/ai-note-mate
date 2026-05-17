@@ -487,6 +487,13 @@ export class MCPManager {
 					parameters: tool.inputSchema,
 				},
 			},
+			// Embedding-only description: drop the `[MCP: <serverName>]`
+			// prefix that we keep in `schema.description` for the model's
+			// benefit. The prefix is shared across every tool from the same
+			// server and dilutes cosine similarity, making intra-server
+			// tools harder to disambiguate. Falls back to `tool.name` when
+			// the upstream provides no description at all.
+			embeddingDescription: tool.description || tool.name,
 			capabilities: ['network'],
 			exec: async (_chatStream, args, signal?: AbortSignal): Promise<ToolCallResult> => {
 				try {

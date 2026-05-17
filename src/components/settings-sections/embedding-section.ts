@@ -1,7 +1,11 @@
 import { DropdownComponent, Setting } from "obsidian";
 import { t } from "../../i18n";
 import type { EmbeddingProviderType } from "../../services/providers";
-import { createDefaultEmbeddingConfig } from "../../settings/defaults";
+import {
+	createDefaultEmbeddingConfig,
+	DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
+	DEFAULT_TOOL_FILTER_TOP_K,
+} from "../../settings/defaults";
 import type { EmbeddingConfig } from "../../settings/types";
 import {
 	createApiKeyField,
@@ -25,7 +29,11 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		const { plugin, refreshSection, containerEl } = this.ctx;
 		const embeddingConfigs = plugin.settings.embeddingConfigs;
 
-		// Embedding enabled toggle
+		// Embedding enabled toggle. Marked experimental at the master switch
+		// rather than on every sub-setting: this is the single entry point
+		// users see before opting in, so the flask badge here is enough to
+		// communicate the status of the entire embedding subsystem (active
+		// config selection, tool-filter knobs, etc.).
 		createToggleField({
 			container,
 			name: t('settings.embeddingEnabled'),
@@ -33,6 +41,41 @@ export class EmbeddingSettingsSection implements SettingsSection {
 			value: plugin.settings.embeddingEnabled,
 			onChange: async (value) => {
 				plugin.settings.embeddingEnabled = value;
+				await plugin.saveSettings();
+			},
+			experimental: true,
+		});
+
+		// ── Tool filter tuning (global, applies whenever embedding is used
+		//    to gate on-demand tools). Bounds are validated at the use-site
+		//    (ChatStream._getBestMatchedTools) so we don't need range UI here
+		//    beyond a sensible placeholder + light input parsing.
+		createTextField({
+			container,
+			name: t('settings.toolFilterSimilarityThreshold'),
+			desc: t('settings.toolFilterSimilarityThresholdDesc'),
+			placeholder: String(DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD),
+			value: String(plugin.settings.toolFilterSimilarityThreshold),
+			onChange: async (value) => {
+				const num = parseFloat(value);
+				plugin.settings.toolFilterSimilarityThreshold =
+					isNaN(num) ? DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD
+					: Math.max(0, Math.min(1, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.toolFilterTopK'),
+			desc: t('settings.toolFilterTopKDesc'),
+			placeholder: String(DEFAULT_TOOL_FILTER_TOP_K),
+			value: String(plugin.settings.toolFilterTopK),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.toolFilterTopK =
+					isNaN(num) ? DEFAULT_TOOL_FILTER_TOP_K
+					: Math.max(1, Math.min(30, num));
 				await plugin.saveSettings();
 			},
 		});

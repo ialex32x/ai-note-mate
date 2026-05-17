@@ -1,7 +1,11 @@
 import type NoteAssistantPlugin from 'main';
-import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions } from '../../services/chat-stream';
+import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type EmbeddingFilterOptions } from '../../services/chat-stream';
 import { AgentOrchestrator } from '../../services/agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getActiveEmbeddingConfig } from '../../settings';
+import {
+    DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
+    DEFAULT_TOOL_FILTER_TOP_K,
+} from '../../settings/defaults';
 import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provider';
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
@@ -51,6 +55,22 @@ export function createEmbeddingConfig(plugin: NoteAssistantPlugin): MinimalModel
         apiKey,
         baseURL: embeddingConfig.baseUrl,
         model: embeddingConfig.model,
+    };
+}
+
+/**
+ * Resolve the embedding-based tool filter options from settings, applying
+ * the same fallbacks as the use-site in case a previously-saved settings
+ * file lacks the field (forward compatibility for first plugin upgrade).
+ *
+ * Returned object is safe to forward unconditionally — when embedding is
+ * not configured, ChatStream simply ignores this struct.
+ */
+export function createEmbeddingFilterOptions(plugin: NoteAssistantPlugin): EmbeddingFilterOptions {
+    const settings = plugin.settings;
+    return {
+        similarityThreshold: settings.toolFilterSimilarityThreshold ?? DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
+        topK: settings.toolFilterTopK ?? DEFAULT_TOOL_FILTER_TOP_K,
     };
 }
 

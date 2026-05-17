@@ -172,6 +172,74 @@ export interface ToolCallResult {
 }
 
 /**
+ * Tunable parameters for embedding-based on-demand tool filtering.
+ *
+ * Forwarded by callers (typically the SessionView) into {@link IChatAgent.prompt}.
+ * Missing fields fall back to the built-in defaults at the use-site
+ * (see {@link DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD} / {@link DEFAULT_TOOL_FILTER_TOP_K}).
+ *
+ * - `similarityThreshold`: minimum cosine similarity, clamped to `[0, 1]`. `0`
+ *   effectively disables the threshold (only `topK` matters).
+ * - `topK`: cap on the number of on-demand tools surfaced to the model.
+ *   Always-on tools are not counted toward this cap.
+ */
+export interface EmbeddingFilterOptions {
+    similarityThreshold: number;
+    topK: number;
+}
+
+/**
+ * Decide whether a query is too short / signal-poor to drive embedding-based
+ * tool filtering. When this returns true, callers should fall back to the
+ * full tool set rather than risk wiping out the on-demand schemas with a
+ * meaningless query.
+ *
+ * Heuristic:
+ *   - After stripping whitespace / punctuation / symbols, fewer than 8
+ *     characters → too short (catches "yes", "ok", "继续", "go on" …).
+ *   - No CJK ideograph/kana/hangul AND no English-alphabet word (length ≥ 2)
+ *     → too short (catches pure-number/pure-emoji follow-ups).
+ *
+ * Intentionally simple: cheap on every turn, easy to reason about, and a
+ * false-negative just means we attach the full tool set (safe degradation).
+ */
+function isQueryTooShort(text: string): boolean {
+    if (!text) return true;
+    const stripped = text.replace(/[\s\p{P}\p{S}]/gu, '');
+    if (stripped.length < 8) return true;
+    const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text);
+    const hasEnglishWord = /[a-zA-Z]{2,}/.test(text);
+    return !hasCJK && !hasEnglishWord;
+}
+
+/**
+ * Build the text used to embed a tool for similarity ranking.
+ *
+ * Composition (newline-separated):
+ *   1. `function.name` — usually a strong, language-neutral signal
+ *      (e.g. `vault_grep_file`, `web_search`).
+ *   2. {@link RegisteredTool.embeddingDescription} when present, otherwise
+ *      `function.description` — the bulk of the semantic payload.
+ *   3. Top-level parameter names, when discoverable from
+ *      `function.parameters.properties` — surfaces hints the description
+ *      may not spell out (e.g. `tags`, `query`, `path`).
+ *
+ * Changes to this composition invalidate the embedder's per-text cache
+ * (entries are keyed by sha256(text)). That's acceptable: a one-shot
+ * re-embed of all on-demand tools on first use after the change.
+ */
+function buildToolEmbeddingText(tool: RegisteredTool): string {
+    const fn = tool.schema.function;
+    const description = tool.embeddingDescription ?? fn.description ?? '';
+    const properties = fn.parameters['properties'];
+    const paramNames = (properties && typeof properties === 'object' && !Array.isArray(properties))
+        ? Object.keys(properties as Record<string, unknown>)
+        : [];
+    const paramLine = paramNames.length > 0 ? `Parameters: ${paramNames.join(', ')}` : '';
+    return [fn.name, description, paramLine].filter(Boolean).join('\n');
+}
+
+/**
  * A tool registered with the ChatStream instance.
  * `schema` is the provider-agnostic tool definition; `exec` is the handler.
  */
@@ -181,6 +249,19 @@ export interface RegisteredTool {
 
     /** Provider-agnostic tool schema (type + function definition) */
     schema: ToolDefinition;
+    /**
+     * Optional description used *only* for embedding-based similarity
+     * matching, in place of `schema.function.description`. The schema
+     * description is always what the LLM sees; this override is for cases
+     * where the description carries noise or boilerplate that hurts
+     * semantic ranking (e.g. MCP tools whose descriptions are prefixed
+     * with `[MCP: <serverName>]` so the model can attribute the source,
+     * but where the prefix dilutes cosine similarity across tools from
+     * the same server).
+     *
+     * Leave undefined to fall back to `schema.function.description`.
+     */
+    embeddingDescription?: string;
     /**
      * Capability flags declaring what actions this tool may perform.
      * Used to filter tools based on user's permission settings.
@@ -500,6 +581,12 @@ export interface IChatAgent {
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
             /**
+             * Tunable parameters for embedding-based on-demand tool filtering.
+             * Only consulted when `embedding` is also supplied. Missing fields
+             * fall back to plugin defaults at use-site.
+             */
+            embeddingFilter?: EmbeddingFilterOptions;
+            /**
              * Called synchronously after the user message has been created
              * and appended to the agent's message history, but before any
              * provider work begins. Used by the view to render the user
@@ -754,6 +841,11 @@ export class ChatStream implements IChatAgent {
             summarizer?: MinimalModelConfig,
             embedding?: MinimalModelConfig,
             /**
+             * Tunable parameters for embedding-based on-demand tool filtering.
+             * Only consulted when `embedding` is also supplied.
+             */
+            embeddingFilter?: EmbeddingFilterOptions,
+            /**
              * Synchronous notification fired after the user message is
              * created and appended to history, before any provider work
              * starts. See {@link IChatAgent.prompt} for rationale.
@@ -884,20 +976,20 @@ export class ChatStream implements IChatAgent {
         const dynamicTools = this._config.dynamicTools?.() ?? [];
         const allTools = [...this._tools, ...dynamicTools];
 
-        const filteredTools = await this._getBestMatchedTools(
-            options.embedding,
-            userInput,
-            allowedCapabilities
-                ? allTools.filter(tool => {
-                    // If tool has no capabilities declared, allow it (backward compatibility)
-                    if (!tool.capabilities || tool.capabilities.length === 0) {
-                        return true;
-                    }
-                    // Tool is allowed if ALL its capabilities are in the allowed list
-                    return tool.capabilities.every(cap => allowedCapabilities.includes(cap));
-                })
-                : allTools // If no filter specified, allow all tools
-        );
+        // Capability filtering is independent of embedding-based filtering
+        // and doesn't change within a single prompt() call, so we compute it
+        // once up-front. Embedding-based filtering runs separately at the
+        // top of every tool-call loop iteration (see below).
+        const capabilityFilteredTools: RegisteredTool[] = allowedCapabilities
+            ? allTools.filter(tool => {
+                // If tool has no capabilities declared, allow it (backward compatibility)
+                if (!tool.capabilities || tool.capabilities.length === 0) {
+                    return true;
+                }
+                // Tool is allowed if ALL its capabilities are in the allowed list
+                return tool.capabilities.every(cap => allowedCapabilities.includes(cap));
+            })
+            : allTools;
 
         try {
             let finalMessage: ChatMessage | null = null;
@@ -910,8 +1002,38 @@ export class ChatStream implements IChatAgent {
             // with the main agent's.
             const toolCallCounts = new Map<string, number>();
 
+            // Most recent assistant content from the previous loop iteration,
+            // used to enrich the embedding-filter query so subsequent tool-call
+            // rounds can surface tools matching the model's *current* next-step
+            // intent (e.g. user asks "summarize my notes" → after reading,
+            // assistant says "Now I'll write the summary" → write_file is
+            // re-included by the next round's filter). Empty on the first
+            // iteration so the first filter pass uses the raw user input.
+            let lastAssistantText = '';
+            // Holds the currently-applicable filtered tool set across the loop.
+            // Recomputed at the top of every iteration. Declared outside the
+            // loop so error reporting (filteredTools.find for handler lookup,
+            // etc.) can reference the latest value.
+            let filteredTools: RegisteredTool[] = capabilityFilteredTools;
+
             // Tool-call loop: keep requesting until no more tool calls
             while (true) {
+                // Re-run embedding-based filtering on every iteration so the
+                // on-demand tool set reflects the model's current direction.
+                // Tool descriptions are cached inside the shared Embedder, so
+                // this adds at most one embedding call per iteration whose
+                // query string differs from the previous one (cap the
+                // assistant text portion to keep the query compact).
+                const filterQuery = lastAssistantText
+                    ? `${userInput}\n${lastAssistantText.slice(0, 300)}`
+                    : userInput;
+                filteredTools = await this._getBestMatchedTools(
+                    options.embedding,
+                    filterQuery,
+                    capabilityFilteredTools,
+                    options.embeddingFilter,
+                );
+
                 const toolSchemas = filteredTools.map((t) => t.schema);
                 const activeProvider = options?.provider;
 
@@ -1056,6 +1178,30 @@ export class ChatStream implements IChatAgent {
                         const registered = filteredTools.find((t) => {
                             return t.schema.function.name === toolName;
                         });
+
+                        // ── Filter-miss telemetry ──────────────────────────
+                        // When the model calls a tool that is *registered* on
+                        // this agent (passes capability filtering) but didn't
+                        // make it through embedding-based filtering, log a
+                        // debug line. This is the most useful single signal
+                        // for diagnosing "AI suddenly can't do X" reports —
+                        // it pinpoints whether the threshold / topK / tool
+                        // description quality is at fault, without changing
+                        // runtime behaviour. (Capability-rejected tools and
+                        // genuinely-unregistered names are excluded; they
+                        // are not embedding-filter misses.)
+                        if (!registered) {
+                            const missed = capabilityFilteredTools.find(
+                                t => t.schema.function.name === toolName,
+                            );
+                            if (missed) {
+                                console.debug(
+                                    `[embedding tool filter] miss: model called "${toolName}" `
+                                    + `but it was filtered out (registered & capability-allowed, `
+                                    + `consider lowering threshold or revising its description)`,
+                                );
+                            }
+                        }
 
                         // ── Per-turn call-budget enforcement ────────────────
                         // Bump the counter *before* dispatch so that hard
@@ -1222,6 +1368,14 @@ export class ChatStream implements IChatAgent {
                         }
                     }
 
+                    // Capture the assistant's prose for the next iteration's
+                    // re-filter query. Most tool-call turns include a brief
+                    // narration (e.g. "Let me search for…", "现在我来创建文件") —
+                    // a strong signal of what tools the next round will need.
+                    // Falls back to '' when the turn was pure-tool-call;
+                    // _getBestMatchedTools handles the empty/short case.
+                    lastAssistantText = result.content ?? '';
+
                     // Continue the loop to let the AI process tool results
                     continue;
                 }
@@ -1307,11 +1461,37 @@ export class ChatStream implements IChatAgent {
     }
 
     // ── Private methods ─────────────────────────────────────────────────────
-    private async _getBestMatchedTools(config: MinimalModelConfig | undefined, userInput: string, tools: RegisteredTool[]): Promise<RegisteredTool[]> {
+    /**
+     * Select which of `tools` should be exposed to the model for the current
+     * request, based on cosine similarity between an embedding of `query` and
+     * each on-demand tool's description.
+     *
+     * Behaviour:
+     *   - Always-on tools (`ondemand: false`) are never filtered.
+     *   - When `config` is undefined → no filtering; full `tools` returned.
+     *   - When `query` is too short / signal-poor (see {@link isQueryTooShort})
+     *     → no filtering; full `tools` returned. Prevents short follow-ups
+     *     like "yes" / "继续" from collapsing the on-demand tool set.
+     *   - When the global embedder isn't initialized or the embedding call
+     *     throws → no filtering; full `tools` returned (the Embedder tracks
+     *     the failure on its own status).
+     *
+     * The `query` parameter is intentionally generic: callers may pass the
+     * raw user input on the first round, then enrich it with the most recent
+     * assistant text on subsequent rounds (so the filter tracks the model's
+     * current next-step intent, not just the original question).
+     */
+    private async _getBestMatchedTools(
+        config: MinimalModelConfig | undefined,
+        query: string,
+        tools: RegisteredTool[],
+        filterOpts?: EmbeddingFilterOptions,
+    ): Promise<RegisteredTool[]> {
         if (!config) return tools;
+        if (isQueryTooShort(query)) return tools;
 
-        /** Minimum cosine similarity for an on-demand tool to be included */
-        const SIMILARITY_THRESHOLD = 0.3;
+        const similarityThreshold = Math.max(0, Math.min(1, filterOpts?.similarityThreshold ?? 0.3));
+        const topK = Math.max(1, Math.floor(filterOpts?.topK ?? 9));
 
         try {
             const always = tools.filter(t => !t.ondemand);
@@ -1331,10 +1511,13 @@ export class ChatStream implements IChatAgent {
             // config. updateConfig() is a no-op when the fingerprint is unchanged.
             await embedder.updateConfig(config);
 
-            // Embed user input + all on-demand tool descriptions in one batched call.
+            // Embed query + all on-demand tool descriptions in one batched call.
             // The embedder handles per-text caching internally (hit rate will be high
-            // for tool descriptions, near-zero for user inputs).
-            const texts = [userInput, ...ondemand.map(t => t.schema.function.description)];
+            // for tool descriptions, near-zero for queries). Each tool's embed text
+            // mixes name + description (or `embeddingDescription` override, see
+            // `RegisteredTool.embeddingDescription`) + parameter names so the
+            // ranking has more than just the description to bite on.
+            const texts = [query, ...ondemand.map(buildToolEmbeddingText)];
             const vectors = await embedder.embed(texts);
             const userEmbedding = vectors[0]!;
             const ondemandEmbeddings = vectors.slice(1);
@@ -1342,25 +1525,34 @@ export class ChatStream implements IChatAgent {
             // ── Rank ALL ondemand tools (no threshold) so we can log every score ──
             const allRanked = findSimilar(userEmbedding, ondemandEmbeddings, ondemand.length, 0);
             // Then apply the threshold + topK cap used for actual selection.
-            const similarities = allRanked
-                .filter(s => s.similarity >= SIMILARITY_THRESHOLD)
-                .slice(0, 9);
+            let similarities = allRanked
+                .filter(s => s.similarity >= similarityThreshold)
+                .slice(0, topK);
+
+            // ── Zero-pass fallback ─────────────────────────────────────────
+            // If the threshold filtered out every on-demand tool, retain the
+            // best `min(3, topK, ondemand.length)` so the model still has a
+            // workable on-demand surface area. Respects the user's `topK` cap
+            // (someone who set topK=1 doesn't want 3 fallback tools) and the
+            // genuine "no on-demand tools registered" case (already returned
+            // above). Without this, a misconfigured threshold or a follow-up
+            // whose embedding happens to miss every description could leave
+            // the model with only `always` tools and no way to act.
+            if (similarities.length === 0 && allRanked.length > 0) {
+                const fallbackCount = Math.min(3, topK, allRanked.length);
+                similarities = allRanked.slice(0, fallbackCount);
+            }
+
             const results = similarities.map(s => ondemand[s.index]!);
 
             // Detailed per-tool similarity log to help diagnose unexpected drops.
             // Each row: { name, similarity, passed }
+            const passedIndices = new Set(similarities.map(s => s.index));
             const scoreTable = allRanked.map(s => ({
                 name: ondemand[s.index]!.schema.function.name,
                 similarity: Number(s.similarity.toFixed(4)),
-                passed: s.similarity >= SIMILARITY_THRESHOLD,
+                passed: passedIndices.has(s.index),
             }));
-            // console.log(
-            //     '[embedding tool filter]',
-            //     `userInput="${userInput.length > 120 ? userInput.slice(0, 120) + '...' : userInput}"`,
-            //     `threshold=${SIMILARITY_THRESHOLD}`,
-            //     `always=[${always.map(t => t.schema.function.name).join(', ')}]`,
-            //     `passed=${similarities.length}/${ondemand.length}`,
-            // );
             console.debug(scoreTable);
             return [...always, ...results];
         } catch (err) {

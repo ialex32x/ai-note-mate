@@ -253,6 +253,10 @@ export const zhTW: Record<string, string> = {
 	'settings.embeddingModel': '模型',
 	'settings.embeddingModelDesc': '用於文字嵌入的模型。',
 	'settings.embeddingEmpty': '尚未配置嵌入。新增一個以啟用嵌入功能。',
+	'settings.toolFilterSimilarityThreshold': '工具過濾:相似度閾值',
+	'settings.toolFilterSimilarityThresholdDesc': '按需工具被保留所需的最小餘弦相似度 (0–1)。值越小越寬鬆。請根據目前嵌入模型微調;設為 0 時關閉閾值過濾。',
+	'settings.toolFilterTopK': '工具過濾:Top-K',
+	'settings.toolFilterTopKDesc': '過濾後最多保留多少個按需工具 (1–30)。常駐工具不計入此上限。',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP 伺服器',

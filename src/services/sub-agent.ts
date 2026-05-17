@@ -8,7 +8,7 @@
  * to the main agent.
  */
 
-import { ChatStream, ChatMessage, RegisteredTool } from "./chat-stream";
+import { ChatStream, ChatMessage, RegisteredTool, type EmbeddingFilterOptions } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
 import { estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
@@ -188,6 +188,7 @@ export class SubAgent {
             allowedCapabilities?: ToolCapability[];
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
+            embeddingFilter?: EmbeddingFilterOptions;
             /** Optional context from the main conversation */
             context?: string;
             /**
@@ -272,6 +273,7 @@ export class SubAgent {
                 allowedCapabilities: options.allowedCapabilities,
                 summarizer: options.summarizer,
                 embedding: options.embedding,
+                embeddingFilter: options.embeddingFilter,
             });
         } catch (err) {
             if (err instanceof Error && err.name === 'AbortError') {

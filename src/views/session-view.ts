@@ -49,6 +49,7 @@ import {
     maybeGenerateSessionTitle,
     createSummarizerConfig,
     createEmbeddingConfig,
+    createEmbeddingFilterOptions,
     createProviderForActiveProfileOf,
     SessionNavigator,
 } from './session-view/index';
@@ -1186,6 +1187,7 @@ export class SessionView extends ItemView {
             thinkingLevel: getActiveProfile(this.plugin.settings).thinkingLevel,
             summarizer: createSummarizerConfig(this.plugin),
             embedding: createEmbeddingConfig(this.plugin),
+            embeddingFilter: createEmbeddingFilterOptions(this.plugin),
             onUserMessage: (msg) => {
                 this.appendBubble(msg);
                 this.forceScrollToBottom();

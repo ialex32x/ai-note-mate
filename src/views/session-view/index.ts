@@ -13,6 +13,7 @@ export {
 export {
     createSummarizerConfig,
     createEmbeddingConfig,
+    createEmbeddingFilterOptions,
     createProviderForActiveProfileOf,
     createChatAgent,
     buildDynamicTools,

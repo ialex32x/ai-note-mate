@@ -253,6 +253,10 @@ export const ja: Record<string, string> = {
 	'settings.embeddingModel': 'モデル',
 	'settings.embeddingModelDesc': 'テキスト埋め込みに使用するモデル。',
 	'settings.embeddingEmpty': '埋め込みが設定されていません。追加して埋め込み機能を有効にしてください。',
+	'settings.toolFilterSimilarityThreshold': 'ツールフィルター:類似度しきい値',
+	'settings.toolFilterSimilarityThresholdDesc': 'オンデマンドツールを残すために必要な最小コサイン類似度 (0–1)。値が小さいほど寛容になります。埋め込みモデルに合わせて調整してください。0 にするとしきい値フィルターは無効になります。',
+	'settings.toolFilterTopK': 'ツールフィルター:上位 K',
+	'settings.toolFilterTopKDesc': 'フィルター後にモデルへ提示するオンデマンドツールの最大数 (1–30)。常時ツールはこの上限に含まれません。',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP サーバー',

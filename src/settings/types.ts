@@ -204,6 +204,26 @@ export interface NoteAssistantPluginSettings {
 	embeddingConfigs: EmbeddingConfig[];
 	/** ID of the currently active embedding config */
 	activeEmbeddingId: string;
+	/**
+	 * Minimum cosine similarity for an on-demand tool to be kept after
+	 * embedding-based filtering. Range [0, 1]. Always-on tools (memory,
+	 * conversation history, etc.) are not affected.
+	 *
+	 * Different embedding models produce different similarity distributions
+	 * (e.g. `text-embedding-3-small` ≈ 0.2–0.5 cross-domain, BGE/Qwen tends
+	 * higher), so this is exposed for per-model tuning. Values outside
+	 * `[0, 1]` are clamped at use-site; 0 effectively disables the threshold
+	 * (only `toolFilterTopK` still applies).
+	 */
+	toolFilterSimilarityThreshold: number;
+	/**
+	 * Maximum number of on-demand tools surfaced to the model after
+	 * embedding-based filtering. Always-on tools are not counted toward this
+	 * cap. Range [1, 30]. Lower values produce smaller, more focused tool
+	 * schemas (helps on smaller-context models); higher values are safer for
+	 * vault-wide tasks that need many distinct on-demand tools in one turn.
+	 */
+	toolFilterTopK: number;
 
 	// ── Memories ───────────────────────────────────────────────────────────
 	memoryEnabled: boolean;
