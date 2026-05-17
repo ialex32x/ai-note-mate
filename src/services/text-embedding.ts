@@ -7,13 +7,26 @@ import { MinimalModelConfig } from "./llm-provider";
 // ─────────────────────────────────────────────
 
 /**
- * Create text embeddings using the configured provider.
- * 
- * @param config Provider configuration including API key, model, etc.
- * @param texts Array of text strings to embed
- * @returns Array of embedding vectors (each is a number array)
+ * Per-call batch size limit when forwarding requests to the underlying
+ * provider. Picked to satisfy the most restrictive OpenAI-compatible
+ * embedding endpoint we currently target — Aliyun DashScope's
+ * `text-embedding-v3 / v4` cap inputs at 10 per request (older v1/v2 at 25,
+ * OpenAI proper at 2048). 10 is small enough to be universally safe; the
+ * ChatStream tool-filter path also caches per text, so after the first call
+ * only the query is a miss and the chunking degenerates to a single request.
  */
-export function createEmbeddings(
+const EMBEDDING_BATCH_SIZE = 10;
+
+function chunk<T>(arr: readonly T[], size: number): T[][] {
+    if (size <= 0) return [arr.slice()];
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+        out.push(arr.slice(i, i + size));
+    }
+    return out;
+}
+
+function dispatchEmbeddings(
     config: MinimalModelConfig,
     texts: string[],
 ): Promise<number[][]> {
@@ -26,6 +39,55 @@ export function createEmbeddings(
         default:
             throw new Error(`Unknown provider type for embedding: ${String(providerType)}`);
     }
+}
+
+/**
+ * Create text embeddings using the configured provider.
+ *
+ * Splits the input into chunks of {@link EMBEDDING_BATCH_SIZE} and dispatches
+ * the chunks in parallel, then re-assembles the vectors in the original order.
+ * This keeps us within the per-request limits of every provider we currently
+ * support without surfacing batching to callers.
+ *
+ * @param config Provider configuration including API key, model, etc.
+ * @param texts  Array of text strings to embed
+ * @returns      Array of embedding vectors in the same order as `texts`
+ */
+export async function createEmbeddings(
+    config: MinimalModelConfig,
+    texts: string[],
+): Promise<number[][]> {
+    if (texts.length === 0) return [];
+    const chunks = texts.length <= EMBEDDING_BATCH_SIZE
+        ? [texts]
+        : chunk(texts, EMBEDDING_BATCH_SIZE);
+    console.debug(
+        `Embedding: dispatching ${texts.length} text(s) in ${chunks.length} chunk(s) (batch=${EMBEDDING_BATCH_SIZE}, provider=${config.type}, model=${config.model})`,
+    );
+
+    if (chunks.length === 1) {
+        return dispatchEmbeddings(config, chunks[0]!);
+    }
+
+    const chunkResults = await Promise.all(
+        chunks.map((c) => dispatchEmbeddings(config, c)),
+    );
+
+    const out: number[][] = new Array<number[]>(texts.length);
+    let cursor = 0;
+    for (let ci = 0; ci < chunks.length; ci++) {
+        const inputs = chunks[ci]!;
+        const vectors = chunkResults[ci]!;
+        if (vectors.length !== inputs.length) {
+            throw new Error(
+                `Embedding provider returned ${vectors.length} vectors for ${inputs.length} inputs`,
+            );
+        }
+        for (let i = 0; i < vectors.length; i++) {
+            out[cursor++] = vectors[i]!;
+        }
+    }
+    return out;
 }
 
 // ─────────────────────────────────────────────

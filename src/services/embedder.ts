@@ -175,6 +175,11 @@ export class Embedder {
             }
         }
 
+        const hitCount = texts.length - missTexts.length;
+        console.debug(
+            `Embedder: embed() received ${texts.length} text(s), cache hit=${hitCount}, miss=${missTexts.length}`,
+        );
+
         if (missTexts.length > 0) {
             if (signal?.aborted) {
                 throw new DOMException("Aborted", "AbortError");

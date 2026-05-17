@@ -1554,6 +1554,18 @@ export class ChatStream implements IChatAgent {
                 passed: passedIndices.has(s.index),
             }));
             console.debug(scoreTable);
+
+            // High-level summary of the filter outcome. `filterRate` is the
+            // proportion of on-demand tools that were dropped (1 - kept/total),
+            // so 0% means "kept everything", 100% means "kept nothing" (the
+            // zero-pass fallback above prevents the latter in practice).
+            const droppedOndemand = ondemand.length - results.length;
+            const filterRate = ondemand.length > 0
+                ? droppedOndemand / ondemand.length
+                : 0;
+            console.debug(
+                `Tool filter: total=${tools.length} (always=${always.length}, ondemand=${ondemand.length}) → kept ${always.length + results.length} (always=${always.length}, ondemand=${results.length}); dropped ${droppedOndemand} ondemand (filterRate=${(filterRate * 100).toFixed(1)}%, threshold=${similarityThreshold}, topK=${topK})`,
+            );
             return [...always, ...results];
         } catch (err) {
             // The embedder tracks its own status (see Embedder.status); we just
