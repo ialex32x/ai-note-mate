@@ -458,3 +458,72 @@
         pointer-events: none;
     }
 }
+
+/* ─────────────────────────────────────────────
+   Regenerate MCP Slug Confirmation Modal
+   ───────────────────────────────────────────── */
+
+.oap-regenerate-slug-modal__body {
+    .flex-column();
+    gap: @spacing-md;
+    padding-top: @spacing-sm;
+    padding-bottom: @spacing-md;
+}
+
+.oap-regenerate-slug-modal__summary {
+    margin: 0;
+    color: @text-primary;
+    font-size: 0.92em;
+    line-height: 1.45;
+}
+
+.oap-regenerate-slug-modal__diff {
+    margin: 0;
+    padding: @spacing-sm @spacing-md;
+    list-style: none;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    max-height: 220px;
+    overflow-y: auto;
+    .flex-column();
+    gap: @spacing-xs;
+}
+
+.oap-regenerate-slug-modal__diff-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: @spacing-xs;
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.4;
+
+    code {
+        font-family: var(--font-monospace);
+        color: @text-primary;
+        user-select: text;
+    }
+}
+
+.oap-regenerate-slug-modal__diff-arrow {
+    color: @text-faint;
+    font-family: var(--font-interface);
+}
+
+.oap-regenerate-slug-modal__diff-more,
+.oap-regenerate-slug-modal__no-tools {
+    margin: 0;
+    color: @text-secondary;
+    font-size: 0.88em;
+    font-style: italic;
+}
+
+// Standout warning explaining that Skill references will break. Uses
+// the warning palette (not error) — the action is intentional and
+// recoverable, just consequential.
+.oap-regenerate-slug-modal__warning {
+    margin: 0;
+    color: @text-warning;
+    font-size: 0.9em;
+    line-height: 1.4;
+}

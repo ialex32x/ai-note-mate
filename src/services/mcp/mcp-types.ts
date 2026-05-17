@@ -24,6 +24,20 @@ export interface MCPServerConfig {
 	id: string;
 	/** Display name */
 	name: string;
+	/**
+	 * Stable identifier used to build the tool name exposed to the LLM
+	 * (`mcp_${slug}_${toolName}`). Auto-generated from `name` on first
+	 * save and **never** mutated by routine operations (renames, reloads,
+	 * reconnects, add/remove of other servers). Users may explicitly
+	 * regenerate it via the "Regenerate slug" action, with the
+	 * understanding that any Skill referencing the old tool names will
+	 * stop working.
+	 *
+	 * Optional on the type to support backwards-compatible loading of
+	 * older `data.json` files. {@link MCPManager.initialize} fills it in
+	 * (and persists) on first load.
+	 */
+	slug?: string;
 	/** Server URL (Streamable HTTP endpoint) */
 	url: string;
 	/** Whether this server is globally enabled */

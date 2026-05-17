@@ -3,18 +3,10 @@ import type { RegisteredTool, ToolCallResult } from '../chat-stream';
 import { SdkMCPClient } from './sdk-mcp-client';
 import type NoteAssistantPlugin from '../../main';
 import { t } from '../../i18n';
+import { deriveSlugBase, disambiguateSlug, isValidSlug } from './slug-generator';
 
 function generateId(): string {
 	return `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-}
-
-/** Sanitize a string for use as part of a tool function name (a-zA-Z0-9_-) */
-function sanitizeForToolName(str: string): string {
-	return str
-		.toLowerCase()
-		.replace(/[^a-z0-9_-]/g, '_')
-		.replace(/_+/g, '_')
-		.replace(/^_|_$/g, '');
 }
 
 /** Look up whether a tool is enabled in a persisted config list. Missing → true. */
@@ -75,6 +67,14 @@ export class MCPManager {
 	/** Initialize: connect to all globally enabled servers from settings */
 	async initialize(): Promise<void> {
 		const servers = this.plugin.settings.mcpServers ?? [];
+		// Backfill missing / invalid slugs in one pass before any other
+		// logic runs — _toRegisteredTool and the settings UI both assume
+		// a non-empty, valid slug exists on every server.
+		const slugsChanged = this._backfillSlugs(servers);
+		if (slugsChanged) {
+			try { await this.plugin.saveSettings(); }
+			catch (err) { console.error('[MCP] Failed to persist backfilled slugs', err); }
+		}
 		for (const config of servers) {
 			this._states.set(config.id, {
 				config,
@@ -87,8 +87,48 @@ export class MCPManager {
 		}
 	}
 
+	/**
+	 * One-shot migration: ensure every server has a valid `slug`.
+	 *
+	 * Walks `servers` in order; for each entry whose `slug` is missing /
+	 * invalid / duplicate of an earlier entry's slug, assigns one derived
+	 * from its display name and disambiguated against everything
+	 * processed so far. The very first entry's slug "wins" any tie so
+	 * that older configs (which previously rendered tool names from the
+	 * sanitised display name) keep the same names where possible.
+	 *
+	 * Returns true iff at least one slug was written, so the caller can
+	 * decide whether to persist.
+	 */
+	private _backfillSlugs(servers: MCPServerConfig[]): boolean {
+		const taken = new Set<string>();
+		let mutated = false;
+		for (const cfg of servers) {
+			const current = cfg.slug;
+			// Reuse the existing slug iff it is well-formed AND not already
+			// claimed by an earlier server. Otherwise regenerate.
+			if (current && isValidSlug(current) && !taken.has(current)) {
+				taken.add(current);
+				continue;
+			}
+			const base = deriveSlugBase(cfg.name);
+			const slug = disambiguateSlug(base, taken);
+			cfg.slug = slug;
+			taken.add(slug);
+			mutated = true;
+		}
+		return mutated;
+	}
+
 	/** Add and optionally connect a new server */
 	async addServer(config: MCPServerConfig): Promise<void> {
+		// Ensure the new server has a unique, valid slug before exposing
+		// it via getRegisteredTools(). Callers (settings UI, programmatic
+		// imports) are not required to fill this in themselves.
+		if (!config.slug || !isValidSlug(config.slug) || this._isSlugTakenByOther(config.slug, config.id)) {
+			const base = deriveSlugBase(config.name);
+			config.slug = disambiguateSlug(base, this._collectTakenSlugs(config.id));
+		}
 		this._states.set(config.id, {
 			config,
 			status: 'disconnected',
@@ -98,6 +138,29 @@ export class MCPManager {
 			await this._connectServer(config.id);
 		}
 		this._emit();
+	}
+
+	/**
+	 * Compute the set of slugs currently in use by all configured
+	 * servers, optionally excluding one (typically the server we're
+	 * about to assign a slug to, so it doesn't see its own old slug as
+	 * a collision).
+	 */
+	private _collectTakenSlugs(excludeServerId?: string): Set<string> {
+		const taken = new Set<string>();
+		for (const s of this.plugin.settings.mcpServers ?? []) {
+			if (s.id === excludeServerId) continue;
+			if (s.slug && isValidSlug(s.slug)) taken.add(s.slug);
+		}
+		return taken;
+	}
+
+	private _isSlugTakenByOther(slug: string, serverId: string): boolean {
+		for (const s of this.plugin.settings.mcpServers ?? []) {
+			if (s.id === serverId) continue;
+			if (s.slug === slug) return true;
+		}
+		return false;
 	}
 
 	/** Remove and disconnect a server */
@@ -147,6 +210,13 @@ export class MCPManager {
 	 */
 	getRegisteredTools(): RegisteredTool[] {
 		const tools: RegisteredTool[] = [];
+		// Defensive: detect schema-name collisions across servers/tools
+		// and drop the duplicates with a console warning instead of
+		// silently shadowing one of them. With the slug system this
+		// should be unreachable in normal operation; the guard is here
+		// to surface data corruption (e.g. hand-edited data.json) rather
+		// than let it manifest as "this tool never gets called".
+		const seenNames = new Set<string>();
 
 		for (const [serverId, client] of this.clients) {
 			if (!client.connected) continue;
@@ -154,14 +224,21 @@ export class MCPManager {
 			const state = this._states.get(serverId);
 			if (!state || !state.config.enabled) continue;
 
-			const serverName = state.config.name ?? serverId;
+			const slug = state.config.slug ?? deriveSlugBase(state.config.name);
 			const toolConfigs = state.config.tools;
 
 			for (const tool of client.tools) {
 				// Per-tool opt-out: skip tools the user has disabled in config.
 				// If no entry exists yet (e.g., race before first sync), default to enabled.
 				if (toolConfigs && !isToolEnabledInConfig(toolConfigs, tool.name)) continue;
-				tools.push(this._toRegisteredTool(serverId, serverName, tool));
+				const registered = this._toRegisteredTool(serverId, state.config.name, slug, tool);
+				const schemaName = registered.schema.function.name;
+				if (seenNames.has(schemaName)) {
+					console.warn(`[MCP] Dropping duplicate tool name "${schemaName}" (server "${state.config.name}"). Check MCP server slugs in settings.`);
+					continue;
+				}
+				seenNames.add(schemaName);
+				tools.push(registered);
 			}
 		}
 		return tools;
@@ -206,7 +283,13 @@ export class MCPManager {
 		this._emit();
 	}
 
-	/** Create a default MCPServerConfig */
+	/**
+	 * Create a default MCPServerConfig.
+	 *
+	 * `slug` is left undefined intentionally — {@link addServer} assigns
+	 * one based on the final display name (which the UI typically sets
+	 * after construction) and the current set of taken slugs.
+	 */
 	static createDefaultConfig(): MCPServerConfig {
 		return {
 			id: generateId(),
@@ -216,6 +299,44 @@ export class MCPManager {
 			apiKey: '',
 			tools: [],
 		};
+	}
+
+	/**
+	 * Regenerate the slug of an existing server from its current display
+	 * name and persist the change. Intended to be invoked from the
+	 * settings UI only, after the user has explicitly confirmed (because
+	 * any Skill referencing the old `mcp_${oldSlug}_*` tool names will
+	 * stop matching).
+	 *
+	 * Returns the new slug (which may equal the old one if the name now
+	 * sanitises identically). Emits a change event so subscribers (UI)
+	 * re-render.
+	 */
+	async regenerateSlug(serverId: string): Promise<string | null> {
+		const state = this._states.get(serverId);
+		if (!state) return null;
+		const newSlug = this.previewSlugForServer(serverId);
+		if (state.config.slug !== newSlug) {
+			state.config.slug = newSlug;
+			this._persistConfig(state.config);
+			await this.plugin.saveSettings();
+			this._emit();
+		}
+		return newSlug;
+	}
+
+	/**
+	 * Compute what slug *would* be generated for `serverId` right now
+	 * (based on its current display name and the slugs taken by other
+	 * servers). Pure / non-mutating — safe to call from render paths to
+	 * surface a "Slug differs from display name" hint or to preview the
+	 * outcome of a regenerate action.
+	 */
+	previewSlugForServer(serverId: string): string {
+		const state = this._states.get(serverId);
+		if (!state) return '';
+		const base = deriveSlugBase(state.config.name);
+		return disambiguateSlug(base, this._collectTakenSlugs(serverId));
 	}
 
 	/**
@@ -345,8 +466,12 @@ export class MCPManager {
 		}
 	}
 
-	private _toRegisteredTool(serverId: string, serverName: string, tool: MCPToolInfo): RegisteredTool {
-		const slug = sanitizeForToolName(serverName);
+	private _toRegisteredTool(serverId: string, serverName: string, slug: string, tool: MCPToolInfo): RegisteredTool {
+		// `slug` is bounded to 12 chars by the slug generator, so the
+		// final name is at most 4 (`mcp_`) + 12 + 1 (`_`) + len(tool.name)
+		// — well under the OpenAI 64-char limit for any realistic
+		// upstream tool name. The .slice(0, 64) is kept as a paranoid
+		// last-resort cap that should never fire in practice.
 		const schemaName = `mcp_${slug}_${tool.name}`.slice(0, 64);
 
 		return {

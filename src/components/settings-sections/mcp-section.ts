@@ -3,6 +3,7 @@ import { t } from "../../i18n";
 import { MCPManager } from "../../services/mcp/mcp-manager";
 import type { MCPServerConfig, MCPServerState, MCPToolConfig } from "../../services/mcp/mcp-types";
 import { copyToClipboard } from "../../utils/clipboard";
+import { RegenerateSlugConfirmModal } from "../../modals/regenerate-slug-confirm-modal";
 import {
 	createTabBar,
 	createTextField,
@@ -101,13 +102,19 @@ export class MCPSettingsSection implements SettingsSection {
 
 		// ── Tab bar (always rendered so the "+" Add button is available even
 		//    when there are no servers yet) ──
+		// Empty display names are allowed (with a non-blocking warning in
+		// the editor) — render the i18n fallback label here so the tab
+		// is still visible/clickable.
 		const tabBarResult = createTabBar({
 			container,
-			items: mcpServers.map(s => ({
-				id: s.id,
-				name: s.name,
-				tooltip: s.url || s.name || 'Unnamed',
-			})),
+			items: mcpServers.map(s => {
+				const label = s.name.trim() || t('settings.mcpServerNameFallback');
+				return {
+					id: s.id,
+					name: label,
+					tooltip: s.url || label,
+				};
+			}),
 			// MCP has no "active" concept (each server is independently
 			// enabled), so reuse `editingId` here. activeDotTooltip is omitted
 			// so no extra dot is drawn.
@@ -266,19 +273,32 @@ export class MCPSettingsSection implements SettingsSection {
 		server: MCPServerConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
 	): void {
-		const { app, plugin } = this.ctx;
+		const { app, plugin, refreshSection } = this.ctx;
 		const state = plugin.mcpManager?.getServerState(server.id);
 
 		// ── Header row: name + enabled toggle + reconnect + status ──
+		// Refs we update on every name keystroke so the empty-name
+		// warning and slug-divergence indicator stay in sync without
+		// having to re-render the whole editor (which would steal focus
+		// from the input).
+		let nameWarningEl: HTMLElement | null = null;
+		let slugInfoEl: HTMLElement | null = null;
+
 		const headerSetting = new Setting(container)
 			.setName(t('settings.mcpServerName'))
 			.addText(text => text
 				.setValue(server.name)
 				.setPlaceholder(t('settings.mcpServerName'))
 				.onChange(async (value) => {
-					server.name = value || 'Unnamed';
+					// Persist the raw user input (no "Unnamed" fallback) —
+					// the empty-name warning is non-blocking and the
+					// renderer below handles display fallback.
+					server.name = value;
 					await plugin.saveSettings();
-					refreshTabLabel(server.id, server.name, server.url || server.name);
+					const label = server.name.trim() || t('settings.mcpServerNameFallback');
+					refreshTabLabel(server.id, label, server.url || label);
+					this.refreshNameWarning(nameWarningEl, server.name);
+					this.refreshSlugInfo(slugInfoEl, server);
 				}))
 			.addToggle(toggle => toggle
 				.setValue(server.enabled)
@@ -309,6 +329,47 @@ export class MCPSettingsSection implements SettingsSection {
 		});
 		this.editorStatusBtn = statusBtn;
 		this.editorStatusServerId = server.id;
+
+		// ── Empty-name warning (under the name field, non-blocking) ──
+		// Rendered as a sibling of the Setting row so it inherits the
+		// row's horizontal padding via the explicit class.
+		nameWarningEl = container.createDiv({ cls: 'oap-mcp-name-warning' });
+		this.refreshNameWarning(nameWarningEl, server.name);
+
+		// ── Slug preview / Regenerate row ────────────────────────────
+		// Shown right after the name so the link between display name
+		// and tool-id is visually obvious. Slug is read-only (the user
+		// can only "regenerate" it explicitly).
+		const slugSetting = new Setting(container)
+			.setName(t('settings.mcpServerSlug'))
+			.setDesc(t('settings.mcpServerSlugDesc'));
+
+		const slugValueEl = slugSetting.controlEl.createEl('code', {
+			cls: 'oap-mcp-slug-value',
+		});
+		// Tool-id preview line is rendered below the setting (full-width)
+		// so long ids don't squeeze the Regenerate button off-screen.
+		slugInfoEl = container.createDiv({ cls: 'oap-mcp-slug-info' });
+
+		slugSetting.addExtraButton(btn => btn
+			.setIcon('copy')
+			.setTooltip(t('settings.mcpSlugCopy'))
+			.onClick(() => {
+				void copyToClipboard(server.slug ?? '');
+			}));
+		slugSetting.addExtraButton(btn => btn
+			.setIcon('refresh-cw')
+			.setTooltip(t('settings.mcpSlugRegenerate'))
+			.onClick(async () => {
+				await this.handleRegenerateSlug(server);
+				// Pull the (possibly) updated slug back into the UI.
+				slugValueEl.setText(server.slug ?? '');
+				this.refreshSlugInfo(slugInfoEl, server);
+				refreshSection(this);
+			}));
+
+		slugValueEl.setText(server.slug ?? '');
+		this.refreshSlugInfo(slugInfoEl, server);
 
 		// URL field
 		createTextField({
@@ -349,6 +410,78 @@ export class MCPSettingsSection implements SettingsSection {
 		// Persisted, synced from the server on each successful connect.
 		// Users can individually toggle which tools are exposed to the model.
 		this.renderToolsList(container, server);
+	}
+
+	/**
+	 * Update the empty-name warning element under the name field.
+	 *
+	 * Non-blocking by design: an empty display name is allowed (so users
+	 * can hit "Add" first and finish naming later) but discouraged
+	 * because anywhere the name is shown will then have to fall back to
+	 * a generic placeholder.
+	 */
+	private refreshNameWarning(el: HTMLElement | null, name: string): void {
+		if (!el) return;
+		const empty = !name || !name.trim();
+		el.toggleClass('is-visible', empty);
+		if (empty) {
+			el.setText(t('settings.mcpServerNameEmptyWarning'));
+		} else {
+			el.empty();
+		}
+	}
+
+	/**
+	 * Refresh the "Tool ID: mcp_<slug>_*" preview line plus the
+	 * divergence hint shown when the user has renamed the server but
+	 * not regenerated its slug.
+	 */
+	private refreshSlugInfo(el: HTMLElement | null, server: MCPServerConfig): void {
+		if (!el) return;
+		el.empty();
+		const { plugin } = this.ctx;
+		const slug = server.slug ?? '';
+		// Tool-id preview — what Skill files would reference.
+		const preview = el.createDiv({ cls: 'oap-mcp-slug-preview' });
+		preview.createSpan({
+			cls: 'oap-mcp-slug-preview__label',
+			text: t('settings.mcpSlugPreviewLabel'),
+		});
+		preview.createEl('code', {
+			cls: 'oap-mcp-slug-preview__value',
+			text: slug ? `mcp_${slug}_*` : '—',
+		});
+
+		// Divergence indicator: only shown when name and slug have
+		// drifted apart and a regenerate would actually change something.
+		const expected = plugin.mcpManager?.previewSlugForServer(server.id) ?? '';
+		if (expected && expected !== slug) {
+			const note = el.createDiv({ cls: 'oap-mcp-slug-divergence' });
+			note.setText(t('settings.mcpSlugDivergenceNote', { suggested: expected }));
+		}
+	}
+
+	/**
+	 * Prompt the user to confirm regenerating a server's slug, then
+	 * execute. No-op (returns silently) when the resulting slug would
+	 * equal the current one — there is nothing to confirm in that case.
+	 */
+	private async handleRegenerateSlug(server: MCPServerConfig): Promise<void> {
+		const { app, plugin } = this.ctx;
+		const manager = plugin.mcpManager;
+		if (!manager) return;
+
+		const oldSlug = server.slug ?? '';
+		const newSlug = manager.previewSlugForServer(server.id);
+		if (!newSlug || newSlug === oldSlug) return;
+
+		const toolNames = (server.tools ?? []).map(t => t.name);
+		const { confirmed } = await new RegenerateSlugConfirmModal(
+			app, oldSlug, newSlug, toolNames,
+		).waitForResult();
+		if (!confirmed) return;
+
+		await manager.regenerateSlug(server.id);
 	}
 
 	/**

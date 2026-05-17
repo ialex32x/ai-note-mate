@@ -537,6 +537,66 @@
     }
 }
 
+// Empty display-name warning shown directly under the name field.
+// Non-blocking by design (the server still works) — uses the warning
+// colour but not the error one to communicate "this is a soft hint".
+// Hidden by default; the section toggles `.is-visible` when the name
+// is empty so the row collapses entirely otherwise.
+.oap-mcp-name-warning {
+    color: @text-warning;
+    font-size: var(--font-ui-smaller);
+    line-height: 1.4;
+    padding: 0 0 @spacing-sm 0;
+    display: none;
+
+    &.is-visible {
+        display: block;
+    }
+}
+
+// Read-only slug value rendered inline in the slug Setting's control
+// column. Monospace + subtle background to make it look like an
+// identifier the user can copy verbatim into Skill files.
+.oap-mcp-slug-value {
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-small);
+    padding: 2px @spacing-sm;
+    background: var(--background-modifier-form-field);
+    border-radius: var(--radius-s);
+    color: @text-primary;
+    user-select: text;
+}
+
+// Tool-id preview + slug-name divergence note rendered as a sibling
+// block under the slug Setting (full width) so long ids don't squeeze
+// the action buttons off-screen.
+.oap-mcp-slug-info {
+    padding: 0 0 @spacing-sm 0;
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+}
+
+.oap-mcp-slug-preview {
+    display: flex;
+    align-items: baseline;
+    gap: @spacing-xs;
+    font-size: var(--font-ui-smaller);
+    color: @text-secondary;
+
+    code {
+        font-family: var(--font-monospace);
+        font-size: var(--font-ui-smaller);
+        color: @text-primary;
+    }
+}
+
+.oap-mcp-slug-divergence {
+    font-size: var(--font-ui-smaller);
+    color: @text-warning;
+    line-height: 1.4;
+}
+
 @keyframes spin {
     from { transform: rotate(0deg); }
     to { transform: rotate(360deg); }
