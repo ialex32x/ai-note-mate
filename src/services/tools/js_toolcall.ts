@@ -51,8 +51,10 @@ const SHADOWED_GLOBALS = [
     "fetch", "XMLHttpRequest", "WebSocket", "EventSource", "Request", "Response", "Headers",
     // Storage APIs
     "localStorage", "sessionStorage", "indexedDB", "caches",
-    // Code generation
-    "eval", "Function",
+    // Code generation (note: `eval` is a strict-mode reserved word and
+    // cannot appear as a parameter name; it stays accessible, but strict
+    // mode already prevents it from injecting variables into our scope)
+    "Function",
     // Workers
     "Worker", "SharedWorker", "ServiceWorker",
     // Node / Electron leftovers (may exist in desktop renderer)
