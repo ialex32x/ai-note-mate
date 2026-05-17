@@ -44,6 +44,7 @@ export function createDefaultProfile(): ProviderProfile {
 		apiKey: '',
 		modalities: ['image'],
 		maxTokens: 0,
+		thinkingLevel: 'auto',
 		contextCompressionThreshold: 0,
 		slidingWindowSize: 0,
 		maxSummariesThreshold: 0,

@@ -4,8 +4,34 @@
 
 import { type EmbeddingProviderType } from "./providers";
 
-/** Thinking/reasoning effort level for models that support it */
-export type ThinkingLevel = "off" | "low" | "medium" | "high";
+/**
+ * Thinking / reasoning effort level for models that support it.
+ *
+ * The five values are a provider-agnostic abstraction; each provider
+ * translates them into its native API surface:
+ *
+ * - `"auto"`  — let the provider decide (parameter is omitted). This is
+ *   the default for newly-created profiles and the implicit behavior
+ *   when the field is missing from older saved profiles.
+ * - `"off"`   — explicitly disable thinking where the provider can do so
+ *   (e.g. Gemini Flash `thinkingBudget: 0`). For providers that cannot
+ *   truly disable reasoning (OpenAI o-series), this is treated the same
+ *   as `"auto"` — there is no API switch to honor.
+ * - `"low" / "medium" / "high"` — tiered effort. Mapped to the native
+ *   enum on OpenAI-compatible providers (`reasoning_effort`) and to
+ *   integer token budgets on providers that expose a budget knob
+ *   (Gemini: 1024 / 8192 / 32768).
+ */
+export type ThinkingLevel = "auto" | "off" | "low" | "medium" | "high";
+
+/** Ordered list of every {@link ThinkingLevel} value (for UI dropdowns). */
+export const ALL_THINKING_LEVELS: ThinkingLevel[] = [
+    "auto",
+    "off",
+    "low",
+    "medium",
+    "high",
+];
 
 export interface MinimalModelConfig {
     type: EmbeddingProviderType;

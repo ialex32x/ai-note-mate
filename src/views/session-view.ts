@@ -1180,6 +1180,10 @@ export class SessionView extends ItemView {
                 return allowed.length < ALL_TOOL_CAPABILITIES.length ? allowed : undefined;
             })(),
             provider: createProviderForActiveProfileOf(this.plugin),
+            // Pull thinkingLevel from the active profile. Older profiles
+            // saved before this field existed leave it `undefined`, which
+            // the providers treat the same as "auto" (param omitted).
+            thinkingLevel: getActiveProfile(this.plugin.settings).thinkingLevel,
             summarizer: createSummarizerConfig(this.plugin),
             embedding: createEmbeddingConfig(this.plugin),
             onUserMessage: (msg) => {

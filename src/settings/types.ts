@@ -1,6 +1,6 @@
 import type { LLMProviderType, EmbeddingProviderType } from "../services/providers";
 import type { MCPServerConfig } from "../services/mcp/mcp-types";
-import type { ModalityCapability, ToolCapability } from "../services/llm-provider";
+import type { ModalityCapability, ThinkingLevel, ToolCapability } from "../services/llm-provider";
 
 export const DefaultGeminiImageModel = "gemini-3-pro-image-preview";
 
@@ -35,6 +35,19 @@ export interface ProviderProfile {
 	modalities: ModalityCapability[];
 	/** Max token limit for session display. 0 means unlimited. */
 	maxTokens: number;
+
+	/**
+	 * Thinking / reasoning effort level forwarded to the provider.
+	 * Optional for backward compatibility with profiles saved before this
+	 * field existed — missing values are treated as {@link ThinkingLevel} `"auto"`
+	 * by the providers (i.e. the parameter is omitted from the API call,
+	 * preserving each provider's native default).
+	 *
+	 * Translation to native API surface lives in each provider's
+	 * `createStream`. See the {@link ThinkingLevel} docstring for the
+	 * mapping per provider.
+	 */
+	thinkingLevel?: ThinkingLevel;
 
 	// ── Context compression (per-profile tuning) ───────────────────────────
 	/**

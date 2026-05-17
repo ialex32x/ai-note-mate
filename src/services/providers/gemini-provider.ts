@@ -78,15 +78,27 @@ export class GeminiProvider implements LLMProvider {
         // Convert tools to Gemini FunctionDeclaration format
         const geminiTools = tools && tools.length > 0 ? this.convertTools(tools) : undefined;
 
-        // Build thinking config based on thinking level
-        const thinkingConfig = thinkingLevel && thinkingLevel !== "off"
-            ? {
-                thinkingConfig: {
-                    thinkingBudget: thinkingLevel === "low" ? 1024
-                        : thinkingLevel === "medium" ? 8192
-                        : 32768,
-                },
-              }
+        // Map the provider-agnostic ThinkingLevel to Gemini's `thinkingBudget`:
+        //   - "auto" / undefined → omit entirely; Gemini picks its own default
+        //     (dynamic on 2.5 Pro; dynamic-with-default on 2.5 Flash).
+        //   - "off" → budget 0. Supported on Flash; will error on models that
+        //     mandate thinking (e.g. Gemini 3 Pro / 2.5 Pro). The error is
+        //     surfaced verbatim to the user — picking "off" on a thinking-only
+        //     model is a misconfiguration we don't try to silently rewrite.
+        //   - "low" / "medium" / "high" → fixed integer budgets sized to span
+        //     the practical range without burning the entire output budget on
+        //     thought tokens.
+        const thinkingBudget = thinkingLevel === "off"
+            ? 0
+            : thinkingLevel === "low"
+                ? 1024
+                : thinkingLevel === "medium"
+                    ? 8192
+                    : thinkingLevel === "high"
+                        ? 32768
+                        : null;
+        const thinkingConfig = thinkingBudget !== null
+            ? { thinkingConfig: { thinkingBudget } }
             : {};
 
         const response = await this.client.models.generateContentStream({

@@ -185,47 +185,29 @@ export class OpenAIProvider implements LLMProvider {
                   }))
                 : undefined;
 
-        // ── DEBUG (temporary): dump the exact request body so we can see
-        //    whether `reasoning_content` is actually attached on the
-        //    last assistant message.
-        try {
-            console.debug("[openai-provider] thinkingLevel =", thinkingLevel,
-                "model =", this.model);
-            console.debug("[openai-provider] request.messages =",
-                JSON.parse(JSON.stringify(openaiMessages)));
-        } catch { /* noop */ }
+        // `reasoning_effort` is supported by OpenAI o-series / GPT-5 and a
+        // handful of OpenAI-compatible thinking models (DeepSeek R1, certain
+        // Qwen variants). Only forward the three explicit tiers; `auto` and
+        // `off` both translate to "omit the parameter" because OpenAI's API
+        // has no way to truly disable thinking on a reasoning-only model and
+        // `auto` is precisely "let the model decide".
+        const isExplicitTier = thinkingLevel === "low"
+            || thinkingLevel === "medium"
+            || thinkingLevel === "high";
 
-        let stream;
-        try {
-            stream = await this.client.chat.completions.create(
-                {
-                    model: this.model,
-                    messages: openaiMessages,
-                    tools: openaiTools,
-                    // tool_choice: openaiTools ? "auto" : undefined,
-                    stream: true,
-                    stream_options: { include_usage: true },
-                    // reasoning_effort is supported by OpenAI o-series and DeepSeek R1 models
-                    ...(thinkingLevel && thinkingLevel !== "off"
-                        ? { reasoning_effort: thinkingLevel }
-                        : {}),
-                },
-                { signal },
-            );
-        } catch (err) {
-            console.debug("[openai-provider] create() threw:", err);
-            throw err;
-        }
+        const stream = await this.client.chat.completions.create(
+            {
+                model: this.model,
+                messages: openaiMessages,
+                tools: openaiTools,
+                stream: true,
+                stream_options: { include_usage: true },
+                ...(isExplicitTier ? { reasoning_effort: thinkingLevel } : {}),
+            },
+            { signal },
+        );
 
-        let chunkIdx = 0;
         for await (const chunk of stream) {
-            if (chunkIdx < 3) {
-                try {
-                    console.debug(`[openai-provider] chunk[${chunkIdx}] =`,
-                        JSON.parse(JSON.stringify(chunk)));
-                } catch { /* noop */ }
-                chunkIdx++;
-            }
             const delta = chunk.choices[0]?.delta as OpenAIDeltaWithReasoning | undefined;
             const finishReason = chunk.choices[0]?.finish_reason ?? null;
             const usage = chunk.usage

@@ -5,7 +5,9 @@ import type { LLMProviderType } from "../../services/providers";
 import { createLLMProvider } from "../../services/providers";
 import {
 	ALL_MODALITY_CAPABILITIES,
+	ALL_THINKING_LEVELS,
 	type ModalityCapability,
+	type ThinkingLevel,
 } from "../../services/llm-provider";
 import { createDefaultProfile, generateId } from "../../settings/defaults";
 import type { ProviderProfile } from "../../settings/types";
@@ -259,6 +261,34 @@ export class ProfileSettingsSection implements SettingsSection {
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				profile.maxTokens = isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Thinking / reasoning effort.
+		//
+		// Provider-agnostic: each provider translates the chosen tier to its
+		// native API (OpenAI `reasoning_effort`, Gemini `thinkingBudget`, …).
+		// See ThinkingLevel in services/llm-provider.ts for the mapping.
+		const thinkingLabels: Record<ThinkingLevel, string> = {
+			auto: t('settings.thinkingLevelAuto'),
+			off: t('settings.thinkingLevelOff'),
+			low: t('settings.thinkingLevelLow'),
+			medium: t('settings.thinkingLevelMedium'),
+			high: t('settings.thinkingLevelHigh'),
+		};
+		const thinkingOptions: Record<string, string> = {};
+		for (const lvl of ALL_THINKING_LEVELS) {
+			thinkingOptions[lvl] = thinkingLabels[lvl];
+		}
+		createDropdownField({
+			container,
+			name: t('settings.thinkingLevel'),
+			desc: t('settings.thinkingLevelDesc'),
+			options: thinkingOptions,
+			value: profile.thinkingLevel ?? 'auto',
+			onChange: async (value) => {
+				profile.thinkingLevel = value as ThinkingLevel;
 				await plugin.saveSettings();
 			},
 		});
