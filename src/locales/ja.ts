@@ -192,7 +192,7 @@ export const ja: Record<string, string> = {
 	'settings.enterToSend': 'Enter で送信',
 	'settings.enterToSendDesc': '有効にすると、Enterでメッセージを送信し、Shift+Enterで改行します。無効にすると動作が逆になります。',
 	'settings.builtinWebSearch': '組み込みのウェブ検索ツール',
-	'settings.builtinWebSearchDesc': '組み込みのウェブ検索ツールをアシスタントに公開し、必要に応じてウェブから情報を取得できるようにします。',
+	'settings.builtinWebSearchDesc': '組み込みのウェブ検索ツールをアシスタントに公開し、必要に応じてウェブから情報を取得できるようにします。組み込みのネットワークアクセスは機能・安定性ともに限定的です。より安定して強力なネットワークアクセスが必要な場合は、ネットワークアクセスを提供する専用の MCP ツールの利用を検討してください。',
 	'settings.builtinWebFetch': '組み込みのウェブ取得ツール',
 	'settings.builtinWebFetchDesc': '組み込みのウェブ取得ツールをアシスタントに公開し、指定した URL から読みやすい本文内容を取得・抽出できるようにします。',
 	'settings.webFetchSoftLimit': 'ウェブ取得のソフト上限（1 ターンあたり）',

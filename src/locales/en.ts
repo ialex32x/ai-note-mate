@@ -192,7 +192,7 @@ export const en: Record<string, string> = {
 	'settings.enterToSend': 'Enter to send',
 	'settings.enterToSendDesc': 'When enabled, Enter sends the message and Shift+Enter inserts a newline. When disabled, the behavior is reversed.',
 	'settings.builtinWebSearch': 'Built-in web search tool',
-	'settings.builtinWebSearchDesc': 'Expose the built-in web search tool to the assistant so it can fetch information from the web when needed.',
+	'settings.builtinWebSearchDesc': 'Expose the built-in web search tool to the assistant so it can fetch information from the web when needed. The built-in web access has limited capability and reliability — for more stable and powerful results, consider using a dedicated MCP tool that provides web access.',
 	'settings.builtinWebFetch': 'Built-in web fetch tool',
 	'settings.builtinWebFetchDesc': 'Expose the built-in web fetch tool to the assistant so it can retrieve and extract readable content from a specific URL.',
 	'settings.webFetchSoftLimit': 'Web fetch soft limit (per turn)',

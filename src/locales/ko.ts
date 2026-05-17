@@ -192,7 +192,7 @@ export const ko: Record<string, string> = {
 	'settings.enterToSend': 'Enter로 전송',
 	'settings.enterToSendDesc': '활성화하면 Enter로 메시지를 전송하고 Shift+Enter로 줄바꿈합니다. 비활성화하면 동작이 반대로 됩니다.',
 	'settings.builtinWebSearch': '내장 웹 검색 도구',
-	'settings.builtinWebSearchDesc': '내장 웹 검색 도구를 어시스턴트에 노출하여 필요할 때 웹에서 정보를 가져올 수 있도록 합니다.',
+	'settings.builtinWebSearchDesc': '내장 웹 검색 도구를 어시스턴트에 노출하여 필요할 때 웹에서 정보를 가져올 수 있도록 합니다. 내장 네트워크 접근 기능과 안정성은 제한적입니다. 더 안정적이고 강력한 네트워크 접근이 필요하다면, 네트워크 접근을 제공하는 전용 MCP 도구의 사용을 고려해 보세요.',
 	'settings.builtinWebFetch': '내장 웹 페이지 가져오기 도구',
 	'settings.builtinWebFetchDesc': '내장 웹 페이지 가져오기 도구를 어시스턴트에 노출하여 지정한 URL에서 읽을 수 있는 본문 내용을 가져오고 추출할 수 있도록 합니다.',
 	'settings.webFetchSoftLimit': '웹 페이지 가져오기 소프트 제한(턴당)',

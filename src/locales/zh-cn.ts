@@ -191,7 +191,7 @@ export const zhCN: Record<string, string> = {
 	'settings.enterToSend': 'Enter 发送',
 	'settings.enterToSendDesc': '开启后，Enter 发送消息，Shift+Enter 换行。关闭后行为相反。',
 	'settings.builtinWebSearch': '内置网络搜索工具',
-	'settings.builtinWebSearchDesc': '向助手暴露内置的网络搜索工具，使其可以在需要时从网络获取信息。',
+	'settings.builtinWebSearchDesc': '向助手暴露内置的网络搜索工具，使其可以在需要时从网络获取信息。内置网络访问能力和稳定性有限，如需更稳定、更强大的网络访问能力，建议使用专门提供网络访问的 MCP 工具。',
 	'settings.builtinWebFetch': '内置网页抓取工具',
 	'settings.builtinWebFetchDesc': '向助手暴露内置的网页抓取工具，使其可以从指定 URL 获取并提取可读正文内容。',
 	'settings.webFetchSoftLimit': '网页抓取软上限（每轮）',

@@ -192,7 +192,7 @@ export const zhTW: Record<string, string> = {
 	'settings.enterToSend': 'Enter 傳送',
 	'settings.enterToSendDesc': '開啟後，Enter 傳送訊息，Shift+Enter 換行。關閉後行為相反。',
 	'settings.builtinWebSearch': '內建網路搜尋工具',
-	'settings.builtinWebSearchDesc': '向助手公開內建的網路搜尋工具，使其在需要時可從網路取得資訊。',
+	'settings.builtinWebSearchDesc': '向助手公開內建的網路搜尋工具，使其在需要時可從網路取得資訊。內建網路存取能力與穩定性有限，如需更穩定、更強大的網路存取能力，建議使用專門提供網路存取的 MCP 工具。',
 	'settings.builtinWebFetch': '內建網頁擷取工具',
 	'settings.builtinWebFetchDesc': '向助手公開內建的網頁擷取工具，使其可從指定 URL 取得並擷取可讀正文內容。',
 	'settings.webFetchSoftLimit': '網頁擷取軟上限（每輪）',
