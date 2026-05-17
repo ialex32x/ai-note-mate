@@ -25,9 +25,43 @@ import {
 // consistent across the read / locate / edit toolchain.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const DEFAULT_MAX_MATCHES = 200;
+// Lowered from 200 → 50 to keep typical grep results comfortably under
+// `TOOL_RESULT_COLLAPSE_THRESHOLD` (500 estimated tokens, see
+// `context-reducer.ts`). When a `grep_file` result is small enough, the
+// reducer's "shrink large tool results" pass leaves it untouched, so the
+// concrete line numbers + matched content survive context compression
+// even after the model has moved on. With the previous 200 cap, a busy
+// grep on a long file routinely produced results that got collapsed to
+// `[Tool result truncated: JSON object with keys {...}]` once consumed,
+// making the model scan-read the whole file to "re-locate" what it had
+// already found. Power users can still request a higher cap via
+// `max_matches`; this is just the default.
+const DEFAULT_MAX_MATCHES = 50;
 const DEFAULT_CONTEXT_LINES = 0;
 const QUERY_HARD_LIMIT = 20;
+/**
+ * Per-line cap for `matches[].content` (and each entry of
+ * `context_before` / `context_after` when context is requested). Lines
+ * longer than this are truncated with a trailing `…` marker.
+ *
+ * `grep_file` is a *locate* primitive — its return value is the line
+ * NUMBER plus *just enough* of the line to confirm a match. It is not a
+ * substitute for `read_file`. Without this cap, a single grep over a
+ * file that contains a giant inline data row (e.g. a base64 image, a
+ * dumped JSON blob, a table with hundreds of cells per line) could
+ * inflate one match to many KB and trip the same "result got shrunk
+ * away" failure mode the lowered DEFAULT_MAX_MATCHES is fighting. 240
+ * chars matches the existing `key_points` / `sample_diff` excerpt cap
+ * used elsewhere in the digest workflow, so the wire shape stays
+ * consistent across locate / inspect / edit primitives.
+ */
+const MATCH_CONTENT_MAX_CHARS = 240;
+
+/** Truncate a single line for inclusion in a match result. */
+function clampLineForMatch(line: string): string {
+    if (line.length <= MATCH_CONTENT_MAX_CHARS) return line;
+    return line.slice(0, MATCH_CONTENT_MAX_CHARS) + "…";
+}
 
 interface GrepMatch {
     line: number;
@@ -107,6 +141,8 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "number",
                             description:
                                 "Cap on total matches returned across all queries. Defaults to " + DEFAULT_MAX_MATCHES + ". " +
+                                "Each match's `content` field is also capped at " + MATCH_CONTENT_MAX_CHARS + " characters (with a " +
+                                "trailing `…` when truncated) so a single very long line never dominates the result. " +
                                 "The response always echoes this cap as `max_matches` and sets `has_more: true` " +
                                 "when the cap is reached (i.e. additional matches may exist beyond what was returned). " +
                                 "Treat `has_more` as a normal pagination hint, not an error: ignore it when the current " +
@@ -288,14 +324,22 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     if (matchers[q]!(line)) {
                         const m: GrepMatch = {
                             line: i + 1,
-                            content: line,
+                            // Per-line truncation keeps a single match from
+                            // bloating the whole result when the file has a
+                            // very long line (e.g. inline base64, dumped JSON,
+                            // wide tables). See `MATCH_CONTENT_MAX_CHARS`.
+                            content: clampLineForMatch(line),
                             matched_query: queries[q]!,
                         };
                         if (contextLines > 0) {
                             const beforeStart = Math.max(0, i - contextLines);
                             const afterEnd = Math.min(lines.length - 1, i + contextLines);
-                            if (beforeStart < i) m.context_before = lines.slice(beforeStart, i);
-                            if (afterEnd > i) m.context_after = lines.slice(i + 1, afterEnd + 1);
+                            if (beforeStart < i) {
+                                m.context_before = lines.slice(beforeStart, i).map(clampLineForMatch);
+                            }
+                            if (afterEnd > i) {
+                                m.context_after = lines.slice(i + 1, afterEnd + 1).map(clampLineForMatch);
+                            }
                         }
                         matches.push(m);
                         if (matches.length >= maxMatches) {

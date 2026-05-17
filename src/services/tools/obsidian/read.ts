@@ -1,6 +1,6 @@
 import { arrayBufferToBase64 } from "obsidian";
 import type NoteAssistantPlugin from "../../../main";
-import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
+import type { ChatStream, RegisteredTool, ToolCallResult } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";
 import { resolveFileRef } from "../../../utils/workspace-utils";
 import { TFolder } from "obsidian";
@@ -21,6 +21,102 @@ import {
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "./heading-section";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Repeat-read tracking for `read_file`
+//
+// Threshold for the "you've already read several ranges of this file —
+// consider grep_file" notice. Counts the CURRENT call inclusively, so 3
+// means: "this call is the 3rd ranged read of the same file in the
+// current turn". Below this, no notice is attached.
+//
+// Three is the smallest count that unambiguously distinguishes
+// "deliberate multi-section pull" (often 1–2 reads) from "scanning the
+// file in 100-line slices" (the failure mode this notice exists to
+// interrupt). Tunable; not exposed as a setting because it's a
+// behaviour nudge, not a hard limit (`maxCallsPerTurn` is the right
+// place for hard caps).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const READ_FILE_REPEAT_NOTICE_THRESHOLD = 3;
+
+/**
+ * Walk the chat history backward and collect the ranged `read_file`
+ * tool_calls in the CURRENT turn that target the given file path.
+ *
+ * Scoping is done by stopping at the most recent `user` message — every
+ * `prompt()` invocation pushes the user message *before* the tool loop
+ * begins, so the walk terminates exactly at the start of the current
+ * turn. (Historical turns from a resumed session contain their own
+ * `user` boundaries and stay invisible to this counter.)
+ *
+ * The current call's own `tool_call` ChatMessage is already pushed onto
+ * `_messages` before `exec` runs (see `chat-stream.ts` around the
+ * registered handler dispatch), so the returned array INCLUDES the
+ * current invocation. Callers should compare its length directly
+ * against {@link READ_FILE_REPEAT_NOTICE_THRESHOLD}.
+ *
+ * Whole-file reads (no `start_line`/`end_line`) are intentionally NOT
+ * counted: when a file is small enough to read whole, a single follow-
+ * up grep is the right move, not a notice telling the model to grep
+ * instead. Only ranged reads — the slicing pattern that produces the
+ * "1–100, 101–200, …" failure mode — are tracked here.
+ */
+function collectRangedReadFileCallsInCurrentTurn(
+    chatStream: ChatStream,
+    path: string,
+): { startLine: number; endLine: number }[] {
+    const ranges: { startLine: number; endLine: number }[] = [];
+    const messages = chatStream.messages;
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (!m) continue;
+        if (m.role === "user") break; // current-turn boundary
+        if (m.role !== "tool_call") continue;
+        const meta = m.toolCallMeta;
+        if (!meta || meta.toolName !== "read_file") continue;
+        const args = meta.toolArgs;
+        if (!args || args["path"] !== path) continue;
+        const startLine = args["start_line"];
+        const endLine = args["end_line"];
+        if (typeof startLine !== "number" || typeof endLine !== "number") continue;
+        ranges.push({ startLine, endLine });
+    }
+    return ranges;
+}
+
+/**
+ * Build the "stop scanning, use grep instead" notice that gets
+ * attached to a `read_file` result when the model is on its 3rd+
+ * ranged read of the same file in one turn.
+ *
+ * Wording is deliberately specific: it reproduces the offending range
+ * sequence so the model can SEE its own pattern rather than abstractly
+ * accepting an instruction. The closing "if you have a specific reason
+ * this notice doesn't address" clause is the escape valve for legit
+ * multi-section reads (e.g. user explicitly asked for the bytes of
+ * three named sections) — never word it as a hard prohibition or the
+ * model will second-guess every legitimate range read.
+ */
+function buildRepeatReadFileNotice(
+    path: string,
+    ranges: { startLine: number; endLine: number }[],
+): string {
+    // Newest-first when collected; reverse so the printed sequence
+    // reads in chronological order (matches the model's mental model
+    // of "I read X, then Y, then Z"). Cap at 8 entries so a runaway
+    // doesn't itself bloat the notice past the 500-token shrink line.
+    const printable = ranges.slice(0, 8).reverse();
+    const formatted = printable.map((r) => `${r.startLine}-${r.endLine}`).join(", ");
+    return (
+        `You have now read ${ranges.length} ranged slices of '${path}' in this turn (${formatted}). ` +
+        `If you are scanning to locate a specific keyword, section, or paragraph, STOP reading further ranges and use \`grep_file\` instead — ` +
+        `it returns the matching line numbers directly without ingesting the file. ` +
+        `If a previous \`grep_file\` already returned matches in this turn but they are no longer visible to you, ` +
+        `simply re-issue the same \`grep_file\` call: it is cheap, idempotent, and reproduces the line numbers without further range reads. ` +
+        `Continue reading further ranges of this file ONLY if you have a specific reason that this notice doesn't address (e.g. the user explicitly asked for several named sections).`
+    );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: read_file
@@ -214,18 +310,26 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const effectiveEndLine = Math.min(endLine, totalLines);
             const selectedContent = lines.slice(startLine - 1, effectiveEndLine).join("\n");
 
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    path,
-                    content: selectedContent,
-                    start_line: startLine,
-                    end_line: effectiveEndLine,
-                    total_lines: totalLines,
-                    mtime: file.stat.mtime,
-                },
+            // Behaviour nudge against "scan the file in 100-line slices".
+            // We only attach a notice when the same file has been ranged-
+            // read at least {@link READ_FILE_REPEAT_NOTICE_THRESHOLD} times
+            // in the current turn (inclusive of THIS call); see the helper's
+            // doc comment for why this fires now and not on earlier reads.
+            // The notice is plain text inside the result object — the
+            // serializer will fold it into the JSON the model sees.
+            const result: Record<string, unknown> = {
+                path,
+                content: selectedContent,
+                start_line: startLine,
+                end_line: effectiveEndLine,
+                total_lines: totalLines,
+                mtime: file.stat.mtime,
             };
+            const priorRanges = collectRangedReadFileCallsInCurrentTurn(_chatStream, path);
+            if (priorRanges.length >= READ_FILE_REPEAT_NOTICE_THRESHOLD) {
+                result["notice"] = buildRepeatReadFileNotice(path, priorRanges);
+            }
+            return { success: true, type: "object", content: result };
         },
     };
 }

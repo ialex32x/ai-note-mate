@@ -985,12 +985,38 @@ export class ChatStream implements IChatAgent {
                 rawMessages.push({ role: "user", content: msg.content, id: msg.id });
                 continue;
             }
-            if (msg.role === "assistant") {
-                // Collect the trailing tool_call siblings (if any) that belong
-                // to this assistant turn.
+            if (msg.role === "assistant" || msg.role === "tool_call") {
+                // The assistant turn that emitted these tool calls. May
+                // be the current message (text-or-thinking + toolCalls
+                // turn — assistant pushed to `_messages`), or absent
+                // (pure tool-call turn — `isPureToolCallTurn` skipped
+                // pushing the assistant to avoid an empty UI bubble).
+                //
+                // For the "absent" case we synthesise a stand-in
+                // assistant with empty content, so the reconstructed
+                // sequence still satisfies the protocol invariant the
+                // pre-sanitiser checks ("every tool_result has an
+                // assistant(toolCalls) owner with a matching id").
+                //
+                // Without this synthesis, every pure tool-call turn's
+                // tool_calls fall through the original `else` branch,
+                // get silently dropped, and on the NEXT prompt() call
+                // the model sees no record of having invoked any
+                // tool — i.e. it "forgets" the search/read it just
+                // performed and re-fires the same tools on the next
+                // user turn. Combined with a sub-agent's already-
+                // narrow loop budget this surfaces as the agent
+                // "走两步就忘": after a couple of pure-tool-call
+                // iterations the conversation is reduced to a stub
+                // and the model falls back to its initial reflex.
+                const isAssistantNode = msg.role === "assistant";
+                const assistantContent = isAssistantNode ? msg.content : "";
+                const assistantId = isAssistantNode ? msg.id : undefined;
+                const assistantThinking = isAssistantNode ? msg.thinkingContent : undefined;
+
                 const toolCalls: NonNullable<ChatMessageParam["toolCalls"]> = [];
                 const toolResultParams: ChatMessageParam[] = [];
-                let j = i + 1;
+                let j = isAssistantNode ? i + 1 : i;
                 while (j < this._messages.length && this._messages[j]!.role === "tool_call") {
                     const tcMsg = this._messages[j]!;
                     const meta = tcMsg.toolCallMeta;
@@ -1019,11 +1045,23 @@ export class ChatStream implements IChatAgent {
                     }
                     j++;
                 }
+
+                // Skip degenerate orphans: a `tool_call` node with no
+                // valid meta+result pair wouldn't add anything useful
+                // to the prompt and would synthesise an empty
+                // assistant — which pre-sanitize would then drop. Bail
+                // before mutating rawMessages so the outer loop just
+                // moves on.
+                if (!isAssistantNode && toolCalls.length === 0) {
+                    i = j - 1;
+                    continue;
+                }
+
                 rawMessages.push({
                     role: "assistant",
-                    content: msg.content,
-                    id: msg.id,
-                    thinkingContent: msg.thinkingContent,
+                    content: assistantContent,
+                    id: assistantId,
+                    thinkingContent: assistantThinking,
                     toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
                 });
                 for (const tr of toolResultParams) rawMessages.push(tr);
@@ -1031,7 +1069,7 @@ export class ChatStream implements IChatAgent {
                 i = j - 1;
                 continue;
             }
-            // tool_call without a preceding assistant, or other roles: skip.
+            // Other roles (system, etc.): skip.
         }
 
         // Filter tools based on allowed capabilities

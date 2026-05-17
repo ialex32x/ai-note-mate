@@ -1309,9 +1309,34 @@ export class ContextReducer {
                     console.warn("[ContextReducer] validate: dropping leading orphan tool_result");
                     continue;
                 }
-                // Find the nearest non-tool_result predecessor already accepted.
+                // Find the nearest assistant predecessor already accepted.
+                //
+                // The walk must step over any message that ChatStream may
+                // legitimately interleave inside an assistant→tool_result
+                // chain. Today that is:
+                //   * sibling `tool_result` messages (the obvious case);
+                //   * synthetic `user` messages injected right after a
+                //     media-returning tool_result so the LLM can perceive
+                //     the bytes (see chat-stream.ts where `mediaAttachment`
+                //     is unpacked into `{ role: "user", media: [...] }`).
+                //     Without skipping these, every sibling tool_result
+                //     from the same assistant turn that happens to sit
+                //     AFTER the media-injected user message gets dropped
+                //     as an orphan, and pass 2 then fills the gap with a
+                //     synthetic "[Error: tool result missing after context
+                //     compression]" placeholder. The model reads that as
+                //     "my tool call failed" and re-tries the whole batch
+                //     on the next iteration — same media tool re-fires,
+                //     same orphan-drop happens — which surfaces in the
+                //     wild as the agent looping "as if it forgot what it
+                //     just did after two steps".
+                // Generalising: walk back across non-assistant messages
+                // to find the closest assistant, then verify with a
+                // toolCallId match. The id-match guard is what keeps this
+                // safe — it prevents a stale assistant from a prior turn
+                // from being silently re-used as an owner.
                 let ownerIdx = pass1.length - 1;
-                while (ownerIdx >= 0 && pass1[ownerIdx]!.role === "tool_result") {
+                while (ownerIdx >= 0 && pass1[ownerIdx]!.role !== "assistant") {
                     ownerIdx--;
                 }
                 const owner = ownerIdx >= 0 ? pass1[ownerIdx] : undefined;
@@ -1343,12 +1368,28 @@ export class ContextReducer {
             const toolCalls = msg.toolCalls;
             if (!toolCalls || toolCalls.length === 0) continue;
 
-            // Collect immediately-following tool_results.
+            // Collect tool_results owned by `msg`. Walk forward until we
+            // hit the next assistant (= start of a new turn) or run out.
+            //
+            // The walk must look PAST any non-tool_result interjection
+            // ChatStream may legitimately emit inside a tool sequence —
+            // today that is a synthetic `user` message carrying the
+            // bytes of a media-returning tool's output (see chat-stream
+            // where `mediaAttachment` is unpacked). Stopping at the
+            // first non-tool_result would partition a multi-toolCall
+            // batch around that user message and falsely report the
+            // tool_results that follow it as "missing", causing
+            // pass 2 to splat synthetic "[Error: tool result missing
+            // after context compression]" placeholders into the
+            // prompt. The model then reads its own tool calls as
+            // failed and re-tries the whole batch.
             const gathered = new Map<string, T>();
             let j = i + 1;
-            while (j < pass1.length && pass1[j]!.role === "tool_result") {
-                const tcId = pass1[j]!.toolCallId;
-                if (tcId) gathered.set(tcId, pass1[j]!);
+            while (j < pass1.length && pass1[j]!.role !== "assistant") {
+                if (pass1[j]!.role === "tool_result") {
+                    const tcId = pass1[j]!.toolCallId;
+                    if (tcId) gathered.set(tcId, pass1[j]!);
+                }
                 j++;
             }
 
