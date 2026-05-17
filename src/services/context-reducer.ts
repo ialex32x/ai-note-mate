@@ -1152,12 +1152,35 @@ export class ContextReducer {
      *   tests, unknown model) the model floor is omitted and only
      *   `threshold × 1.5` applies, preserving the original behaviour.
      *
-     * Strategy: re-run `shrinkLargeToolResults` with `forceShrinkAll=true`
-     * so the unconsumed-tail exemption is bypassed. The envelope spill
-     * path still preserves recall via the artifact store, so a user
-     * who really needs the dropped detail can recover it with
-     * `recall_artifact` on the next turn. The structural assistant→
-     * tool_result pairing is preserved, so no re-sanitization is needed.
+     * Strategy: walk tool_results in **chronological (oldest-first)**
+     * order, shrinking each oversized one in turn and stopping as soon
+     * as the assembled prompt drops back under the emergency line. This
+     * preserves the model's most recent tool_results — the ones it is
+     * most likely to be reasoning over right now — and only sacrifices
+     * the earliest ones, which the model has had the longest to digest
+     * (and which are most likely already paraphrased into the model's
+     * own subsequent tool-call arguments anyway).
+     *
+     * Why incremental beats the previous "force-shrink everything"
+     * approach: once the outer reducer's `shrinkLargeToolResults`
+     * (which now exempts the entire active reasoning chain — see its
+     * JSDoc) leaves the active chain intact, the wholesale variant
+     * here would force-truncate every active-chain tool_result the
+     * moment the cumulative chain crossed the emergency line. For a
+     * sub-agent that legitimately needs to read several large files in
+     * one turn (`read_file → exchange.put → read_file → exchange.put
+     * → ...`), that's exactly the "走两步就忘 → re-fetch the same
+     * file → loop" pathology this entire shrink stage was meant to
+     * prevent. Walking oldest-first and stopping at the budget line
+     * gives the model the maximum number of recent intact tool_results
+     * we can fit while still meeting the provider's window contract.
+     *
+     * The envelope spill path still preserves recall via the artifact
+     * store on every shrink call, so a user who really needs the
+     * dropped detail can recover it with `recall_artifact` on the
+     * next turn. The structural assistant→tool_result pairing is
+     * preserved (only the `content` field of each tool_result is
+     * rewritten), so no re-sanitization is needed.
      *
      * Returns the possibly-rewritten messages array (the original is
      * never mutated). The `shrunk` flag in the return value signals to
@@ -1195,17 +1218,38 @@ export class ContextReducer {
 
         if (total <= emergencyLine) return { messages, shrunk: false };
 
-        const shrunkMessages = this.shrinkLargeToolResults(
-            messages,
-            store,
-            /* forceShrinkAll */ true,
-        );
+        // Incremental, oldest-first shrink. We keep a running token
+        // total and shrink one tool_result at a time until we either
+        // dip back under `emergencyLine` or run out of shrinkable
+        // material. The running-delta update keeps this O(N) on the
+        // common path even for very long histories.
+        const working: T[] = messages.slice();
+        let runningTotal = total;
+        let anyShrunk = false;
 
-        const newTotal = estimateMessagesTokens(shrunkMessages) + accessoryTokens;
-        // No actual change? `forceShrinkAll` only helps when there is
-        // something oversized in the tail; if everything was already
-        // shrunk in the primary pass, this is a no-op.
-        if (newTotal === total) {
+        for (let i = 0; i < working.length; i++) {
+            if (runningTotal <= emergencyLine) break;
+            const msg = working[i]!;
+            if (msg.role !== "tool_result") continue;
+            const before = msg.content;
+            if (typeof before !== "string" || before.length === 0) continue;
+            const after = shrinkToolResultContent(before, msg.toolCallId, store);
+            if (after === before) continue; // already small / non-shrinkable
+            working[i] = { ...msg, content: after } as T;
+            // Token delta: `estimateTokens` is cheap (linear in length
+            // with a couple of branches) and counting only the changed
+            // message keeps the worst case O(total content size)
+            // instead of O(N · total content size) we'd get from a
+            // full `estimateMessagesTokens` re-count per iteration.
+            runningTotal = runningTotal - estimateTokens(before) + estimateTokens(after);
+            anyShrunk = true;
+        }
+
+        // Nothing left to shrink? Either every tool_result was already
+        // small or the over-budget portion lives in the assistant /
+        // user messages themselves. Either way, returning `messages`
+        // (the original, untouched) keeps the no-op contract.
+        if (!anyShrunk) {
             const guidance = limitedByModel
                 ? `model context window ~${modelContextWindow} is the limiting factor — ` +
                   `lower the compression threshold or switch to a larger-context model.`
@@ -1220,6 +1264,7 @@ export class ContextReducer {
             return { messages, shrunk: false };
         }
 
+        const newTotal = estimateMessagesTokens(working) + accessoryTokens;
         if (newTotal > emergencyLine) {
             console.warn(
                 `[ContextReducer] emergency shrink applied but prompt is still over budget: ` +
@@ -1229,14 +1274,15 @@ export class ContextReducer {
             );
         } else {
             console.warn(
-                `[ContextReducer] emergency shrink applied: ${total} → ${newTotal} ` +
-                `estimated tokens (limit ${Math.floor(emergencyLine)}` +
+                `[ContextReducer] emergency shrink applied (incremental, oldest-first): ` +
+                `${total} → ${newTotal} estimated tokens (limit ${Math.floor(emergencyLine)}` +
                 `${limitedByModel ? `, capped by model window ${modelContextWindow}` : ""}). ` +
-                `Some recently-returned tool results were truncated to fit the budget; ` +
-                `their original content remains recoverable via the artifact store when available.`,
+                `Earliest oversized tool_results were truncated to fit the budget; ` +
+                `more recent results were preserved verbatim. Original content remains ` +
+                `recoverable via the artifact store when available.`,
             );
         }
-        return { messages: shrunkMessages, shrunk: true };
+        return { messages: working, shrunk: true };
     }
 
     /**
@@ -1511,20 +1557,60 @@ export class ContextReducer {
     ): T[] {
         if (messages.length === 0) return messages;
 
-        // Locate the index of the last assistant message — anything after it
-        // is part of the "just-produced, not yet digested" tail.
-        // -1 means there is no assistant message at all in this slice; the
-        // condition `i > lastAssistantIdx` then evaluates to true for every
-        // tool_result, so the entire slice is treated as unconsumed and
-        // nothing gets shrunk. This is the safe default — without an
-        // assistant anchor we cannot prove the model has read anything yet.
+        // Locate the boundary between consumed and still-active
+        // tool_results. Anything after this index is part of the
+        // "just-produced, not yet digested" tail.
         //
-        // When `forceShrinkAll` is true the exemption is bypassed entirely;
-        // computing `lastAssistantIdx` is harmless in that case and keeps
-        // the per-iteration condition uniform.
+        // The rule is: only a **content-bearing** assistant turn (one
+        // whose `content` is a non-empty string) closes the active
+        // reasoning chain. A pure tool-call assistant (empty content,
+        // toolCalls only) does NOT — it just forwards data into the
+        // next tool via toolCall arguments and chains the next step,
+        // which means the preceding tool_result is still in the
+        // model's working set and may be referenced again on later
+        // iterations.
+        //
+        // Why this matters — vault_inspector "走两步就忘" loop:
+        //   read_file (big body) → exchange.put(value=<body>) →
+        //   read_file (same path again) → exchange.put again → ...
+        // Pre-fix the heuristic took **any** assistant as the
+        // boundary, so once iter 2 emitted its `exchange.put`
+        // toolCall, iter 3's reduce() shrank read_file's result to a
+        // `[Tool result truncated: …]` placeholder. The model could
+        // no longer see its own file content and retried the read
+        // from scratch, looping the entire chain.
+        //
+        // Why it's safe to extend the exemption window backwards:
+        //   * The total context still has a hard ceiling at the
+        //     emergency-shrink line (1.5× threshold), where
+        //     `forceShrinkAll=true` overrides this exemption and
+        //     truncates everything regardless of position.
+        //   * Sub-agents always run with a single user turn so they
+        //     can't go through primary compression at all — the
+        //     emergency line is the ONLY budget brake regardless of
+        //     this rule.
+        //   * Once the model produces any prose (even a one-line
+        //     "done"), the entire pre-prose chain becomes shrinkable
+        //     again — i.e. closing the chain costs nothing extra
+        //     compared to the old behaviour.
+        //
+        // -1 means no content-bearing assistant exists in the slice;
+        // the condition `i > lastAssistantIdx` then evaluates to
+        // true for every tool_result, so the entire slice is treated
+        // as the active chain and nothing gets shrunk. This is the
+        // safe default — without a closing prose turn we cannot
+        // prove the model has finished reasoning over any of the
+        // tool_results yet.
+        //
+        // When `forceShrinkAll` is true the exemption is bypassed
+        // entirely; computing `lastAssistantIdx` is harmless in that
+        // case and keeps the per-iteration condition uniform.
         let lastAssistantIdx = -1;
         for (let i = messages.length - 1; i >= 0; i--) {
-            if (messages[i]!.role === 'assistant') {
+            const m = messages[i]!;
+            if (m.role !== 'assistant') continue;
+            const hasContent = typeof m.content === 'string' && m.content.length > 0;
+            if (hasContent) {
                 lastAssistantIdx = i;
                 break;
             }
