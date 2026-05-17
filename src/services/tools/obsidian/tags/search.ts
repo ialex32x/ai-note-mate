@@ -19,13 +19,14 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "search_by_tag",
                 description:
-                    "Find all markdown notes that carry any of the given tags. " +
-                    "ALWAYS batch multiple tags into a single call (up to 10) — NEVER issue separate calls for each tag. " +
-                    "A file is included if it matches ANY of the provided tags (OR semantics). " +
-                    "Each returned file lists which of the searched tags it matched in its matched_tags field, " +
-                    "so you can derive per-tag counts from a single batch call without querying tags individually. " +
-                    "By default matches each tag exactly; set 'include_descendants' to true to also match nested sub-tags " +
-                    "(e.g. tag='project' with descendants matches #project/alpha, #project/beta, etc.).",
+                    "Find all markdown notes that carry the given tag(s). ALWAYS batch multiple tags " +
+                    "(up to 10) into a single call — NEVER issue separate calls per tag. " +
+                    "`match_mode` combines the tag list: 'any' (OR, default — file matches if it has any " +
+                    "one tag) or 'all' (AND — file must carry every tag). With `include_descendants=true`, " +
+                    "each searched tag is also satisfied by any of its descendants (so `match_mode='all'` " +
+                    "+ descendants on `['project','urgent']` matches a file tagged `#project/alpha` + " +
+                    "`#urgent/today`). Each returned file lists which searched tags it matched under " +
+                    "`matched_tags` — enough to derive per-tag counts from one batch call.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -35,6 +36,14 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
                             description:
                                 "Array of tags to search for (1–10 tags), with or without the leading '#'. " +
                                 "Example: ['project', '#review'].",
+                        },
+                        match_mode: {
+                            type: "string",
+                            enum: ["any", "all"],
+                            description:
+                                "How to combine the tag list. 'any' (default) = OR — a file matches if it carries " +
+                                "ANY one of the tags. 'all' = AND — a file must carry EVERY tag. With a single " +
+                                "tag in the list, both modes are equivalent.",
                         },
                         include_descendants: {
                             type: "boolean",
@@ -61,8 +70,18 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
         exec: async (_chatStream, args, _signal) => {
             const rawTags = args["tags"] as string[];
             const includeDescendants = (args["include_descendants"] as boolean) ?? false;
+            const matchModeRaw = (args["match_mode"] as string | undefined) ?? "any";
             const limit = (args["limit"] as number) ?? 200;
             const skip = Math.max(0, (args["skip"] as number) ?? 0);
+
+            if (matchModeRaw !== "any" && matchModeRaw !== "all") {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `Invalid match_mode '${matchModeRaw}'. Must be 'any' or 'all'.`,
+                };
+            }
+            const matchMode = matchModeRaw;
 
             if (!Array.isArray(rawTags) || rawTags.length === 0) {
                 return { success: false, type: "text", content: "tags must be a non-empty array of tag names." };
@@ -85,11 +104,14 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
 
             const tagMatchers = normalized as NonNullable<typeof normalized[number]>[];
 
-            const matchesTag = (t: string): boolean => {
-                for (const m of tagMatchers) {
-                    if (t === m.normalized) return true;
-                    if (includeDescendants && t.startsWith(m.prefix)) return true;
-                }
+            // Per-matcher predicate: does this single searched tag match a file
+            // tag? (exact, or under-its-descendants when include_descendants).
+            const tagMatchesMatcher = (
+                fileTag: string,
+                matcher: typeof tagMatchers[number],
+            ): boolean => {
+                if (fileTag === matcher.normalized) return true;
+                if (includeDescendants && fileTag.startsWith(matcher.prefix)) return true;
                 return false;
             };
 
@@ -101,17 +123,40 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
                 if (seen.has(file.path)) continue;
 
                 const fileTags = collectTagsForFile(plugin, file);
-                const matched: string[] = [];
-                for (const ft of fileTags) {
-                    if (matchesTag(ft)) {
-                        matched.push(ft);
+                if (fileTags.length === 0) continue;
+
+                // For each searched matcher, find which (if any) of the file's
+                // tags satisfy it. In `any` mode any matcher's hit is enough;
+                // in `all` mode every matcher must have at least one hit.
+                const matchedSet = new Set<string>();
+                let allMatchersSatisfied = true;
+                for (const matcher of tagMatchers) {
+                    let matcherSatisfied = false;
+                    for (const ft of fileTags) {
+                        if (tagMatchesMatcher(ft, matcher)) {
+                            matchedSet.add(ft);
+                            matcherSatisfied = true;
+                            // For `any` we still keep scanning to populate
+                            // matched_tags (which is per-file evidence,
+                            // useful for the caller's downstream reporting).
+                            // Continue rather than break.
+                        }
+                    }
+                    if (!matcherSatisfied) {
+                        allMatchersSatisfied = false;
+                        if (matchMode === "all") break; // short-circuit AND
                     }
                 }
 
-                if (matched.length > 0) {
-                    seen.add(file.path);
-                    allMatches.push({ path: file.path, mtime: file.stat.mtime, matched_tags: matched });
-                }
+                const isMatch = matchMode === "all" ? allMatchersSatisfied : matchedSet.size > 0;
+                if (!isMatch) continue;
+
+                seen.add(file.path);
+                allMatches.push({
+                    path: file.path,
+                    mtime: file.stat.mtime,
+                    matched_tags: [...matchedSet],
+                });
             }
 
             // Sort by mtime descending (most recently modified first) for deterministic pagination
@@ -126,6 +171,7 @@ export function vaultSearchByTag(plugin: NoteAssistantPlugin): RegisteredTool {
                 type: "object",
                 content: {
                     searched_tags: tagMatchers.map((m) => m.normalized),
+                    match_mode: matchMode,
                     include_descendants: includeDescendants,
                     total_matches: totalMatches,
                     has_more: hasMore,

@@ -18,9 +18,9 @@ export function vaultDeleteFolder(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "delete_folder",
                 description:
-                    "Delete a folder and all of its contents (files and sub-folders) from the vault. " +
-                    "Items are moved to trash according to the user's Obsidian \"Files & Links → Deleted files\" preference (system trash, vault .trash, or permanent). " +
-                    "Use this when the user wants to delete or remove a folder and everything inside it.",
+                    "Delete a folder and all of its contents (files and sub-folders). Items are " +
+                    "disposed according to the user's Obsidian \"Files & Links → Deleted files\" " +
+                    "setting (system trash, vault `.trash`, or permanent).",
                 parameters: {
                     type: "object",
                     properties: {

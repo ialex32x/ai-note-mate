@@ -20,12 +20,11 @@ export function vaultGetOverview(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "get_overview",
                 description:
-                    "Get a high-level overview of the entire vault: total number of files, breakdown by file extension, " +
-                    "total folder count, total size in bytes, and information about the most recently modified, " +
-                    "least recently modified, largest, smallest, and earliest created files. " +
-                    "Use this as a first step when the user asks broad questions about their vault like 'how big is my vault?', " +
-                    "'what's in my vault?', 'give me an overview', 'what is my largest note?', 'what is the oldest note?', " +
-                    "or when you need to quickly understand the scale and shape of the knowledge base.",
+                    "High-level vault overview: total file / folder count, total size, breakdown by " +
+                    "extension, plus the most-recently-modified / least-recently-modified / largest / " +
+                    "smallest / earliest-created files. Use as a first step for broad questions ('how " +
+                    "big is my vault?', 'what's my largest note?', 'oldest note?', etc.) and for " +
+                    "extremal queries — far cheaper than scanning files manually.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -119,12 +118,10 @@ export function vaultListFilesSorted(plugin: NoteAssistantPlugin): RegisteredToo
             function: {
                 name: "list_files_sorted",
                 description:
-                    "List files in the vault sorted by a chosen field (modification time, creation time, or size). " +
-                    "Defaults to modification time descending (most recent first). " +
-                    "Optionally filter by a minimum modification timestamp, by file extension, or by folder prefix. " +
-                    "Use this when the user asks 'what did I edit recently?', 'what notes did I work on today/this week?', " +
-                    "'show me recently modified files', 'what are my largest notes?', 'what are the oldest notes?', " +
-                    "or needs to understand recent activity, file sizes, or creation dates in the vault.",
+                    "List files sorted by `mtime` (default; most recent first), `ctime`, or `size`. " +
+                    "Optionally filter by minimum mtime, file extension, or folder prefix. Use for " +
+                    "'what did I edit recently?', 'what are my largest notes?', 'what are the oldest " +
+                    "notes?' and similar recency / size queries.",
                 parameters: {
                     type: "object",
                     properties: {

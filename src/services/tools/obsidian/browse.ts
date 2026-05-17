@@ -16,16 +16,12 @@ export function vaultBrowseFolder(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "browse_folder",
                 description:
-                    "Browse files and sub-folders inside a vault folder with metadata. " +
-                    "Each file entry includes extension, creation time (ctime), modification time (mtime), and size in bytes. " +
-                    "Each folder entry only includes its path. " +
-                    "Use this when the user wants to see, browse, explore, list, or check the contents of a folder. " +
-                    "Pass an empty string or '/' to list the vault root. " +
-                    "Prefer a SINGLE call with an appropriate `max_depth` (e.g. 2) over multiple sequential calls " +
-                    "that walk each top-level folder one at a time. " +
-                    "For broad vault-wide statistics (sizes, extension breakdown, recency), call `get_overview` instead. " +
-                    "Set `entries_type` to \"folder\" to list only folders (useful for mapping vault structure without file noise) " +
-                    "or \"file\" to list only files.",
+                    "List files and sub-folders inside a vault folder. File entries carry extension, " +
+                    "ctime, mtime, and size; folder entries carry only their path. Pass `''` or `'/'` " +
+                    "for the vault root. Prefer a SINGLE call with an appropriate `max_depth` (e.g. 2) " +
+                    "over walking top-level folders one-at-a-time. Use `entries_type: 'folder'` to map " +
+                    "vault structure without file noise, or `'file'` for files only. For vault-wide " +
+                    "stats (sizes / extension breakdown / recency), call `get_overview` instead.",
                 parameters: {
                     type: "object",
                     properties: {

@@ -241,21 +241,6 @@ describe("resolveAnchorEntry: insert_before_section", () => {
     });
 });
 
-describe("resolveAnchorEntry: insert_after_section", () => {
-    it("inserts content just after the section ends", () => {
-        const ctx = fixtureContext();
-        const entry = makeEntry(["Chapter 1", "Body"], "insert_after_section", "AFTER BODY SECTION");
-        const r = resolveAnchorEntry(entry, ctx.original, FIXTURE_HEADINGS, ctx.lineStarts, ctx.totalLines);
-        if (typeof r === "string") throw new Error(r);
-        const out = applySpan(ctx.original, r);
-        const bgIdx = out.indexOf("bg line 2");
-        const insIdx = out.indexOf("AFTER BODY SECTION");
-        const c2Idx = out.indexOf("# Chapter 2");
-        expect(insIdx).toBeGreaterThan(bgIdx);
-        expect(c2Idx).toBeGreaterThan(insIdx);
-    });
-});
-
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveAnchorEntry — error paths
 // ─────────────────────────────────────────────────────────────────────────────

@@ -19,11 +19,9 @@ export function vaultListTags(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "list_tags",
                 description:
-                    "List all tags used across the vault with their occurrence counts (number of notes using each tag). " +
-                    "Optionally filter by a prefix to narrow down to a tag namespace (e.g. 'project/'). " +
-                    "Tags are returned in the '#tag' format. " +
-                    "Use this when the user wants to see which tags exist, explore their tag taxonomy, " +
-                    "find related tags, or when you need to discover tag vocabulary before searching for notes.",
+                    "List all tags in the vault with per-tag note counts. Tags are returned as `#tag`. " +
+                    "Optionally filter by a prefix to narrow to a tag namespace (e.g. `project/`). " +
+                    "Use to discover tag vocabulary before searching for notes.",
                 parameters: {
                     type: "object",
                     properties: {

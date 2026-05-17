@@ -24,15 +24,9 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "create_file",
                 description:
-                    "Create a NEW file in the vault with the given content. " +
-                    "Parent folders are created automatically if they do not exist. " +
-                    "Use this when the user wants to create, make, save, or store a new note or file. " +
-                    "\n\n" +
-                    "REFUSES if the path already exists — this tool does not overwrite. " +
-                    "If you want to change an existing file, pick by intent: " +
-                    "`replace_text` / `edit_lines` for surgical edits, " +
-                    "`append_file` / `prepend_file` to add content, " +
-                    "or delegate a full-body rewrite to the `vault_editor` sub-agent.",
+                    "Create a NEW file in the vault with the given content. Missing parent folders are " +
+                    "created automatically. REFUSES if the path already exists — this tool does not " +
+                    "overwrite (use the appropriate edit tool to change an existing file).",
                 parameters: {
                     type: "object",
                     properties: {

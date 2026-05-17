@@ -17,6 +17,7 @@ import {
     vaultCreateFile,
     vaultDeleteFiles,
     vaultDeleteFolder,
+    vaultEditFrontmatter,
     vaultPrependFile,
     vaultRenameFile,
     vaultEditLines,
@@ -25,7 +26,12 @@ import {
 } from "./edit";
 import { vaultGetOverview, vaultListFilesSorted } from "./overview";
 import { vaultEditFileTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
-import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
+import {
+    vaultFindOrphanFiles,
+    vaultGetBacklinks,
+    vaultGetOutgoingLinks,
+    vaultGetUnresolvedLinks,
+} from "./graph";
 
 /**
  * Tool partitioning rationale
@@ -79,6 +85,8 @@ import { vaultFindOrphanFiles, vaultGetBacklinks } from "./graph";
  *    handles inserts/deletes via its `edits` array — there is no
  *    separate insert_lines tool)
  *  - Structural: delete_files / delete_folder / rename_or_move_file
+ *  - Frontmatter: edit_frontmatter (set/unset arbitrary YAML keys; tag
+ *    keys are refused and routed to the tag-specific tools below)
  *  - Tag edits:   edit_file_tags / rename_tag (vault-wide)
  */
 export function createObsidianMutationTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
@@ -93,6 +101,8 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultDeleteFiles(plugin),
         vaultDeleteFolder(plugin),
         vaultRenameFile(plugin),
+        // Frontmatter property edits (non-tag YAML keys)
+        vaultEditFrontmatter(plugin),
         // Tag edits
         vaultEditFileTags(plugin),
         vaultRenameTag(plugin),
@@ -131,6 +141,8 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
         vaultSearchByTag(plugin),
         // Link graph
         vaultGetBacklinks(plugin),
+        vaultGetOutgoingLinks(plugin),
+        vaultGetUnresolvedLinks(plugin),
         vaultFindOrphanFiles(plugin),
     ];
 }
@@ -171,12 +183,14 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
  *    these tools just tempts it to "tidy up" on its own, which hides
  *    state changes from the main agent (violating the
  *    `§0.3 principle 1` of `docs/vault-editor-subagent-plan.md`).
- *  - `edit_file_tags` / `rename_tag`: tag edits are either per-file
- *    structural (vs content) or vault-wide. Either way, they should
- *    stay explicit in the main agent's plan. The editor can still
- *    rewrite frontmatter text via `replace_text` (anchor or search
- *    mode) when that's genuinely part of a content rewrite — but it
- *    cannot trigger a tag-aware structural edit unilaterally.
+ *  - `edit_file_tags` / `rename_tag` / `edit_frontmatter`: tag and
+ *    frontmatter property edits are structural (vs content) when
+ *    per-file, or vault-wide. Either way, they should stay explicit
+ *    in the main agent's plan. The editor can still rewrite
+ *    frontmatter text via `replace_text` (anchor or search mode) when
+ *    that's genuinely part of a content rewrite — but it cannot
+ *    trigger a tag-aware or property-aware structural edit
+ *    unilaterally.
  *  - `write_file`: this is the NEW tool added for wholesale rewrites
  *    (§3.2 of the plan). Included here.
  *

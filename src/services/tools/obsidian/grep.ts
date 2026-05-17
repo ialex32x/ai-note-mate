@@ -2,6 +2,11 @@ import type NoteAssistantPlugin from "../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
 import type { ToolCapability } from "../../llm-provider";
 import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "./_shared";
+import {
+    formatFindSectionError,
+    resolveHeadingPathToRange,
+    type HeadingNode,
+} from "./heading-section";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: grep_file
@@ -14,6 +19,10 @@ import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "./_sh
 // Designed for the very common pattern of "I know which file; I have a few
 // strings/patterns I want to anchor on; give me the line numbers (and just
 // enough context to confirm the match) so I can edit later".
+//
+// Section scoping uses `heading_path` — the same shape `read_section` and
+// `replace_text` (anchor mode) accept — so heading addressing stays
+// consistent across the read / locate / edit toolchain.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEFAULT_MAX_MATCHES = 200;
@@ -28,63 +37,6 @@ interface GrepMatch {
     context_after?: string[];
 }
 
-interface SectionWindow {
-    heading: string;
-    level: number;
-    /** 1-based inclusive */
-    start_line: number;
-    /** 1-based inclusive */
-    end_line: number;
-}
-
-/**
- * Locate the section in the file whose heading text equals `sectionName`
- * (case-insensitive, trimmed). The section spans from the heading line
- * (inclusive) up to — but not including — the next heading of the same
- * or shallower level, or EOF.
- *
- * Returns `null` when the heading is not found. We deliberately match by
- * exact heading text rather than substring: section anchoring is a hard
- * scope constraint, and a substring match could silently widen the scope
- * to the wrong section.
- */
-function findSection(
-    plugin: NoteAssistantPlugin,
-    file: import("obsidian").TFile,
-    totalLines: number,
-    sectionName: string,
-): SectionWindow | null {
-    const cache = plugin.app.metadataCache.getFileCache(file);
-    const headings = cache?.headings ?? [];
-    if (headings.length === 0) return null;
-
-    const wanted = sectionName.trim().toLowerCase();
-    const idx = headings.findIndex((h) => h.heading.trim().toLowerCase() === wanted);
-    if (idx < 0) return null;
-
-    const target = headings[idx]!;
-    const startLine = target.position.start.line + 1; // 1-based
-
-    // Find the next heading of equal-or-shallower level — that boundary is
-    // where the current section ends. Headings cache is in document order,
-    // so a forward scan is sufficient.
-    let endLine = totalLines;
-    for (let i = idx + 1; i < headings.length; i++) {
-        const h = headings[i]!;
-        if (h.level <= target.level) {
-            endLine = h.position.start.line; // exclusive of the next heading line; convert from 0-based -> 1-based-exclusive == 0-based value
-            break;
-        }
-    }
-
-    return {
-        heading: target.heading,
-        level: target.level,
-        start_line: startLine,
-        end_line: Math.max(startLine, endLine),
-    };
-}
-
 export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
@@ -94,16 +46,13 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "grep_file",
                 description:
-                    "Find lines matching one or more queries within a SINGLE known file, " +
-                    "and return their line numbers and matched content. " +
-                    "Use this — NOT read_file — when you already know which file to inspect " +
-                    "and you need line numbers for specific strings or patterns " +
-                    "(e.g. preparing a follow-up edit_lines call, or confirming whether a marker exists). " +
-                    "Much cheaper than reading the full file: it skips delivering unrelated lines. " +
-                    "Multiple queries are evaluated with OR semantics; each result reports which query it matched. " +
-                    "Optional `section` restricts the search to a single heading-anchored region " +
-                    "(use get_metadata first to discover heading names if needed). " +
-                    "For vault-wide search across many files, use search_content instead.",
+                    "Find lines matching one or more queries within a SINGLE known file; returns line " +
+                    "numbers and matched content. Prefer this over `read_file` when you already know " +
+                    "the file and just need line numbers for specific strings/patterns (e.g. preparing " +
+                    "a follow-up `edit_lines` call). Multiple queries are OR-combined; each match " +
+                    "reports its `matched_query`. Optional `heading_path` restricts the search to a " +
+                    "single heading-anchored region (use `get_metadata` first to discover the outline). " +
+                    "For vault-wide search across many files, use `search_content` instead.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -133,13 +82,19 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "boolean",
                             description: "Whether matching is case-sensitive. Defaults to false.",
                         },
-                        section: {
-                            type: "string",
+                        heading_path: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
                             description:
-                                "Optional heading text to restrict the search to a single section. " +
-                                "Matched case-insensitively against exact heading text (no substring). " +
-                                "The section spans from the heading line up to the next heading of the same or shallower level. " +
-                                "If the heading is not found, the call fails with a clear error so you can retry.",
+                                "Optional heading path that restricts the search to a single section. " +
+                                "Heading titles ordered outermost → innermost (e.g. ['Chapter 2', 'Background']). " +
+                                "Matching is exact (case-sensitive, trimmed). A short tail (even a single leaf " +
+                                "title) is accepted IF it is unique in the file; otherwise the call fails as " +
+                                "ambiguous and you must prepend more ancestors. The section spans from the matched " +
+                                "heading line up to the next heading of the same or shallower level (subsections " +
+                                "are included). If the path is missing or ambiguous, the call fails with concrete " +
+                                "diagnostics so you can refine and retry.",
                         },
                         context: {
                             type: "number",
@@ -169,9 +124,22 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const rawQueries = args["queries"];
             const useRegex = (args["use_regex"] as boolean) ?? false;
             const caseSensitive = (args["case_sensitive"] as boolean) ?? false;
-            const sectionName = args["section"] as string | undefined;
+            const rawHeadingPath = args["heading_path"];
             const contextLines = Math.max(0, (args["context"] as number) ?? DEFAULT_CONTEXT_LINES);
             const maxMatches = Math.max(1, (args["max_matches"] as number) ?? DEFAULT_MAX_MATCHES);
+
+            // Defensive: callers occasionally still send the legacy `section` field.
+            // Refuse loudly so the model retries with `heading_path` instead of
+            // silently grepping the whole file.
+            if (args["section"] !== undefined) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        "`section` is no longer accepted; use `heading_path` (an array of heading titles, " +
+                        "outermost → innermost, e.g. ['Chapter 2', 'Background']) to scope the grep to a section.",
+                };
+            }
 
             // ── Validate queries ────────────────────────────────────────────
             if (!Array.isArray(rawQueries) || rawQueries.length === 0) {
@@ -199,6 +167,31 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     };
                 }
                 queries.push(q);
+            }
+
+            // ── Validate heading_path (when provided) ───────────────────────
+            let headingPath: string[] | null = null;
+            if (rawHeadingPath !== undefined) {
+                if (!Array.isArray(rawHeadingPath) || rawHeadingPath.length === 0) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: "heading_path must be a non-empty array of heading titles (outermost → innermost).",
+                    };
+                }
+                const hp: string[] = [];
+                for (let i = 0; i < rawHeadingPath.length; i++) {
+                    const item: unknown = rawHeadingPath[i];
+                    if (typeof item !== "string") {
+                        return {
+                            success: false,
+                            type: "text",
+                            content: `heading_path[${i}] must be a string.`,
+                        };
+                    }
+                    hp.push(item);
+                }
+                headingPath = hp;
             }
 
             // ── Resolve file ────────────────────────────────────────────────
@@ -247,20 +240,40 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const lines = content.split("\n");
             const totalLines = lines.length;
 
-            let section: SectionWindow | null = null;
+            let section:
+                | { heading: string; level: number; start_line: number; end_line: number }
+                | null = null;
             let scanStart = 1; // 1-based inclusive
             let scanEnd = totalLines; // 1-based inclusive
-            if (sectionName !== undefined) {
-                section = findSection(plugin, file, totalLines, sectionName);
-                if (!section) {
+            if (headingPath !== null) {
+                const cache = plugin.app.metadataCache.getFileCache(file);
+                const cachedHeadings: HeadingNode[] = (cache?.headings ?? []).map((h) => ({
+                    level: h.level,
+                    heading: h.heading,
+                    line: h.position.start.line,
+                }));
+                const resolved = resolveHeadingPathToRange(
+                    cachedHeadings,
+                    headingPath,
+                    totalLines,
+                    true,
+                );
+                if (!resolved.ok) {
                     return {
                         success: false,
                         type: "text",
-                        content:
-                            `Section '${sectionName}' not found in '${path}'. ` +
-                            `Use get_metadata to list available headings, or omit the 'section' parameter to grep the whole file.`,
+                        content: formatFindSectionError(resolved.error, headingPath),
                     };
                 }
+                section = {
+                    heading: resolved.section.heading,
+                    level: resolved.section.level,
+                    start_line: resolved.section.start_line,
+                    end_line: resolved.section.end_line,
+                };
+                // `end_line` is the 1-based inclusive last line of the section
+                // (equivalently the 0-based exclusive upper bound), matching how
+                // `read_section`'s consumer slices its output.
                 scanStart = section.start_line;
                 scanEnd = section.end_line;
             }

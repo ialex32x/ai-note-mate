@@ -146,7 +146,6 @@ const ANCHOR_WHERE_VALUES = [
     "append_to_section",
     "prepend_to_body",
     "insert_before_section",
-    "insert_after_section",
 ] as const;
 type AnchorWhere = typeof ANCHOR_WHERE_VALUES[number];
 
@@ -490,21 +489,6 @@ function resolveAnchorEntry(
                 replace: padForInsertion(original, at, entry.replace),
             };
         }
-
-        case "insert_after_section": {
-            // Identical offset to append_to_section in the simple case
-            // but semantically distinct: this is meant for content that
-            // logically lives OUTSIDE the section. Keeping it as a
-            // separate `where` lets future enhancements (e.g. forcing a
-            // blank line as a separator) target it without disturbing
-            // append-to-section behaviour.
-            const at = bodyEnd;
-            return {
-                from: at,
-                to: at,
-                replace: padForInsertion(original, at, entry.replace),
-            };
-        }
     }
 }
 
@@ -556,40 +540,26 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "replace_text",
                 description:
-                    "Apply one or more edits to a single file in one atomic operation. Each entry in `replacements` " +
-                    "uses one of two locator modes: " +
-                    "(a) `search` — literal find-and-replace against the file's pre-edit content; " +
-                    "(b) `anchor` — position the edit by heading path (e.g. ['Chapter 2','Background']) plus a " +
-                    "`where` mode (replace_section / replace_body / append_to_section / prepend_to_body / " +
-                    "insert_before_section / insert_after_section). " +
-                    "Each entry MUST provide exactly one of `search` or `anchor`. " +
+                    "Apply one or more atomic edits to a single file via `replacements[]`. Each entry uses " +
+                    "exactly one locator mode: `search` (literal find-and-replace) OR `anchor` (heading_path " +
+                    "+ `where`: replace_section / replace_body / append_to_section / prepend_to_body / " +
+                    "insert_before_section). " +
+                    "All entries match the SAME pre-edit snapshot; matched ranges across entries must be " +
+                    "disjoint. Overlapping matches are rejected and nothing is written. Set `dry_run` to preview. " +
                     "\n\n" +
-                    "All entries match the SAME pre-edit snapshot, so order does not matter and earlier " +
-                    "edits never invalidate later ones. Matched ranges across entries must be disjoint; " +
-                    "overlapping matches are rejected and nothing is written. Set `dry_run` to true to preview. " +
+                    "Mode picking: use `anchor` when the edit aligns with a section boundary or you already " +
+                    "have a heading_path from a digest — cheapest because it doesn't require knowing the " +
+                    "section's exact text. Use `search` for unstructured edits inside a section (typos, term " +
+                    "renames, deleting a phrase). " +
                     "\n\n" +
-                    "IMPORTANT: When you need multiple edits in the same file, you MUST submit them ALL in a " +
-                    "single call via the `replacements` array. Do NOT split them across calls — after the first " +
-                    "call the file content has shifted and your second call's `search`/`anchor` may either miss " +
-                    "or match unintended text. " +
+                    "Tag-shape guard: a `search` value that looks like a single tag token (e.g. `#foo`) is " +
+                    "refused by default — raw text replace cannot tell `#foo` from `#foobar` and risks " +
+                    "frontmatter corruption. Set that entry's `force=true` only if a literal text replace is " +
+                    "genuinely intended (run with `dry_run=true` first). " +
                     "\n\n" +
-                    "WHEN TO USE WHICH MODE: " +
-                    "Use `anchor` when you have a heading path from `vault_inspector`'s digest output, or when " +
-                    "the edit naturally maps to a section boundary (replace this whole section, append a paragraph " +
-                    "to that section, insert a heading before another). It is the cheapest mode because it does " +
-                    "not require knowing the section's exact text. " +
-                    "Use `search` for unstructured edits inside a section (typos, term renames, deleting a phrase). " +
-                    "\n\n" +
-                    "WHEN TO USE WHICH TOOL: " +
-                    "Prefer `edit_file_tags` for tag add/remove/set on specific notes, and `rename_tag` for " +
-                    "vault-wide tag rename — text-level edits cannot reliably tell '#X' from '#XYZ' and may " +
-                    "corrupt YAML frontmatter. " +
-                    "Prefer `edit_lines` when you know the exact line range to rewrite, insert, or delete. " +
-                    "\n\n" +
-                    "TAG GUARD: when a `search` (search mode only) looks like a single tag token (e.g. '#foo'), " +
-                    "this tool refuses that entry by default because raw text replace can partial-match (e.g. " +
-                    "'#foo' inside '#foobar') and corrupt frontmatter. Set that entry's `force=true` if you really " +
-                    "intend a raw text replace (running with `dry_run=true` first is recommended).",
+                    "Pass `expected_pre_edit_mtime` (Unix ms; chain from a prior read tool's `mtime` or another " +
+                    "write tool's `new_mtime`) to fail fast on concurrent external edits. The response echoes " +
+                    "`previous_mtime` / `new_mtime` for chaining.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -641,8 +611,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                                     "replace_body (replace the section body, keeping the heading line); " +
                                                     "prepend_to_body (insert immediately after the heading line); " +
                                                     "append_to_section (insert at the section's end, before any sibling/parent heading); " +
-                                                    "insert_before_section (insert just before the heading line); " +
-                                                    "insert_after_section (insert just after the section, semantically OUTSIDE it).",
+                                                    "insert_before_section (insert just before the heading line).",
                                             },
                                         },
                                         required: ["heading_path", "where"],
@@ -685,6 +654,14 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "If true, validate and preview the result without modifying the file. " +
                                 "Defaults to false.",
                         },
+                        expected_pre_edit_mtime: {
+                            type: "integer",
+                            minimum: 0,
+                            description:
+                                "Optional Unix ms; the file's expected current `mtime`. If actual on-disk " +
+                                "`mtime` differs, the call fails (concurrent-edit guard). Chain from a prior " +
+                                "read tool's `mtime` or another write tool's `new_mtime`.",
+                        },
                     },
                     required: ["path", "replacements"],
                 },
@@ -695,6 +672,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const path = args["path"] as string;
             const rawReplacements = args["replacements"];
             const dryRun = (args["dry_run"] as boolean) ?? false;
+            const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
             if (!Array.isArray(rawReplacements) || rawReplacements.length === 0) {
                 return {
@@ -707,6 +685,25 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const fileOrErr = requireFile(plugin.app, path);
             if (isFailure(fileOrErr)) return fileOrErr;
             const file = fileOrErr;
+
+            // Snapshot mtime BEFORE reading the body so race detection sees the
+            // pre-mutation value even if Obsidian were to refresh stat mid-call
+            // (it does not today; defensive against future internal changes).
+            const previousMtime = file.stat.mtime;
+            if (
+                expectedPreEditMtime !== undefined
+                && expectedPreEditMtime !== previousMtime
+            ) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `\`expected_pre_edit_mtime\` mismatch: caller believes file mtime is ${expectedPreEditMtime}, ` +
+                        `but actual mtime is ${previousMtime}. This usually means the file was modified ` +
+                        `between your read and this write. Re-read the file (its envelope reports the new mtime) ` +
+                        `and retry with the updated content.`,
+                };
+            }
 
             // Validate every entry up-front so we never partially apply.
             const normalised: NormalisedEntry[] = [];
@@ -920,6 +917,11 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
 
             const totalReplaced = summaries.reduce((s, r) => s + r.occurrences_replaced, 0);
 
+            // After modify(), Obsidian updates `file.stat` in place. Dry-run keeps
+            // the same value as `previous_mtime` so the caller can still pass the
+            // returned `new_mtime` into a follow-up call without a mismatch.
+            const newMtime = dryRun ? previousMtime : file.stat.mtime;
+
             return {
                 success: true,
                 type: "object",
@@ -929,6 +931,8 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                     replacements: summaries,
                     total_replacements: totalReplaced,
                     dry_run: dryRun,
+                    previous_mtime: previousMtime,
+                    new_mtime: newMtime,
                     ...(dryRun ? { preview: working } : {}),
                 },
             };

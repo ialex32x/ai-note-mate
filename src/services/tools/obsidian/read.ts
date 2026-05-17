@@ -35,23 +35,20 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "read_file",
                 description:
-                    "Read the content of a file in the Obsidian vault. " +
-                    "For text/markdown files, optionally specify start_line and end_line (1-based, inclusive) " +
-                    "to read only a specific line range; omit both to read the entire file. " +
-                    "IMPORTANT: When the file is large (more than ~200 lines) and no line range is specified, " +
-                    "this tool returns a structured outline with headings and line numbers plus a content preview " +
-                    "instead of the full content. Use the heading line numbers to decide which sections to read " +
-                    "with start_line/end_line in a follow-up call. " +
-                    "For media files (images: png, jpg, gif, webp, svg, etc.; videos: mp4, webm, mov, etc.; " +
-                    "audio: mp3, wav, ogg, flac, etc.; documents: pdf), " +
-                    "returns the file as base64 data for viewing and analysis (line range is not applicable). " +
-                    "Whether the audio/video/pdf content is actually delivered to you depends on the active model's " +
-                    "configured input modalities; unsupported modalities are silently dropped with a short text note. " +
-                    "PDFs above ~20 MB are rejected to stay within provider inline-attachment limits. " +
-                    "BINARY FORMATS NOT SUPPORTED: Office documents (doc/docx/xls/xlsx/ppt/pptx/...), archives (zip/rar/7z/...), " +
-                    "executables, fonts, design files, databases, etc. are rejected — do not attempt to read them with this tool; " +
-                    "ask the user to convert to a supported format first. " +
-                    "Use this when the user wants to read, view, check, examine, see, open, or show the content of a specific file.",
+                    "Read a file from the vault. " +
+                    "For text/markdown files, optionally specify `start_line` / `end_line` (1-based, " +
+                    "inclusive) for a range; omit both to read the whole file. When the file is large " +
+                    "(> ~200 lines) and no range is given, returns a structured outline (headings + line " +
+                    "numbers) plus a preview instead of the full body — pick a section and re-read with " +
+                    "`start_line` / `end_line`. " +
+                    "\n\n" +
+                    "Media files (images: png/jpg/gif/webp/svg/…; audio: mp3/wav/ogg/flac/…; video: " +
+                    "mp4/webm/mov/…; document: pdf) are returned as base64 via the multimodal channel; " +
+                    "line range is ignored. Whether the model actually consumes the bytes depends on its " +
+                    "input modalities (unsupported modalities are silently dropped with a text note). " +
+                    "PDFs above ~20 MB are refused. " +
+                    "Other binary formats (Office docs, archives, executables, fonts, design files, " +
+                    "databases, …) are refused — convert to text/markdown first.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -412,13 +409,11 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
             function: {
                 name: "get_active_file",
                 description:
-                    "Get information about the file currently open and focused in the editor. " +
-                    "Use this when the user refers to 'this file', 'current note', 'active file', " +
-                    "'the note I'm viewing', or 'the file I'm looking at'. " +
-                    "Optionally include its content. " +
-                    "NOTE: When include_content is true and the file is large (more than ~200 lines), " +
-                    "only an outline with headings/line numbers and a content preview are returned " +
-                    "instead of the full content. Use read_file with start_line/end_line to read specific sections.",
+                    "Get info about the file currently focused in the editor. Use when the user refers " +
+                    "to 'this file', 'current note', 'the note I'm viewing', etc. Optionally include " +
+                    "its content. When `include_content` is true and the file is large (> ~200 lines), " +
+                    "an outline + preview is returned instead of the full body — use `read_file` with " +
+                    "`start_line` / `end_line` for specific sections.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -446,8 +441,8 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                 name: activeFile.name,
                 extension: activeFile.extension,
                 size: activeFile.stat.size,
-                created: activeFile.stat.ctime,
-                modified: activeFile.stat.mtime,
+                ctime: activeFile.stat.ctime,
+                mtime: activeFile.stat.mtime,
             };
 
             if (includeContent) {
@@ -508,11 +503,10 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "get_metadata",
                 description:
-                    "Get the parsed frontmatter metadata and structural info (headings, tags, links) " +
-                    "of one or more markdown files, without reading the full content. " +
-                    "Accepts up to 200 paths in a single call — prefer batching over sequential single-path calls. " +
-                    "Use this when the user wants to see a note's structure, outline, tags, links, " +
-                    "or frontmatter/YAML metadata without loading the entire file.",
+                    "Get parsed frontmatter, structural info (headings / tags / links), and basic file " +
+                    "state (mtime / ctime / size) of one or more markdown files — without reading the " +
+                    "full content. Accepts up to 200 paths in a single call; ALWAYS batch over " +
+                    "sequential single-path calls.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -550,9 +544,22 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                 const file = fileOrErr;
 
                 const cache = plugin.app.metadataCache.getFileCache(file);
+                // File state is independent of metadataCache parsing — always
+                // include it so a single get_metadata call can answer both
+                // "what's in this note" and "when was it last modified".
+                const stat = file.stat;
 
                 if (!cache) {
-                    results.push({ path, frontmatter: null, headings: [], tags: [], links: [] });
+                    results.push({
+                        path,
+                        frontmatter: null,
+                        headings: [],
+                        tags: [],
+                        links: [],
+                        mtime: stat.mtime,
+                        ctime: stat.ctime,
+                        size: stat.size,
+                    });
                     continue;
                 }
 
@@ -583,6 +590,9 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                     headings,
                     tags,
                     links,
+                    mtime: stat.mtime,
+                    ctime: stat.ctime,
+                    size: stat.size,
                 });
             }
 
@@ -686,7 +696,7 @@ export function vaultIsFolder(plugin: NoteAssistantPlugin): RegisteredTool {
                     content: {
                         path,
                         exists: false,
-                        isFolder: false,
+                        is_folder: false,
                     },
                 };
             }
@@ -698,7 +708,7 @@ export function vaultIsFolder(plugin: NoteAssistantPlugin): RegisteredTool {
                 content: {
                     path,
                     exists: true,
-                    isFolder,
+                    is_folder: isFolder,
                 },
             };
         },
@@ -718,12 +728,10 @@ export function vaultResolveLink(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "resolve_link",
                 description:
-                    "Resolve a wikilink reference to its full vault path. " +
-                    "IMPORTANT: Only use this tool when the reference does NOT contain a path separator (/). " +
-                    "For example, use this for 'MyNote' but NOT for 'Notes/MyNote.md' (which already has a path). " +
-                    "When the reference contains '/', resolve it directly from the path structure without using this tool. " +
-                    "For short links (filename-only), searches the entire vault for a unique match. " +
-                    "If a file and folder share the same name, the file takes priority.",
+                    "Resolve a wikilink reference (filename-only) to its full vault path. ONLY use when " +
+                    "the reference has no `/` — for paths like `Notes/MyNote.md` resolve directly. " +
+                    "Searches the whole vault for a unique match; if a file and folder share the name, " +
+                    "the file wins.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -756,9 +764,9 @@ export function vaultResolveLink(plugin: NoteAssistantPlugin): RegisteredTool {
                 type: "object",
                 content: {
                     reference,
-                    resolvedPath: resolved.path,
-                    isFolder: resolved.isFolder,
-                    isShortLink: resolved.isShortLink,
+                    resolved_path: resolved.path,
+                    is_folder: resolved.isFolder,
+                    is_short_link: resolved.isShortLink,
                 },
             };
         },

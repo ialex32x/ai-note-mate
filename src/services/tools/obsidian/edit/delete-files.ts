@@ -17,11 +17,10 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "delete_files",
                 description:
-                    "Move one or more files to trash (safe delete). " +
-                    "Files are moved according to the user's Obsidian \"Files & Links → Deleted files\" preference (system trash, vault .trash, or permanent), and may be recoverable depending on that setting. " +
-                    "Use this when the user wants to delete, remove, or trash files from the vault. " +
-                    "To delete a folder and its contents, use `delete_folder` instead; " +
-                    "folder paths passed here will be reported as failures without affecting other entries.",
+                    "Move one or more files to trash. Disposal honours the user's Obsidian " +
+                    "\"Files & Links → Deleted files\" setting (system trash, vault `.trash`, or " +
+                    "permanent), so recoverability depends on that. Each path is processed " +
+                    "independently. To delete a folder and its contents, use `delete_folder` instead.",
                 parameters: {
                     type: "object",
                     properties: {

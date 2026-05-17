@@ -93,28 +93,17 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "write_file",
                 description:
-                    "Overwrite the ENTIRE content of an existing markdown file in one atomic operation. " +
-                    "Use this when you have produced a fully rewritten body (e.g. after reformatting, " +
-                    "translating, or restructuring the note). This is the ONLY tool that performs " +
-                    "wholesale overwrite of an existing file — `create_file` strictly creates new files " +
-                    "and refuses when the path already exists. " +
+                    "Overwrite the ENTIRE content of an EXISTING markdown file in one atomic operation. " +
+                    "Use when you have produced the FULL new body (e.g. after reformatting, translating, " +
+                    "or restructuring the note). The file MUST exist; this tool refuses to create new " +
+                    "files (use `create_file` for that). " +
                     "\n\n" +
-                    "For SURGICAL multi-region edits (a few typo fixes, heading renames, a couple of " +
-                    "paragraphs to rewrite), prefer `replace_text` — it batches multiple locators into " +
-                    "one atomic call and is far less error-prone than assembling the whole new body. " +
-                    "For line-level insert / replace / delete, use `edit_lines`. " +
-                    "\n\n" +
-                    "The file MUST exist; this tool refuses to create new files. Use `create_file` for that. " +
-                    "\n\n" +
-                    "OPTIONAL SAFETY CHECK: pass `expected_pre_edit_mtime` with the file's `mtime` " +
-                    "(Unix ms timestamp) as observed by the caller — `read_file`, `read_section`, " +
-                    "and `get_file_state` all return `mtime` in their envelopes, and prior write " +
-                    "tools return `new_mtime` you can chain. If provided and the actual on-disk " +
-                    "`mtime` differs, the call fails — this catches the case where the file was " +
-                    "modified between the caller's read and this write. Use the file's `mtime` " +
-                    "rather than its size: character count and on-disk byte count can legitimately " +
-                    "differ (CRLF normalization, multi-byte UTF-8, BOM stripping) and would yield " +
-                    "false-positive race errors. Recommended whenever you have the info.",
+                    "Pass `expected_pre_edit_mtime` (Unix ms; chain from a prior read tool's `mtime` or " +
+                    "another write tool's `new_mtime`) to fail fast on concurrent external edits — strongly " +
+                    "recommended whenever you have the info, since this tool overwrites the whole body. " +
+                    "Use `mtime` rather than file size as the race guard: byte count and character count " +
+                    "can legitimately differ on CRLF / multi-byte / BOM files and would yield false-positive " +
+                    "race errors.",
                 parameters: {
                     type: "object",
                     properties: {

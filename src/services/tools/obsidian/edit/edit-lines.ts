@@ -291,32 +291,23 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "edit_lines",
                 description:
-                    "Apply one or more line-based edits to a file in a single atomic operation. " +
-                    "Supports replacing a line range, deleting a range (replace with empty content), " +
-                    "and inserting new content before a given line — all in the same call. " +
+                    "Apply one or more atomic line-based edits to a file via `edits[]`. Supports replacing " +
+                    "a 1-based inclusive line range (`op: 'replace'`, set `content: ''` to delete) and " +
+                    "inserting before a given line (`op: 'insert'`; use `line = totalLines + 1` to append). " +
+                    "All edits' line numbers refer to the PRE-EDIT file; the tool applies them back-to-front " +
+                    "so earlier edits never shift later ones. Edits must reference disjoint ranges; " +
+                    "overlapping edits are rejected. If validation fails, nothing is written (atomic). " +
+                    "Set `dry_run` to preview. " +
                     "\n\n" +
-                    "LINE NUMBERING: Lines are 1-based and split by '\\n'. A trailing newline at the " +
-                    "end of the file produces a final empty line that DOES count toward the file's " +
-                    "total line count. Always run `read_file` first to verify line numbers " +
-                    "before editing — do not guess. " +
+                    "Lines are 1-based and split by `\\n`; a trailing newline produces a final empty line " +
+                    "that DOES count toward the total. Run `read_file` first to verify line numbers — do " +
+                    "not guess. " +
                     "\n\n" +
-                    "IMPORTANT: When you need multiple edits in the same file, you MUST submit them ALL " +
-                    "in a single call via the `edits` array. Do NOT split them across multiple calls — " +
-                    "every edit's line numbers refer to the file BEFORE any edit is applied, and the tool " +
-                    "applies them back-to-front so earlier edits never shift later edits' line numbers. " +
-                    "Splitting into multiple calls will use stale line numbers and corrupt the file. " +
-                    "\n\n" +
-                    "All edits must reference disjoint ranges; overlapping edits are rejected. " +
-                    "If validation fails, the file is not modified at all (atomic). " +
-                    "Set dry_run to true to preview without modifying the file. " +
-                    "\n\n" +
-                    "RETURN VALUE: On success the response includes `affected_regions` — contiguous " +
-                    "snippets of the post-edit file (±3 lines of context around each change), with " +
-                    "adjacent or overlapping windows merged into a single region. Each region lists " +
-                    "the edits it covers under `edits`, where `input_index` maps back to the position " +
-                    "in your `edits` argument and `new_range` gives the 1-based post-edit line range " +
-                    "of that edit's new content (null for pure deletions). Use this to verify results " +
-                    "without re-reading the file.",
+                    "RETURN: `affected_regions` lists post-edit snippets (±3 lines of context, adjacent " +
+                    "windows merged) with each contained edit's `input_index` (back-reference into your " +
+                    "`edits` array) and `new_range` (1-based post-edit range, null for pure deletions) — " +
+                    "use this to verify without re-reading. Response also echoes `previous_mtime` / " +
+                    "`new_mtime` for chaining into the next tool's `expected_pre_edit_mtime`.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -332,51 +323,44 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "file BEFORE any edit is applied. Edits must not overlap.",
                             items: {
                                 type: "object",
-                                oneOf: [
-                                    {
-                                        type: "object",
-                                        properties: {
-                                            op: { type: "string", enum: ["replace"] },
-                                            start_line: {
-                                                type: "number",
-                                                description: "1-based inclusive start of the range to replace.",
-                                            },
-                                            end_line: {
-                                                type: "number",
-                                                description: "1-based inclusive end of the range to replace.",
-                                            },
-                                            content: {
-                                                type: "string",
-                                                description:
-                                                    "Replacement content. Can be more or fewer lines than the " +
-                                                    "original range. Use an empty string to delete the range. " +
-                                                    "Do NOT append a trailing '\\n' unless you intend an extra " +
-                                                    "empty line — 'X\\n' becomes two lines ['X', ''].",
-                                            },
-                                        },
-                                        required: ["op", "start_line", "end_line", "content"],
+                                properties: {
+                                    op: {
+                                        type: "string",
+                                        enum: ["replace", "insert"],
+                                        description:
+                                            "Edit kind. " +
+                                            "'replace' rewrites/deletes a 1-based inclusive line range " +
+                                            "(use start_line + end_line; pass content='' to delete). " +
+                                            "'insert' inserts content BEFORE the given line (use the " +
+                                            "`line` field; line = totalLines + 1 appends at end of file).",
                                     },
-                                    {
-                                        type: "object",
-                                        properties: {
-                                            op: { type: "string", enum: ["insert"] },
-                                            line: {
-                                                type: "number",
-                                                description:
-                                                    "1-based line number; content is inserted BEFORE this line. " +
-                                                    "Use line = totalLines + 1 to append at end of file.",
-                                            },
-                                            content: {
-                                                type: "string",
-                                                description:
-                                                    "Content to insert (may be one or many lines). Must not be empty. " +
-                                                    "Do NOT append a trailing '\\n' unless you intend an extra " +
-                                                    "empty line — 'X\\n' becomes two lines ['X', ''].",
-                                            },
-                                        },
-                                        required: ["op", "line", "content"],
+                                    start_line: {
+                                        type: "number",
+                                        description:
+                                            "[op=replace only] 1-based inclusive start of the range to replace.",
                                     },
-                                ],
+                                    end_line: {
+                                        type: "number",
+                                        description:
+                                            "[op=replace only] 1-based inclusive end of the range to replace.",
+                                    },
+                                    line: {
+                                        type: "number",
+                                        description:
+                                            "[op=insert only] 1-based line number; content is inserted " +
+                                            "BEFORE this line. Use line = totalLines + 1 to append.",
+                                    },
+                                    content: {
+                                        type: "string",
+                                        description:
+                                            "Replacement / insertion content. For replace, may be more or " +
+                                            "fewer lines than the original range; pass '' to delete. For " +
+                                            "insert, must be non-empty. Do NOT append a trailing '\\n' " +
+                                            "unless you intend an extra empty line — 'X\\n' becomes " +
+                                            "two lines ['X', ''].",
+                                    },
+                                },
+                                required: ["op", "content"],
                             },
                         },
                         dry_run: {
@@ -384,6 +368,14 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                             description:
                                 "If true, validate and preview the result without modifying the file. " +
                                 "Defaults to false.",
+                        },
+                        expected_pre_edit_mtime: {
+                            type: "integer",
+                            minimum: 0,
+                            description:
+                                "Optional Unix ms; the file's expected current `mtime`. If actual on-disk " +
+                                "`mtime` differs, the call fails (concurrent-edit guard). Chain from a prior " +
+                                "read tool's `mtime` or another write tool's `new_mtime`.",
                         },
                     },
                     required: ["path", "edits"],
@@ -395,6 +387,7 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             const path = args["path"] as string;
             const rawEdits = args["edits"];
             const dryRun = (args["dry_run"] as boolean) ?? false;
+            const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
             if (!Array.isArray(rawEdits) || rawEdits.length === 0) {
                 return { success: false, type: "text", content: "`edits` must be a non-empty array." };
@@ -403,6 +396,22 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             const fileOrErr = requireFile(plugin.app, path);
             if (isFailure(fileOrErr)) return fileOrErr;
             const file = fileOrErr;
+
+            const previousMtime = file.stat.mtime;
+            if (
+                expectedPreEditMtime !== undefined
+                && expectedPreEditMtime !== previousMtime
+            ) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `\`expected_pre_edit_mtime\` mismatch: caller believes file mtime is ${expectedPreEditMtime}, ` +
+                        `but actual mtime is ${previousMtime}. This usually means the file was modified ` +
+                        `between your read and this write. Re-read the file (its envelope reports the new mtime) ` +
+                        `and retry with the updated content.`,
+                };
+            }
 
             const original = await plugin.app.vault.read(file);
             const lines = original.split("\n");
@@ -445,6 +454,8 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                 });
                 if (lockErr) return lockErr;
             }
+
+            const newMtime = dryRun ? previousMtime : file.stat.mtime;
 
             // ── Build per-edit summaries and post-edit affected regions ────────
             //
@@ -501,6 +512,8 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                     edits_applied: applied,
                     previous_total_lines: totalLines,
                     new_total_lines: newTotalLines,
+                    previous_mtime: previousMtime,
+                    new_mtime: newMtime,
                     dry_run: dryRun,
                     affected_regions: affectedRegions,
                     ...(dryRun ? { preview: resultContent } : {}),

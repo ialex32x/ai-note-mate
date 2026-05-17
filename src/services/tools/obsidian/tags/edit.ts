@@ -42,13 +42,11 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "edit_file_tags",
                 description:
-                    "Add, remove, or set (overwrite) tags on one or more specific notes. " +
-                    "This is the ONLY safe way to edit tags on individual files — do NOT use replace_text for tag edits, " +
-                    "as it cannot reliably distinguish '#X' from '#XYZ', and cannot safely modify YAML frontmatter. " +
-                    "Frontmatter is updated via the official processFrontMatter API (preserves YAML structure, quoting, key order). " +
-                    "Inline '#tag' occurrences are located via the metadata cache's exact offsets. " +
-                    "Operations are idempotent: adding an existing tag or removing a missing tag is a no-op, not an error. " +
-                    "If the user wants to rename a tag everywhere across the entire vault, use rename_tag instead.",
+                    "Add / remove / set tags on one or more specific notes. Frontmatter is updated via " +
+                    "`processFrontMatter` (preserves YAML structure, quoting, key order); inline `#tag` " +
+                    "occurrences are located via the metadata cache's exact offsets — neither YAML nor " +
+                    "in-body prose can get corrupted. Operations are idempotent: adding an existing tag " +
+                    "or removing a missing tag is a no-op.",
                 parameters: {
                     type: "object",
                     properties: {

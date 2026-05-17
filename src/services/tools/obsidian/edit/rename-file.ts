@@ -18,17 +18,10 @@ export function vaultRenameFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "rename_or_move_file",
                 description:
-                    "Rename AND/OR move a file or folder within the vault in a single atomic operation. " +
-                    "Setting `new_path` to a path in a different folder MOVES the file (e.g. 'Notes/A.md' → 'Archive/A.md'); " +
-                    "setting it to a different filename in the same folder RENAMES it; you can do both at once. " +
-                    "All internal links (wikilinks) pointing to this file are automatically updated according to the user's Obsidian preferences. " +
-                    "Parent folders for the new path are created automatically if they do not exist. " +
-                    "\n\n" +
-                    "ALWAYS use this tool whenever the user wants to rename, move, relocate, or reorganize a file or folder. " +
-                    "Do NOT move a file by reading its content with `read_file`, recreating it at the destination with " +
-                    "`create_file`, and then deleting the original with `delete_files` — that approach loses wikilink " +
-                    "updates, wastes tokens, and can leave duplicate or orphaned files if any step fails. " +
-                    "This tool is the only correct way to move/rename inside the vault.",
+                    "Rename and/or move a file or folder within the vault in a single atomic operation. " +
+                    "Different folder = move; different filename = rename; both at once is fine. " +
+                    "Internal wikilinks are automatically updated per the user's Obsidian preferences, " +
+                    "and missing parent folders for `new_path` are created automatically.",
                 parameters: {
                     type: "object",
                     properties: {

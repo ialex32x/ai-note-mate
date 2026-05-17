@@ -18,12 +18,9 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "prepend_file",
                 description:
-                    "Prepend text to the beginning of an existing file in the vault. " +
-                    "If the file has YAML frontmatter (delimited by ---), the content is inserted " +
-                    "immediately after the closing --- of the frontmatter block. " +
-                    "If there is no frontmatter, the content is inserted at the very beginning of the file. " +
-                    "If the file does not exist, it will be created with the given content. " +
-                    "Use this when the user wants to insert, prepend, or add content to the beginning or top of a note.",
+                    "Prepend text to the beginning of an existing file. If the file has YAML " +
+                    "frontmatter (delimited by `---`), the content is inserted immediately AFTER the " +
+                    "closing `---`; otherwise at the very start. Creates the file if missing.",
                 parameters: {
                     type: "object",
                     properties: {

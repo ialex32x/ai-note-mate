@@ -15,9 +15,9 @@ export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "search_files",
                 description:
-                    "Search for files in the vault whose path or filename contains the given keyword. " +
-                    "Case-insensitive substring match. " +
-                    "Use this when the user wants to find, locate, look for, or search for files by name or path.",
+                    "Find files in the vault by path / filename keyword (case-insensitive substring). " +
+                    "Use for 'find file X', 'locate notes named …', etc. Paginated: when `has_more` is " +
+                    "true, increase `skip` by the previous `count` for the next page.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -31,6 +31,12 @@ export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "Optional file extension filter, e.g. 'md', 'pdf'. " +
                                 "Omit to match all extensions.",
                         },
+                        skip: {
+                            type: "number",
+                            description:
+                                "Number of matching files to skip before collecting results. Defaults to 0. " +
+                                "Use together with `limit` for pagination.",
+                        },
                         limit: {
                             type: "number",
                             description: "Maximum number of results to return. Defaults to 20.",
@@ -43,19 +49,33 @@ export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
         exec: async (_chatStream, args, _signal) => {
             const query = (args["query"] as string).toLowerCase();
             const extension = args["extension"] as string | undefined;
-            const limit = (args["limit"] as number) ?? 20;
+            const skip = Math.max(0, (args["skip"] as number) ?? 0);
+            const limit = Math.max(1, (args["limit"] as number) ?? 20);
 
             const allFiles = plugin.app.vault.getFiles();
-            const results = allFiles
-                .filter((f) => {
-                    const pathMatch = f.path.toLowerCase().includes(query);
-                    const extMatch = extension ? f.extension === extension.replace(/^\./, "") : true;
-                    return pathMatch && extMatch;
-                })
-                .slice(0, limit)
-                .map((f) => ({ path: f.path, name: f.name, extension: f.extension }));
+            const matches = allFiles.filter((f) => {
+                const pathMatch = f.path.toLowerCase().includes(query);
+                const extMatch = extension ? f.extension === extension.replace(/^\./, "") : true;
+                return pathMatch && extMatch;
+            });
 
-            return { success: true, type: "object", content: { query, results } };
+            const total = matches.length;
+            const page = matches.slice(skip, skip + limit);
+            const hasMore = skip + page.length < total;
+            const files = page.map((f) => ({ path: f.path, name: f.name, extension: f.extension }));
+
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    query,
+                    total,
+                    count: files.length,
+                    skip,
+                    has_more: hasMore,
+                    files,
+                },
+            };
         },
     };
 }
@@ -78,12 +98,11 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
             function: {
                 name: "search_content",
                 description:
-                    "Vault-wide full-text search across ALL markdown files. " +
-                    "Returns matching files with line numbers and surrounding context lines. " +
-                    "Use this when the user wants to find text, content, or keywords across the whole vault " +
-                    "(not just by filename) and the target file is unknown. " +
-                    "DO NOT use this to search inside a single known file — use `grep_file` instead, " +
-                    "which is much cheaper, supports multiple queries at once, and can be scoped to a heading section.",
+                    "Vault-wide full-text search across ALL markdown files; returns matching files with " +
+                    "line numbers and surrounding context lines. Use when the target file is UNKNOWN. " +
+                    "If you already know the file, use `grep_file` instead — much cheaper, supports " +
+                    "multiple queries at once, and can be scoped to a heading section. Paginated via " +
+                    "`skip` / `limit`.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -103,10 +122,16 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                             type: "boolean",
                             description: "Whether the search is case-sensitive. Defaults to false.",
                         },
+                        skip: {
+                            type: "number",
+                            description:
+                                "Number of matching files to skip before collecting results. Defaults to 0. " +
+                                "Use together with `limit` for pagination.",
+                        },
                         limit: {
                             type: "number",
                             description:
-                                "Maximum number of matching files to return. Defaults to 10.",
+                                "Maximum number of matching files to return per page. Defaults to 10.",
                         },
                         context_lines: {
                             type: "number",
@@ -122,7 +147,8 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
         exec: async (_chatStream, args, _signal) => {
             const query = args["query"] as string;
             const caseSensitive = (args["case_sensitive"] as boolean) ?? false;
-            const limit = (args["limit"] as number) ?? 10;
+            const skip = Math.max(0, (args["skip"] as number) ?? 0);
+            const limit = Math.max(1, (args["limit"] as number) ?? 10);
             const contextLines = (args["context_lines"] as number) ?? 2;
             const useRegex = (args["use_regex"] as boolean) ?? false;
 
@@ -153,14 +179,13 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
 
             const filesToSearch = plugin.app.vault.getMarkdownFiles();
 
-            const matches: {
+            type FileMatch = {
                 path: string;
                 occurrences: { line: number; context: string }[];
-            }[] = [];
+            };
+            const allMatches: FileMatch[] = [];
 
             for (const file of filesToSearch) {
-                if (matches.length >= limit) break;
-
                 const content = await plugin.app.vault.cachedRead(file);
                 const lines = content.split("\n");
                 const occurrences: { line: number; context: string }[] = [];
@@ -178,11 +203,26 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                 }
 
                 if (occurrences.length > 0) {
-                    matches.push({ path: file.path, occurrences });
+                    allMatches.push({ path: file.path, occurrences });
                 }
             }
 
-            return { success: true, type: "object", content: { query, matches } };
+            const total = allMatches.length;
+            const matches = allMatches.slice(skip, skip + limit);
+            const hasMore = skip + matches.length < total;
+
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    query,
+                    total,
+                    count: matches.length,
+                    skip,
+                    has_more: hasMore,
+                    matches,
+                },
+            };
         },
     };
 }
