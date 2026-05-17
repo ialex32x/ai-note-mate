@@ -511,6 +511,11 @@ export class AgentOrchestrator implements IChatAgent {
         // We intercept the original config callbacks to add orchestration logic
         this._mainAgent = new ChatStream({
             ...config,
+            // Tag the main agent's log lines so the per-LLM-call tool-count
+            // debug output (see `ChatStream.prompt`) is distinguishable
+            // from each sub-agent's. Overrides any value the caller may
+            // have set in `config` since this orchestrator owns the label.
+            agentLabel: 'main',
             // Dynamic tools: include delegate_task + any user-provided dynamic tools
             dynamicTools: () => {
                 const userDynamic = config.dynamicTools?.() ?? [];

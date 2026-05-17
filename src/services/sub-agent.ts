@@ -507,6 +507,11 @@ export class SubAgent {
         // `_currentExec*` fields refreshed at the start of each execute() call.
         const chatStream = new ChatStream({
             systemPrompt: this._config.systemPrompt,
+            // Tag every LLM-call debug log with this sub-agent's name so
+            // a mixed orchestration trace (main + multiple sub-agents
+            // interleaving over many tool-call rounds) can be untangled
+            // per agent at a glance. See `ChatStreamConfig.agentLabel`.
+            agentLabel: this._config.name,
             // Inherit the same context-compression tuning as the main agent
             // (set by the orchestrator from the active profile). Without this
             // a long-running sub-agent would compress on the built-in

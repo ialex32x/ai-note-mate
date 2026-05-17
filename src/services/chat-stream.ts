@@ -324,6 +324,17 @@ export interface ChatStreamConfig {
     /** Optional system prompt prepended to every conversation */
     systemPrompt?: string;
     /**
+     * Optional short label identifying this ChatStream instance for
+     * diagnostic logs (e.g. `"main"` for the orchestrator's main agent
+     * or a sub-agent's name like `"vault_inspector"`). Pure cosmetic —
+     * appears as the `agent=…` field in `console.debug` lines emitted
+     * around tool-set construction and LLM dispatch, so a single
+     * console capture can be untangled into per-agent flows. Default
+     * `"agent"` keeps single-agent callers (tests, ad-hoc usage) from
+     * needing to supply a value.
+     */
+    agentLabel?: string;
+    /**
      * Optional callback that returns additional tools on each prompt call.
      * Used for dynamic tool sources (e.g., MCP servers) that may change
      * between sessions without re-creating the ChatStream instance.
@@ -1170,6 +1181,22 @@ export class ChatStream implements IChatAgent {
                 } else {
                     // console.log("no summarizer configured, skipping context reduction");
                 }
+
+                // Per-LLM-call tool-count log. Emitted on every iteration
+                // of the tool-call loop (one line per outgoing provider
+                // request) so a multi-round turn produces one line per
+                // round. The label distinguishes main agent vs. each
+                // sub-agent in a mixed orchestration trace; the comma-
+                // separated names let us spot embedding/capability filter
+                // surprises at a glance without diffing against the
+                // detailed score table above.
+                const agentLabel = this._config.agentLabel ?? 'agent';
+                console.debug(
+                    `[agent="${agentLabel}"] sending ${toolSchemas.length} tool(s) to LLM` +
+                    (toolSchemas.length > 0
+                        ? `: ${toolSchemas.map(s => s.function.name).join(', ')}`
+                        : ''),
+                );
 
                 const stream = activeProvider.createStream(
                     messagesToSend,
