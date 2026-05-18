@@ -25,12 +25,13 @@ import { runEditTask } from "./edit-history-runner";
 import { createProviderForActiveProfile } from "../utils/provider-factory";
 import { EditHistoryView } from "./edit-history-view";
 
-const ACTIONS: readonly EditAction[] = ["expand", "shorten", "polish"];
+const ACTIONS: readonly EditAction[] = ["expand", "shorten", "polish", "continue"];
 
 const ACTION_ICONS: Record<EditAction, IconName> = {
     expand: "maximize-2",
     shorten: "minimize-2",
     polish: "wand-2",
+    continue: "chevrons-right",
 };
 
 /**

@@ -37,6 +37,7 @@ const ACTION_ICONS: Record<EditAction, IconName> = {
     expand: "maximize-2",
     shorten: "minimize-2",
     polish: "wand-2",
+    continue: "chevrons-right",
 };
 
 /**

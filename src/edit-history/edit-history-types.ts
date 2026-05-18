@@ -8,8 +8,17 @@
  * See {@link ../../docs/ai-edit-history-plan.md} for the full design.
  */
 
-/** Action variants exposed in the editor right-click menu. */
-export type EditAction = "expand" | "shorten" | "polish";
+/**
+ * Action variants exposed in the editor right-click menu.
+ *
+ * - `expand` / `shorten` / `polish` rewrite the selection in place: the AI
+ *   output REPLACES the captured `from..to` range.
+ * - `continue` treats the selection as context and APPENDS the AI output
+ *   immediately after `to`, leaving the original selection untouched.
+ *   The stale check on the captured range still applies, so a user edit
+ *   inside the selection during generation correctly aborts the write-back.
+ */
+export type EditAction = "expand" | "shorten" | "polish" | "continue";
 
 /** Lifecycle states a task can move through. */
 export type EditTaskStatus =

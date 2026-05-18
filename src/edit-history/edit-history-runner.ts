@@ -142,9 +142,18 @@ function notifyFailure(reason: string): void {
 type WriteResult = "ok" | "stale";
 
 /**
- * Locate the original editor and replace the captured range with `rewritten`.
- * Returns `"stale"` if either the file or the exact original text can no
- * longer be found at the captured coordinates.
+ * Locate the original editor and apply the AI output back into the buffer.
+ *
+ * - For rewrite actions (expand/shorten/polish), `rewritten` REPLACES the
+ *   captured `from..to` range.
+ * - For `continue`, the captured range is kept intact and `rewritten` is
+ *   INSERTED immediately after `to`. The stale check still validates that
+ *   the captured range matches `originalText` so a mid-stream edit aborts
+ *   the write-back rather than splicing the continuation into a now-
+ *   inconsistent neighbourhood.
+ *
+ * Returns `"stale"` if the file or the exact captured text can no longer
+ * be found at the captured coordinates.
  */
 function applyRewriteToEditor(
     plugin: NoteAssistantPlugin,
@@ -169,7 +178,12 @@ function applyRewriteToEditor(
     }
 
     try {
-        editor.replaceRange(rewritten, from, to);
+        if (task.action === "continue") {
+            // Insert AFTER the selection; selection text remains intact.
+            editor.replaceRange(rewritten, to, to);
+        } else {
+            editor.replaceRange(rewritten, from, to);
+        }
         return "ok";
     } catch {
         return "stale";
