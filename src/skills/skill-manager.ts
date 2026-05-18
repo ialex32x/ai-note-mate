@@ -30,6 +30,28 @@ export interface SkillDiscoveryConfig {
   skillDirs: string[];
 }
 
+/**
+ * Options accepted by {@link SkillManager.buildSystemPromptForSkills}.
+ */
+export interface BuildSystemPromptForSkillsOptions {
+  /**
+   * Names of skills whose body is already in the conversation context
+   * (loaded via `load_skill` or the auto-inject path). Used to render
+   * an `[loaded]` tag so the model reuses the in-context body instead
+   * of re-firing `load_skill`. Matching is case-sensitive against
+   * `skill.name` — pass exactly what {@link SkillManager.getActiveSkillNames}
+   * returns.
+   */
+  activeNames?: Set<string>;
+  /**
+   * Optional one-line directive inserted right before the per-skill
+   * listing. The embedding-driven shortlister uses this to surface a
+   * strong match, e.g. "Strong skill match this turn: `foo`
+   * (similarity 0.74) — load it before proceeding."
+   */
+  headerHint?: string;
+}
+
 export class SkillManager {
   private skills: SkillDefinition[] = [];
   private activeSkillNames: Set<string> = new Set();
@@ -215,9 +237,39 @@ export class SkillManager {
 
   /**
    * Activates a skill by name (marks it as "in use" for the current session).
+   * Used by:
+   *   - `load_skill` tool: records that the skill body has been injected
+   *     into the conversation, so the catalogue can mark it `[loaded]` on
+   *     subsequent turns and the model knows it doesn't need to re-load.
+   *   - skill-catalogue auto-inject path: same intent, just done up-front
+   *     when similarity is very high (skips the explicit `load_skill`
+   *     round trip — see `src/skills/skill-catalogue.ts`).
    */
   activateSkill(name: string): void {
     this.activeSkillNames.add(name);
+  }
+
+  /**
+   * Forget every previously-activated skill in this session.
+   *
+   * Wired into ChatStream's `onContextCompressed` hook: after the reducer
+   * drops historical messages, any previously-loaded skill body is no
+   * longer reliably in the model's context. Clearing the set lets the
+   * catalogue stop labelling those skills as `[loaded]` and lets the
+   * model re-trigger `load_skill` (or our auto-inject path) for them on
+   * a future turn.
+   */
+  clearActiveSkills(): void {
+    this.activeSkillNames.clear();
+  }
+
+  /**
+   * Returns a snapshot of currently-active skill names.
+   * Exposed for the catalogue renderer; callers should treat the returned
+   * Set as read-only.
+   */
+  getActiveSkillNames(): Set<string> {
+    return new Set(this.activeSkillNames);
   }
 
   /**
@@ -229,10 +281,10 @@ export class SkillManager {
 
   /**
    * Builds a system prompt snippet listing available skills as a *catalogue*
-   * (name + description only). The full skill body is loaded on demand via
-   * the `load_skill` tool — this is the "progressive disclosure" pattern,
-   * keeping the initial context small while still letting the model discover
-   * which skills exist.
+   * (name + description, and optional `when_to_use` per entry). The full
+   * skill body is loaded on demand via the `load_skill` tool — this is the
+   * "progressive disclosure" pattern, keeping the initial context small
+   * while still letting the model discover which skills exist.
    *
    * Equivalent to {@link buildSystemPromptForSkills} called with the
    * current enabled-skill set. Callers that want to render a *subset*
@@ -259,34 +311,65 @@ export class SkillManager {
    * `load_skill`, so callers MUST filter `.disabled` themselves before
    * calling.
    *
+   * `opts.activeNames` (when provided) flags skills whose body has
+   * already been injected into the conversation (via `load_skill` or
+   * the auto-inject path) — those entries are rendered with an
+   * `[loaded]` tag so the model knows to reuse what it already has
+   * instead of re-firing `load_skill`. The set is intersected with
+   * `skills` so stale activations from filtered-out skills are silently
+   * dropped.
+   *
+   * `opts.headerHint` is an optional one-line directive that gets
+   * inserted right before the per-skill listing — used by the
+   * embedding-driven shortlister to nudge the model toward a strongly-
+   * matching skill on the current turn.
+   *
    * @returns Catalogue text, or '' when `skills` is empty.
    */
-  buildSystemPromptForSkills(skills: SkillDefinition[]): string {
+  buildSystemPromptForSkills(
+    skills: SkillDefinition[],
+    opts: BuildSystemPromptForSkillsOptions = {},
+  ): string {
     if (skills.length === 0) {
       return '';
     }
 
+    const activeNames = opts.activeNames;
     const parts: string[] = [
-      '## Available Skills',
+      '## Available Skills (READ FIRST — STEP 0)',
       '',
-      'Below is a catalogue of skills (name + short description). The full',
-      'procedure body of each skill is kept out of context to save tokens',
-      'and is fetched on demand via the `load_skill` tool.',
+      '**Before** invoking any other tool, answering, or delegating, scan',
+      'this catalogue. If any listed skill matches the user\'s intent — by',
+      'name, description, or `When to use` line — you MUST call',
+      '`load_skill` with that skill\'s name and follow the returned',
+      'procedure. Skills encode tested, opinionated procedures for this',
+      'vault; improvising when a skill exists wastes turns and produces',
+      'inconsistent results. Prefer skill execution over `delegate_task`',
+      'whenever both could apply.',
       '',
-      'When a user request matches a listed skill AND that skill\'s full',
-      'instructions have not already been provided earlier in this',
-      'conversation, call `load_skill` with the skill name to retrieve',
-      'its procedure, then follow it. If you already received a skill\'s',
-      'instructions in a previous turn of this conversation, those',
-      'instructions remain in context — reuse them directly and do NOT',
-      'call `load_skill` again for the same skill.',
-      '',
-      'Skills catalogue:',
+      'Each skill\'s full body is kept out of context to save tokens and',
+      'is fetched on demand via `load_skill`. Skills tagged `[loaded]`',
+      'below already have their body in your context from an earlier',
+      'turn — reuse those directly and do NOT call `load_skill` for them',
+      'again unless the user indicates the skill has been modified.',
       '',
     ];
 
+    if (opts.headerHint) {
+      parts.push(opts.headerHint, '');
+    }
+
+    parts.push('Skills catalogue:', '');
+
     for (const skill of skills) {
-      parts.push(`- **${skill.name}**: ${skill.description}`);
+      const isActive = activeNames?.has(skill.name) ?? false;
+      const activeTag = isActive ? ' `[loaded]`' : '';
+      parts.push(`- **${skill.name}**${activeTag}: ${skill.description}`);
+      if (skill.whenToUse) {
+        // Indent the trigger under the bullet so the model reads it as
+        // metadata of the same entry, not as a sibling skill.
+        parts.push(`    - When to use: ${skill.whenToUse}`);
+      }
     }
 
     return parts.join('\n');
@@ -318,6 +401,10 @@ export class SkillManager {
       '',
       `**Description:** ${skill.description}`,
     ];
+
+    if (skill.whenToUse) {
+      parts.push(`**When to use:** ${skill.whenToUse}`);
+    }
 
     if (skillDir) {
       parts.push(

@@ -301,10 +301,26 @@ export interface ChatStreamConfig {
     systemPrompt?: string;
     /**
      * Optional callback that produces extra system-prompt text to
+     * prepend on each {@link prompt} call. Same shape as
+     * {@link systemPromptSuffix} but the returned text lands *before*
+     * {@link systemPrompt} (separated by a blank line).
+     *
+     * Used for fragments whose placement matters — e.g. the skills
+     * catalogue (see `src/skills/skill-catalogue.ts`), which benefits
+     * from being at the very top of the system prompt so the model's
+     * attention to "STEP 0: scan skills" isn't diluted by the
+     * surrounding rules/HINTS/DELEGATION blocks.
+     *
+     * Errors are caught and ignored so a failing prefix provider can
+     * never block the actual LLM request. Aborts (DOMException with
+     * `name === 'AbortError'`) propagate to the surrounding flow as
+     * usual.
+     */
+    systemPromptPrefix?: (query: string, signal?: AbortSignal) => string | Promise<string>;
+    /**
+     * Optional callback that produces extra system-prompt text to
      * append on each {@link prompt} call. Receives the current user
-     * input so providers can adapt the appended text to the turn —
-     * e.g. shortlist a skills catalogue by embedding-similarity to
-     * the current query (see `src/skills/skill-catalogue.ts`).
+     * input so providers can adapt the appended text to the turn.
      *
      * The returned text is appended to {@link systemPrompt} separated
      * by a blank line; returning '' (or `undefined`) leaves the
@@ -969,23 +985,41 @@ export class ChatStream implements IChatAgent {
         //     completed result yet) are skipped \u2014 they would produce orphan
         //     tool_results that the validator would drop anyway.
         // Resolve the effective system prompt for this turn. Static
-        // `systemPrompt` is the baseline; `systemPromptSuffix` can append
-        // a per-turn, query-aware fragment (e.g. an embedding-shortlisted
-        // skill catalogue — see `src/skills/skill-catalogue.ts`). Suffix
-        // failures degrade silently to the baseline so a broken suffix
-        // provider can never block the LLM call.
-        let effectiveSystemPrompt = this._config.systemPrompt ?? '';
+        // `systemPrompt` is the baseline; `systemPromptPrefix` /
+        // `systemPromptSuffix` can wrap a per-turn, query-aware fragment
+        // around it (e.g. an embedding-shortlisted skill catalogue at
+        // the very top — see `src/skills/skill-catalogue.ts`). Prefix /
+        // suffix failures degrade silently to the baseline so a broken
+        // provider can never block the LLM call. The final order is:
+        //   [prefix] · "\n\n" · [baseline] · "\n\n" · [suffix]
+        // with empty segments simply dropped from the join.
+        const baseline = this._config.systemPrompt ?? '';
+        const segments: string[] = [];
+
+        if (this._config.systemPromptPrefix) {
+            try {
+                const prefix = await this._config.systemPromptPrefix(
+                    userInput,
+                    this._abortController?.signal,
+                );
+                if (prefix) segments.push(prefix);
+            } catch (err) {
+                if (err instanceof DOMException && err.name === 'AbortError') {
+                    throw err;
+                }
+                console.warn('ChatStream: systemPromptPrefix threw, falling back to base prompt', err);
+            }
+        }
+
+        if (baseline) segments.push(baseline);
+
         if (this._config.systemPromptSuffix) {
             try {
                 const suffix = await this._config.systemPromptSuffix(
                     userInput,
                     this._abortController?.signal,
                 );
-                if (suffix) {
-                    effectiveSystemPrompt = effectiveSystemPrompt
-                        ? `${effectiveSystemPrompt}\n\n${suffix}`
-                        : suffix;
-                }
+                if (suffix) segments.push(suffix);
             } catch (err) {
                 if (err instanceof DOMException && err.name === 'AbortError') {
                     throw err;
@@ -993,6 +1027,8 @@ export class ChatStream implements IChatAgent {
                 console.warn('ChatStream: systemPromptSuffix threw, falling back to base prompt', err);
             }
         }
+
+        const effectiveSystemPrompt = segments.join('\n\n');
 
         const rawMessages: ChatMessageParam[] = [];
         if (effectiveSystemPrompt) {

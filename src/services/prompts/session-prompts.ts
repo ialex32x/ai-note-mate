@@ -137,6 +137,7 @@ Do NOT delegate when:
 - The user is having a casual conversation
 - The task only requires memory recall or conversation history
 - You already hold a tool that does the job
+- **A listed skill in the "Available Skills" catalogue matches the request.** Skills encode tested procedures specific to this vault — prefer \`load_skill\` over \`delegate_task\` whenever both could apply. Delegation only re-derives what the skill already prescribes.
 
 When delegating, provide a clear and complete task description. After receiving the result, synthesize it into a natural response.
 

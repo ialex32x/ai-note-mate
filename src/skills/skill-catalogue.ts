@@ -1,35 +1,64 @@
 /**
- * Build the skills catalogue snippet that gets appended to the main
+ * Build the skills catalogue snippet that gets prepended to the main
  * agent's system prompt for a given user turn.
  *
- * Two modes, picked transparently:
+ * Three escalating modes, picked transparently per turn:
  *
- *   - **Embedding shortlist** (preferred when an embedding profile is
- *     configured and the query is "long enough" — see {@link isQueryTooShort}):
- *     embed the user's query plus each enabled skill's
- *     `name + description`, rank by cosine similarity, then advertise
- *     only the top `topK` skills whose score clears `similarityThreshold`.
- *     Mirrors the same shortlist pattern `ChatStream._getBestMatchedTools`
- *     uses for on-demand tools, including the zero-pass fallback
- *     (when *every* skill is filtered out, keep `min(3, topK)` best
- *     scoring ones so the model still has a workable surface area).
+ *   - **Auto-inject** (top-1 similarity ≥ {@link SKILL_AUTO_INJECT_THRESHOLD}):
+ *     the full body of the top-matched skill is injected inline (above
+ *     the catalogue). The model can follow it directly — no `load_skill`
+ *     round trip needed. The skill is marked active so subsequent turns
+ *     in the same session don't re-inject it.
  *
- *   - **Full catalogue fallback**: when embedding is not configured,
- *     the query is too short, the embedder hasn't been initialized,
- *     or the embedding call throws — return every enabled skill. This
- *     matches the pre-embedding behaviour exactly, so a misconfigured
- *     embedding setup can never *reduce* what the model can discover.
+ *   - **Strong hint** (top-1 similarity ≥ {@link SKILL_HINT_THRESHOLD}):
+ *     the catalogue gets a one-line directive at the top naming the
+ *     best match, but the full body stays out of context. Saves tokens
+ *     vs. auto-inject while still concentrating the model's attention.
  *
- * The returned text is intentionally indistinguishable between modes
- * (no "this is a shortlist" hint) so the model treats every advertised
- * skill as the full available set — preventing it from guessing at
- * names that happened to be filtered out this turn.
+ *   - **Plain shortlist**: the catalogue lists the top-K matching skills
+ *     (and falls back to the best few when the threshold filters
+ *     everyone out), without any extra steering. This is the historical
+ *     behaviour.
+ *
+ * **Fallback path**: when embedding is not configured, the query is too
+ * short, the embedder hasn't been initialized, or the embedding call
+ * throws — return the full enabled-skill catalogue. This matches the
+ * pre-embedding behaviour exactly, so a misconfigured embedding setup
+ * can never *reduce* what the model can discover.
+ *
+ * Active-skill tracking ({@link SkillManager.getActiveSkillNames}) is
+ * woven through every mode: skills whose body is already in context are
+ * rendered with `[loaded]` so the model knows to reuse them. The set is
+ * cleared by ChatStream's `onContextCompressed` hook so post-compression
+ * the catalogue can re-trigger them again.
  */
 
 import { findSimilar, isQueryTooShort } from '../services/text-embedding';
 import { getGlobalEmbedder } from '../services/embedder';
 import type { MinimalModelConfig } from '../services/llm-provider';
 import type { SkillManager, SkillDefinition } from './skill-manager';
+
+/**
+ * Cosine-similarity floor above which the top-1 matched skill is auto-
+ * injected (full body) into the system prompt. Above this we treat the
+ * match as "certain enough that the round-trip cost of `load_skill`
+ * outweighs the token cost of inlining the body".
+ *
+ * Tuned conservatively (0.75) so we don't inline irrelevant bodies on
+ * generic queries. Users with non-OpenAI embedding models that produce
+ * different distributions can effectively retune by lowering
+ * `skillFilterSimilarityThreshold` (which gates entry into the
+ * shortlist in the first place); the auto-inject floor is a separate,
+ * fixed safety threshold for now.
+ */
+export const SKILL_AUTO_INJECT_THRESHOLD = 0.75;
+/**
+ * Cosine-similarity floor above which a "strong skill match" hint is
+ * inserted at the top of the catalogue (no body injection). Set below
+ * {@link SKILL_AUTO_INJECT_THRESHOLD} so we get a useful middle band
+ * where the model is nudged but the body is still loaded on demand.
+ */
+export const SKILL_HINT_THRESHOLD = 0.55;
 
 /** Knobs for the embedding-based shortlist. Same shape as `EmbeddingFilterOptions`. */
 export interface SkillCatalogueFilterOptions {
@@ -55,7 +84,7 @@ export interface BuildSkillSystemPromptParams {
 }
 
 /**
- * Compose the catalogue text appended to the main agent's system prompt.
+ * Compose the catalogue text prepended to the main agent's system prompt.
  *
  * Safe to call on every user turn:
  *   - Skill descriptions are embedded only once each — the shared
@@ -74,22 +103,24 @@ export async function buildSkillSystemPromptForQuery(
         return '';
     }
 
+    const activeNames = skillManager.getActiveSkillNames();
+
     // ── Decide whether to shortlist or hand back the full catalogue ──
     //
     // Each of these branches is a "no embedding-based filtering" case;
     // the user-visible behaviour matches the pre-embedding implementation
-    // exactly, so a misconfigured or absent embedding stack never reduces
-    // what the model can discover.
+    // exactly (modulo the new active-skill `[loaded]` marker, which is
+    // additive and always safe to render).
     if (!embeddingConfig) {
-        return skillManager.buildSystemPromptForSkills(enabledSkills);
+        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
     }
     if (isQueryTooShort(query)) {
-        return skillManager.buildSystemPromptForSkills(enabledSkills);
+        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
     }
     const embedder = getGlobalEmbedder();
     if (!embedder) {
         console.warn('SkillCatalogue: global embedder not initialized, falling back to full catalogue');
-        return skillManager.buildSystemPromptForSkills(enabledSkills);
+        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
     }
 
     const similarityThreshold = Math.max(0, Math.min(1, filterOpts?.similarityThreshold ?? 0));
@@ -118,8 +149,6 @@ export async function buildSkillSystemPromptForQuery(
             kept = allRanked.slice(0, fallbackCount);
         }
 
-        const shortlisted = kept.map(r => enabledSkills[r.index]!);
-
         // Detailed per-skill similarity log — same shape as the tool
         // filter's diagnostic table so users / devs can read both logs
         // with the same mental model.
@@ -131,17 +160,72 @@ export async function buildSkillSystemPromptForQuery(
         }));
         console.debug(scoreTable);
 
-        const droppedCount = enabledSkills.length - shortlisted.length;
+        const droppedCount = enabledSkills.length - kept.length;
         const filterRate = enabledSkills.length > 0
             ? droppedCount / enabledSkills.length
             : 0;
         console.debug(
-            `Skill catalogue filter: total=${enabledSkills.length} → kept ${shortlisted.length}; ` +
+            `Skill catalogue filter: total=${enabledSkills.length} → kept ${kept.length}; ` +
             `dropped ${droppedCount} (filterRate=${(filterRate * 100).toFixed(1)}%, ` +
             `threshold=${similarityThreshold}, topK=${topK})`,
         );
 
-        return skillManager.buildSystemPromptForSkills(shortlisted);
+        const shortlisted = kept.map(r => enabledSkills[r.index]!);
+        const top = kept[0];
+        const topSkill = top ? enabledSkills[top.index]! : null;
+        const topSimilarity = top?.similarity ?? 0;
+
+        // ── Mode escalation: auto-inject > hint > plain ──
+        //
+        // Auto-inject only when the top match is well above the hint
+        // threshold AND the skill isn't already loaded in this session
+        // (the [loaded] marker is enough; injecting again wastes tokens).
+        // The body is prepended *above* the catalogue so the model sees
+        // the procedure first; the catalogue still appears below so the
+        // model knows the full skill universe and that this one is now
+        // loaded.
+        if (topSkill
+            && topSimilarity >= SKILL_AUTO_INJECT_THRESHOLD
+            && !activeNames.has(topSkill.name)
+        ) {
+            const instructions = skillManager.buildSkillInstructions(topSkill.name);
+            if (instructions) {
+                skillManager.activateSkill(topSkill.name);
+                // Refresh the snapshot so the catalogue below also tags
+                // the just-injected skill as [loaded].
+                const refreshedActive = skillManager.getActiveSkillNames();
+                const catalogue = skillManager.buildSystemPromptForSkills(
+                    shortlisted,
+                    {
+                        activeNames: refreshedActive,
+                        headerHint: formatStrongMatchHint(topSkill.name, topSimilarity, true),
+                    },
+                );
+                const banner = [
+                    '## Skill Pre-Loaded For This Turn',
+                    '',
+                    `The user's request strongly matches the **${topSkill.name}** skill ` +
+                    `(similarity ${topSimilarity.toFixed(2)}). Its full procedure is ` +
+                    'inlined immediately below — follow it directly, no `load_skill` ' +
+                    'call needed.',
+                    '',
+                    instructions,
+                    '',
+                ].join('\n');
+                return `${banner}\n${catalogue}`;
+            }
+            // Instructions unavailable (skill was removed mid-turn?) — fall
+            // through to the hint branch so we still surface the match.
+        }
+
+        if (topSkill && topSimilarity >= SKILL_HINT_THRESHOLD) {
+            return skillManager.buildSystemPromptForSkills(shortlisted, {
+                activeNames,
+                headerHint: formatStrongMatchHint(topSkill.name, topSimilarity, false),
+            });
+        }
+
+        return skillManager.buildSystemPromptForSkills(shortlisted, { activeNames });
     } catch (err) {
         // The Embedder already marked itself as `unavailable` (see
         // Embedder.embed); we just degrade to the full catalogue here.
@@ -153,23 +237,59 @@ export async function buildSkillSystemPromptForQuery(
             throw err;
         }
         console.error('SkillCatalogue: embedding failed, falling back to full catalogue', err);
-        return skillManager.buildSystemPromptForSkills(enabledSkills);
+        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
     }
 }
 
 /**
  * Compose the text that represents a single skill in the embedding
  * space. Mirrors `buildToolEmbeddingText` in spirit — combine the
- * strongest semantic signal (name + description) into one newline-
- * separated blob so cosine similarity has more than just a one-liner
- * to bite on. Skill bodies are deliberately NOT included: they live
- * out-of-prompt behind `load_skill` and embedding them would dilute
- * the ranking with implementation noise.
+ * strongest semantic signals into one newline-separated blob so cosine
+ * similarity has more than just a one-liner to bite on. Skill bodies
+ * are deliberately NOT included: they live out-of-prompt behind
+ * `load_skill` and embedding them would dilute the ranking with
+ * implementation noise.
+ *
+ * Includes (in order of authoring intent, which roughly mirrors signal
+ * strength for the ranker):
+ *   - name: the canonical identifier the model will see
+ *   - description: the one-liner advertised in the catalogue
+ *   - when_to_use: the natural-language trigger condition
+ *   - triggers: short trigger phrases / synonyms the embedder can
+ *     latch onto when the user's wording differs from the description
  *
  * Changes to this composition invalidate the embedder's per-text
  * cache (entries are keyed by sha256(text)). That's acceptable: at
  * worst one re-embed of every skill on next use.
  */
 function buildSkillEmbeddingText(skill: SkillDefinition): string {
-    return [skill.name, skill.description ?? ''].filter(Boolean).join('\n');
+    const parts: string[] = [skill.name];
+    if (skill.description) parts.push(skill.description);
+    if (skill.whenToUse) parts.push(skill.whenToUse);
+    if (skill.triggers && skill.triggers.length > 0) {
+        parts.push(skill.triggers.join(', '));
+    }
+    return parts.filter(Boolean).join('\n');
+}
+
+/**
+ * Format the one-line header hint used by the strong-match and auto-
+ * inject modes. Kept here (rather than in `SkillManager`) because the
+ * exact wording is tightly coupled to the catalogue's "STEP 0" framing
+ * and only the catalogue builder needs to produce it.
+ */
+function formatStrongMatchHint(
+    name: string,
+    similarity: number,
+    autoInjected: boolean,
+): string {
+    const sim = similarity.toFixed(2);
+    if (autoInjected) {
+        return `> **Auto-loaded skill this turn:** \`${name}\` (similarity ${sim}). ` +
+            'Its full procedure is provided above. Follow it directly without ' +
+            'calling `load_skill` again.';
+    }
+    return `> **Strong skill match this turn:** \`${name}\` (similarity ${sim}). ` +
+        'Strongly consider calling `load_skill({ "name": "' + name + '" })` ' +
+        'and following its procedure before doing anything else.';
 }

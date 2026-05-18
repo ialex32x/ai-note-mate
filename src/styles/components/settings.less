@@ -299,6 +299,136 @@
     word-break: break-word;
 }
 
+.oap-settings-skill-when {
+    color: @text-secondary;
+    word-break: break-word;
+    margin-top: 2px;
+    font-style: italic;
+    opacity: 0.85;
+}
+
+.oap-settings-skill-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 2px 0;
+}
+
+.oap-settings-skill-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 0.78em;
+    line-height: 1.4;
+    border: 1px solid transparent;
+
+    &--warn {
+        color: @text-warning;
+        background: var(--background-modifier-hover);
+        border-color: @bg-modifier-border;
+    }
+
+    &--info {
+        color: @text-secondary;
+        background: @bg-modifier-hover;
+        border-color: @bg-modifier-border;
+    }
+}
+
+.oap-settings-skill-tester {
+    margin: @spacing-md 0;
+    padding: @spacing-md;
+    background: @bg-modifier-hover;
+    border-radius: 6px;
+    border: 1px solid @bg-modifier-border;
+}
+
+.oap-settings-skill-tester-title {
+    font-weight: 500;
+    color: @text-primary;
+    margin-bottom: 2px;
+}
+
+.oap-settings-skill-tester-desc {
+    color: @text-faint;
+    font-size: 0.82em;
+    margin-bottom: @spacing-sm;
+}
+
+.oap-settings-skill-tester-row {
+    display: flex;
+    gap: @spacing-sm;
+    align-items: stretch;
+    margin-bottom: @spacing-sm;
+}
+
+.oap-settings-skill-tester-input {
+    flex: 1;
+    min-width: 0;
+}
+
+.oap-settings-skill-tester-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.oap-settings-skill-tester-result {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: @spacing-md;
+    padding: 4px 8px;
+    font-size: 0.85em;
+    border-radius: 4px;
+    background: @bg-primary;
+    border-left: 3px solid transparent;
+
+    &--auto-inject {
+        border-left-color: @text-success;
+    }
+
+    &--hint {
+        border-left-color: @text-accent;
+    }
+
+    &--plain {
+        border-left-color: @bg-modifier-border;
+    }
+
+    &--below-threshold {
+        border-left-color: transparent;
+        opacity: 0.6;
+    }
+}
+
+.oap-settings-skill-tester-result-name {
+    color: @text-primary;
+    word-break: break-all;
+}
+
+.oap-settings-skill-tester-result-sim {
+    color: @text-secondary;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-monospace);
+}
+
+.oap-settings-skill-tester-result-band {
+    color: @text-faint;
+    font-size: 0.85em;
+}
+
+.oap-settings-skill-tester-empty,
+.oap-settings-skill-tester-error {
+    color: @text-faint;
+    font-size: 0.85em;
+    padding: 4px 0;
+}
+
+.oap-settings-skill-tester-error {
+    color: @text-error;
+}
+
 .oap-settings-chip-list {
     display: flex;
     flex-wrap: wrap;

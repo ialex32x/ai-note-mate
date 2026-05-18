@@ -5,6 +5,8 @@ import { getActiveProfile, getSummarizerProfile, getActiveEmbeddingConfig } from
 import {
     DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
     DEFAULT_TOOL_FILTER_TOP_K,
+    DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
+    DEFAULT_SKILL_FILTER_TOP_K,
 } from '../../settings/defaults';
 import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provider';
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
@@ -75,6 +77,24 @@ export function createEmbeddingFilterOptions(plugin: NoteAssistantPlugin): Embed
     };
 }
 
+/**
+ * Resolve the skill-catalogue shortlist options from settings.
+ *
+ * Separate from {@link createEmbeddingFilterOptions} because skills
+ * have their own defaults: they're few and the user's natural-language
+ * phrasing rarely matches the description verbatim, so a more
+ * permissive cosine threshold + larger topK is the right starting
+ * point. Same shape as the tool-filter options so the catalogue
+ * builder can consume it without translation.
+ */
+export function createSkillFilterOptions(plugin: NoteAssistantPlugin): EmbeddingFilterOptions {
+    const settings = plugin.settings;
+    return {
+        similarityThreshold: settings.skillFilterSimilarityThreshold ?? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
+        topK: settings.skillFilterTopK ?? DEFAULT_SKILL_FILTER_TOP_K,
+    };
+}
+
 /** Build a provider using the active profile. */
 export function createProviderForActiveProfileOf(plugin: NoteAssistantPlugin): LLMProvider {
     return createProviderForActiveProfile(plugin).provider;
@@ -142,12 +162,16 @@ export function createChatAgent(
     });
 
     // Skills are intentionally NOT folded into the static `systemPrompt`
-    // here — they are appended per-turn via `systemPromptSuffix` below so
-    // that the catalogue can be shortlisted by embedding similarity to
-    // the current user query. The full-catalogue fallback (no embedding
-    // configured / query too short / embed failed) lives inside
-    // `buildSkillSystemPromptForQuery` and preserves the pre-embedding
-    // behaviour exactly.
+    // here — they are *prepended* per-turn via `systemPromptPrefix` below
+    // so the catalogue lands at the very top of the system prompt (the
+    // "STEP 0: scan skills" framing only works when the model sees the
+    // catalogue before the rules/HINTS/DELEGATION blocks compete for its
+    // attention). The catalogue is also shortlisted by embedding
+    // similarity to the current user query and supports a strong-match
+    // hint plus an auto-inject mode for very-high-confidence matches
+    // (see `src/skills/skill-catalogue.ts`). The full-catalogue fallback
+    // (no embedding configured / query too short / embed failed) is
+    // handled inside the catalogue builder.
     const fullSystemPrompt = builtinSystemPrompt + (settings.systemPrompt || '');
 
     // Resolve per-profile context-compression overrides from the active
@@ -178,19 +202,20 @@ export function createChatAgent(
 
     const chatStreamConfig = {
         systemPrompt: fullSystemPrompt,
-        // Per-turn skill catalogue. Shortlist by embedding similarity
+        // Per-turn skill catalogue, prepended at the very top of the
+        // system prompt so the "STEP 0: scan skills" framing is the
+        // first thing the model sees. Shortlist by embedding similarity
         // to the current user input when an embedding profile is
-        // configured; otherwise return the full enabled-skill catalogue
-        // (same wording as the legacy static build). Errors degrade
-        // silently to the full catalogue — `ChatStream.prompt()` also
-        // swallows non-abort errors from this callback as an extra
-        // safety net.
-        systemPromptSuffix: (query: string, signal?: AbortSignal) =>
+        // configured; otherwise return the full enabled-skill catalogue.
+        // Errors degrade silently to the full catalogue —
+        // `ChatStream.prompt()` also swallows non-abort errors from
+        // this callback as an extra safety net.
+        systemPromptPrefix: (query: string, signal?: AbortSignal) =>
             buildSkillSystemPromptForQuery({
                 skillManager: plugin.skillManager,
                 query,
                 embeddingConfig: createEmbeddingConfig(plugin) ?? null,
-                filterOpts: createEmbeddingFilterOptions(plugin),
+                filterOpts: createSkillFilterOptions(plugin),
                 signal,
             }),
         compressionOptions,
@@ -259,6 +284,15 @@ export function createChatAgent(
             },
         } : {}),
         onContextCompressed: () => {
+            // Drop the active-skill set unconditionally — even when the
+            // captured `generationMatches()` check below would short-
+            // circuit the UI callback, the underlying ChatStream has
+            // already mutated its history. Any skill body that was
+            // injected via `load_skill` or auto-inject may now have
+            // been summarised away, so the catalogue must stop showing
+            // those skills as `[loaded]` to avoid the model thinking
+            // it can skip re-loading.
+            plugin.skillManager.clearActiveSkills();
             if (!callbacks.generationMatches()) return;
             callbacks.onContextCompressed();
         },

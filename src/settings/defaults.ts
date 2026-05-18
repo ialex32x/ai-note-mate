@@ -40,6 +40,25 @@ export const DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD = 0.3;
  */
 export const DEFAULT_TOOL_FILTER_TOP_K = 9;
 
+/**
+ * Default cosine similarity threshold for the skills catalogue. Lower
+ * than {@link DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD} because skills
+ * are few and specialized — the user's natural-language phrasing rarely
+ * matches the description verbatim, so a permissive default avoids
+ * silently filtering out the relevant skill on real-world queries.
+ * Users can retune if they have many similar skills and want stricter
+ * pruning.
+ */
+export const DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD = 0.2;
+/**
+ * Default cap on skills surfaced per turn. Higher than the tool-filter
+ * cap because the per-skill rendering is light (one bullet + optional
+ * "When to use" line), so even 15 entries fit comfortably; meanwhile a
+ * lower cap risks dropping the correct skill when the embedding model
+ * compresses the score distribution.
+ */
+export const DEFAULT_SKILL_FILTER_TOP_K = 15;
+
 export function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -112,6 +131,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	activeEmbeddingId: '',
 	toolFilterSimilarityThreshold: DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
 	toolFilterTopK: DEFAULT_TOOL_FILTER_TOP_K,
+	skillFilterSimilarityThreshold: DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
+	skillFilterTopK: DEFAULT_SKILL_FILTER_TOP_K,
 	memoryEnabled: true,
 	memories: [],
 	followUpSuggestionsEnabled: true,

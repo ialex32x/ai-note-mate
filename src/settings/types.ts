@@ -225,6 +225,24 @@ export interface NoteAssistantPluginSettings {
 	 */
 	toolFilterTopK: number;
 
+	/**
+	 * Minimum cosine similarity for a skill to be kept in the per-turn
+	 * skills catalogue after embedding-based filtering. Tuned separately
+	 * from {@link toolFilterSimilarityThreshold} because skills are
+	 * typically few, highly-specialized, and the user's natural-language
+	 * query rarely uses the exact wording of the skill's description —
+	 * so a more permissive default (lower threshold, higher topK) is the
+	 * right starting point. Range [0, 1]; clamped at use-site.
+	 */
+	skillFilterSimilarityThreshold: number;
+	/**
+	 * Maximum number of skills surfaced to the model in the per-turn
+	 * skills catalogue after embedding-based filtering. Range [1, 30].
+	 * See {@link skillFilterSimilarityThreshold} for the rationale on
+	 * defaulting higher than the tool-filter cap.
+	 */
+	skillFilterTopK: number;
+
 	// ── Memories ───────────────────────────────────────────────────────────
 	memoryEnabled: boolean;
 	memories: NoteAssistantMemory[];

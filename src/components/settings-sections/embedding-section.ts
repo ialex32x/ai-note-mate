@@ -5,6 +5,8 @@ import {
 	createDefaultEmbeddingConfig,
 	DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
 	DEFAULT_TOOL_FILTER_TOP_K,
+	DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
+	DEFAULT_SKILL_FILTER_TOP_K,
 } from "../../settings/defaults";
 import type { EmbeddingConfig } from "../../settings/types";
 import {
@@ -75,6 +77,39 @@ export class EmbeddingSettingsSection implements SettingsSection {
 				const num = parseInt(value, 10);
 				plugin.settings.toolFilterTopK =
 					isNaN(num) ? DEFAULT_TOOL_FILTER_TOP_K
+					: Math.max(1, Math.min(30, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		// ── Skill filter tuning (separate from tool filter because the
+		//    typical skill catalogue is small + specialized; see comment
+		//    on DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD).
+		createTextField({
+			container,
+			name: t('settings.skillFilterSimilarityThreshold'),
+			desc: t('settings.skillFilterSimilarityThresholdDesc'),
+			placeholder: String(DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD),
+			value: String(plugin.settings.skillFilterSimilarityThreshold),
+			onChange: async (value) => {
+				const num = parseFloat(value);
+				plugin.settings.skillFilterSimilarityThreshold =
+					isNaN(num) ? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD
+					: Math.max(0, Math.min(1, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.skillFilterTopK'),
+			desc: t('settings.skillFilterTopKDesc'),
+			placeholder: String(DEFAULT_SKILL_FILTER_TOP_K),
+			value: String(plugin.settings.skillFilterTopK),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.skillFilterTopK =
+					isNaN(num) ? DEFAULT_SKILL_FILTER_TOP_K
 					: Math.max(1, Math.min(30, num));
 				await plugin.saveSettings();
 			},
