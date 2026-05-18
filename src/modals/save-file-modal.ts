@@ -362,7 +362,7 @@ class NewFolderPromptModal extends Modal {
 
         const cancelBtn = btnRow.createEl('button', {
             cls: 'new-folder-prompt__btn new-folder-prompt__btn--cancel',
-            text: t('save.cancel'),
+            text: t('common.cancel'),
         });
         cancelBtn.addEventListener('click', () => this.close());
 

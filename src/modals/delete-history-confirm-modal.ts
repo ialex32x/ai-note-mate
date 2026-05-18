@@ -106,7 +106,7 @@ export class DeleteHistoryConfirmModal extends Modal {
         const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
 
         const cancelBtn = buttonContainer.createEl('button', { cls: 'delete-history-modal__btn' });
-        cancelBtn.setText(t('view.deleteHistorySessionsConfirmCancel'));
+        cancelBtn.setText(t('common.cancel'));
         cancelBtn.addEventListener('click', () => {
             this.resolve({ confirmed: false, includeBusy: false });
             this.close();

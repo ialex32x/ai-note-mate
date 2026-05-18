@@ -50,7 +50,7 @@ export class SystemPromptModal extends Modal {
 
 		const cancelBtn = btnRow.createEl('button', {
 			cls: 'system-prompt-modal__btn system-prompt-modal__btn--cancel',
-			text: t('save.cancel'),
+			text: t('common.cancel'),
 		});
 		cancelBtn.addEventListener('click', () => {
 			this.cancelled = true;

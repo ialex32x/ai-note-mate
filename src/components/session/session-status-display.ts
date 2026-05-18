@@ -152,7 +152,7 @@ export class SessionStatusDisplay {
             this.renderSection(el, t('status.agentsSection'), (section) => {
                 this.renderRow(
                     section,
-                    t('statusLabel.mainAgent'),
+                    'Orchestrator',
                     this.formatCompact(breakdown.main.totalTokens),
                     breakdown.main.totalTokens.toLocaleString(),
                 );

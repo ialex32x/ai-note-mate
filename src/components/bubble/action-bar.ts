@@ -52,7 +52,7 @@ export function renderActionBar(
     // Copy button
     const copyBtn = actions.createEl('button', {
         cls: 'session-icon-btn session-bubble__action-btn',
-        attr: { 'aria-label': t('view.copyMessage') },
+        attr: { 'aria-label': t('common.copy') },
     });
     setIcon(copyBtn, 'copy');
     copyBtn.addEventListener('click', () => void onCopy(copyBtn, msg.content));

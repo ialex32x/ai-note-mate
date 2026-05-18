@@ -362,7 +362,7 @@ export class BubbleRenderer extends Component {
             // since the main agent's final answer typically summarises this reply.
             // Empty-content case is already filtered out earlier in renderInto.
             if (msg.subAgent) {
-                wrapInSubAgentCollapsible(bubble, contentEl, msg);
+                wrapInSubAgentCollapsible(bubble, contentEl);
             }
 
             if (msg.streaming) {

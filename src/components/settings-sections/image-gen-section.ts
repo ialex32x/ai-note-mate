@@ -178,7 +178,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 		createApiKeyField({
 			container,
 			app,
-			name: t('settings.imageGenApiKey'),
+			name: t('common.apiKey'),
 			desc: t('settings.imageGenApiKeyDesc'),
 			value: config.apiKey,
 			onChange: async (value) => {
@@ -191,7 +191,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 		const modelPlaceholder = getImageGenModelPlaceholder(config.apiScheme);
 		createTextField({
 			container,
-			name: t('settings.imageGenModel'),
+			name: t('common.model'),
 			desc: t('settings.imageGenModelDesc'),
 			placeholder: modelPlaceholder,
 			value: config.model,

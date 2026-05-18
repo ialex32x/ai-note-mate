@@ -241,7 +241,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		createApiKeyField({
 			container,
 			app,
-			name: t('settings.apiKey'),
+			name: t('common.apiKey'),
 			desc: t('settings.embeddingApiKeyDesc'),
 			value: config.apiKey,
 			onChange: async (value) => {
@@ -254,7 +254,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		const modelPlaceholder = config.type === 'gemini' ? 'text-embedding-004' : 'text-embedding-3-small';
 		createTextField({
 			container,
-			name: t('settings.embeddingModel'),
+			name: t('common.model'),
 			desc: t('settings.embeddingModelDesc'),
 			placeholder: modelPlaceholder,
 			value: config.model,

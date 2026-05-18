@@ -94,10 +94,10 @@ export function appendErrorBubble(
 
     const copyBtn = actions.createEl('button', {
         cls: 'session-bubble__action-btn',
-        attr: { 'aria-label': t('view.copyError') },
+        attr: { 'aria-label': t('common.copy') },
     });
     setIcon(copyBtn, 'copy');
-    setTooltip(copyBtn, t('view.copyError'));
+    setTooltip(copyBtn, t('common.copy'));
     copyBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         // Always copy the full, untruncated text so the user can paste it
@@ -109,7 +109,7 @@ export function appendErrorBubble(
         ev.preventDefault();
         const menu = new Menu();
         menu.addItem((item) => {
-            item.setTitle(t('view.copyError'));
+            item.setTitle(t('common.copy'));
             item.setIcon('copy');
             item.onClick(() => {
                 void copyErrorToClipboard(fullText);

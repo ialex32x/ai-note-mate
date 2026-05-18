@@ -35,7 +35,7 @@ export class CheckpointActionConfirmModal extends Modal {
         const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
 
         const cancelBtn = buttonContainer.createEl('button', {});
-        cancelBtn.setText(t('save.cancel'));
+        cancelBtn.setText(t('common.cancel'));
         cancelBtn.addEventListener('click', () => {
             this.resolve(false);
             this.close();

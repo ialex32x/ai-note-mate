@@ -386,7 +386,7 @@ export class MCPSettingsSection implements SettingsSection {
 
 		// API Key field
 		new Setting(container)
-			.setName(t('settings.mcpServerApiKey'))
+			.setName(t('common.apiKey'))
 			.addComponent(el => new SecretComponent(app, el)
 				.setValue(server.apiKey)
 				.onChange(async (value) => {

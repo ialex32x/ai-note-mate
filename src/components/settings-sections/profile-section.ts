@@ -372,7 +372,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		createApiKeyField({
 			container,
 			app,
-			name: t('settings.apiKey'),
+			name: t('common.apiKey'),
 			desc: t('settings.apiKeyDesc'),
 			value: profile.apiKey,
 			onChange: async (value) => {
@@ -394,7 +394,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		createApiKeyField({
 			container,
 			app,
-			name: t('settings.apiKey'),
+			name: t('common.apiKey'),
 			desc: t('settings.geminiApiKeyDesc'),
 			value: profile.apiKey,
 			onChange: async (value) => {
@@ -422,7 +422,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 
 		const setting = new Setting(container)
-			.setName(t('settings.model'))
+			.setName(t('common.model'))
 			.setDesc(t('settings.modelDesc'))
 			.addText(text => {
 				if (modelPlaceholder) {

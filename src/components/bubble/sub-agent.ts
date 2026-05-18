@@ -17,12 +17,12 @@ import { t } from '../../i18n';
  * sub-agent badge.
  */
 
-/** Return a human-readable label for a sub-agent (e.g. `vault_inspector` → "Vault Inspector"). */
+/** Return a human-readable label for a sub-agent (e.g. `vault_inspector` → "Vault Reader"). */
 export function getSubAgentLabel(agentName: string): string {
     switch (agentName) {
-        case 'vault_inspector': return t('view.subAgentVaultInspector');
-        case 'web': return t('view.subAgentWeb');
-        case 'code': return t('view.subAgentCode');
+        case 'vault_inspector': return 'Vault Reader';
+        case 'web': return 'Web';
+        case 'code': return 'Code';
         default: return agentName;
     }
 }
@@ -69,11 +69,7 @@ export function renderSubAgentBadge(parent: HTMLElement, agentName: string): voi
 export function wrapInSubAgentCollapsible(
     bubble: HTMLElement,
     contentEl: HTMLElement,
-    msg: ChatMessage,
 ): void {
-    const agentName = msg.subAgent?.agentName ?? 'agent';
-    const agentLabel = getSubAgentLabel(agentName);
-
     // Preserve the user's manual toggle across re-renders within the same
     // DOM bubble (the caller has already emptied the bubble before calling
     // render, so we check for a data attribute that survives).
@@ -100,7 +96,7 @@ export function wrapInSubAgentCollapsible(
     header.appendText(' ');
     header.createEl('span', {
         cls: 'session-bubble__subagent-reply-summary',
-        text: t('view.subAgentReplySummary', { agent: agentLabel }),
+        text: t('view.subAgentReplySummary'),
     });
 
     // Replace the pre-created contentEl with a body wrapper that contains it.

@@ -384,7 +384,7 @@ export class EditHistoryView extends ItemView {
         setTooltip(statusIcon, statusTooltip);
 
         if (task.status === "running" || task.status === "pending") {
-            this.makeIconButton(buttonRow, "x", t("editHistory.button.cancel"), () => {
+            this.makeIconButton(buttonRow, "x", t("common.cancel"), () => {
                 this.store.cancel(task.id);
             });
         }
@@ -627,7 +627,11 @@ export class EditHistoryView extends ItemView {
         // Kind icon on the left (create / modify / rename / delete).
         const kindIcon = head.createEl("span", { cls: "ai-edit-history-action-icon" });
         setIcon(kindIcon, KIND_ICONS[entry.kind]);
-        setTooltip(kindIcon, t(`editHistory.fileChanges.kind.${entry.kind}`));
+        const kindLabelKey =
+            entry.kind === "delete"
+                ? "common.delete"
+                : `editHistory.fileChanges.kind.${entry.kind}`;
+        setTooltip(kindIcon, t(kindLabelKey));
 
         const canOpen = entry.kind !== "delete";
 

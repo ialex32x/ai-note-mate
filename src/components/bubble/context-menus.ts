@@ -52,7 +52,7 @@ export function attachImageContextMenu(
             const menu = new Menu();
 
             menu.addItem((item) => {
-                item.setTitle(t('view.copyLink'));
+                item.setTitle(t('common.copy'));
                 item.onClick(async () => {
                     const textToCopy = vaultPath || srcAttr;
                     await copyToClipboard(textToCopy);
@@ -185,7 +185,7 @@ export function attachLinkContextMenu(
             }
 
             menu.addItem((item) => {
-                item.setTitle(t('view.copyLink'));
+                item.setTitle(t('common.copy'));
                 item.onClick(async () => {
                     await copyToClipboard(hrefAttr);
                 });
@@ -237,7 +237,7 @@ export function attachUserBubbleContextMenu(
         const menu = new Menu();
 
         menu.addItem((item) => {
-            item.setTitle(t('view.copyMessage'));
+            item.setTitle(t('common.copy'));
             item.setIcon('copy');
             item.onClick(async () => {
                 await copyToClipboard(content);

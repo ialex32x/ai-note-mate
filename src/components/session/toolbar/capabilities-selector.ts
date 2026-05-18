@@ -58,7 +58,7 @@ export function createCapabilitiesSelector(
         { value: 'read_file', label: t('view.capReadFile'), tip: t('view.capReadFileTip') },
         { value: 'write_file', label: t('view.capWriteFile'), tip: t('view.capWriteFileTip') },
         { value: 'create_file', label: t('view.capCreateFile'), tip: t('view.capCreateFileTip') },
-        { value: 'delete_file', label: t('view.capDeleteFile'), tip: t('view.capDeleteFileTip') },
+        { value: 'delete_file', label: t('common.delete'), tip: t('view.capDeleteFileTip') },
         { value: 'network', label: t('view.capNetwork'), tip: t('view.capNetworkTip') },
         { value: 'multimodal_generate', label: t('view.capMultimodalGenerate'), tip: t('view.capMultimodalGenerateTip') },
         { value: 'execute', label: t('view.capExecute'), tip: t('view.capExecuteTip') },

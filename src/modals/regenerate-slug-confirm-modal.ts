@@ -100,7 +100,7 @@ export class RegenerateSlugConfirmModal extends Modal {
 		const btnRow = contentEl.createDiv({ cls: 'modal-button-container' });
 
 		const cancelBtn = btnRow.createEl('button', { cls: 'oap-regenerate-slug-modal__btn' });
-		cancelBtn.setText(t('mcp.regenerateSlugCancel'));
+		cancelBtn.setText(t('common.cancel'));
 		cancelBtn.addEventListener('click', () => {
 			this.resolve({ confirmed: false });
 			this.close();

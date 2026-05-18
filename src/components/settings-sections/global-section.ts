@@ -19,7 +19,7 @@ const CAPABILITY_I18N: Record<ToolCapability, { label: string; desc: string }> =
 	read_file: { label: 'view.capReadFile', desc: 'view.capReadFileTip' },
 	write_file: { label: 'view.capWriteFile', desc: 'view.capWriteFileTip' },
 	create_file: { label: 'view.capCreateFile', desc: 'view.capCreateFileTip' },
-	delete_file: { label: 'view.capDeleteFile', desc: 'view.capDeleteFileTip' },
+	delete_file: { label: 'common.delete', desc: 'view.capDeleteFileTip' },
 	network: { label: 'view.capNetwork', desc: 'view.capNetworkTip' },
 	multimodal_generate: { label: 'view.capMultimodalGenerate', desc: 'view.capMultimodalGenerateTip' },
 	execute: { label: 'view.capExecute', desc: 'view.capExecuteTip' },
