@@ -68,7 +68,7 @@ export const ko: Record<string, string> = {
 	'view.insightCardDeepen': '더 깊이 파고들기',
 	'view.insightCardSearchTag': '#{tag} 태그가 있는 노트 검색',
 	'view.extractInsights': '이 응답에서 인사이트 추출',
-	'view.insightExtractionUnavailable': '인사이트를 추출하기 전에 설정에서 컨텍스트 요약 프로필을 구성하세요.',
+	'view.insightExtractionUnavailable': '인사이트를 추출하기 전에 설정에서 인사이트 프로필(또는 대체용 요약기)을 구성하세요.',
 	'view.permissions': '권한',
 	'view.profile': '프로필',
 	'view.profileSummarizerBadge': '컨텍스트 요약기로 사용 중',
@@ -190,6 +190,8 @@ export const ko: Record<string, string> = {
 	'settings.editInitialPrompt': '편집',
 	'settings.enterToSend': 'Enter로 전송',
 	'settings.enterToSendDesc': '활성화하면 Enter로 메시지를 전송하고 Shift+Enter로 줄바꿈합니다. 비활성화하면 동작이 반대로 됩니다.',
+	'settings.showAdvanced': '고급 설정 표시',
+	'settings.showAdvancedDesc': '활성화하면 플러그인 동작을 이해한 경우에만 변경해야 하는 고급 매개변수가 표시됩니다.',
 	'settings.builtinWebSearch': '내장 웹 검색 도구',
 	'settings.builtinWebSearchDesc': '내장 웹 검색 도구를 어시스턴트에 노출하여 필요할 때 웹에서 정보를 가져올 수 있도록 합니다. 내장 네트워크 접근 기능과 안정성은 제한적입니다. 더 안정적이고 강력한 네트워크 접근이 필요하다면, 네트워크 접근을 제공하는 전용 MCP 도구의 사용을 고려해 보세요.',
 	'settings.builtinWebFetch': '내장 웹 페이지 가져오기 도구',
@@ -202,6 +204,7 @@ export const ko: Record<string, string> = {
 	'settings.builtinRSSFetchDesc': '내장 RSS/Atom 피드 가져오기 도구를 어시스턴트에 노출하여 지정한 URL에서 피드 메타데이터와 항목을 읽을 수 있도록 합니다.',
 	'settings.builtinJavaScript': '내장 JavaScript 도구',
 	'settings.builtinJavaScriptDesc': '내장 JavaScript 실행 도구를 어시스턴트에 노출하여 필요할 때 짧은 코드 조각을 실행할 수 있도록 합니다.',
+	'settings.followUpSection': 'Follow-up',
 	'settings.followUpSuggestions': '후속 제안 버튼',
 	'settings.followUpSuggestionsDesc': 'AI 응답의 끝에 다음 단계 제안이 있을 때 해당 제안을 메시지 끝의 일회성 퀵 픽 버튼으로 표시하여 클릭 한 번으로 계속 진행할 수 있게 합니다.',
 	'settings.followUpSuggestionsStructured': '모델에 구조화된 후속 제안 요청',
@@ -209,7 +212,10 @@ export const ko: Record<string, string> = {
 	'settings.followUpSuggestionsAutoSend': '클릭 시 즉시 전송',
 	'settings.followUpSuggestionsAutoSendDesc': '활성화하면 제안 버튼을 클릭할 때 프롬프트를 즉시 전송합니다. 비활성화 시에는 입력란에만 채워져 수정 후 전송할 수 있습니다.',
 	'settings.insightExtraction': '응답에서 재사용 가능한 인사이트 추출',
-	'settings.insightExtractionDesc': '어시스턴트 응답마다 컨텍스트 요약 프로필로 일회성·무상태 호출을 실행하여, 후보 인사이트를 읽기 전용 카드로 보여줍니다. 항목을 클릭하면 후속 대화 턴으로 해당 인사이트를 더 깊이 파고들 수 있습니다.',
+	'settings.insightExtractionDesc': '어시스턴트 응답마다 일회성·무상태 호출로 후보 인사이트를 읽기 전용 카드로 보여줍니다. 항목을 클릭하면 후속 대화 턴으로 해당 인사이트를 더 깊이 파고들 수 있습니다.',
+	'settings.insightsProfile': '인사이트 프로필',
+	'settings.insightsProfileDesc': '인사이트 추출에 사용할 프로바이더 프로필입니다. 요약기보다 강한 구조화 출력이 필요하면 전용 프로필을 선택하고, 기본값은 요약기와 동일합니다.',
+	'settings.insightsProfileSameAsSummarizer': '요약기와 동일',
 	'settings.insightExtractionMinReplyChars': '최소 응답 길이(문자 수)',
 	'settings.insightExtractionMinReplyCharsDesc': '응답이 이 문자 수보다 짧으면 추출을 건너뜁니다. 너무 짧은 응답에 토큰을 낭비하지 않도록 합니다.',
 	'settings.artifactStore': '서브 에이전트 반환 캐시',
@@ -408,6 +414,10 @@ export const ko: Record<string, string> = {
 	// ── Experimental feature indicator ────────────────────
 	'settings.experimental': '실험적 기능입니다. 동작과 안전성은 향후 버전에서 변경될 수 있습니다.',
 	'settings.experimentalHint': '실험적',
+
+	// ── Advanced parameter indicator ──────────────────────
+	'settings.advanced': '고급 매개변수입니다. 동작을 이해하지 못하면 변경하지 마세요.',
+	'settings.advancedHint': '고급',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '채팅 열기',

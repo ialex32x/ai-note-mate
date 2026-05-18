@@ -16,6 +16,7 @@ import {
 	createDropdownField,
 	createTabBar,
 	createTextField,
+	createToggleField,
 	refreshDropdownOptions,
 	scrollActiveTabIntoView,
 } from "../settings-components";
@@ -83,6 +84,92 @@ export class ProfileSettingsSection implements SettingsSection {
 				});
 		}
 
+		new Setting(container)
+			.setName(t('settings.followUpSection'))
+			.setHeading();
+
+		// ── Insights profile selector (below summarizer; empty = same as summarizer) ──
+		let insightsDropdown: DropdownComponent;
+		{
+			new Setting(container)
+				.setName(t('settings.insightsProfile'))
+				.setDesc(t('settings.insightsProfileDesc'))
+				.addDropdown((dropdown: DropdownComponent) => {
+					insightsDropdown = dropdown;
+					dropdown.addOption('', t('settings.insightsProfileSameAsSummarizer'));
+					for (const p of profiles) {
+						dropdown.addOption(p.id, getProfileLabel(p));
+					}
+					const dedicatedId = plugin.settings.insightsProfileId;
+					const value = dedicatedId && profiles.some(p => p.id === dedicatedId)
+						? dedicatedId
+						: '';
+					dropdown.setValue(value);
+					dropdown.onChange(async (value: string) => {
+						plugin.settings.insightsProfileId = value;
+						await plugin.saveSettings();
+					});
+				});
+		}
+
+		createToggleField({
+			container,
+			name: t('settings.insightExtraction'),
+			desc: t('settings.insightExtractionDesc'),
+			value: plugin.settings.insightExtractionEnabled,
+			onChange: async (value) => {
+				plugin.settings.insightExtractionEnabled = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.insightExtractionMinReplyChars'),
+			desc: t('settings.insightExtractionMinReplyCharsDesc'),
+			placeholder: '400',
+			value: String(plugin.settings.insightExtractionMinReplyChars),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.insightExtractionMinReplyChars =
+					isNaN(num) || num < 0 ? 0 : num;
+				await plugin.saveSettings();
+			},
+		});
+
+		createToggleField({
+			container,
+			name: t('settings.followUpSuggestions'),
+			desc: t('settings.followUpSuggestionsDesc'),
+			value: plugin.settings.followUpSuggestionsEnabled,
+			onChange: async (value) => {
+				plugin.settings.followUpSuggestionsEnabled = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		createToggleField({
+			container,
+			name: t('settings.followUpSuggestionsStructured'),
+			desc: t('settings.followUpSuggestionsStructuredDesc'),
+			value: plugin.settings.followUpSuggestionsStructured,
+			onChange: async (value) => {
+				plugin.settings.followUpSuggestionsStructured = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		createToggleField({
+			container,
+			name: t('settings.followUpSuggestionsAutoSend'),
+			desc: t('settings.followUpSuggestionsAutoSendDesc'),
+			value: plugin.settings.followUpSuggestionsAutoSend,
+			onChange: async (value) => {
+				plugin.settings.followUpSuggestionsAutoSend = value;
+				await plugin.saveSettings();
+			},
+		});
+
 		// ── Tab bar ──
 		const tabBarResult = createTabBar({
 			container,
@@ -131,6 +218,9 @@ export class ProfileSettingsSection implements SettingsSection {
 				if (plugin.settings.summarizerProfileId === editingProfile.id) {
 					plugin.settings.summarizerProfileId = profiles[0]!.id;
 				}
+				if (plugin.settings.insightsProfileId === editingProfile.id) {
+					plugin.settings.insightsProfileId = '';
+				}
 				this.editingProfileId = profiles[0]!.id;
 				await plugin.saveSettings();
 				refreshSection(this);
@@ -139,13 +229,28 @@ export class ProfileSettingsSection implements SettingsSection {
 			disableDelete: profiles.length <= 1,
 		});
 
-		// Helper: refresh both profile-list dropdowns in-place (active + summarizer)
+		// Helper: refresh profile-list dropdowns in-place (active + summarizer + insights)
 		const refreshProfileDropdowns = () => {
 			if (activeProfileDropdown != null) {
 				refreshDropdownOptions(activeProfileDropdown, profiles, getProfileLabel);
 			}
 			if (summarizerDropdown != null) {
 				refreshDropdownOptions(summarizerDropdown, profiles, getProfileLabel);
+			}
+			if (insightsDropdown != null) {
+				const dedicatedId = plugin.settings.insightsProfileId;
+				const value = dedicatedId && profiles.some(p => p.id === dedicatedId)
+					? dedicatedId
+					: '';
+				const selectEl = insightsDropdown.selectEl;
+				selectEl.empty();
+				const sameOpt = selectEl.createEl('option', { text: t('settings.insightsProfileSameAsSummarizer') });
+				sameOpt.value = '';
+				for (const p of profiles) {
+					const opt = selectEl.createEl('option', { text: getProfileLabel(p) });
+					opt.value = p.id;
+				}
+				insightsDropdown.setValue(value);
 			}
 		};
 
@@ -258,6 +363,7 @@ export class ProfileSettingsSection implements SettingsSection {
 			desc: t('settings.maxTokensDesc'),
 			placeholder: '0',
 			value: String(profile.maxTokens),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				profile.maxTokens = isNaN(num) || num < 0 ? 0 : num;
@@ -322,6 +428,7 @@ export class ProfileSettingsSection implements SettingsSection {
 			desc: t('settings.slidingWindowSizeDesc'),
 			placeholder: '0',
 			value: String(profile.slidingWindowSize),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				profile.slidingWindowSize = isNaN(num) || num < 0 ? 0 : num;
@@ -336,6 +443,7 @@ export class ProfileSettingsSection implements SettingsSection {
 			desc: t('settings.maxSummariesThresholdDesc'),
 			placeholder: '0',
 			value: String(profile.maxSummariesThreshold),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				profile.maxSummariesThreshold = isNaN(num) || num < 0 ? 0 : num;

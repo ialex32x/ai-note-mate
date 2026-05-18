@@ -84,6 +84,8 @@ export interface ApiKeyFieldOptions {
 	sessionRestartRequired?: boolean;
 	/** Whether this setting controls an experimental feature */
 	experimental?: boolean;
+	/** Whether this setting is an advanced parameter */
+	advanced?: boolean;
 }
 
 /** Options for creating a text field */
@@ -104,6 +106,8 @@ export interface TextFieldOptions {
 	sessionRestartRequired?: boolean;
 	/** Whether this setting controls an experimental feature */
 	experimental?: boolean;
+	/** Whether this setting is an advanced parameter */
+	advanced?: boolean;
 }
 
 /** Options for creating a toggle field */
@@ -122,6 +126,8 @@ export interface ToggleFieldOptions {
 	sessionRestartRequired?: boolean;
 	/** Whether this setting controls an experimental feature */
 	experimental?: boolean;
+	/** Whether this setting is an advanced parameter */
+	advanced?: boolean;
 }
 
 /** Options for creating a dropdown field */
@@ -142,6 +148,8 @@ export interface DropdownFieldOptions {
 	sessionRestartRequired?: boolean;
 	/** Whether this setting controls an experimental feature */
 	experimental?: boolean;
+	/** Whether this setting is an advanced parameter */
+	advanced?: boolean;
 }
 
 /** Return type for createTabBar */
@@ -405,6 +413,71 @@ export function markSettingExperimental(setting: Setting): void {
 	hint.textContent = t('settings.experimentalHint');
 }
 
+/**
+ * Adds a visual indicator to a setting to show it is an advanced parameter
+ * that should only be changed when you understand its effect.
+ *
+ * Layer 1: A `settings-2` icon badge appended to the setting name, with a
+ *          tooltip describing the advanced status.
+ * Layer 2: A small text hint appended to the setting description.
+ */
+export function markSettingAdvanced(setting: Setting): void {
+	// Layer 1: Icon badge
+	const badge = setting.nameEl.createSpan({ cls: 'oap-advanced-badge' });
+	setIcon(badge, 'settings-2');
+	setTooltip(badge, t('settings.advanced'));
+
+	// Layer 2: Text hint in description
+	const hint = setting.descEl.createSpan({ cls: 'oap-advanced-hint' });
+	hint.textContent = t('settings.advancedHint');
+}
+
+/** Whether advanced-marked settings should be rendered in the settings UI. */
+let advancedSettingsVisible = false;
+
+/** Sync visibility flag before rendering any settings section. */
+export function setAdvancedSettingsVisible(visible: boolean): void {
+	advancedSettingsVisible = visible;
+}
+
+export function isAdvancedSettingsVisible(): boolean {
+	return advancedSettingsVisible;
+}
+
+/**
+ * Hide a section heading when advanced settings are off. Use for groups
+ * whose child fields are all marked `advanced`.
+ */
+export function applyAdvancedOnlyGroupHeading(setting: Setting): void {
+	if (!advancedSettingsVisible) {
+		setting.settingEl.addClass('oap-setting--advanced-collapsed');
+	}
+}
+
+interface SettingIndicatorOptions {
+	sessionRestartRequired?: boolean;
+	experimental?: boolean;
+	advanced?: boolean;
+}
+
+function applySettingIndicators(setting: Setting, options: SettingIndicatorOptions): void {
+	const { sessionRestartRequired, experimental, advanced } = options;
+
+	if (sessionRestartRequired) {
+		markSettingRequiresSessionRestart(setting);
+	}
+	if (experimental) {
+		markSettingExperimental(setting);
+	}
+	if (advanced) {
+		if (advancedSettingsVisible) {
+			markSettingAdvanced(setting);
+		} else {
+			setting.settingEl.addClass('oap-setting--advanced-collapsed');
+		}
+	}
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Field Factories
 // ─────────────────────────────────────────────────────────────────────────────
@@ -413,7 +486,7 @@ export function markSettingExperimental(setting: Setting): void {
  * Creates an API key field with SecretComponent.
  */
 export function createApiKeyField(options: ApiKeyFieldOptions): Setting {
-	const { container, app, name, desc, value, onChange, sessionRestartRequired, experimental } = options;
+	const { container, app, name, desc, value, onChange, sessionRestartRequired, experimental, advanced } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -428,12 +501,7 @@ export function createApiKeyField(options: ApiKeyFieldOptions): Setting {
 			await onChange(newValue);
 		}));
 
-	if (sessionRestartRequired) {
-		markSettingRequiresSessionRestart(setting);
-	}
-	if (experimental) {
-		markSettingExperimental(setting);
-	}
+	applySettingIndicators(setting, { sessionRestartRequired, experimental, advanced });
 
 	return setting;
 }
@@ -442,7 +510,7 @@ export function createApiKeyField(options: ApiKeyFieldOptions): Setting {
  * Creates a text input field.
  */
 export function createTextField(options: TextFieldOptions): Setting {
-	const { container, name, desc, placeholder, value, onChange, sessionRestartRequired, experimental } = options;
+	const { container, name, desc, placeholder, value, onChange, sessionRestartRequired, experimental, advanced } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -461,12 +529,7 @@ export function createTextField(options: TextFieldOptions): Setting {
 		});
 	});
 
-	if (sessionRestartRequired) {
-		markSettingRequiresSessionRestart(setting);
-	}
-	if (experimental) {
-		markSettingExperimental(setting);
-	}
+	applySettingIndicators(setting, { sessionRestartRequired, experimental, advanced });
 
 	return setting;
 }
@@ -475,7 +538,7 @@ export function createTextField(options: TextFieldOptions): Setting {
  * Creates a toggle field.
  */
 export function createToggleField(options: ToggleFieldOptions): Setting {
-	const { container, name, desc, value, onChange, sessionRestartRequired, experimental } = options;
+	const { container, name, desc, value, onChange, sessionRestartRequired, experimental, advanced } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -491,12 +554,7 @@ export function createToggleField(options: ToggleFieldOptions): Setting {
 		});
 	});
 
-	if (sessionRestartRequired) {
-		markSettingRequiresSessionRestart(setting);
-	}
-	if (experimental) {
-		markSettingExperimental(setting);
-	}
+	applySettingIndicators(setting, { sessionRestartRequired, experimental, advanced });
 
 	return setting;
 }
@@ -505,7 +563,7 @@ export function createToggleField(options: ToggleFieldOptions): Setting {
  * Creates a dropdown field.
  */
 export function createDropdownField(options: DropdownFieldOptions): Setting {
-	const { container, name, desc, options: dropdownOptions, value, onChange, sessionRestartRequired, experimental } = options;
+	const { container, name, desc, options: dropdownOptions, value, onChange, sessionRestartRequired, experimental, advanced } = options;
 
 	const setting = new Setting(container)
 		.setName(name);
@@ -524,12 +582,7 @@ export function createDropdownField(options: DropdownFieldOptions): Setting {
 		});
 	});
 
-	if (sessionRestartRequired) {
-		markSettingRequiresSessionRestart(setting);
-	}
-	if (experimental) {
-		markSettingExperimental(setting);
-	}
+	applySettingIndicators(setting, { sessionRestartRequired, experimental, advanced });
 
 	return setting;
 }

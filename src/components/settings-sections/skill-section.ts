@@ -9,7 +9,7 @@ import {
 } from "../../settings/defaults";
 import { getGlobalEmbedder } from "../../services/embedder";
 import { cosineSimilarity } from "../../services/text-embedding";
-import { createTextField } from "../settings-components";
+import { createTextField, isAdvancedSettingsVisible } from "../settings-components";
 import type { EmbeddingConfig, NoteAssistantPluginSettings } from "../../settings/types";
 import type { SkillDefinition } from "../../skills/skill-loader";
 import type { SectionContext, SettingsSection } from "./types";
@@ -250,6 +250,7 @@ export class SkillSettingsSection implements SettingsSection {
 			desc: t('settings.skillFilterSimilarityThresholdDesc'),
 			placeholder: String(DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD),
 			value: String(plugin.settings.skillFilterSimilarityThreshold),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseFloat(value);
 				plugin.settings.skillFilterSimilarityThreshold =
@@ -265,6 +266,7 @@ export class SkillSettingsSection implements SettingsSection {
 			desc: t('settings.skillFilterTopKDesc'),
 			placeholder: String(DEFAULT_SKILL_FILTER_TOP_K),
 			value: String(plugin.settings.skillFilterTopK),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				plugin.settings.skillFilterTopK =
@@ -280,6 +282,7 @@ export class SkillSettingsSection implements SettingsSection {
 			desc: t('settings.skillHintThresholdDesc'),
 			placeholder: String(DEFAULT_SKILL_HINT_THRESHOLD),
 			value: String(plugin.settings.skillHintThreshold),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseFloat(value);
 				plugin.settings.skillHintThreshold =
@@ -295,6 +298,7 @@ export class SkillSettingsSection implements SettingsSection {
 			desc: t('settings.skillAutoInjectThresholdDesc'),
 			placeholder: String(DEFAULT_SKILL_AUTO_INJECT_THRESHOLD),
 			value: String(plugin.settings.skillAutoInjectThreshold),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseFloat(value);
 				plugin.settings.skillAutoInjectThreshold =
@@ -329,6 +333,9 @@ export class SkillSettingsSection implements SettingsSection {
 		const wrap = container.createEl('div', {
 			cls: 'oap-settings-skill-tester',
 		});
+		if (!isAdvancedSettingsVisible()) {
+			wrap.addClass('oap-setting--advanced-collapsed');
+		}
 		wrap.createEl('div', {
 			cls: 'oap-settings-skill-tester-title',
 			text: t('settings.skillTesterTitle'),

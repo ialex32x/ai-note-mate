@@ -7,7 +7,7 @@ import {
     type InsightCardState,
 } from '../insights';
 import { stripStructuredBlock } from '../suggestions';
-import { createSummarizerConfig } from '../../views/session-view/chat-factory';
+import { createInsightsConfig } from '../../views/session-view/chat-factory';
 import type { SessionRuntime } from './session-runtime';
 
 /**
@@ -17,10 +17,10 @@ import type { SessionRuntime } from './session-runtime';
  * call time (live tuning works without restart).
  *
  * Returns a promise that resolves once persistence has been requested.
- * The summarizer call itself runs in the background; callers are not
+ * The extractor call itself runs in the background; callers are not
  * expected to await it for ordering with later runtime hooks.
  *
- * Silent on missing summarizer / disabled feature / too-short reply —
+ * Silent on missing insights profile / disabled feature / too-short reply —
  * the auto path never surfaces Notices to the user. The manual path
  * ({@link extractInsightsForMessage}) is responsible for visible
  * feedback when it can't proceed.
@@ -31,8 +31,8 @@ export async function maybeExtractInsightsAfterFinish(
 ): Promise<void> {
     if (!plugin.settings.insightExtractionEnabled) return;
 
-    const summarizer = createSummarizerConfig(plugin);
-    if (!summarizer) return;
+    const insightsModel = createInsightsConfig(plugin);
+    if (!insightsModel) return;
 
     const { user, assistant } = findTailTurn(runtime.chat.messages);
     if (!assistant) return;
@@ -50,10 +50,10 @@ export async function maybeExtractInsightsAfterFinish(
  * action. Unlike {@link maybeExtractInsightsAfterFinish} this bypasses
  * the `insightExtractionEnabled` toggle and the minimum reply length —
  * it is an explicit user gesture and should always proceed when there
- * is a summarizer profile to call.
+ * is an insights profile (or summarizer fallback) to call.
  *
- * Caller (the view) is responsible for surfacing the "no summarizer"
- * Notice when {@link createSummarizerConfig} returns undefined. This
+ * Caller (the view) is responsible for surfacing the "no profile"
+ * Notice when {@link createInsightsConfig} returns undefined. This
  * function silently bails in that case so it stays safe to invoke
  * from background paths.
  */
@@ -62,8 +62,8 @@ export async function extractInsightsForMessage(
     runtime: SessionRuntime,
     assistantMsg: ChatMessage,
 ): Promise<void> {
-    const summarizer = createSummarizerConfig(plugin);
-    if (!summarizer) return;
+    const insightsModel = createInsightsConfig(plugin);
+    if (!insightsModel) return;
 
     const messages = runtime.chat.messages;
     const idx = messages.findIndex(m => m.id === assistantMsg.id);
@@ -94,8 +94,8 @@ async function runExtraction(
     assistant: ChatMessage,
     cause: 'auto' | 'manual',
 ): Promise<void> {
-    const summarizer = createSummarizerConfig(plugin);
-    if (!summarizer) return;
+    const insightsModel = createInsightsConfig(plugin);
+    if (!insightsModel) return;
 
     const gen = runtime.beginInsightExtraction(assistant.id, cause);
 
@@ -105,7 +105,7 @@ async function runExtraction(
         const tags = collectVaultTags(plugin.app);
         const opts = tags.length > 0 ? { availableTags: tags } : undefined;
         insights = await extractInsights(
-            summarizer,
+            insightsModel,
             {
                 userMessage: user?.content ?? '',
                 assistantMessage: assistant.content ?? '',

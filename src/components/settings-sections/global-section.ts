@@ -2,6 +2,7 @@ import { Setting, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
 import {
+	applyAdvancedOnlyGroupHeading,
 	createDropdownField,
 	createTextField,
 	createToggleField,
@@ -31,10 +32,22 @@ export class GlobalSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin } = this.ctx;
+		const { plugin, refreshAll } = this.ctx;
 
 		// System prompt (display-only with edit button)
 		this.renderSystemPromptField(container);
+
+		createToggleField({
+			container,
+			name: t('settings.showAdvanced'),
+			desc: t('settings.showAdvancedDesc'),
+			value: plugin.settings.showAdvanced,
+			onChange: async (value) => {
+				plugin.settings.showAdvanced = value;
+				await plugin.saveSettings();
+				refreshAll();
+			},
+		});
 
 		// Enter to send toggle
 		createToggleField({
@@ -85,6 +98,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			desc: t('settings.webFetchSoftLimitDesc'),
 			placeholder: '5',
 			value: String(plugin.settings.webFetchSoftLimit),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				plugin.settings.webFetchSoftLimit = isNaN(num) || num < 0 ? 0 : num;
@@ -99,6 +113,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			desc: t('settings.webFetchHardLimitDesc'),
 			placeholder: '12',
 			value: String(plugin.settings.webFetchHardLimit),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				plugin.settings.webFetchHardLimit = isNaN(num) || num < 0 ? 0 : num;
@@ -134,77 +149,15 @@ export class GlobalSettingsSection implements SettingsSection {
 			experimental: true,
 		});
 
-		// Follow-up suggestions master toggle
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestions'),
-			desc: t('settings.followUpSuggestionsDesc'),
-			value: plugin.settings.followUpSuggestionsEnabled,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsEnabled = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		// Follow-up suggestions: structured-block mode
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestionsStructured'),
-			desc: t('settings.followUpSuggestionsStructuredDesc'),
-			value: plugin.settings.followUpSuggestionsStructured,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsStructured = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		// Follow-up suggestions: auto-send on click
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestionsAutoSend'),
-			desc: t('settings.followUpSuggestionsAutoSendDesc'),
-			value: plugin.settings.followUpSuggestionsAutoSend,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsAutoSend = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		// Insight extraction master toggle (uses summarizer profile)
-		createToggleField({
-			container,
-			name: t('settings.insightExtraction'),
-			desc: t('settings.insightExtractionDesc'),
-			value: plugin.settings.insightExtractionEnabled,
-			onChange: async (value) => {
-				plugin.settings.insightExtractionEnabled = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		// Insight extraction: minimum reply length (chars) before running
-		createTextField({
-			container,
-			name: t('settings.insightExtractionMinReplyChars'),
-			desc: t('settings.insightExtractionMinReplyCharsDesc'),
-			placeholder: '400',
-			value: String(plugin.settings.insightExtractionMinReplyChars),
-			onChange: async (value) => {
-				const num = parseInt(value, 10);
-				plugin.settings.insightExtractionMinReplyChars =
-					isNaN(num) || num < 0 ? 0 : num;
-				await plugin.saveSettings();
-			},
-		});
-
 		// ── Sub-agent return cache (artifact store) ─────────────────────────
 		// All three knobs are read once at SessionRuntime construction
 		// (see runtime-factory.ts). Existing runtimes are NOT re-tuned —
 		// users are warned via the session-restart hint.
-		new Setting(container)
+		const artifactStoreHeading = new Setting(container)
 			.setName(t('settings.artifactStore'))
 			.setDesc(t('settings.artifactStoreDesc'))
 			.setHeading();
+		applyAdvancedOnlyGroupHeading(artifactStoreHeading);
 
 		createTextField({
 			container,
@@ -212,6 +165,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			desc: t('settings.artifactStoreTotalBytesKbDesc'),
 			placeholder: '1024',
 			value: String(plugin.settings.artifactStoreTotalBytesKb),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				// `< 1` falls back to default at use-site (deriveArtifactStoreOptions);
@@ -229,6 +183,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			desc: t('settings.artifactStoreSingleArtifactKbDesc'),
 			placeholder: '128',
 			value: String(plugin.settings.artifactStoreSingleArtifactKb),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				plugin.settings.artifactStoreSingleArtifactKb = isNaN(num) ? 0 : num;
@@ -243,6 +198,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			desc: t('settings.artifactStoreTtlMinutesDesc'),
 			placeholder: '30',
 			value: String(plugin.settings.artifactStoreTtlMinutes),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				// Negative falls back to default; 0 explicitly disables TTL

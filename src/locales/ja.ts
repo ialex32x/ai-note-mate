@@ -68,7 +68,7 @@ export const ja: Record<string, string> = {
 	'view.insightCardDeepen': 'さらに深掘りする',
 	'view.insightCardSearchTag': '#{tag} のタグが付いたノートを検索',
 	'view.extractInsights': 'この返信からインサイトを抽出',
-	'view.insightExtractionUnavailable': 'インサイトを抽出する前に、設定でコンテキスト要約器プロファイルを構成してください。',
+	'view.insightExtractionUnavailable': 'インサイトを抽出する前に、設定でインサイト用プロファイル（またはフォールバック用の要約器）を構成してください。',
 	'view.permissions': '権限',
 	'view.profile': 'プロファイル',
 	'view.profileSummarizerBadge': 'コンテキスト要約器として使用中',
@@ -190,6 +190,8 @@ export const ja: Record<string, string> = {
 	'settings.editInitialPrompt': '編集',
 	'settings.enterToSend': 'Enter で送信',
 	'settings.enterToSendDesc': '有効にすると、Enterでメッセージを送信し、Shift+Enterで改行します。無効にすると動作が逆になります。',
+	'settings.showAdvanced': '上級設定を表示',
+	'settings.showAdvancedDesc': '有効にすると、効果を理解している場合にのみ変更すべき上級者向けパラメータが表示されます。',
 	'settings.builtinWebSearch': '組み込みのウェブ検索ツール',
 	'settings.builtinWebSearchDesc': '組み込みのウェブ検索ツールをアシスタントに公開し、必要に応じてウェブから情報を取得できるようにします。組み込みのネットワークアクセスは機能・安定性ともに限定的です。より安定して強力なネットワークアクセスが必要な場合は、ネットワークアクセスを提供する専用の MCP ツールの利用を検討してください。',
 	'settings.builtinWebFetch': '組み込みのウェブ取得ツール',
@@ -202,6 +204,7 @@ export const ja: Record<string, string> = {
 	'settings.builtinRSSFetchDesc': '組み込みの RSS/Atom フィード取得ツールをアシスタントに公開し、指定した URL からフィードのメタデータと項目を読み取れるようにします。',
 	'settings.builtinJavaScript': '組み込みの JavaScript ツール',
 	'settings.builtinJavaScriptDesc': '組み込みの JavaScript 実行ツールをアシスタントに公開し、必要に応じて短いコードを評価できるようにします。',
+	'settings.followUpSection': 'フォローアップ',
 	'settings.followUpSuggestions': 'フォローアップボタン',
 	'settings.followUpSuggestionsDesc': 'AI が回答の最後で次のアクションを提案したとき、それらをメッセージ末尾の使い捨てクイックボタンとして表示し、クリック一つで続けられるようにします。',
 	'settings.followUpSuggestionsStructured': 'モデルに構造化されたフォローアップを要求',
@@ -209,7 +212,10 @@ export const ja: Record<string, string> = {
 	'settings.followUpSuggestionsAutoSend': 'クリックで即時送信',
 	'settings.followUpSuggestionsAutoSendDesc': '有効にすると、提案ボタンをクリックした際にプロンプトをそのまま送信します。無効の場合は入力欄に転写され、編集後に送信できます。',
 	'settings.insightExtraction': '応答から再利用可能な知見を抽出',
-	'settings.insightExtractionDesc': 'AI の応答ごとに、コンテキスト要約器プロファイルを使って一度きり・状態を持たない呼び出しを行い、候補となる知見を読み取り専用カードとして表示します。各項目をクリックすると、その内容を追加の対話ターンでさらに深掘りできます。',
+	'settings.insightExtractionDesc': 'AI の応答ごとに、一度きり・状態を持たない呼び出しで候補となる知見を読み取り専用カードとして表示します。各項目をクリックすると、その内容を追加の対話ターンでさらに深掘りできます。',
+	'settings.insightsProfile': 'インサイト用プロファイル',
+	'settings.insightsProfileDesc': 'インサイト抽出に使うプロバイダープロファイル。要約器より強い構造化出力が必要な場合は専用プロファイルを選び、既定のままなら要約器と同じプロファイルを使います。',
+	'settings.insightsProfileSameAsSummarizer': '要約器と同じ',
 	'settings.insightExtractionMinReplyChars': '最短応答長（文字数）',
 	'settings.insightExtractionMinReplyCharsDesc': 'AI の応答がこの文字数より短い場合は抽出をスキップし、極端に短い応答に対するトークン消費を避けます。',
 	'settings.artifactStore': 'サブエージェント結果キャッシュ',
@@ -408,6 +414,10 @@ export const ja: Record<string, string> = {
 	// ── Experimental feature indicator ────────────────────
 	'settings.experimental': '実験的機能。動作と安全性は今後のバージョンで変更される可能性があります。',
 	'settings.experimentalHint': '実験的',
+
+	// ── Advanced parameter indicator ──────────────────────
+	'settings.advanced': '上級者向けパラメータです。効果を理解していない場合は変更しないでください。',
+	'settings.advancedHint': '上級',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': 'チャットを開く',

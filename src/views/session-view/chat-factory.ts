@@ -1,7 +1,8 @@
 import type NoteAssistantPlugin from 'main';
 import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type EmbeddingFilterOptions } from '../../services/chat-stream';
 import { AgentOrchestrator } from '../../services/agent-orchestrator';
-import { getActiveProfile, getSummarizerProfile, getActiveEmbeddingConfig } from '../../settings';
+import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../../settings';
+import type { ProviderProfile } from '../../settings/types';
 import {
     DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
     DEFAULT_TOOL_FILTER_TOP_K,
@@ -29,21 +30,40 @@ import { createConversationTools } from '../../services/tools/conversation-toolc
 import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
 import { inferModelContextWindow } from '../../services/model-context-window';
 
+function createModelConfigFromProfile(
+    plugin: NoteAssistantPlugin,
+    profile: ProviderProfile,
+): MinimalModelConfig | undefined {
+    const apiKey = plugin.app.secretStorage.getSecret(profile.apiKey) ?? profile.apiKey;
+    if (!apiKey) return undefined;
+
+    return {
+        type: profile.provider,
+        apiKey,
+        baseURL: profile.baseUrl,
+        model: profile.model,
+    };
+}
+
 /** Resolve the summarizer model config from settings (if any). */
 export function createSummarizerConfig(plugin: NoteAssistantPlugin): MinimalModelConfig | undefined {
     const settings = plugin.settings;
     if (!settings.summarizerProfileId) return undefined;
 
-    const sp = getSummarizerProfile(settings);
-    const spApiKey = plugin.app.secretStorage.getSecret(sp.apiKey) ?? sp.apiKey;
-    if (!spApiKey) return undefined;
+    return createModelConfigFromProfile(plugin, getSummarizerProfile(settings));
+}
 
-    return {
-        type: sp.provider,
-        apiKey: spApiKey,
-        baseURL: sp.baseUrl,
-        model: sp.model,
-    };
+/**
+ * Resolve the model config used for insight extraction.
+ * When `insightsProfileId` is empty, falls back to {@link createSummarizerConfig}.
+ */
+export function createInsightsConfig(plugin: NoteAssistantPlugin): MinimalModelConfig | undefined {
+    const settings = plugin.settings;
+    const dedicatedId = settings.insightsProfileId;
+    if (dedicatedId && settings.profiles.some(p => p.id === dedicatedId)) {
+        return createModelConfigFromProfile(plugin, getInsightsProfile(settings));
+    }
+    return createSummarizerConfig(plugin);
 }
 
 /** Resolve the embedding model config from settings (if any). */

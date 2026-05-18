@@ -34,8 +34,8 @@ const MAX_TAGS_IN_PROMPT = 200;
  * whether to hide the card or render "no insights".
  *
  * This deliberately reuses {@link createChatCompletion} (the same
- * channel as the context summarizer and edit-history rewrite) so no
- * new provider plumbing is introduced.
+ * channel as other auxiliary one-shot calls) so no new provider plumbing
+ * is introduced.
  */
 export async function extractInsights(
     modelConfig: MinimalModelConfig,

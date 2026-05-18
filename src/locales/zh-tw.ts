@@ -68,7 +68,7 @@ export const zhTW: Record<string, string> = {
 	'view.insightCardDeepen': '進一步深入',
 	'view.insightCardSearchTag': '搜尋帶有 #{tag} 的筆記',
 	'view.extractInsights': '從此回覆萃取見解',
-	'view.insightExtractionUnavailable': '萃取見解前，請先於設定中配置上下文摘要器方案。',
+	'view.insightExtractionUnavailable': '萃取見解前，請先於設定中配置見解方案（或配置摘要器作為回退）。',
 	'view.permissions': '權限',
 	'view.profile': '設定檔',
 	'view.profileSummarizerBadge': '目前用作上下文摘要器',
@@ -190,6 +190,8 @@ export const zhTW: Record<string, string> = {
 	'settings.editInitialPrompt': '編輯',
 	'settings.enterToSend': 'Enter 傳送',
 	'settings.enterToSendDesc': '開啟後，Enter 傳送訊息，Shift+Enter 換行。關閉後行為相反。',
+	'settings.showAdvanced': '顯示進階設定',
+	'settings.showAdvancedDesc': '開啟後顯示進階參數；若不確定用法，請勿隨意修改。',
 	'settings.builtinWebSearch': '內建網路搜尋工具',
 	'settings.builtinWebSearchDesc': '向助手公開內建的網路搜尋工具，使其在需要時可從網路取得資訊。內建網路存取能力與穩定性有限，如需更穩定、更強大的網路存取能力，建議使用專門提供網路存取的 MCP 工具。',
 	'settings.builtinWebFetch': '內建網頁擷取工具',
@@ -202,6 +204,7 @@ export const zhTW: Record<string, string> = {
 	'settings.builtinRSSFetchDesc': '向助手公開內建的 RSS/Atom 訂閱源擷取工具，使其可從指定 URL 讀取訂閱源的中繼資料與項目。',
 	'settings.builtinJavaScript': '內建 JavaScript 工具',
 	'settings.builtinJavaScriptDesc': '向助手公開內建的 JavaScript 執行工具，使其在需要時可執行小段程式碼。',
+	'settings.followUpSection': 'Follow-up 相關',
 	'settings.followUpSuggestions': '追問建議按鈕',
 	'settings.followUpSuggestionsDesc': 'AI 回覆結尾建議下一步時，將其渲染為訊息結尾的一次性快捷按鈕，點擊即可繼續，省去重複輸入。',
 	'settings.followUpSuggestionsStructured': '讓模型輸出結構化追問',
@@ -209,7 +212,10 @@ export const zhTW: Record<string, string> = {
 	'settings.followUpSuggestionsAutoSend': '點擊追問按鈕立即傳送',
 	'settings.followUpSuggestionsAutoSendDesc': '開啟後，點擊追問按鈕將直接傳送該提示；關閉時僅將提示填入輸入框，方便你先編輯再傳送。',
 	'settings.insightExtraction': '從回覆中萃取可複用知識點',
-	'settings.insightExtractionDesc': 'AI 每次回覆後，使用上下文摘要器方案做一次一次性、無狀態的呼叫，將候選知識點以唯讀卡片呈現；點擊任一條可讓 AI 在後續對話中針對該知識點進一步展開。',
+	'settings.insightExtractionDesc': 'AI 每次回覆後，透過一次性、無狀態呼叫將候選知識點以唯讀卡片呈現；點擊任一條可讓 AI 在後續對話中進一步展開。',
+	'settings.insightsProfile': '見解萃取設定檔',
+	'settings.insightsProfileDesc': '用於萃取見解的 Provider 設定檔。若需要比摘要器更強的結構化輸出，可指定獨立設定檔；預設與摘要器相同。',
+	'settings.insightsProfileSameAsSummarizer': '與摘要器相同',
 	'settings.insightExtractionMinReplyChars': '最短回覆長度（字元數）',
 	'settings.insightExtractionMinReplyCharsDesc': '當 AI 回覆短於此字元數時略過萃取，避免在極短回覆上消耗 Token。',
 	'settings.artifactStore': '子代理回傳值快取',
@@ -408,6 +414,10 @@ export const zhTW: Record<string, string> = {
 	// ── Experimental feature indicator ────────────────────
 	'settings.experimental': '試驗功能；行為與安全保證在後續版本可能發生變化。',
 	'settings.experimentalHint': '試驗性',
+
+	// ── Advanced parameter indicator ──────────────────────
+	'settings.advanced': '進階參數；若不確定用法，請勿隨意修改。',
+	'settings.advancedHint': '進階',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '開啟對話',

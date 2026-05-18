@@ -48,6 +48,7 @@ import {
     handleTitleClick,
     maybeGenerateSessionTitle,
     createSummarizerConfig,
+    createInsightsConfig,
     createEmbeddingConfig,
     createEmbeddingFilterOptions,
     createProviderForActiveProfileOf,
@@ -1513,8 +1514,8 @@ export class SessionView extends ItemView {
         }
         if (!this.runtime) return;
 
-        const summarizer = createSummarizerConfig(this.plugin);
-        if (!summarizer) {
+        const insightsModel = createInsightsConfig(this.plugin);
+        if (!insightsModel) {
             new Notice(t('view.insightExtractionUnavailable'));
             return;
         }

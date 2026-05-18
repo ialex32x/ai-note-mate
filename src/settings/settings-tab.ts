@@ -1,7 +1,7 @@
 import { App, PluginSettingTab } from "obsidian";
 import NoteAssistantPlugin from "../main";
 import { t } from "../i18n";
-import { createSettingsSection } from "../components/settings-components";
+import { createSettingsSection, setAdvancedSettingsVisible } from "../components/settings-components";
 import { SectionAnchorNav } from "../components/settings-anchor-nav";
 import {
 	EmbeddingSettingsSection,
@@ -70,6 +70,8 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 
 		containerEl.empty();
 
+		setAdvancedSettingsVisible(this.plugin.settings.showAdvanced);
+
 		// Host for the sticky anchor nav; placed before all sections so it
 		// sits at the top of the scroll container.
 		const anchorHost = containerEl.createDiv();
@@ -136,6 +138,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			return;
 		}
 		body.empty();
+		setAdvancedSettingsVisible(this.plugin.settings.showAdvanced);
 		section.render(body);
 		if (headerActions && section.renderHeaderActions) {
 			headerActions.empty();

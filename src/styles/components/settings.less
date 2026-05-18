@@ -733,11 +733,9 @@
     user-select: text;
 }
 
-// Tool-id preview + slug-name divergence note rendered as a sibling
-// block under the slug Setting (full width) so long ids don't squeeze
-// the action buttons off-screen.
+// Tool-id preview + slug-name divergence note (inside setting description).
 .oap-mcp-slug-info {
-    padding: 0 0 @spacing-sm 0;
+    margin-top: @spacing-xs;
     display: flex;
     flex-direction: column;
     gap: @spacing-xs;
@@ -746,21 +744,29 @@
 .oap-mcp-slug-preview {
     display: flex;
     align-items: baseline;
+    flex-wrap: wrap;
     gap: @spacing-xs;
     font-size: var(--font-ui-smaller);
-    color: @text-secondary;
+    line-height: 1.4;
+    color: @text-faint;
 
-    code {
+    &__label {
+        opacity: 0.9;
+    }
+
+    &__value {
         font-family: var(--font-monospace);
         font-size: var(--font-ui-smaller);
-        color: @text-primary;
+        color: @text-secondary;
+        opacity: 0.85;
     }
 }
 
 .oap-mcp-slug-divergence {
     font-size: var(--font-ui-smaller);
-    color: @text-warning;
     line-height: 1.4;
+    color: @text-faint;
+    opacity: 0.9;
 }
 
 @keyframes spin {
@@ -1102,6 +1108,47 @@
     border: 1px solid ~"color-mix(in srgb, var(--interactive-accent) 30%, transparent)";
     border-radius: @radius-sm;
     opacity: 0.85;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
+// Advanced settings hidden until "Show advanced" is enabled in General.
+.oap-setting--advanced-collapsed {
+    display: none !important;
+}
+
+/* ── Advanced parameter indicator ────────────────────── */
+// Cyan: visible and distinct from accent (experimental) and warning (session restart).
+.oap-advanced-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    color: var(--color-cyan);
+    opacity: 0.8;
+    cursor: help;
+    vertical-align: middle;
+    flex-shrink: 0;
+
+    svg {
+        .icon-size(12px);
+    }
+
+    &:hover {
+        opacity: 1;
+    }
+}
+
+.oap-advanced-hint {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--color-cyan);
+    border: 1px solid ~"color-mix(in srgb, var(--color-cyan) 35%, transparent)";
+    border-radius: @radius-sm;
+    opacity: 0.9;
     line-height: 1.5;
     white-space: nowrap;
 }

@@ -12,6 +12,7 @@ export {
 } from './session-title-editor';
 export {
     createSummarizerConfig,
+    createInsightsConfig,
     createEmbeddingConfig,
     createEmbeddingFilterOptions,
     createProviderForActiveProfileOf,

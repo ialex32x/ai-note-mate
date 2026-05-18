@@ -56,6 +56,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 			desc: t('settings.toolFilterSimilarityThresholdDesc'),
 			placeholder: String(DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD),
 			value: String(plugin.settings.toolFilterSimilarityThreshold),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseFloat(value);
 				plugin.settings.toolFilterSimilarityThreshold =
@@ -71,6 +72,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 			desc: t('settings.toolFilterTopKDesc'),
 			placeholder: String(DEFAULT_TOOL_FILTER_TOP_K),
 			value: String(plugin.settings.toolFilterTopK),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				plugin.settings.toolFilterTopK =

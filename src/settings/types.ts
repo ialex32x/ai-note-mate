@@ -139,6 +139,11 @@ export interface NoteAssistantPluginSettings {
 	activeProfileId: string;
 	/** ID of the current profile used as context summarizer (usually the one with lower token cost) */
 	summarizerProfileId: string;
+	/**
+	 * Profile used for conversation insight extraction. Empty string means
+	 * "same as summarizer" ({@link summarizerProfileId}).
+	 */
+	insightsProfileId: string;
 
 	// ── Global settings (not per-profile) ───────────────────────────────────
 	systemPrompt: string;
@@ -180,6 +185,8 @@ export interface NoteAssistantPluginSettings {
 	
 	/** Enter to send, Shift+Enter for newline. If false, reversed. */
 	enterToSend: boolean;
+	/** When true, settings marked as advanced are shown in the settings UI. */
+	showAdvanced: boolean;
 	/** Image generation configs array. If empty, image generation is disabled. */
 	imageGenConfigs: ImageGenConfig[];
 	/** ID of the currently active image generation config */
@@ -285,9 +292,9 @@ export interface NoteAssistantPluginSettings {
 	// ── Conversation insight extraction (knowledge-nugget preview) ──────────
 	/**
 	 * Master switch: after each assistant reply, run a one-shot extractor
-	 * (using the summarizer profile) to surface candidate knowledge nuggets
-	 * as a read-only card at the tail of the conversation. Disabled by
-	 * default to keep the plugin's footprint quiet.
+	 * (using {@link insightsProfileId} or, when empty, the summarizer
+	 * profile) to surface candidate knowledge nuggets as a read-only card
+	 * at the tail of the conversation.
 	 */
 	insightExtractionEnabled: boolean;
 	/**

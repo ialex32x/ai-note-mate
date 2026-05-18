@@ -127,6 +127,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	profiles: [createDefaultProfile()],
 	activeProfileId: '',  // will be set to the first profile's id in loadSettings
 	summarizerProfileId: '',
+	insightsProfileId: '',
 	systemPrompt: '',
 	imageDownloadDir: 'Attachments',
 	builtinWebSearchEnabled: true,
@@ -139,6 +140,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	imageGenConfigs: [],
 	activeImageGenId: '',
 	enterToSend: true,
+	showAdvanced: false,
 	toolConfirmMode: 'auto',
 	mcpServers: [],
 	skillSearchPaths: [],

@@ -14,5 +14,6 @@ export {
 	getActiveImageGenConfig,
 	getActiveProfile,
 	getSummarizerProfile,
+	getInsightsProfile,
 } from "./settings/helpers";
 export { NoteAssistantSettingTab } from "./settings/settings-tab";

@@ -26,6 +26,14 @@ export function getSummarizerProfile(settings: NoteAssistantPluginSettings): Pro
 	return createDefaultProfile();
 }
 
+/** Profile dedicated to insight extraction, when configured. */
+export function getInsightsProfile(settings: NoteAssistantPluginSettings): ProviderProfile {
+	const profile = settings.profiles.find(p => p.id === settings.insightsProfileId);
+	if (profile) return profile;
+	if (settings.profiles.length > 0) return settings.profiles[0]!;
+	return createDefaultProfile();
+}
+
 /** Helper: get the currently active image generation config from settings (may be null) */
 export function getActiveImageGenConfig(settings: NoteAssistantPluginSettings): ImageGenConfig | null {
 	if (settings.imageGenConfigs.length === 0) return null;

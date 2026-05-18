@@ -347,9 +347,9 @@ export class MCPSettingsSection implements SettingsSection {
 		const slugValueEl = slugSetting.controlEl.createEl('code', {
 			cls: 'oap-mcp-slug-value',
 		});
-		// Tool-id preview line is rendered below the setting (full-width)
-		// so long ids don't squeeze the Regenerate button off-screen.
-		slugInfoEl = container.createDiv({ cls: 'oap-mcp-slug-info' });
+		// Tool-id preview + divergence note live in the description column
+		// so they align with other setting labels/descriptions.
+		slugInfoEl = slugSetting.descEl.createDiv({ cls: 'oap-mcp-slug-info' });
 
 		slugSetting.addExtraButton(btn => btn
 			.setIcon('copy')

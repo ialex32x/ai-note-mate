@@ -402,6 +402,13 @@ export default class NoteAssistantPlugin extends Plugin {
 			}
 		}
 
+		if (
+			this.settings.insightsProfileId
+			&& !this.settings.profiles.some(p => p.id === this.settings.insightsProfileId)
+		) {
+			this.settings.insightsProfileId = '';
+		}
+
 		// Ensure at least one embedding config exists (cannot delete the last one)
 		if (this.settings.embeddingConfigs.length === 0) {
 			const defaultEmbedding = createDefaultEmbeddingConfig();

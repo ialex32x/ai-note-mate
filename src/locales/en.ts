@@ -68,7 +68,7 @@ export const en: Record<string, string> = {
 	'view.insightCardDeepen': 'Expand into a fuller note',
 	'view.insightCardSearchTag': 'Search notes tagged with #{tag}',
 	'view.extractInsights': 'Extract insights from this reply',
-	'view.insightExtractionUnavailable': 'Configure a context summarizer profile in settings before extracting insights.',
+	'view.insightExtractionUnavailable': 'Configure an insights profile (or a context summarizer as fallback) in settings before extracting insights.',
 	'view.permissions': 'Permissions',
 	'view.profile': 'Profile',
 	'view.profileSummarizerBadge': 'Used as context summarizer',
@@ -190,6 +190,8 @@ export const en: Record<string, string> = {
 	'settings.editInitialPrompt': 'Edit',
 	'settings.enterToSend': 'Enter to send',
 	'settings.enterToSendDesc': 'When enabled, Enter sends the message and Shift+Enter inserts a newline. When disabled, the behavior is reversed.',
+	'settings.showAdvanced': 'Show advanced',
+	'settings.showAdvancedDesc': 'When enabled, shows advanced parameters that should only be changed if you understand their effect.',
 	'settings.builtinWebSearch': 'Built-in web search tool',
 	'settings.builtinWebSearchDesc': 'Expose the built-in web search tool to the assistant so it can fetch information from the web when needed. The built-in web access has limited capability and reliability — for more stable and powerful results, consider using a dedicated MCP tool that provides web access.',
 	'settings.builtinWebFetch': 'Built-in web fetch tool',
@@ -202,6 +204,7 @@ export const en: Record<string, string> = {
 	'settings.builtinRSSFetchDesc': 'Expose the built-in RSS/Atom feed fetch tool to the assistant so it can read feed metadata and items from a given URL.',
 	'settings.builtinJavaScript': 'Built-in JavaScript tool',
 	'settings.builtinJavaScriptDesc': 'Expose the built-in JavaScript execution tool to the assistant so it can evaluate small code snippets when needed.',
+	'settings.followUpSection': 'Follow-up',
 	'settings.followUpSuggestions': 'Follow-up suggestion buttons',
 	'settings.followUpSuggestionsDesc': 'When the AI ends its reply with proposed next actions, render them as one-shot quick-pick buttons so you can continue with a single click.',
 	'settings.followUpSuggestionsStructured': 'Ask the model for structured follow-ups',
@@ -209,7 +212,10 @@ export const en: Record<string, string> = {
 	'settings.followUpSuggestionsAutoSend': 'Send suggestion on click',
 	'settings.followUpSuggestionsAutoSendDesc': 'When enabled, clicking a suggestion button immediately sends the prompt instead of just prefilling the input.',
 	'settings.insightExtraction': 'Extract reusable insights from replies',
-	'settings.insightExtractionDesc': 'After each assistant reply, runs a one-shot, stateless call (using the context summarizer profile) to surface candidate knowledge nuggets in a read-only card. Click any item to let the assistant expand on it as a follow-up turn.',
+	'settings.insightExtractionDesc': 'After each assistant reply, runs a one-shot, stateless call to surface candidate knowledge nuggets in a read-only card. Click any item to let the assistant expand on it as a follow-up turn.',
+	'settings.insightsProfile': 'Insights profile',
+	'settings.insightsProfileDesc': 'Provider profile used for insight extraction. Choose a dedicated profile when you want stronger structured output than your summarizer, or keep the default to reuse the summarizer.',
+	'settings.insightsProfileSameAsSummarizer': 'Same as summarizer',
 	'settings.insightExtractionMinReplyChars': 'Minimum reply length (characters)',
 	'settings.insightExtractionMinReplyCharsDesc': 'Skip extraction when the assistant reply is shorter than this many characters. Helps avoid spending tokens on tiny replies.',
 	'settings.artifactStore': 'Sub-agent return cache',
@@ -408,6 +414,10 @@ export const en: Record<string, string> = {
 	// ── Experimental feature indicator ────────────────────
 	'settings.experimental': 'Experimental feature; behavior and safety guarantees may change in future versions.',
 	'settings.experimentalHint': 'Experimental',
+
+	// ── Advanced parameter indicator ──────────────────────
+	'settings.advanced': 'Advanced parameter; only change if you understand how it affects the plugin.',
+	'settings.advancedHint': 'Advanced',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': 'Open Chat',
