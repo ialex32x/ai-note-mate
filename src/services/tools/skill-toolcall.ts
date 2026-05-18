@@ -65,16 +65,26 @@ function loadSkill(plugin: NoteAssistantPlugin): RegisteredTool {
                     content: "Missing required parameter: 'name' (non-empty string).",
                 };
             }
-            const name = rawName.trim();
-
             const manager = plugin.skillManager;
+            const resolvedName = manager.resolveSkillName(rawName);
+            if (!resolvedName) {
+                const available = manager.getSkills().map(s => s.name);
+                const hint = available.length > 0
+                    ? ` Available skills: ${available.join(", ")}.`
+                    : " No skills are currently available.";
+                return {
+                    success: false,
+                    type: "text",
+                    content: `Skill "${rawName.trim()}" not found or disabled.${hint}`,
+                };
+            }
 
             // Pick up any on-disk edits the user may have made since the
             // skill was last loaded. Safe no-op when mtime is unchanged
             // or the skill is frozen (e.g. built-in).
-            await manager.refreshSkillIfStale(name);
+            await manager.refreshSkillIfStale(resolvedName);
 
-            const skill = manager.getSkill(name);
+            const skill = manager.getSkill(resolvedName);
             if (!skill || skill.disabled) {
                 const available = manager.getSkills().map(s => s.name);
                 const hint = available.length > 0
@@ -83,7 +93,7 @@ function loadSkill(plugin: NoteAssistantPlugin): RegisteredTool {
                 return {
                     success: false,
                     type: "text",
-                    content: `Skill "${name}" not found or disabled.${hint}`,
+                    content: `Skill "${resolvedName}" not found or disabled.${hint}`,
                 };
             }
 

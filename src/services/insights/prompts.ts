@@ -11,6 +11,10 @@
  * the `{tagSection}` placeholder receives either an empty string (free-form
  * tagging) or a "vocabulary-constrained" instruction block produced by
  * {@link buildRestrictedTagSection}.
+ *
+ * Output language is left implicit — the model is told to match the user's
+ * message language and otherwise decide for itself, so the extractor does
+ * not have to thread a language policy through its call sites.
  */
 export const INSIGHT_EXTRACTION_SYSTEM_PROMPT = `\
 You extract small, reusable knowledge nuggets ("insights") from a single Q&A turn between a user and an AI assistant inside a personal notes app.
@@ -91,10 +95,10 @@ export function buildInsightUserPrompt(userMessage: string, assistantMessage: st
  * as a normal user turn (so the model can call tools, stream, etc.) — it
  * therefore needs to read naturally as if the user typed it.
  *
- * Per project decision the prompt is always English regardless of UI
- * locale; the model is told to reply in the same language as the
- * surrounding conversation, which keeps things consistent without
- * having to maintain five translated templates.
+ * Per project decision the prompt body is always English regardless of
+ * UI locale; the closing instruction tells the model to reply in the
+ * conversation's language so the resulting note matches what the user
+ * sees on screen.
  */
 export function buildInsightDeepenPrompt(input: {
     title: string;

@@ -3,6 +3,7 @@
  * Zero dependency on gemini-cli internals.
  */
 
+import { normalizePath } from 'obsidian';
 import {
   type SkillDefinition,
   type FileSystemAdapter,
@@ -152,6 +153,36 @@ export class SkillManager {
     return (
       this.skills.find((s) => s.name.toLowerCase() === lowercaseName) ?? null
     );
+  }
+
+  /**
+   * Resolves a catalogue skill name or the vault-relative `SKILL.md` path
+   * (`skill.location`) to the canonical skill name.
+   *
+   * Matching order: exact name (case-insensitive via {@link getSkill}), then
+   * exact path (case-sensitive; input is passed through {@link normalizePath},
+   * `skill.location` is already vault-canonical from discovery).
+   *
+   * @returns Canonical skill name, or null when nothing matches.
+   */
+  resolveSkillName(input: string): string | null {
+    const trimmed = input.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const byName = this.getSkill(trimmed);
+    if (byName) {
+      return byName.name;
+    }
+
+    if (!/[\\/]/.test(trimmed)) {
+      return null;
+    }
+
+    const normalizedInput = normalizePath(trimmed);
+    const byLocation = this.skills.find((s) => s.location === normalizedInput);
+    return byLocation?.name ?? null;
   }
 
   /**

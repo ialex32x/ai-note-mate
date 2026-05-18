@@ -103,13 +103,14 @@ async function runExtraction(
     let failed = false;
     try {
         const tags = collectVaultTags(plugin.app);
+        const opts = tags.length > 0 ? { availableTags: tags } : undefined;
         insights = await extractInsights(
             summarizer,
             {
                 userMessage: user?.content ?? '',
                 assistantMessage: assistant.content ?? '',
             },
-            tags.length > 0 ? { availableTags: tags } : undefined,
+            opts,
         );
     } catch (err) {
         console.warn('[Insights] extraction failed:', err);

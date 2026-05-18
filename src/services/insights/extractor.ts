@@ -63,10 +63,9 @@ export async function extractInsights(
             : FREEFORM_TAG_SECTION;
     const allowedTagLookup = availableTags.length > 0 ? buildTagLookup(availableTags) : null;
 
-    const system = INSIGHT_EXTRACTION_SYSTEM_PROMPT.replace('{limit}', String(limit)).replace(
-        '{tagSection}',
-        tagSection,
-    );
+    const system = INSIGHT_EXTRACTION_SYSTEM_PROMPT
+        .replace('{limit}', String(limit))
+        .replace('{tagSection}', tagSection);
     const userPrompt = buildInsightUserPrompt(userText, assistantText);
 
     let raw: string;
