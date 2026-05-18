@@ -3,7 +3,7 @@
 	"name": "Note Mate",
 	"version": "1.2.3",
 	"minAppVersion": "1.11.4",
-	"description": "Note Mate is a smart AI assistant for your vault. With Note Mate, you can easily create new notes, expand on ideas, and get insights from your vault.",
+	"description": "A vault-connected sidebar assistant: persistent chat that searches and drafts with you, in-editor rewrite and explain shortcuts, plus checkpoints so you review or rewind AI edits cleanly.",
 	"author": "ialex32x",
 	"authorUrl": "https://github.com/ialex32x",
 	"fundingUrl": "https://buymeacoffee.com/ialex32x",

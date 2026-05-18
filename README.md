@@ -1,154 +1,84 @@
 # Note Mate
 
-A powerful AI assistant plugin for [Obsidian](https://obsidian.md) that integrates large language models directly into your knowledge workflow. Chat with AI about your notes, generate content, search the web, create images, and more — all without leaving your vault.
+A vault-connected sidebar assistant: persistent chat that searches and drafts with you, in-editor rewrite and explain shortcuts, plus checkpoints so you review or rewind AI edits cleanly.
 
-## Features
+It’s an [Obsidian](https://obsidian.md) plugin. Plug in AI accounts you already use, chat beside your notes, pull in vault context, polish text where the cursor sits, and rewind changes when needed—still inside Obsidian.
 
-### Multi-Provider LLM Support
+## What it does for you
 
-- **OpenAI-compatible** — Works with OpenAI (GPT series), Azure OpenAI, and any API that follows the OpenAI chat completions format.
-- **Google Gemini** — Native support for the Gemini API.
-- **Multiple profiles** — Configure and switch between different providers/models on the fly.
+### Deep vault tooling
 
-### Conversational AI Session
+**Notebook access**
 
-- Dedicated sidebar chat view with full Markdown rendering.
-- Persistent session history — conversations are saved and searchable across sessions.
-- System prompt customization for tailoring AI behavior.
-- Streaming responses with thinking/reasoning level control.
-- Follow-up suggestion quick-picks for seamless conversation flow.
+Under **Settings → Note Mate**, turn on the **vault tools** you want (grouped under **tool permissions**). Then the assistant can:
 
-### Deep Vault Integration
+- Open notes by path or wiki link and quote what matters.
+- Search by text or tags and follow links between notes.
+- Create notes or edit what’s already there—everything stays traceable so you know what shifted.
 
-The AI can read, search, browse, and write notes in your vault through a rich set of built-in tools:
+**Insights**
 
-- **Read** — Retrieve note content by path or wikilink reference (with line-range support).
-- **Search** — Full-text search, tag-based search, and graph traversal across your vault.
-- **Write** — Create new notes, append/prepend content, or perform in-place edits.
-- **Browse** — List files and folders, explore vault structure.
-- **Overview** — Get summaries of vault sections for orientation.
-- **Graph** — Traverse backlinks and outgoing links to understand note relationships.
+Controlled separately from vault tooling. After a reply, optional cards surface takeaway angles—new vantage points, sharper questions, hooks worth promoting into notes. The goal is fresher momentum, not circling what you already said.
 
-### AI-Powered Editor Actions
+### Everyday editor shortcuts
 
-- **Rewrite selection** — Expand, shorten, or polish selected text in-place using AI.
-- **Explain selection** — Highlight text and ask the AI to explain it.
-- **Send to AI Session** — Send file references or editor context (cursor/selection) to the chat for follow-up questions.
-- **Edit History** — Track all AI edits with a dedicated history view for review and undo.
+Right from the editor:
 
-### Web Search & Fetch
+- **Rewrite selection** — expand, shorten, or polish highlighted text.
+- **Explain selection** — ask clearly about confusing passages.
+- **Send to AI session** — push the open file—plus cursor or selection—into chat for deeper back-and-forth.
+- **AI Edit History** — see AI-driven edits and use checkpoints/history when you need to rewind.
 
-- Built-in web search with multi-engine scheduling.
-- Image search for visual references.
-- URL content fetching and extraction (via Cheerio-based HTML parsing).
-- RSS feed parsing for staying up to date with external sources.
+### Models and accounts
 
-### Image Generation
+Add your own keys: **OpenAI-compatible** endpoints (including OpenAI, Azure OpenAI, and comparable hosts), Google Gemini, and saved **profiles** so switching models isn’t rewriting forms each time.
 
-- Supports multiple image generation backends:
-  - **Gemini** (native image generation)
-  - **OpenAI** (DALL·E compatible)
-  - **Qwen** (Alibaba Cloud compatible)
-- Generated images are saved directly into your vault.
+### Optional extras (when you turn them on)
 
-### MCP (Model Context Protocol) Support
+- **Lookups** — Web search, open a page from a URL, skim feeds—useful for research next to notes.
+- **Images** — generate pictures and drop them straight into your vault (provider-dependent).
+- **Richer tooling** — connect **MCP** servers for capabilities your admin or community provides.
+- **Skills** — reusable instruction packs loaded from folders you choose—great for repeatable workflows.
+- **Embeddings** (**experimental**) — connect an embedding provider so **tools** and **skills** can be relevance-ranked before entering the prompt, saving tokens. Vault-wide semantic search is **not** here yet; whole-library search “by meaning” is **planned / TBD**. Expect drift as this settles.
+- **Memory** — stash short facts between sessions when you want continuity.
+- **JavaScript snippets** (**experimental**) — run short scripts from chat for arithmetic or reshaping pasted text when enabled. Executes through the plugin, **not** a hardened sandbox; expect sizeable shifts between releases.
 
-- Connect to external MCP servers for extended tool capabilities.
-- Configure multiple MCP server endpoints.
-
-### Skills System
-
-- Extensible skill definitions loaded from configurable directories.
-- Skills provide domain-specific instructions and tool schemas for the AI.
-
-### Memory
-
-- Persistent key-value memory store that persists across sessions.
-- The AI can save and recall facts to maintain long-term context.
-
-### Insight Extraction
-
-- Automatically extract knowledge nuggets from AI conversations.
-- Surface reusable insights as preview cards after each assistant reply.
-
-### JavaScript Sandbox
-
-- Execute JavaScript code snippets in a controlled environment.
-- Useful for quick calculations or data transformations within a conversation.
-
-### Internationalization
-
-- Full localization support: English, Japanese, Korean, Simplified Chinese, Traditional Chinese.
-- Auto-detects system locale with manual override option.
-
-### Cross-Platform
-
-- Works on **Windows**, **macOS**, **Linux**, **iOS**, and **Android**.
-- No desktop-only APIs — fully mobile-compatible.
+**Platforms & languages:** Runs on desktop and mobile (**Windows**, **macOS**, **Linux**, **iOS**, **Android**).  
+UI copy ships in **English**, **日本語**, **한국어**, **简体中文**, and **繁體中文**—defaults follow locale; overrides live in plugin settings.
 
 ## Installation
 
-### From Community Plugins (Recommended)
+### Community plugins (recommended)
 
-1. Open **Settings → Community plugins** in Obsidian.
-2. Search for **Note Mate**.
-3. Click **Install**, then **Enable**.
+1. In Obsidian, open **Settings → Community plugins**.
+2. Search **Note Mate**, then choose **Install** and **Enable**.
 
-### Manual Installation
+### Manual install
 
 1. Download `main.js`, `styles.css`, and `manifest.json` from the [latest release](https://github.com/ialex32x/ai-note-mate/releases).
-2. Create a folder at `<YourVault>/.obsidian/plugins/ai-note-mate/`.
-3. Copy the downloaded files into that folder.
-4. Reload Obsidian and enable the plugin in **Settings → Community plugins**.
+2. Inside your vault, create `.obsidian/plugins/ai-note-mate/` if it doesn’t exist.
+3. Copy those three files into that folder.
+4. Reload Obsidian and enable the plugin under **Settings → Community plugins**.
 
-## Configuration
+## First-time setup
 
-1. Go to **Settings → Note Mate**.
-2. Add at least one **Provider Profile** (OpenAI-compatible or Gemini) with your API key and model.
-3. Optionally configure:
-   - System prompt
-   - Image generation provider
-   - Embedding provider for semantic search
-   - MCP server connections
-   - Skill search paths
-   - Tool capability permissions
+1. Open **Settings → Note Mate**.
+2. Add at least one **Provider profile**: an **OpenAI-compatible** endpoint or Gemini, plus your model and key.
+3. Optionally wire integrations—you can skip these until something on the roadmap needs them:
+   - **Image generation** — saves generated visuals into your vault when enabled.
+   - **Embeddings** (**experimental**) — provider needed for embedding-based **tool/skill** filtering (saves tokens). Not for vault-wide semantic search yet; that mode is **planned / TBD**.
+   - **MCP servers** — connect external MCP servers for extra tooling.
+   - **Skill folders** — where optional instruction bundles live on disk.
+   - **Tool permissions** — fine-grained control over which vault moves the automation may attempt.
 
-## Development
+## Building from source
 
-### Prerequisites
+For people who want to compile the plugin locally:
 
-- Node.js 18+
-- npm
-
-### Setup
-
-```bash
-npm install
-```
-
-### Build
-
-```bash
-npm run build
-```
-
-### Dev (watch mode)
-
-```bash
-npm run dev
-```
-
-### Lint
-
-```bash
-npm run lint
-```
-
-### Test
-
-```bash
-npm run test
-```
+- **Needs:** Node.js 18+ and npm.
+- **Install:** `npm install`
+- **Build:** `npm run build` (or `npm run dev` for watch mode)
+- **Checks:** `npm run lint` and `npm run test`
 
 ## License
 
@@ -156,18 +86,8 @@ npm run test
 
 ## Author
 
-*Born from a human-AI collab: I did the prompting, the AI did the coding.* 🙂
-
-
 [ialex32x](https://github.com/ialex32x)
 
-LLM Models:
-- Claude-Opus-4.6
-- Claude-Opus-4.7
-- GLM-5.1
-- DeepSeek-V3.1
-- Kimi-2.5
+## Support
 
-## Support 
-
-If you find this plugin useful, consider [buying me a coffee](https://buymeacoffee.com/ialex32x).
+If this plugin helps your daily notes, consider [buying me a coffee](https://buymeacoffee.com/ialex32x).
