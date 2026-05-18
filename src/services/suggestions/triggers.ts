@@ -47,3 +47,32 @@ export const SINGLE_QUESTION_HINTS: readonly string[] = [
     'しましょうか', 'しますか',
     '해드릴까요', '원하시면',
 ];
+
+/**
+ * Sentence-leading offer prefixes used when splitting a closing question
+ * like "需要我 A，或者 B 吗?" into multiple parallel suggestions.
+ *
+ * Only the prefixes that naturally appear at the *start* of the offer
+ * (subject-verb form) are listed here. Japanese sentence-final markers
+ * such as "しましょうか" and Korean "해드릴까요" are deliberately excluded
+ * because they sit at the *end* of the verb phrase and don't fit the
+ * "strip-prefix-then-split" model used by `splitOrChoiceQuestion`.
+ * Those forms still produce a single-suggestion follow-up via the
+ * regular `SINGLE_QUESTION_HINTS` path.
+ *
+ * Stored lowercased for case-insensitive matching.
+ */
+export const OFFER_PREFIXES_AT_START: readonly string[] = [
+    '需要我', '要不要我', '是否需要我', '要我帮', '要我幫',
+    'would you like me to', 'do you want me to', 'shall i', 'should i',
+];
+
+/**
+ * "Or"-style separators used to break a single closing question into
+ * parallel options. Accepts an optional CJK / Western comma before the
+ * connector (e.g. `"整理 A，或者 B"` or `"整理 A 或者 B"`) and the bare
+ * ` or ` conjunction in English. Intentionally case-insensitive so that
+ * sentence-cased English (`" Or "`) still matches.
+ */
+export const OR_CHOICE_SEPARATORS: RegExp =
+    /[,，、]?\s*(?:或者|或是|还是|還是)\s*|\s+or\s+/i;

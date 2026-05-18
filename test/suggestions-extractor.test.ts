@@ -241,3 +241,95 @@ describe('extractSuggestions / heuristic fallback', () => {
         expect(out[1]).toEqual({ label: '翻译为英文', prompt: '翻译为英文' });
     });
 });
+
+describe('extractSuggestions / closing-question splitter', () => {
+    it('splits a "需要我 A，或者 B 吗?" offer into two parallel options', () => {
+        const md = [
+            '这是回答正文。',
+            '',
+            '需要我帮你整理成笔记，或者继续生成更多内容吗？',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '帮你整理成笔记', prompt: '帮你整理成笔记' },
+            { label: '继续生成更多内容', prompt: '继续生成更多内容' },
+        ]);
+    });
+
+    it('handles the "或者" connector without a leading comma', () => {
+        const md = '要不要我先列大纲或者直接展开正文呢？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '先列大纲', prompt: '先列大纲' },
+            { label: '直接展开正文', prompt: '直接展开正文' },
+        ]);
+    });
+
+    it('splits on "还是" as an or-choice connector inside an offer', () => {
+        const md = '要不要我先整理大纲还是直接展开正文？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '先整理大纲', prompt: '先整理大纲' },
+            { label: '直接展开正文', prompt: '直接展开正文' },
+        ]);
+    });
+
+    it('splits an English "Should I A, or B?" offer', () => {
+        const md = 'Should I summarize the article, or generate more content?';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: 'summarize the article', prompt: 'summarize the article' },
+            { label: 'generate more content', prompt: 'generate more content' },
+        ]);
+    });
+
+    it('falls back to the whole sentence when no or-choice connector is present', () => {
+        const md = '需要我先帮你整理大纲吗？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        // Single-suggestion fallback keeps the original sentence verbatim,
+        // matching the pre-split behaviour of `extractSingleQuestion`.
+        expect(out).toEqual([
+            { label: '需要我先帮你整理大纲吗？', prompt: '需要我先帮你整理大纲吗？' },
+        ]);
+    });
+
+    it('does not split when the offer prefix does not sit at the start', () => {
+        // "对了" is filler, not a recognised offer prefix — the candidate no
+        // longer starts with `需要我`, so the splitter bails and the original
+        // single-question path returns the whole sentence.
+        const md = '对了，需要我帮你整理成笔记，或者继续生成更多内容吗？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            {
+                label: '对了，需要我帮你整理成笔记，或者继续生成更多内容吗？',
+                prompt: '对了，需要我帮你整理成笔记，或者继续生成更多内容吗？',
+            },
+        ]);
+    });
+
+    it('keeps Japanese sentence-final offers as a single suggestion', () => {
+        // `しましょうか` is in SINGLE_QUESTION_HINTS but intentionally not in
+        // OFFER_PREFIXES_AT_START (it sits at the end, not the start), so the
+        // splitter must not fire here.
+        const md = '整理しましょうか？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '整理しましょうか？', prompt: '整理しましょうか？' },
+        ]);
+    });
+
+    it('still rejects ambiguous "A？或者 B？" closers with multiple question marks', () => {
+        const md = '需要我帮你整理成笔记？或者继续生成更多内容？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        // Two question marks → original guard rejects the candidate entirely.
+        expect(out).toEqual([]);
+    });
+});

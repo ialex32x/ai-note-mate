@@ -1,4 +1,9 @@
-import { FOLLOWUP_HEADERS, SINGLE_QUESTION_HINTS } from './triggers';
+import {
+    FOLLOWUP_HEADERS,
+    OFFER_PREFIXES_AT_START,
+    OR_CHOICE_SEPARATORS,
+    SINGLE_QUESTION_HINTS,
+} from './triggers';
 import type { ExtractOptions, SuggestedAction, SuggestedClientAction } from './types';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
 import { truncate } from '../../utils/string-truncate';
@@ -215,9 +220,13 @@ function parseHeuristic(markdown: string): SuggestedAction[] {
         return items.map((t) => ({ label: t, prompt: t }));
     }
 
-    // Fallback: single-question closer ("要不要我帮你 xxx?"). Return 1 entry.
-    const singleQ = extractSingleQuestion(tail, lower);
-    if (singleQ) return [{ label: singleQ, prompt: singleQ }];
+    // Fallback: single-question closer ("要不要我帮你 xxx?") — possibly
+    // split into multiple parallel options when the question offers an
+    // explicit "A 或者 B" / "A or B" choice.
+    const closingQs = extractSingleQuestion(tail, lower);
+    if (closingQs && closingQs.length > 0) {
+        return closingQs.map((q) => ({ label: q, prompt: q }));
+    }
 
     // Even without an explicit header, if the last paragraph is a short
     // numbered list right after a colon, treat them as suggestions.
@@ -275,7 +284,12 @@ function tailBeforeList(tail: string): string {
 
 /**
  * Detect a single-sentence follow-up question at the very end of the reply.
- * Returns the question (stripped of trailing punctuation) or null.
+ * Returns the candidate option(s) or null.
+ *
+ * Usually we emit one entry (the cleaned sentence itself). When the closer
+ * is a parallel offer like "需要我 A，或者 B 吗?" we additionally try to
+ * split it into the two underlying actions so each becomes its own
+ * one-click suggestion — see `splitOrChoiceQuestion` for details.
  *
  * We only treat the last *sentence* (split by `。.!！?？\n`) as the candidate,
  * not the entire trailing paragraph — otherwise a closing remark like
@@ -286,7 +300,7 @@ function tailBeforeList(tail: string): string {
  * question marks, which usually signals an open-ended choice question
  * ("A？或者 B？") rather than a clean one-click action.
  */
-function extractSingleQuestion(tail: string, _lowerTail: string): string | null {
+function extractSingleQuestion(tail: string, _lowerTail: string): string[] | null {
     // Only the last paragraph.
     const paragraphs = tail.split(/\n\s*\n/);
     const last = paragraphs[paragraphs.length - 1]?.trim();
@@ -321,7 +335,72 @@ function extractSingleQuestion(tail: string, _lowerTail: string): string | null 
     const oneLine = candidate.replace(/\s+/g, ' ').trim();
     // Don't treat very long sentences as one-click actions.
     if (oneLine.length > 80) return null;
-    return oneLine;
+
+    // Try splitting a parallel "A 或者 B 吗?" / "A or B?" offer into two
+    // independent actions. Falls back to the whole sentence when the
+    // pattern doesn't apply.
+    const split = splitOrChoiceQuestion(oneLine);
+    if (split) return split;
+
+    return [oneLine];
+}
+
+/**
+ * Try to break a closing offer like "需要我 A，或者 B 吗?" into parallel
+ * option strings. Returns `null` when the pattern doesn't apply so the
+ * caller can fall back to the original whole-sentence suggestion.
+ *
+ * Strategy:
+ *   1. The candidate must start with an offer prefix that sits at the
+ *      *front* of the sentence (e.g. `需要我`, `Should I`). Sentence-final
+ *      markers (`しましょうか`, `해드릴까요`) deliberately don't qualify.
+ *   2. Strip that prefix, then split the remainder on an "or"-style
+ *      connector (`或者 / 或是 / 还是 / 還是 / " or "`).
+ *   3. Trim trailing yes-no particles (`吗 / 嗎 / 呢 / 呀 / 啊`) and
+ *      stray punctuation from each piece. The cleaned pieces become
+ *      parallel suggestions where label === prompt — matching the
+ *      contract used by the list-based heuristic path.
+ *
+ * Returning ≥ 2 cleaned pieces is required; otherwise the split is
+ * considered spurious and we bail out.
+ */
+function splitOrChoiceQuestion(candidate: string): string[] | null {
+    const lower = candidate.toLowerCase();
+    const prefix = OFFER_PREFIXES_AT_START.find((p) => lower.startsWith(p));
+    if (!prefix) return null;
+
+    // Slice the same length from the *original* candidate so case is
+    // preserved for the remainder (matters for English options).
+    const rest = candidate.slice(prefix.length).trimStart();
+    const parts = rest
+        .split(OR_CHOICE_SEPARATORS)
+        .map((s) => stripYesNoTail(s))
+        .filter((s) => s.length >= 2);
+    if (parts.length < 2) return null;
+
+    return parts;
+}
+
+/**
+ * Strip trailing yes-no markers and stray punctuation that an offer
+ * sentence accumulates near its tail. Applied iteratively because the
+ * suffix often layers (e.g. "整理内容吗?" → "整理内容吗" → "整理内容").
+ *
+ * The bounded loop (3 passes max) is purely defensive — in practice two
+ * passes are enough — and avoids any pathological repetition.
+ */
+function stripYesNoTail(s: string): string {
+    let out = s.trim();
+    for (let i = 0; i < 3 && out.length > 0; i++) {
+        const next = out
+            .replace(/[?？]+\s*$/, '')
+            .replace(/(吗|嗎|呢|呀|啊)\s*$/u, '')
+            .replace(/[,，、.。]\s*$/, '')
+            .trim();
+        if (next === out) break;
+        out = next;
+    }
+    return out;
 }
 
 // ─── Normalization ─────────────────────────────────────────────────────
