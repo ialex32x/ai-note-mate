@@ -41,7 +41,13 @@ export function t(key: string, vars?: Record<string, string | number>): string {
 	let str = current[key] ?? en[key] ?? key;
 	if (vars) {
 		for (const [k, v] of Object.entries(vars)) {
-			str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+			// IMPORTANT: pass replacement as a callback. `String.prototype.replace`
+			// with a string replacement processes `$&`, `$$`, `$n`, etc. as special
+			// sequences, which corrupts variable values containing literal `$`
+			// (e.g. LaTeX math snippets). The function form returns its value
+			// verbatim, so `$` characters survive untouched.
+			const replacement = String(v);
+			str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), () => replacement);
 		}
 	}
 	return str;

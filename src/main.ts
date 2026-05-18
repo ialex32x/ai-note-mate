@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TAbstractFile, MarkdownView, Editor, MarkdownFileInfo } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo } from 'obsidian';
 import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig } from "./settings";
 import { SessionView } from 'views/session-view';
 import { resolveLocale, setLocale, t } from './i18n';
@@ -197,11 +197,29 @@ export default class NoteAssistantPlugin extends Plugin {
 				void this.explainEditorSelection(editor, info);
 			},
 		};
+		// "Auto-tag" is a session-level action — no selection required.
+		// It dispatches a fully-formed prompt directly to the AI session
+		// without touching the input box, so any draft the user is composing
+		// stays intact. Only meaningful for markdown notes (the .md guard
+		// also hides the entry for canvas / PDF / image files where tags
+		// aren't an Obsidian concept).
+		const autoTagFileItem: AISubmenuItem = {
+			title: t('view.autoTagFile'),
+			icon: 'tags',
+			isAvailable: (_editor, info) => {
+				const file = this.resolveMarkdownFileFromInfo(info);
+				return file !== null;
+			},
+			onClick: (_editor, info) => {
+				const file = this.resolveMarkdownFileFromInfo(info);
+				if (file) void this.autoTagFile(file);
+			},
+		};
 		registerRewriteSelection(
 			this,
 			this.editHistory,
 			() => this.revealEditHistoryView(),
-			[sendToSessionItem, sendToNewSessionItem, explainSelectionItem],
+			[sendToSessionItem, sendToNewSessionItem, explainSelectionItem, autoTagFileItem],
 		);
 		this.addCommand({
 			id: 'open-ai-edit-history',
@@ -265,6 +283,19 @@ export default class NoteAssistantPlugin extends Plugin {
 							void this.sendFileToNewSession(file);
 						});
 					});
+					// "Auto-tag" only applies to markdown notes: tags are a
+					// frontmatter / inline-`#tag` concept, so showing the
+					// entry on folders, canvases, PDFs, etc. would dispatch
+					// a prompt the AI can't sensibly answer.
+					if (file instanceof TFile && file.extension === 'md') {
+						sub.addItem((s) => {
+							s.setTitle(t('view.autoTagFile'));
+							s.setIcon('tags');
+							s.onClick(() => {
+								void this.autoTagFile(file);
+							});
+						});
+					}
 				});
 			})
 		);
@@ -541,20 +572,24 @@ export default class NoteAssistantPlugin extends Plugin {
 	}
 
 	/**
-	 * Build an "explain" prompt from the active editor's selection and send
-	 * it to the AI session — or, when the AI is mid-turn (cannot accept a
-	 * new prompt right now), drop the prompt into the input for the user to
-	 * send manually once the current turn finishes.
+	 * Build an "explain" prompt from the active editor's selection and
+	 * park it in the AI session input as a draft via
+	 * {@link SessionView.fillPromptDraft}. The user reviews + sends
+	 * manually; we never auto-send. If the input already contains a draft
+	 * the view surfaces a Notice and the action is refused.
 	 *
 	 * Selection is required (the menu entry's `isAvailable` already enforces
 	 * this; we re-check defensively here in case future call sites bypass
 	 * the menu wiring).
 	 *
-	 * Prompt shape (English, hard-coded — this is content for the LLM, not
-	 * UI copy, and the wikilink + range syntax mirrors `Send to AI Session`).
-	 * When the selection fits in the inline preview budget, the snippet
-	 * also carries a quoted preview block immediately under the file ref:
-	 *     Please explain the text in [[path]] (Ln A - Ln B)
+	 * The prompt template is sourced from the locale bundle
+	 * (`view.explainPrompt`) so the parked draft matches the user's UI
+	 * language; the wikilink + range syntax embedded inside `{snippet}`
+	 * stays constant across languages because the AI session needs a
+	 * stable file reference. When the selection fits in the inline preview
+	 * budget, `{snippet}` also carries a quoted preview block immediately
+	 * under the file ref:
+	 *     <localized text> [[path]] (Ln A - Ln B)
 	 *     > <selection preview...>
 	 */
 	private async explainEditorSelection(
@@ -567,15 +602,67 @@ export default class NoteAssistantPlugin extends Plugin {
 		const ctx = this.formatEditorContextSnippet(editor, info);
 		if (!ctx) return;
 
-		const prompt = `Please explain the text in ${ctx.snippet}`;
+		const prompt = t('view.explainPrompt', { snippet: ctx.snippet });
 
 		// Activate the session view so the user immediately sees the
-		// outcome (sent message OR pre-filled draft).
+		// freshly parked draft (or the refusal Notice).
 		await this.createSessionView(true);
 		const view = this.getActiveSessionView();
 		if (!view) return;
 
-		view.submitOrFillPrompt(prompt);
+		view.fillPromptDraft(prompt);
+	}
+
+	/**
+	 * "Auto-tag" entry point shared by the editor right-click menu and the
+	 * file-menu submenu. Builds a fully-formed prompt referencing the
+	 * target note via wikilink and parks it in the session input via
+	 * {@link SessionView.fillPromptDraft}, mirroring `explainEditorSelection`:
+	 *
+	 *   - if the input is empty, the prompt is loaded as a draft and the
+	 *     user reviews + sends manually;
+	 *   - if the input already holds an unsent draft, the view surfaces a
+	 *     Notice and the action is refused. We never silently overwrite
+	 *     user-authored text.
+	 *
+	 * The prompt template is sourced from the locale bundle
+	 * (`view.autoTagPrompt`) so the parked draft matches the user's UI
+	 * language; the wikilink for the target note stays constant across
+	 * languages because the AI session needs a stable file reference.
+	 * The session pipeline (skill auto-injection, tools) is what actually
+	 * figures out the vault's tag conventions; we only kick off the turn.
+	 */
+	private async autoTagFile(file: TFile): Promise<void> {
+		if (!file?.path) return;
+
+		const prompt = t('view.autoTagPrompt', { path: file.path });
+
+		await this.createSessionView(true);
+		const view = this.getActiveSessionView();
+		if (!view) return;
+
+		view.fillPromptDraft(prompt);
+	}
+
+	/**
+	 * Resolve a markdown {@link TFile} from the `MarkdownFileInfo` passed
+	 * into `editor-menu` callbacks, falling back to the workspace's active
+	 * markdown view. Returns `null` for non-markdown files (canvas, PDF,
+	 * images, etc.) so callers that act exclusively on notes — like
+	 * "Auto-tag" — can use it as a single source of truth for visibility
+	 * and dispatch logic alike.
+	 */
+	private resolveMarkdownFileFromInfo(
+		info?: MarkdownView | MarkdownFileInfo,
+	): TFile | null {
+		const fromInfo = (info as { file?: TFile } | undefined)?.file;
+		const candidate = fromInfo instanceof TFile
+			? fromInfo
+			: this.app.workspace.getActiveViewOfType(MarkdownView)?.file ?? null;
+		if (candidate instanceof TFile && candidate.extension === 'md') {
+			return candidate;
+		}
+		return null;
 	}
 
 	/** Resolve the (first) live SessionView leaf, or null if none. */

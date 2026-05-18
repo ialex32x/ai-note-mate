@@ -1554,40 +1554,49 @@ export class SessionView extends ItemView {
     }
 
     /**
-     * Public entry for callers outside the session view (e.g. the editor
-     * "Explain" right-click action) that want to submit a fully-formed
-     * prompt to the current session.
+     * Public entry for callers outside the session view (editor right-click
+     * actions like "Explain" / "Auto-tag") that want to park a fully-formed
+     * prompt in the input editor for the user to review and send manually.
      *
-     * Behavior:
-     * - If the chat is currently streaming we cannot dispatch another turn,
-     *   so we drop the prompt into the input editor instead and focus it.
-     *   The user can review and send manually once the current turn ends.
-     * - If the input already contains a non-empty draft we never silently
-     *   replace it — same rule as `handleInsightDeepen` — only fill + focus,
-     *   never auto-send. This prevents accidental loss of in-progress text.
-     * - Otherwise: replace input contents with the prompt and submit.
+     * Behavior is deliberately "fill or refuse", never "fill or auto-send":
+     * - If the input is empty: load `prompt` into the input as a draft,
+     *   focus it, and persist it via the draft controller. The user
+     *   reviews and presses Send when ready.
+     * - If the input already contains a non-empty draft: surface a Notice
+     *   explaining why the action was refused and leave the input
+     *   untouched. We never silently replace user-authored text.
      *
-     * The session view is expected to already be open/active by the caller
-     * (so we can focus the input deterministically); we only manipulate
-     * input + send pipeline here.
+     * Why not auto-send on empty input?
+     *   These entry points dispatch boilerplate prompts (e.g. "Please
+     *   auto-tag [[X]]") that the user often wants to tweak before
+     *   sending. Auto-sending forces the user into a "stop and edit"
+     *   workflow whenever they want to refine the prompt; parking it as a
+     *   draft is the strictly more controllable default.
+     *
+     * The session view is expected to already be open/active by the
+     * caller so we can focus the input deterministically.
+     *
+     * Returns `true` when the prompt was loaded into the input,
+     * `false` when refused.
      */
-    submitOrFillPrompt(prompt: string): void {
-        if (!prompt) return;
+    fillPromptDraft(prompt: string): boolean {
+        if (!prompt) return false;
 
         const draft = this.cmInput.getContent().trim();
-        const busy = this.isStreaming;
-
-        if (busy || draft.length > 0) {
-            // Either AI is mid-turn or user has unsent text — surface the
-            // prompt as a draft and let the user decide when to send.
-            this.cmInput.setContent(prompt);
-            this.cmInput.focus();
-            this.draftController?.scheduleSave();
-            return;
+        if (draft.length > 0) {
+            new Notice(t('view.inputHasDraftNotice'));
+            return false;
         }
 
         this.cmInput.setContent(prompt);
-        void this.handleSend();
+        this.cmInput.focus();
+        this.draftController?.scheduleSave();
+        // Surface a success Notice as well. On mobile (or when the session
+        // view sits behind another leaf on desktop) the input change is
+        // not visually observable, so without this Notice the user has no
+        // signal that the action did anything at all.
+        new Notice(t('view.promptFilledNotice'));
+        return true;
     }
 
     private setInputLocked(locked: boolean) {
