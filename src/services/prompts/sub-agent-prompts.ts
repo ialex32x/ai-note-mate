@@ -20,6 +20,11 @@ export const READING_INPUTS_SECTION = `
 ## Reading structured inputs from the main agent
 The main agent may pre-load structured data into your \`exchange\` store via the \`inputs\` argument of \`delegate_task\`. Your sub-agent's workflow above lists the input keys you should expect for this dispatch — those keys ARE the input contract.
 
+**FIRST-ACTION rule.** When the task prose references \`inputs.<key>\` — e.g. "read inputs.path", "lines inputs.start_line to inputs.end_line", "locate inputs.query in inputs.path" — your VERY FIRST tool call MUST be an \`exchange\` batch-get for those keys. \`inputs.X\` is shorthand for "the value stored under key X in your exchange store"; resolve it first, THEN do the real work using the resolved values. Common mis-routings to AVOID:
+- ❌ Calling \`grep_file\` / \`read_file\` / \`search_content\` with \`path: "__exchange__"\` — there is no such file; \`exchange\` is a tool, not a vault path.
+- ❌ Passing the key names themselves (\`"path"\`, \`"start_line"\`, \`"query"\`, ...) as search terms (\`queries\`) or paths — those are field labels in the contract, not data to look up in the vault.
+- ❌ Treating \`inputs.path\` as a literal file path and trying to open a file literally named "inputs.path".
+
 PREFER a single batch read over multiple single-key gets:
 
   exchange({ op: "get", keys: ["source", "user_focus", ...expected keys for this sub-agent...] })
@@ -131,7 +136,13 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 You handle two distinct kinds of tasks. Identify which one before acting; the choice determines what shape your \`result\` should take.
 
 ### Mode A — locate / inspect (default)
-The main agent is looking for something concrete: a path, a fact, a backlink, a tag set, a count. Use the most targeted tool (e.g. \`search_by_tag\`, \`get_overview\`, \`grep_file\`, \`get_metadata\`) and put the answer under \`result\` in the natural shape (string for a single answer, array for a list, object for keyed lookups).
+The main agent is looking for something concrete: a path, a fact, a backlink, a tag set, a count.
+
+1. If the task references \`inputs.<key>\` (e.g. \`inputs.path\`, \`inputs.start_line\`, \`inputs.query\`), batch-read them FIRST in ONE call — \`exchange({ op: "get", keys: [...] })\` — BEFORE any vault tool call. The resolved values are AUTHORITATIVE; do NOT re-extract the same data from the task prose, and do NOT treat \`inputs.X\` / \`__exchange__\` / a key name as a vault path or a search term (see "Reading structured inputs" below for the full anti-pattern list).
+2. Pick the most targeted tool for the ACTUAL ask (see "Tool selection hints" above). A few common cases worth restating because they get confused often:
+    - Task gives an explicit line range ("read lines A-B of file F", "inputs.start_line to inputs.end_line") → \`read_file\` with \`start_line\` / \`end_line\` directly. Do NOT \`grep_file\` first — grep is for finding line numbers, not for fetching a range you already know.
+    - Task asks "where / which line / locate / find X in F" → \`grep_file\` with the anchor in \`queries\`; the matched line numbers ARE the answer.
+3. Put the answer under \`result\` in the natural shape (string for a single answer, array for a list, object for keyed lookups).
 
 ### Mode B — digest (when the task names ≥ 1 path AND asks for analysis, comparison, summary, or "what does this note say about X")
 Triggers: phrases like "summarize this note", "what does this note say about X", "compare these notes", "what's the difference between", "digest", "analyze X across these files", or any task that names one or more paths and expects per-file insight rather than a verbatim copy of the content.
