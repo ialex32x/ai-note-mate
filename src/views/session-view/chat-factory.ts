@@ -10,6 +10,7 @@ import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provide
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
 import { buildSubAgentConfigs } from '../../services/sub-agent-registry';
+import { buildSkillSystemPromptForQuery } from '../../skills/skill-catalogue';
 import type { ArtifactStore } from '../../services/artifact-store';
 import { createObsidianTools, createObsidianMutationTools } from '../../services/tools/obsidian';
 import { createWebSearchTools, createImageDownloadTools } from '../../services/tools/web-search-toolcall';
@@ -140,10 +141,14 @@ export function createChatAgent(
         structuredFollowUps: settings.followUpSuggestionsEnabled && settings.followUpSuggestionsStructured,
     });
 
-    const skillsPrompt = plugin.skillManager.buildSystemPrompt();
-    const fullSystemPrompt = builtinSystemPrompt +
-        (settings.systemPrompt || '') +
-        (skillsPrompt ? '\n\n' + skillsPrompt : '');
+    // Skills are intentionally NOT folded into the static `systemPrompt`
+    // here — they are appended per-turn via `systemPromptSuffix` below so
+    // that the catalogue can be shortlisted by embedding similarity to
+    // the current user query. The full-catalogue fallback (no embedding
+    // configured / query too short / embed failed) lives inside
+    // `buildSkillSystemPromptForQuery` and preserves the pre-embedding
+    // behaviour exactly.
+    const fullSystemPrompt = builtinSystemPrompt + (settings.systemPrompt || '');
 
     // Resolve per-profile context-compression overrides from the active
     // profile. Stored on disk as 0 = "use plugin default", which the
@@ -173,6 +178,21 @@ export function createChatAgent(
 
     const chatStreamConfig = {
         systemPrompt: fullSystemPrompt,
+        // Per-turn skill catalogue. Shortlist by embedding similarity
+        // to the current user input when an embedding profile is
+        // configured; otherwise return the full enabled-skill catalogue
+        // (same wording as the legacy static build). Errors degrade
+        // silently to the full catalogue — `ChatStream.prompt()` also
+        // swallows non-abort errors from this callback as an extra
+        // safety net.
+        systemPromptSuffix: (query: string, signal?: AbortSignal) =>
+            buildSkillSystemPromptForQuery({
+                skillManager: plugin.skillManager,
+                query,
+                embeddingConfig: createEmbeddingConfig(plugin) ?? null,
+                filterOpts: createEmbeddingFilterOptions(plugin),
+                signal,
+            }),
         compressionOptions,
         dynamicTools: () => callbacks.getDynamicTools(),
         // Forward the runtime's per-session artifact store. Two consumers

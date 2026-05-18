@@ -19,7 +19,7 @@ import type {
     ToolCapability,
     ChatMessageRole,
 } from "./llm-provider";
-import { findSimilar } from "./text-embedding";
+import { findSimilar, isQueryTooShort } from "./text-embedding";
 import { getGlobalEmbedder } from "./embedder";
 
 // ─────────────────────────────────────────────
@@ -189,30 +189,6 @@ export interface EmbeddingFilterOptions {
 }
 
 /**
- * Decide whether a query is too short / signal-poor to drive embedding-based
- * tool filtering. When this returns true, callers should fall back to the
- * full tool set rather than risk wiping out the on-demand schemas with a
- * meaningless query.
- *
- * Heuristic:
- *   - After stripping whitespace / punctuation / symbols, fewer than 8
- *     characters → too short (catches "yes", "ok", "继续", "go on" …).
- *   - No CJK ideograph/kana/hangul AND no English-alphabet word (length ≥ 2)
- *     → too short (catches pure-number/pure-emoji follow-ups).
- *
- * Intentionally simple: cheap on every turn, easy to reason about, and a
- * false-negative just means we attach the full tool set (safe degradation).
- */
-function isQueryTooShort(text: string): boolean {
-    if (!text) return true;
-    const stripped = text.replace(/[\s\p{P}\p{S}]/gu, '');
-    if (stripped.length < 8) return true;
-    const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text);
-    const hasEnglishWord = /[a-zA-Z]{2,}/.test(text);
-    return !hasCJK && !hasEnglishWord;
-}
-
-/**
  * Build the text used to embed a tool for similarity ranking.
  *
  * Composition (newline-separated):
@@ -323,6 +299,23 @@ export interface RegisteredTool {
 export interface ChatStreamConfig {
     /** Optional system prompt prepended to every conversation */
     systemPrompt?: string;
+    /**
+     * Optional callback that produces extra system-prompt text to
+     * append on each {@link prompt} call. Receives the current user
+     * input so providers can adapt the appended text to the turn —
+     * e.g. shortlist a skills catalogue by embedding-similarity to
+     * the current query (see `src/skills/skill-catalogue.ts`).
+     *
+     * The returned text is appended to {@link systemPrompt} separated
+     * by a blank line; returning '' (or `undefined`) leaves the
+     * system prompt unchanged.
+     *
+     * Errors are caught and ignored so a failing suffix provider can
+     * never block the actual LLM request. Aborts (DOMException with
+     * `name === 'AbortError'`) propagate to the surrounding flow as
+     * usual.
+     */
+    systemPromptSuffix?: (query: string, signal?: AbortSignal) => string | Promise<string>;
     /**
      * Optional short label identifying this ChatStream instance for
      * diagnostic logs (e.g. `"main"` for the orchestrator's main agent
@@ -975,9 +968,35 @@ export class ChatStream implements IChatAgent {
         //   * Orphan `tool_call` messages (no preceding assistant, or no
         //     completed result yet) are skipped \u2014 they would produce orphan
         //     tool_results that the validator would drop anyway.
+        // Resolve the effective system prompt for this turn. Static
+        // `systemPrompt` is the baseline; `systemPromptSuffix` can append
+        // a per-turn, query-aware fragment (e.g. an embedding-shortlisted
+        // skill catalogue — see `src/skills/skill-catalogue.ts`). Suffix
+        // failures degrade silently to the baseline so a broken suffix
+        // provider can never block the LLM call.
+        let effectiveSystemPrompt = this._config.systemPrompt ?? '';
+        if (this._config.systemPromptSuffix) {
+            try {
+                const suffix = await this._config.systemPromptSuffix(
+                    userInput,
+                    this._abortController?.signal,
+                );
+                if (suffix) {
+                    effectiveSystemPrompt = effectiveSystemPrompt
+                        ? `${effectiveSystemPrompt}\n\n${suffix}`
+                        : suffix;
+                }
+            } catch (err) {
+                if (err instanceof DOMException && err.name === 'AbortError') {
+                    throw err;
+                }
+                console.warn('ChatStream: systemPromptSuffix threw, falling back to base prompt', err);
+            }
+        }
+
         const rawMessages: ChatMessageParam[] = [];
-        if (this._config.systemPrompt) {
-            rawMessages.push({ role: "system", content: this._config.systemPrompt });
+        if (effectiveSystemPrompt) {
+            rawMessages.push({ role: "system", content: effectiveSystemPrompt });
         }
         for (let i = 0; i < this._messages.length; i++) {
             const msg = this._messages[i]!;

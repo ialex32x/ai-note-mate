@@ -151,3 +151,30 @@ export function findSimilar(
 
     return filtered.slice(0, topK);
 }
+
+/**
+ * Decide whether a query is too short / signal-poor to drive embedding-based
+ * filtering. When this returns true, callers should fall back to the full
+ * candidate set rather than risk wiping it out with a meaningless query.
+ *
+ * Heuristic:
+ *   - After stripping whitespace / punctuation / symbols, fewer than 8
+ *     characters → too short (catches "yes", "ok", "继续", "go on" …).
+ *   - No CJK ideograph/kana/hangul AND no English-alphabet word (length ≥ 2)
+ *     → too short (catches pure-number/pure-emoji follow-ups).
+ *
+ * Intentionally simple: cheap on every turn, easy to reason about, and a
+ * false-negative just means we attach the full set (safe degradation).
+ *
+ * Lives in this file so every embedding-based shortlister (tool filter,
+ * skill catalogue, future consumers) can share one definition of
+ * "too short to bother".
+ */
+export function isQueryTooShort(text: string): boolean {
+    if (!text) return true;
+    const stripped = text.replace(/[\s\p{P}\p{S}]/gu, '');
+    if (stripped.length < 8) return true;
+    const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text);
+    const hasEnglishWord = /[a-zA-Z]{2,}/.test(text);
+    return !hasCJK && !hasEnglishWord;
+}

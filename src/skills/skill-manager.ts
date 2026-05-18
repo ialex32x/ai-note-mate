@@ -234,12 +234,35 @@ export class SkillManager {
    * keeping the initial context small while still letting the model discover
    * which skills exist.
    *
+   * Equivalent to {@link buildSystemPromptForSkills} called with the
+   * current enabled-skill set. Callers that want to render a *subset*
+   * of skills (e.g. an embedding-based shortlist filtered by the
+   * current user query — see `src/skills/skill-catalogue.ts`) should
+   * use {@link buildSystemPromptForSkills} directly.
+   *
    * @returns A formatted string to append to your system prompt, or an
    * empty string when no skills are enabled.
    */
   buildSystemPrompt(): string {
-    const enabledSkills = this.getSkills();
-    if (enabledSkills.length === 0) {
+    return this.buildSystemPromptForSkills(this.getSkills());
+  }
+
+  /**
+   * Render a catalogue of the *given* skill set as a system-prompt
+   * snippet. Same wording / shape as {@link buildSystemPrompt} but
+   * accepts the skill list as input, so callers can pass a filtered /
+   * shortlisted subset without SkillManager having to know how the
+   * subset was picked (embedding similarity, manual selection, etc).
+   *
+   * Pass a subset of {@link getSkills} — disabled skills slipped in
+   * from elsewhere would be advertised here but rejected by
+   * `load_skill`, so callers MUST filter `.disabled` themselves before
+   * calling.
+   *
+   * @returns Catalogue text, or '' when `skills` is empty.
+   */
+  buildSystemPromptForSkills(skills: SkillDefinition[]): string {
+    if (skills.length === 0) {
       return '';
     }
 
@@ -262,7 +285,7 @@ export class SkillManager {
       '',
     ];
 
-    for (const skill of enabledSkills) {
+    for (const skill of skills) {
       parts.push(`- **${skill.name}**: ${skill.description}`);
     }
 
