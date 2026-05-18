@@ -139,8 +139,11 @@
 
     .cm-file-ref__name {
         color: @text-error;
+        // `text-decoration-color` defaults to `currentColor`, so the
+        // line-through automatically picks up `@text-error` from `color`.
+        // Avoid the CSS3 longhand to silence Obsidian's "partially supported"
+        // browser-feature warning without any visual change.
         text-decoration: line-through;
-        text-decoration-color: @text-error;
     }
 }
 

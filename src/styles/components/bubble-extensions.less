@@ -248,7 +248,7 @@
     padding: 1px @spacing-md 1px @spacing-lg;
     border-radius: 12px;
     background: @bg-modifier-hover;
-    border: 1px solid #666;
+    border: 1px solid @bg-modifier-border;
     cursor: pointer;
     white-space: nowrap;
     max-width: 220px;
@@ -349,8 +349,11 @@
 
     .bubble-file-ref__name {
         color: @text-error;
+        // `text-decoration-color` defaults to `currentColor`, so the
+        // line-through automatically picks up `@text-error` from `color`.
+        // Avoid the CSS3 longhand to silence Obsidian's "partially supported"
+        // browser-feature warning without any visual change.
         text-decoration: line-through;
-        text-decoration-color: @text-error;
     }
 }
 
