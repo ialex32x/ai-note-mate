@@ -59,6 +59,22 @@ export const DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD = 0.2;
  */
 export const DEFAULT_SKILL_FILTER_TOP_K = 15;
 
+/**
+ * Default cosine-similarity floor for the "strong skill match" hint
+ * mode. Sized for OpenAI `text-embedding-3-small` whose meaningful
+ * matches typically land in the 0.3–0.6 range; models with a higher
+ * baseline (BGE, Qwen) usually want to nudge this up. The trigger
+ * tester in settings is the source of truth for "what value works for
+ * your model".
+ */
+export const DEFAULT_SKILL_HINT_THRESHOLD = 0.55;
+/**
+ * Default cosine-similarity floor for the auto-inject mode. Conservative
+ * by design so we don't inline irrelevant skill bodies on generic
+ * queries. Should normally stay > {@link DEFAULT_SKILL_HINT_THRESHOLD}.
+ */
+export const DEFAULT_SKILL_AUTO_INJECT_THRESHOLD = 0.75;
+
 export function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -133,6 +149,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	toolFilterTopK: DEFAULT_TOOL_FILTER_TOP_K,
 	skillFilterSimilarityThreshold: DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
 	skillFilterTopK: DEFAULT_SKILL_FILTER_TOP_K,
+	skillHintThreshold: DEFAULT_SKILL_HINT_THRESHOLD,
+	skillAutoInjectThreshold: DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
 	memoryEnabled: true,
 	memories: [],
 	followUpSuggestionsEnabled: true,

@@ -262,6 +262,10 @@ export const ko: Record<string, string> = {
 	'settings.skillFilterSimilarityThresholdDesc': '매 턴 스킬 카탈로그에 스킬이 유지되기 위한 최소 코사인 유사도 (0–1). 스킬은 수가 적고 사용자의 자연어 표현이 설명과 정확히 일치하는 경우가 드물기 때문에 기본값은 도구 필터보다 의도적으로 더 관대합니다.',
 	'settings.skillFilterTopK': '스킬 필터: 상위 K',
 	'settings.skillFilterTopKDesc': '필터링 후 매 턴 카탈로그에 노출되는 스킬의 최대 개수 (1–30).',
+	'settings.skillHintThreshold': '스킬: 강력한 힌트 임계값',
+	'settings.skillHintThresholdDesc': '코사인 유사도 (0–1). 이 값을 초과하면 top-1 스킬이 카탈로그 상단에 "강력 매칭" 힌트 라인을 얻어 모델이 load_skill 호출하도록 유도합니다. 임베딩 모델에 맞춰 조정하세요 — 모델마다 점수 분포가 크게 다릅니다. Skills 섹션의 트리거 테스터를 사용하여 적합한 값을 선택하는 것을 권장합니다.',
+	'settings.skillAutoInjectThreshold': '스킬: 자동 주입 임계값',
+	'settings.skillAutoInjectThresholdDesc': '코사인 유사도 (0–1). 이 값을 초과하면 top-1 스킬의 전체 절차가 시스템 프롬프트에 자동 주입되어 load_skill 왕복 호출을 건너뜁니다. 일반적으로 강력한 힌트 임계값 이상이어야 합니다; 그보다 작으면 에스컬레이션 순서를 단조롭게 유지하기 위해 조용히 상향됩니다.',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP 서버',

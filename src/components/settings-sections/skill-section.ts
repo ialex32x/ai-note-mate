@@ -1,12 +1,16 @@
 import { Notice, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { getActiveEmbeddingConfig } from "../../settings";
+import {
+	DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
+	DEFAULT_SKILL_FILTER_TOP_K,
+	DEFAULT_SKILL_HINT_THRESHOLD,
+	DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
+} from "../../settings/defaults";
 import { getGlobalEmbedder } from "../../services/embedder";
 import { cosineSimilarity } from "../../services/text-embedding";
-import {
-	SKILL_AUTO_INJECT_THRESHOLD,
-	SKILL_HINT_THRESHOLD,
-} from "../../skills/skill-catalogue";
+import { createTextField } from "../settings-components";
+import type { EmbeddingConfig, NoteAssistantPluginSettings } from "../../settings/types";
 import type { SkillDefinition } from "../../skills/skill-loader";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -159,15 +163,16 @@ export class SkillSettingsSection implements SettingsSection {
 				text: t('settings.skillsLoaded', { count: loadedSkills.length }),
 			});
 
-			// ── Trigger tester (only meaningful when embedding is configured) ──
+			// ── Matching tuning + trigger tester ──
 			//
-			// Lets the user paste a hypothetical user query and see the
-			// cosine similarity ranking against every loaded skill. The
-			// most common authoring complaint is "the AI doesn't pick my
-			// skill" — this surface lets users see *why* (poor wording,
-			// missing when_to_use, etc.) without leaving the settings
-			// view. Rendered before the per-skill list so the input is
-			// visible without scrolling on small viewports.
+			// All four threshold knobs sit immediately above the trigger
+			// tester so editing a value and clicking "Test" gives users
+			// instant feedback on how the new value re-bands their skills.
+			// Co-locating them in the Skills section (rather than buried
+			// in Embedding settings) also keeps the conceptually-related
+			// surfaces — "what controls skill matching" + "what would
+			// match right now" — in one mental unit.
+			this.renderMatchingTuning(container);
 			this.renderTriggerTester(container, loadedSkills);
 
 			// List detected skills with name, description, and lint badges
@@ -219,10 +224,101 @@ export class SkillSettingsSection implements SettingsSection {
 	}
 
 	/**
-	 * Render the "test a trigger" panel. The panel is always shown so
-	 * users know the feature exists; when embedding isn't configured we
-	 * render a disabled input + explanatory hint instead of silently
-	 * omitting it.
+	 * Render the four matching-tuning fields:
+	 *
+	 *   1. catalogue similarity floor (`skillFilterSimilarityThreshold`)
+	 *   2. catalogue size cap (`skillFilterTopK`)
+	 *   3. strong-hint floor (`skillHintThreshold`)
+	 *   4. auto-inject floor (`skillAutoInjectThreshold`)
+	 *
+	 * Validation mirrors the use-site clamping in `skill-catalogue.ts`
+	 * (range + ordering rules) so what the user types here is exactly
+	 * what the catalogue builder will apply at runtime.
+	 *
+	 * Lives in this section (not Embedding) because the trigger tester
+	 * is the only meaningful way to pick concrete numbers — every
+	 * embedding model has a different score distribution, and the
+	 * "right" threshold is "wherever your relevant skills score, plus
+	 * a small buffer".
+	 */
+	private renderMatchingTuning(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+
+		createTextField({
+			container,
+			name: t('settings.skillFilterSimilarityThreshold'),
+			desc: t('settings.skillFilterSimilarityThresholdDesc'),
+			placeholder: String(DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD),
+			value: String(plugin.settings.skillFilterSimilarityThreshold),
+			onChange: async (value) => {
+				const num = parseFloat(value);
+				plugin.settings.skillFilterSimilarityThreshold =
+					isNaN(num) ? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD
+					: Math.max(0, Math.min(1, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.skillFilterTopK'),
+			desc: t('settings.skillFilterTopKDesc'),
+			placeholder: String(DEFAULT_SKILL_FILTER_TOP_K),
+			value: String(plugin.settings.skillFilterTopK),
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.skillFilterTopK =
+					isNaN(num) ? DEFAULT_SKILL_FILTER_TOP_K
+					: Math.max(1, Math.min(30, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.skillHintThreshold'),
+			desc: t('settings.skillHintThresholdDesc'),
+			placeholder: String(DEFAULT_SKILL_HINT_THRESHOLD),
+			value: String(plugin.settings.skillHintThreshold),
+			onChange: async (value) => {
+				const num = parseFloat(value);
+				plugin.settings.skillHintThreshold =
+					isNaN(num) ? DEFAULT_SKILL_HINT_THRESHOLD
+					: Math.max(0, Math.min(1, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.skillAutoInjectThreshold'),
+			desc: t('settings.skillAutoInjectThresholdDesc'),
+			placeholder: String(DEFAULT_SKILL_AUTO_INJECT_THRESHOLD),
+			value: String(plugin.settings.skillAutoInjectThreshold),
+			onChange: async (value) => {
+				const num = parseFloat(value);
+				plugin.settings.skillAutoInjectThreshold =
+					isNaN(num) ? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD
+					: Math.max(0, Math.min(1, num));
+				await plugin.saveSettings();
+			},
+		});
+	}
+
+	/**
+	 * Render the "test a trigger" panel.
+	 *
+	 * The panel always renders fully interactive (no `disabled` state on
+	 * either the input or the button). Embedding-readiness is re-evaluated
+	 * at click time, not render time — that way the user can toggle
+	 * embedding on/off in another settings section and the tester will
+	 * just work on the next click, without depending on a cross-section
+	 * re-render notification.
+	 *
+	 * The trade-off (vs. statically disabling the button) is that the
+	 * user only learns embedding isn't ready when they click; we surface
+	 * a clear `Notice()` in that case so it doesn't feel like a silent
+	 * no-op.
 	 */
 	private renderTriggerTester(
 		container: HTMLElement,
@@ -242,10 +338,6 @@ export class SkillSettingsSection implements SettingsSection {
 			text: t('settings.skillTesterDesc'),
 		});
 
-		const embeddingConfig = getActiveEmbeddingConfig(plugin.settings);
-		const embedder = getGlobalEmbedder();
-		const ready = Boolean(embeddingConfig && embedder);
-
 		const row = wrap.createEl('div', {
 			cls: 'oap-settings-skill-tester-row',
 		});
@@ -260,11 +352,6 @@ export class SkillSettingsSection implements SettingsSection {
 			cls: 'oap-settings-skill-tester-btn',
 			text: t('settings.skillTesterRun'),
 		});
-		if (!ready) {
-			queryInput.setAttr('disabled', 'true');
-			runBtn.setAttr('disabled', 'true');
-			setTooltip(runBtn, t('settings.skillTesterNotReady'));
-		}
 
 		const resultsEl = wrap.createEl('div', {
 			cls: 'oap-settings-skill-tester-results',
@@ -272,38 +359,37 @@ export class SkillSettingsSection implements SettingsSection {
 
 		const runTest = async () => {
 			const query = queryInput.value.trim();
-			if (!query || !embeddingConfig || !embedder) return;
+			if (!query) return;
+
+			// Re-read everything fresh on each click so toggling embedding
+			// in another section (or even in another window) is picked up
+			// without needing a settings-tab refresh.
+			const embeddingConfig = getActiveEmbeddingConfig(plugin.settings);
+			const embedder = getGlobalEmbedder();
+			if (!embeddingConfig || !embedder) {
+				new Notice(t('settings.skillTesterNotReady'));
+				return;
+			}
 
 			runBtn.setAttr('disabled', 'true');
 			runBtn.setText(t('settings.skillTesterRunning'));
 			resultsEl.empty();
 
 			try {
-				const apiKey = plugin.app.secretStorage.getSecret(embeddingConfig.apiKey)
-					?? embeddingConfig.apiKey;
-				if (!apiKey) {
-					new Notice(t('settings.skillTesterNoApiKey'));
-					return;
-				}
-				await embedder.updateConfig({
-					type: embeddingConfig.type,
-					apiKey,
-					baseURL: embeddingConfig.baseUrl,
-					model: embeddingConfig.model,
-				});
-
-				const texts = [
+				await runEmbedAndScore({
+					plugin,
+					embedder,
+					embeddingConfig,
 					query,
-					...skills.map(skillEmbeddingText),
-				];
-				const vectors = await embedder.embed(texts);
-				const queryVec = vectors[0]!;
-				const scored = skills.map((s, i) => ({
-					skill: s,
-					similarity: cosineSimilarity(queryVec, vectors[i + 1]!),
-				})).sort((a, b) => b.similarity - a.similarity);
-
-				renderTesterResults(resultsEl, scored);
+					skills,
+					resultsEl,
+					// Snapshot the user's current thresholds so the
+					// result rows show bands that match what would
+					// actually happen at runtime. Re-reading on each
+					// click means changes to the settings take effect
+					// without re-rendering the section.
+					bandThresholds: resolveBandThresholds(plugin.settings),
+				});
 			} catch (err) {
 				console.error('SkillTester: embed failed', err);
 				resultsEl.createEl('div', {
@@ -324,6 +410,55 @@ export class SkillSettingsSection implements SettingsSection {
 			}
 		});
 	}
+}
+
+/**
+ * Embed `query` plus each skill's representative text, score them by
+ * cosine similarity, and render the result rows. Extracted so the
+ * outer flow stays focused on UI state (button text, disabled flag,
+ * error placement) and this function owns the embedding pipeline.
+ *
+ * Throws on any error after surfacing a `Notice` for user-actionable
+ * cases (missing API key) — the caller is responsible for the generic
+ * "embedding failed" fallback row.
+ */
+async function runEmbedAndScore(opts: {
+	plugin: import("../../main").default;
+	embedder: NonNullable<ReturnType<typeof getGlobalEmbedder>>;
+	embeddingConfig: EmbeddingConfig;
+	query: string;
+	skills: SkillDefinition[];
+	resultsEl: HTMLElement;
+	bandThresholds: BandThresholds;
+}): Promise<void> {
+	const { plugin, embedder, embeddingConfig, query, skills, resultsEl, bandThresholds } = opts;
+
+	const apiKey = plugin.app.secretStorage.getSecret(embeddingConfig.apiKey)
+		?? embeddingConfig.apiKey;
+	if (!apiKey) {
+		new Notice(t('settings.skillTesterNoApiKey'));
+		throw new Error('SkillTester: no API key');
+	}
+
+	await embedder.updateConfig({
+		type: embeddingConfig.type,
+		apiKey,
+		baseURL: embeddingConfig.baseUrl,
+		model: embeddingConfig.model,
+	});
+
+	const texts = [
+		query,
+		...skills.map(skillEmbeddingText),
+	];
+	const vectors = await embedder.embed(texts);
+	const queryVec = vectors[0]!;
+	const scored = skills.map((s, i) => ({
+		skill: s,
+		similarity: cosineSimilarity(queryVec, vectors[i + 1]!),
+	})).sort((a, b) => b.similarity - a.similarity);
+
+	renderTesterResults(resultsEl, scored, bandThresholds);
 }
 
 /**
@@ -377,15 +512,60 @@ function computeSkillLints(skill: SkillDefinition): SkillLint[] {
 }
 
 /**
+ * Snapshot of the three thresholds that decide which band a similarity
+ * score falls into. Captured at the moment a test fires so the result
+ * rows reflect the user's *current* settings, not whatever was active
+ * when the settings tab was first opened.
+ */
+interface BandThresholds {
+	/** Floor for inclusion in the catalogue at all. */
+	filter: number;
+	/** Floor for the strong-hint band. */
+	hint: number;
+	/** Floor for the auto-inject band. */
+	autoInject: number;
+}
+
+/**
+ * Resolve the live band thresholds from settings, applying the same
+ * clamping + ordering rules the runtime catalogue builder applies.
+ * Mirrors the logic in `skill-catalogue.ts` so the tester never
+ * disagrees with what actually happens in a real prompt.
+ */
+function resolveBandThresholds(
+	settings: NoteAssistantPluginSettings,
+): BandThresholds {
+	const filter = clamp01(
+		settings.skillFilterSimilarityThreshold ?? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
+	);
+	const hint = clamp01(
+		settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
+	);
+	const autoInject = Math.max(
+		hint,
+		clamp01(
+			settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
+		),
+	);
+	return { filter, hint, autoInject };
+}
+
+function clamp01(n: number): number {
+	if (!Number.isFinite(n)) return 0;
+	return Math.max(0, Math.min(1, n));
+}
+
+/**
  * Render the trigger-tester result list. Each row shows the skill name,
  * the rounded similarity score, and a tone indicator matching the
  * three-band escalation used by the catalogue at runtime (auto-inject /
  * hint / plain) so users can immediately see *what would happen* with
- * the current query.
+ * the current query under their current threshold settings.
  */
 function renderTesterResults(
 	container: HTMLElement,
 	scored: Array<{ skill: SkillDefinition; similarity: number }>,
+	thresholds: BandThresholds,
 ): void {
 	if (scored.length === 0) {
 		container.createEl('div', {
@@ -396,7 +576,7 @@ function renderTesterResults(
 	}
 
 	for (const { skill, similarity } of scored) {
-		const band = bandForSimilarity(similarity);
+		const band = bandForSimilarity(similarity, thresholds);
 		const row = container.createEl('div', {
 			cls: `oap-settings-skill-tester-result oap-settings-skill-tester-result--${band}`,
 		});
@@ -417,10 +597,10 @@ function renderTesterResults(
 
 type SimilarityBand = 'auto-inject' | 'hint' | 'plain' | 'below-threshold';
 
-function bandForSimilarity(s: number): SimilarityBand {
-	if (s >= SKILL_AUTO_INJECT_THRESHOLD) return 'auto-inject';
-	if (s >= SKILL_HINT_THRESHOLD) return 'hint';
-	if (s >= 0.2) return 'plain';
+function bandForSimilarity(s: number, thresholds: BandThresholds): SimilarityBand {
+	if (s >= thresholds.autoInject) return 'auto-inject';
+	if (s >= thresholds.hint) return 'hint';
+	if (s >= thresholds.filter) return 'plain';
 	return 'below-threshold';
 }
 

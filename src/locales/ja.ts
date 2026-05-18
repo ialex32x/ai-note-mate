@@ -262,6 +262,10 @@ export const ja: Record<string, string> = {
 	'settings.skillFilterSimilarityThresholdDesc': '毎ターンのスキルカタログにスキルを残すために必要な最小コサイン類似度 (0–1)。スキルは数が少なく、ユーザーの自然な表現が説明文と完全に一致することは稀なため、デフォルトはツールフィルターより意図的に寛容にしています。',
 	'settings.skillFilterTopK': 'スキルフィルター:上位 K',
 	'settings.skillFilterTopKDesc': 'フィルター後に毎ターンのカタログへ提示するスキルの最大数 (1–30)。',
+	'settings.skillHintThreshold': 'スキル:強ヒントしきい値',
+	'settings.skillHintThresholdDesc': 'コサイン類似度 (0–1)。これを超えると top-1 スキルがカタログ先頭に「強マッチ」ヒント行を獲得し、モデルに load_skill の呼び出しを促します。埋め込みモデルに合わせて調整してください — モデルごとにスコア分布が大きく異なります。Skills セクションのトリガーテスターで適切な値を選ぶことを推奨します。',
+	'settings.skillAutoInjectThreshold': 'スキル:自動注入しきい値',
+	'settings.skillAutoInjectThresholdDesc': 'コサイン類似度 (0–1)。これを超えると top-1 スキルの完全な手順がシステムプロンプトに自動注入され、load_skill の往復呼び出しがスキップされます。通常は強ヒントしきい値 ≥ にすべきです;それより小さい場合、エスカレーション順序を単調に保つため静かに引き上げられます。',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP サーバー',

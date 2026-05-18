@@ -262,6 +262,10 @@ export const zhTW: Record<string, string> = {
 	'settings.skillFilterSimilarityThresholdDesc': '每輪技能目錄中保留某個技能所需的最小餘弦相似度 (0–1)。預設值刻意比工具過濾更寬鬆,因為技能數量少,且使用者的自然語言通常不會與描述用詞完全一致。',
 	'settings.skillFilterTopK': '技能過濾:Top-K',
 	'settings.skillFilterTopKDesc': '過濾後每輪技能目錄最多保留多少個技能 (1–30)。',
+	'settings.skillHintThreshold': '技能:強提示閾值',
+	'settings.skillHintThresholdDesc': '餘弦相似度 (0–1),超過此值後,top-1 技能會在目錄頂部獲得一行「強匹配」提示,促使模型呼叫 load_skill。請依你的嵌入模型調整 — 不同模型的分數分佈差異很大;建議使用 Skills 區域的觸發器測試器選定合適的值。',
+	'settings.skillAutoInjectThreshold': '技能:自動注入閾值',
+	'settings.skillAutoInjectThresholdDesc': '餘弦相似度 (0–1),超過此值後,top-1 技能的完整流程會被自動注入系統提示,省去 load_skill 的往返呼叫。通常應 ≥ 強提示閾值;若小於,系統會靜默上拉以保持升級順序單調。',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP 伺服器',

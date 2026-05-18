@@ -243,6 +243,33 @@ export interface NoteAssistantPluginSettings {
 	 */
 	skillFilterTopK: number;
 
+	/**
+	 * Cosine-similarity floor above which the top-1 matched skill gets
+	 * a "strong skill match" hint line at the top of the catalogue. The
+	 * model is nudged toward calling `load_skill` for it without the
+	 * body actually being injected. Range [0, 1]; clamped at use-site.
+	 *
+	 * Tune to match your embedding model's score distribution — what
+	 * counts as "strongly relevant" varies wildly between models (see
+	 * the trigger tester in Settings → Skills).
+	 *
+	 * Soft constraint: should normally be ≤ {@link skillAutoInjectThreshold}
+	 * so the escalation order (plain → hint → auto-inject) stays
+	 * monotonic. The catalogue builder clamps `autoInject` upward to
+	 * `hint` if the user gets them out of order, so the worst case is
+	 * one mode is unreachable, never broken behaviour.
+	 */
+	skillHintThreshold: number;
+	/**
+	 * Cosine-similarity floor above which the top-1 matched skill is
+	 * auto-injected (full body) into the system prompt — no `load_skill`
+	 * round trip needed. Range [0, 1]; clamped at use-site.
+	 *
+	 * See {@link skillHintThreshold} for tuning guidance and the
+	 * ordering constraint with the hint threshold.
+	 */
+	skillAutoInjectThreshold: number;
+
 	// ── Memories ───────────────────────────────────────────────────────────
 	memoryEnabled: boolean;
 	memories: NoteAssistantMemory[];

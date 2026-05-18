@@ -7,6 +7,8 @@ import {
     DEFAULT_TOOL_FILTER_TOP_K,
     DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
     DEFAULT_SKILL_FILTER_TOP_K,
+    DEFAULT_SKILL_HINT_THRESHOLD,
+    DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
 } from '../../settings/defaults';
 import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provider';
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
@@ -216,6 +218,8 @@ export function createChatAgent(
                 query,
                 embeddingConfig: createEmbeddingConfig(plugin) ?? null,
                 filterOpts: createSkillFilterOptions(plugin),
+                hintThreshold: settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
+                autoInjectThreshold: settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
                 signal,
             }),
         compressionOptions,

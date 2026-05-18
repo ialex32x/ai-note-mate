@@ -39,26 +39,21 @@ import type { MinimalModelConfig } from '../services/llm-provider';
 import type { SkillManager, SkillDefinition } from './skill-manager';
 
 /**
- * Cosine-similarity floor above which the top-1 matched skill is auto-
- * injected (full body) into the system prompt. Above this we treat the
- * match as "certain enough that the round-trip cost of `load_skill`
- * outweighs the token cost of inlining the body".
- *
- * Tuned conservatively (0.75) so we don't inline irrelevant bodies on
- * generic queries. Users with non-OpenAI embedding models that produce
- * different distributions can effectively retune by lowering
- * `skillFilterSimilarityThreshold` (which gates entry into the
- * shortlist in the first place); the auto-inject floor is a separate,
- * fixed safety threshold for now.
+ * Built-in fallback for the auto-inject cosine-similarity floor — used
+ * when the caller doesn't pass an explicit value (e.g. tests, ad-hoc
+ * usage). The runtime path threads the user-tunable
+ * `skillAutoInjectThreshold` from settings instead so different
+ * embedding models (which produce wildly different score
+ * distributions — see `text-embedding-3-small` vs. BGE / Qwen) can be
+ * dialed in by the user via the trigger tester.
  */
-export const SKILL_AUTO_INJECT_THRESHOLD = 0.75;
+export const DEFAULT_SKILL_AUTO_INJECT_THRESHOLD = 0.75;
 /**
- * Cosine-similarity floor above which a "strong skill match" hint is
- * inserted at the top of the catalogue (no body injection). Set below
- * {@link SKILL_AUTO_INJECT_THRESHOLD} so we get a useful middle band
- * where the model is nudged but the body is still loaded on demand.
+ * Built-in fallback for the strong-hint cosine-similarity floor.
+ * See {@link DEFAULT_SKILL_AUTO_INJECT_THRESHOLD} for the rationale
+ * on keeping this user-tunable at the call site.
  */
-export const SKILL_HINT_THRESHOLD = 0.55;
+export const DEFAULT_SKILL_HINT_THRESHOLD = 0.55;
 
 /** Knobs for the embedding-based shortlist. Same shape as `EmbeddingFilterOptions`. */
 export interface SkillCatalogueFilterOptions {
@@ -79,6 +74,21 @@ export interface BuildSkillSystemPromptParams {
     embeddingConfig: MinimalModelConfig | null | undefined;
     /** Tunables for the shortlist. Required when `embeddingConfig` is given. */
     filterOpts?: SkillCatalogueFilterOptions;
+    /**
+     * Cosine-similarity floor for the "strong skill match" hint mode.
+     * Defaults to {@link DEFAULT_SKILL_HINT_THRESHOLD} when omitted.
+     * Clamped to `[0, 1]` at use-site.
+     */
+    hintThreshold?: number;
+    /**
+     * Cosine-similarity floor for the auto-inject mode. Defaults to
+     * {@link DEFAULT_SKILL_AUTO_INJECT_THRESHOLD} when omitted.
+     * Clamped to `[0, 1]` and pulled UP to `hintThreshold` if the user
+     * accidentally configures it below the hint floor — that way the
+     * escalation order (plain → hint → auto-inject) stays monotonic
+     * even with misconfigured settings.
+     */
+    autoInjectThreshold?: number;
     /** Forwarded to the embedder for user-initiated aborts. */
     signal?: AbortSignal;
 }
@@ -102,6 +112,16 @@ export async function buildSkillSystemPromptForQuery(
     if (enabledSkills.length === 0) {
         return '';
     }
+
+    // Resolve the escalation thresholds. Clamp to [0, 1] and force the
+    // auto-inject floor to be at least the hint floor — keeps the
+    // plain → hint → auto-inject escalation monotonic even if the user
+    // accidentally configures auto-inject below hint.
+    const hintThreshold = clamp01(params.hintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD);
+    const autoInjectThreshold = Math.max(
+        hintThreshold,
+        clamp01(params.autoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD),
+    );
 
     const activeNames = skillManager.getActiveSkillNames();
 
@@ -185,7 +205,7 @@ export async function buildSkillSystemPromptForQuery(
         // model knows the full skill universe and that this one is now
         // loaded.
         if (topSkill
-            && topSimilarity >= SKILL_AUTO_INJECT_THRESHOLD
+            && topSimilarity >= autoInjectThreshold
             && !activeNames.has(topSkill.name)
         ) {
             const instructions = skillManager.buildSkillInstructions(topSkill.name);
@@ -218,7 +238,7 @@ export async function buildSkillSystemPromptForQuery(
             // through to the hint branch so we still surface the match.
         }
 
-        if (topSkill && topSimilarity >= SKILL_HINT_THRESHOLD) {
+        if (topSkill && topSimilarity >= hintThreshold) {
             return skillManager.buildSystemPromptForSkills(shortlisted, {
                 activeNames,
                 headerHint: formatStrongMatchHint(topSkill.name, topSimilarity, false),
@@ -270,6 +290,12 @@ function buildSkillEmbeddingText(skill: SkillDefinition): string {
         parts.push(skill.triggers.join(', '));
     }
     return parts.filter(Boolean).join('\n');
+}
+
+/** Clamp `n` to `[0, 1]`, mapping NaN to 0. */
+function clamp01(n: number): number {
+    if (!Number.isFinite(n)) return 0;
+    return Math.max(0, Math.min(1, n));
 }
 
 /**

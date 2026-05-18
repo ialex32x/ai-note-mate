@@ -262,6 +262,10 @@ export const en: Record<string, string> = {
 	'settings.skillFilterSimilarityThresholdDesc': 'Minimum cosine similarity (0–1) for a skill to be kept in the per-turn skills catalogue. Defaults are intentionally more permissive than the tool filter because skills are few and the user rarely phrases queries with the exact wording of the description.',
 	'settings.skillFilterTopK': 'Skill filter: top-K',
 	'settings.skillFilterTopKDesc': 'Maximum number of skills surfaced in the per-turn catalogue after filtering (1–30).',
+	'settings.skillHintThreshold': 'Skill: strong-hint threshold',
+	'settings.skillHintThresholdDesc': 'Cosine similarity (0–1) above which the top-matched skill gets a "strong match" hint line at the top of the catalogue, nudging the model to call load_skill. Tune to your embedding model — different models produce very different score distributions; use the trigger tester in the Skills section to pick a value.',
+	'settings.skillAutoInjectThreshold': 'Skill: auto-inject threshold',
+	'settings.skillAutoInjectThresholdDesc': 'Cosine similarity (0–1) above which the top-matched skill\'s full procedure is auto-injected into the system prompt, skipping the load_skill round trip. Should normally be ≥ the strong-hint threshold; if it isn\'t, it is silently pulled up so escalation stays monotonic.',
 
 	// ── MCP servers ───────────────────────────────────────
 	'settings.mcpServers': 'MCP Servers',
