@@ -231,7 +231,7 @@ export const zhTW: Record<string, string> = {
 	'settings.toolConfirmModeAuto': '自動允許（預設）',
 	'settings.toolConfirmModeAlways': '總是需要確認',
 	'settings.allowedCapabilities': '允許的能力',
-	'settings.allowedCapabilitiesDesc': '授予 AI 可用工具的細粒度權限。與會話工具列中的權限選擇器連動。',
+	'settings.allowedCapabilitiesDesc': '控制 AI 在對話中可啟用的工具類別（細粒度權限）。',
 	'settings.summarizer': '摘要器',
 	'settings.summarizerDesc': '用於上下文摘要的設定檔（通常選擇 Token 成本較低的設定檔）。',
 	'settings.refreshModels': '重新整理模型列表',

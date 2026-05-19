@@ -231,7 +231,7 @@ export const en: Record<string, string> = {
 	'settings.toolConfirmModeAuto': 'Auto-approve (default)',
 	'settings.toolConfirmModeAlways': 'Always require confirmation',
 	'settings.allowedCapabilities': 'Allowed capabilities',
-	'settings.allowedCapabilitiesDesc': 'Fine-grained permissions granted to tools the assistant may use. Shared with the capabilities selector in the session toolbar.',
+	'settings.allowedCapabilitiesDesc': 'Control which tool categories the assistant may use during chat sessions.',
 	'settings.summarizer': 'Summarizer',
 	'settings.summarizerDesc': 'Profile used for context summarization (typically one with lower token cost).',
 	'settings.refreshModels': 'Refresh model list',

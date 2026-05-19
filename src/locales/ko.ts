@@ -231,7 +231,7 @@ export const ko: Record<string, string> = {
 	'settings.toolConfirmModeAuto': '자동 승인 (기본값)',
 	'settings.toolConfirmModeAlways': '항상 확인 요청',
 	'settings.allowedCapabilities': '허용된 기능',
-	'settings.allowedCapabilitiesDesc': 'AI가 사용할 수 있는 도구에 부여되는 세분화된 권한입니다. 세션 툴바의 권한 선택기와 연동됩니다.',
+	'settings.allowedCapabilitiesDesc': '대화 중 AI가 사용할 수 있는 도구 카테고리를 세분화하여 제어합니다.',
 	'settings.summarizer': '요약기',
 	'settings.summarizerDesc': '컨텍스트 요약에 사용할 프로필 (일반적으로 토큰 비용이 낮은 프로필).',
 	'settings.refreshModels': '모델 목록 새로고침',

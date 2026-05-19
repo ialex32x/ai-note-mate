@@ -230,7 +230,7 @@ export const zhCN: Record<string, string> = {
 	'settings.toolConfirmModeAuto': '自动允许（默认）',
 	'settings.toolConfirmModeAlways': '总是需要确认',
 	'settings.allowedCapabilities': '允许的能力',
-	'settings.allowedCapabilitiesDesc': '授予 AI 可用工具的细粒度权限。与会话工具栏中的权限选择器联动。',
+	'settings.allowedCapabilitiesDesc': '控制 AI 在对话中可启用的工具类别（细粒度权限）。',
 	'settings.summarizer': '摘要器',
 	'settings.summarizerDesc': '用于上下文摘要的配置方案（通常选择 Token 成本较低的方案）。',
 	'settings.refreshModels': '刷新模型列表',

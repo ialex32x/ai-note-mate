@@ -227,8 +227,6 @@ export class GlobalSettingsSection implements SettingsSection {
 		});
 
 		// Allowed tool capabilities (flat list of checkboxes).
-		// Mirrors the capabilities selector in the session toolbar; both
-		// surfaces read/write the same persisted list.
 		this.renderCapabilityToggles(container);
 	}
 

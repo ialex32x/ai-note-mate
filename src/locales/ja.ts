@@ -231,7 +231,7 @@ export const ja: Record<string, string> = {
 	'settings.toolConfirmModeAuto': '自動承認（デフォルト）',
 	'settings.toolConfirmModeAlways': '常に確認を要求',
 	'settings.allowedCapabilities': '許可する機能',
-	'settings.allowedCapabilitiesDesc': 'AI が使用できるツールに付与する細かな権限。セッションツールバーの権限セレクタと連動します。',
+	'settings.allowedCapabilitiesDesc': 'チャット中に AI が使用できるツールカテゴリを細かく制御します。',
 	'settings.summarizer': '要約器',
 	'settings.summarizerDesc': 'コンテキスト要約に使用するプロファイル（通常はトークンコストが低いもの）。',
 	'settings.refreshModels': 'モデル一覧を更新',
