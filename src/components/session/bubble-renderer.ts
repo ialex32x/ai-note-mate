@@ -12,6 +12,7 @@ import {
     renderSubAgentBadge,
     wrapInSubAgentCollapsible,
     renderDelegateTaskBubble,
+    shouldShowRoleLabel,
 } from '../bubble/sub-agent';
 import { renderThinkingSection as renderThinkingSectionImpl } from '../bubble/thinking-section';
 import { renderUserContent } from '../bubble/user-content';
@@ -217,7 +218,7 @@ export class BubbleRenderer extends Component {
         // instead of tearing down and rebuilding the entire DOM tree.
         if (msg.role === 'assistant' && msg.streaming) {
             const existing = bubble.querySelector('.session-bubble__content');
-            if (existing instanceof HTMLElement) {
+            if (existing instanceof HTMLElement && !this.subAgentBubbleNeedsFullRender(bubble, msg)) {
                 this.updateStreamingAssistant(bubble, existing, msg, options);
                 return;
             }
@@ -255,6 +256,10 @@ export class BubbleRenderer extends Component {
             pendingConfirmations?: Map<string, (approved: boolean) => void>;
         }
     ): void {
+        if (msg.subAgent) {
+            bubble.querySelectorAll('.session-bubble__role').forEach((el) => el.remove());
+        }
+
         // Update thinking section if present
         if (msg.thinkingContent) {
             const thinkingWrapper = bubble.querySelector('.session-bubble__thinking');
@@ -334,10 +339,7 @@ export class BubbleRenderer extends Component {
             renderSubAgentBadge(bubble, msg.subAgent.agentName);
         }
 
-        // Role label — skipped for sub-agent bubbles since the agent badge
-        // above already identifies the speaker (the generic "AI" label would
-        // be redundant next to e.g. "Vault Agent").
-        if (!msg.subAgent) {
+        if (shouldShowRoleLabel(msg)) {
             bubble.createEl('span', {
                 cls: 'session-bubble__role',
                 text: this.roleLabel(msg.role),
@@ -513,6 +515,19 @@ export class BubbleRenderer extends Component {
     }
 
     // ── Utility methods ─────────────────────────────────────────────────────
+
+    /**
+     * Sub-agent bubbles that were first rendered without `subAgent` metadata
+     * (or before a badge was added) can retain a stale "AI" role line while
+     * streaming. Force a full re-render when that happens.
+     */
+    private subAgentBubbleNeedsFullRender(bubble: HTMLElement, msg: ChatMessage): boolean {
+        if (!msg.subAgent) return false;
+        const hasStaleRole = bubble.querySelector('.session-bubble__role') !== null;
+        const missingBadge = bubble.querySelector('.session-bubble__subagent-badge') === null;
+        const missingSubagentClass = !bubble.hasClass('session-bubble--subagent');
+        return hasStaleRole || missingBadge || missingSubagentClass;
+    }
 
     private roleLabel(role: ChatMessage['role']): string {
         switch (role) {

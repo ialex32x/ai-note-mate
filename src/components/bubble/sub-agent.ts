@@ -27,6 +27,19 @@ export function getSubAgentLabel(agentName: string): string {
     }
 }
 
+/**
+ * Whether a bubble should show the generic role label (e.g. "AI").
+ * Sub-agent-origin messages and the `delegate_task` handoff bubble already
+ * identify the speaker via the agent badge, so the role line is redundant.
+ */
+export function shouldShowRoleLabel(msg: ChatMessage): boolean {
+    if (msg.subAgent) return false;
+    if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
+        return false;
+    }
+    return true;
+}
+
 /** Return the Lucide icon name used to visually identify a sub-agent. */
 export function getSubAgentIcon(agentName: string): string {
     switch (agentName) {
@@ -132,8 +145,8 @@ export function wrapInSubAgentCollapsible(
 /**
  * Render a `delegate_task` tool-call as a plain conversational bubble.
  *
- * Visual treatment: target sub-agent badge + assistant role label + the
- * task text as bubble content. The tool result and any internal tool-call
+ * Visual treatment: target sub-agent badge + the task text as bubble
+ * content. The tool result and any internal tool-call
  * progress are intentionally omitted — the sub-agent's own replies and
  * tool bubbles (rendered as sibling messages) already convey that
  * information, so duplicating it here would only add clutter.
@@ -152,13 +165,6 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
     // Agent badge (same visual treatment as sub-agent bubbles so the
     // "main agent → sub-agent" handoff reads naturally).
     renderSubAgentBadge(bubble, agentName);
-
-    // Role label: reuse the assistant label so the bubble visually aligns
-    // with other AI-originated turns.
-    bubble.createEl('span', {
-        cls: 'session-bubble__role',
-        text: t('view.roleAI'),
-    });
 
     // Content: render the task text as plain text (no tool-detail chrome).
     const contentEl = bubble.createEl('div', { cls: 'session-bubble__content' });
@@ -219,7 +225,6 @@ function renderDelegateInputsCollapsible(
     bubble: HTMLElement,
     inputs: Record<string, unknown>,
 ): void {
-    const keyCount = Object.keys(inputs).length;
     const previouslyExpanded = bubble.dataset['delegateInputsExpanded'] === '1';
 
     const wrapper = bubble.createEl('div', {
@@ -233,7 +238,6 @@ function renderDelegateInputsCollapsible(
             ? 'session-bubble__delegate-inputs-header session-bubble__delegate-inputs-header--expanded'
             : 'session-bubble__delegate-inputs-header',
         attr: {
-            'aria-label': t('view.toggleDelegateInputs'),
             role: 'button',
             tabindex: '0',
         },
@@ -245,7 +249,7 @@ function renderDelegateInputsCollapsible(
     header.appendText(' ');
     header.createEl('span', {
         cls: 'session-bubble__delegate-inputs-summary',
-        text: t('view.delegateInputsSummary', { count: keyCount }),
+        text: 'Arguments',
     });
 
     // Pretty-print body. Wrapped in `try` because while the orchestrator

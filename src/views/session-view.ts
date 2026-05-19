@@ -269,7 +269,7 @@ export class SessionView extends ItemView {
                 this.handleMessageUpdate(ev.msg);
                 break;
             case 'sub-agent-message-update':
-                this.handleSubAgentMessageUpdate(ev.msg);
+                this.handleSubAgentMessageUpdate(ev.msg, ev.agentName);
                 break;
             case 'tool-call-end':
                 // No-op for the view: the trailing loader stays visible
@@ -1085,8 +1085,20 @@ export class SessionView extends ItemView {
                 typeof chat.getSubAgentMessages === 'function'
             ) {
                 const children = chat.getSubAgentMessages(msg.id);
+                const delegateAgent = msg.toolCallMeta?.toolArgs?.['agent'] as string | undefined;
                 for (const child of children) {
-                    this.appendBubble({ ...child, streaming: false });
+                    const tagged = child.subAgent
+                        ? child
+                        : delegateAgent
+                            ? {
+                                ...child,
+                                subAgent: {
+                                    agentName: delegateAgent,
+                                    parentToolCallId: msg.id,
+                                },
+                            }
+                            : child;
+                    this.appendBubble({ ...tagged, streaming: false });
                 }
             }
         }
@@ -1256,13 +1268,26 @@ export class SessionView extends ItemView {
      * The sub-agent's final assistant reply IS rendered (it is the actual answer
      * the user sees, since the delegate_task bubble no longer shows its result).
      */
-    private handleSubAgentMessageUpdate(msg: ChatMessage): void {
-        const existing = this.messageBubbles.get(msg.id);
+    private handleSubAgentMessageUpdate(msg: ChatMessage, agentName: string): void {
+        const tagged = this.ensureSubAgentTag(msg, agentName);
+        const existing = this.messageBubbles.get(tagged.id);
         if (existing) {
-            this.updateBubbleContent(existing, msg);
+            this.updateBubbleContent(existing, tagged);
         } else {
-            this.appendBubble(msg);
+            this.appendBubble(tagged);
         }
+    }
+
+    /** Ensure inline sub-agent bubbles carry origin metadata for badge rendering. */
+    private ensureSubAgentTag(msg: ChatMessage, agentName: string): ChatMessage {
+        if (msg.subAgent?.agentName) return msg;
+        return {
+            ...msg,
+            subAgent: {
+                agentName,
+                parentToolCallId: msg.subAgent?.parentToolCallId ?? '',
+            },
+        };
     }
 
     // ── DOM helpers ──────────────────────────────────────────────────────────

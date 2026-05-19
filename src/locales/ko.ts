@@ -119,8 +119,6 @@ export const ko: Record<string, string> = {
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentReplySummary': '답변 (클릭하여 펼치기)',
 	'view.toggleSubAgentReply': '하위 에이전트 답변 토글',
-	'view.delegateInputsSummary': '입력 ({count}개)',
-	'view.toggleDelegateInputs': '위임 작업 입력 토글',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '언어',

@@ -119,8 +119,6 @@ export const en: Record<string, string> = {
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentReplySummary': 'Reply (click to expand)',
 	'view.toggleSubAgentReply': 'Toggle sub-agent reply',
-	'view.delegateInputsSummary': 'Inputs ({count})',
-	'view.toggleDelegateInputs': 'Toggle delegate task inputs',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': 'Language',

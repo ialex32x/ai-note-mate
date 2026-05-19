@@ -119,8 +119,6 @@ export const zhCN: Record<string, string> = {
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentReplySummary': '回复（点击展开）',
 	'view.toggleSubAgentReply': '切换子代理回复显示',
-	'view.delegateInputsSummary': '输入参数（{count} 项）',
-	'view.toggleDelegateInputs': '切换委派任务输入参数显示',
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '语言',
 	'settings.languageDesc': '插件界面显示语言。',

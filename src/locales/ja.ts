@@ -119,8 +119,6 @@ export const ja: Record<string, string> = {
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentReplySummary': '回答（クリックして展開）',
 	'view.toggleSubAgentReply': 'サブエージェントの回答を切り替え',
-	'view.delegateInputsSummary': '入力（{count} 件）',
-	'view.toggleDelegateInputs': '委任タスクの入力を切り替え',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '言語',

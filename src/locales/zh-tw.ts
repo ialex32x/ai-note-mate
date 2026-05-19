@@ -119,8 +119,6 @@ export const zhTW: Record<string, string> = {
 	// ── Sub-agent ────────────────────────────────────────
 	'view.subAgentReplySummary': '回覆（點擊展開）',
 	'view.toggleSubAgentReply': '切換子代理回覆顯示',
-	'view.delegateInputsSummary': '輸入參數（{count} 項）',
-	'view.toggleDelegateInputs': '切換委派任務輸入參數顯示',
 
 	// ── Settings ──────────────────────────────────────────
 	'settings.language': '語言',
