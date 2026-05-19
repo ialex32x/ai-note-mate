@@ -306,10 +306,18 @@ export class SectionAnchorNav {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────
-	// Private — interactions
+	// Public — interactions
 	// ─────────────────────────────────────────────────────────────────────
 
-	private scrollToItem(id: string): void {
+	/**
+	 * Smoothly scroll to the section with the given anchor id. Exposed
+	 * so external entry points (e.g. the onboarding tips popover) can
+	 * deep-link into a specific section without duplicating the
+	 * sticky-nav-aware scroll math.
+	 *
+	 * No-op when the id doesn't match any registered section.
+	 */
+	scrollToItem(id: string): void {
 		const item = this.items.find((x) => x.id === id);
 		if (!item) return;
 

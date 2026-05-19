@@ -123,6 +123,21 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * Smoothly scroll the settings panel to the section whose
+	 * `titleKey` matches `id`. Used by deep-link entry points like the
+	 * onboarding tips popover ("Try it" → open settings + jump to
+	 * Embedding) so they don't have to duplicate sticky-nav-aware
+	 * scroll math.
+	 *
+	 * Safe to call when the panel hasn't rendered yet — the request is
+	 * silently dropped (the next `display()` will not auto-rescroll, so
+	 * callers should invoke this *after* the tab has been switched on).
+	 */
+	scrollToSection(id: string): void {
+		this.anchorNav?.scrollToItem(id);
+	}
+
+	/**
 	 * Re-render a single section in place without rebuilding the whole tab.
 	 * Keeps scroll position, hover state, and focus on unrelated sections
 	 * intact.

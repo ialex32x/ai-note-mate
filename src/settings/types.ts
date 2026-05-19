@@ -334,4 +334,17 @@ export interface NoteAssistantPluginSettings {
 	 * Validation: negative values fall back to the built-in default.
 	 */
 	artifactStoreTtlMinutes: number;
+
+	// ── Onboarding tips ─────────────────────────────────────────────
+	/**
+	 * IDs of contextual usage tips the user has already dismissed or
+	 * executed. Used by the tips popover in the input toolbar to filter
+	 * out tips the user has already engaged with so they never reappear.
+	 *
+	 * Treat IDs as a stable API once a tip is released: removing a tip
+	 * definition is safe (its ID just becomes a no-op residue in this
+	 * list), but renaming would cause the previously-dismissed entry to
+	 * reappear under the new id.
+	 */
+	knownTipIds: string[];
 }

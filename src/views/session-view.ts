@@ -37,7 +37,9 @@ import {
     createProfileSelector, type ProfileSelectorHandle,
     createCapabilitiesSelector, type CapabilitiesSelectorHandle,
     createCheckpointSelector, type CheckpointSelectorHandle,
+    createTipsButton, type TipsButtonHandle,
 } from '../components/session/toolbar';
+import type { TipSessionViewAdapter } from '../services/tips';
 import { CMInput } from '../components/cm-input';
 import {
     ScrollController,
@@ -133,6 +135,7 @@ export class SessionView extends ItemView {
     private profileSelector!: ProfileSelectorHandle;
     private capabilitiesSelector!: CapabilitiesSelectorHandle;
     private checkpointSelector!: CheckpointSelectorHandle;
+    private tipsButton: TipsButtonHandle | null = null;
     /** Settings-change listener that keeps the capabilities toolbar in sync. */
     private onSettingsChangedForCapabilities: (() => void) | null = null;
     /**
@@ -712,6 +715,14 @@ export class SessionView extends ItemView {
             };
             this.plugin.onSettingsChange(this.onSettingsChangedForCapabilities);
 
+            // ── Tips button (last in the row so existing controls keep their position) ──
+            this.tipsButton = createTipsButton(
+                thinkingRow,
+                this.plugin,
+                this.buildTipSessionViewAdapter(),
+                this.dropdownManager,
+            );
+
             // Reflect live MCP connection state in the session-status panel
             // while it is open. The panel is also refreshed on demand from
             // `updateSessionStatusDisplay()`; this listener covers state
@@ -749,6 +760,8 @@ export class SessionView extends ItemView {
 
         this.profileSelector.dispose();
         this.checkpointSelector?.dispose();
+        this.tipsButton?.dispose();
+        this.tipsButton = null;
         if (this.onSettingsChangedForCapabilities) {
             this.plugin.offSettingsChange(this.onSettingsChangedForCapabilities);
             this.onSettingsChangedForCapabilities = null;
@@ -1221,6 +1234,32 @@ export class SessionView extends ItemView {
      * SessionManager.branchSession looks up the anchor by id in the
      * agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
      */
+    /**
+     * Build the narrow adapter that the tips popover uses to interact
+     * with this view. Kept as a per-call factory rather than a memoized
+     * field so the closures always capture the current `this` — the
+     * view itself outlives any single tips-button instance.
+     */
+    private buildTipSessionViewAdapter(): TipSessionViewAdapter {
+        return {
+            isStreaming: () => this.isStreaming,
+            sendPromptForTip: async (text: string) => {
+                // Guard streaming again at dispatch time. The popover
+                // already disables the confirm button while streaming,
+                // but a tip could theoretically execute after a brief
+                // window in which a turn started; refuse rather than
+                // crashing inside chat.prompt(). Surface a Notice so
+                // the user understands why nothing happened.
+                if (this.isStreaming) {
+                    new Notice(t('view.sessionBusy'));
+                    return;
+                }
+                await this.sendPrompt(text);
+            },
+            fillPromptDraft: (text: string) => this.fillPromptDraft(text),
+        };
+    }
+
     private async sendPrompt(text: string): Promise<void> {
         await this.ensureRuntimeAttached().chat.prompt(text, {
             allowedCapabilities: (() => {

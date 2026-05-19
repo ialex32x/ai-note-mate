@@ -167,4 +167,5 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	artifactStoreTotalBytesKb: 1024,
 	artifactStoreSingleArtifactKb: 128,
 	artifactStoreTtlMinutes: 30,
+	knownTipIds: [],
 };

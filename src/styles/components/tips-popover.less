@@ -1,0 +1,334 @@
+/* ─────────────────────────────────────────────
+   Usage tips popover (input toolbar)
+   ───────────────────────────────────────────── */
+
+// Wrapper sits inline with other toolbar buttons.
+.session-tips {
+    display: inline-flex;
+    align-items: center;
+}
+
+// Escape the default `.session-selector { position: relative }` so the
+// popover anchors against `.session-thinking-row` (the row immediately
+// hosting the button — see the rule below) instead of the tiny
+// wrapper. Anchoring on the wrapper would put the popover's right
+// edge flush with the session-view right edge with zero breathing
+// room, which `.session-view { overflow: hidden }` then clips.
+.session-tips.session-selector {
+    position: static;
+}
+
+// Make the thinking row the positioning context for the tips popover.
+// Scoped with `:has()` so only rows that actually mount the tips button
+// gain `position: relative` — leaves other thinking-row instances
+// untouched. Without this rule the popover would fall through to
+// `.session-input-container` and float above the whole input area
+// instead of staying visually attached to the button.
+.session-thinking-row:has(> .session-tips) {
+    position: relative;
+}
+
+// Hide the whole entry when no tips are eligible — keeps the toolbar
+// visually clean instead of showing a dead button.
+.session-tips--hidden {
+    display: none;
+}
+
+// The trigger button reuses the icon-only style from
+// `.session-thinking-row__icon-btn`; the modifier here only adds tip-
+// specific accents so the lightbulb hint is recognisable.
+.session-tips__btn {
+    color: @text-accent;
+    opacity: 0.9;
+
+    &:hover {
+        opacity: 1;
+    }
+}
+
+// Popover container. Anchored against `.session-thinking-row` (see
+// the rules above), so:
+//   - `bottom: 100%` (from the base `.session-dropdown-menu`) places
+//     the popover directly above the button's row — visually attached
+//     to the lightbulb instead of floating up to the top of the
+//     compose card;
+//   - `right: @spacing-md` insets it slightly from the row's right
+//     edge so it lines up with the button cluster without looking
+//     glued to the border;
+//   - `max-width: calc(100% - ...)` is now relative to thinking-row's
+//     width (which never exceeds session-view's content width), so
+//     the popover can never overflow the session view regardless of
+//     how narrow the sidebar gets — no JS sizing required.
+.session-tips-popover {
+    left: auto;
+    right: @spacing-md;
+    width: 320px;
+    max-width: calc(100% - @spacing-md * 2);
+    padding: 0;
+    gap: 0;
+    box-sizing: border-box;
+}
+
+.session-tips-popover__view {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-sm;
+    padding: @spacing-md;
+}
+
+// ── Header (nav arrows + counter / preview title) ────────────────────
+.session-tips-popover__nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: @spacing-sm;
+    padding-bottom: @spacing-xs;
+    border-bottom: 1px solid @bg-modifier-border;
+}
+
+.session-tips-popover__nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: @radius-sm;
+    background: transparent;
+    color: @text-secondary;
+    cursor: pointer;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover:not(:disabled) {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+
+    &:disabled {
+        opacity: 0.3;
+        cursor: default;
+    }
+
+    svg {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-tips-popover__nav-spacer {
+    display: inline-block;
+    width: 22px;
+    height: 22px;
+}
+
+.session-tips-popover__counter {
+    font-size: 0.78em;
+    color: @text-faint;
+    user-select: none;
+}
+
+// ── Body ─────────────────────────────────────────────────────────────
+.session-tips-popover__body {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-sm;
+}
+
+.session-tips-popover__title {
+    font-size: 0.95em;
+    font-weight: 600;
+    color: @text-primary;
+    line-height: 1.3;
+}
+
+.session-tips-popover__text {
+    font-size: 0.82em;
+    color: @text-secondary;
+    line-height: 1.5;
+}
+
+.session-tips-popover__empty {
+    padding: @spacing-lg;
+    font-size: 0.82em;
+    color: @text-faint;
+    text-align: center;
+}
+
+// ── Preview section ──────────────────────────────────────────────────
+.session-tips-popover__preview-desc {
+    font-size: 0.82em;
+    color: @text-secondary;
+    line-height: 1.5;
+}
+
+.session-tips-popover__preview-section {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+}
+
+.session-tips-popover__preview-header {
+    font-size: 0.7em;
+    font-weight: 600;
+    color: @text-faint;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.session-tips-popover__preview-changes {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+    padding: @spacing-sm @spacing-md;
+    border-radius: @radius-sm;
+    background: @bg-secondary;
+    border: 1px solid @bg-modifier-border;
+}
+
+.session-tips-popover__preview-change {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    font-size: 0.78em;
+    line-height: 1.4;
+}
+
+.session-tips-popover__preview-change-label {
+    color: @text-secondary;
+    flex: 0 0 auto;
+
+    &::after {
+        content: ":";
+        margin-left: 1px;
+    }
+}
+
+.session-tips-popover__preview-change-value {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    flex: 1 1 auto;
+    min-width: 0;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-tips-popover__preview-change-before {
+    color: @text-faint;
+    text-decoration: line-through;
+}
+
+.session-tips-popover__preview-change-arrow {
+    display: inline-flex;
+    align-items: center;
+    color: @text-faint;
+
+    svg {
+        width: 11px;
+        height: 11px;
+    }
+}
+
+.session-tips-popover__preview-change-after {
+    color: @text-accent;
+    font-weight: 500;
+}
+
+.session-tips-popover__preview-prompt {
+    margin: 0;
+    padding: @spacing-sm @spacing-md;
+    max-height: 160px;
+    overflow-y: auto;
+    border-radius: @radius-sm;
+    background: @bg-secondary;
+    border: 1px solid @bg-modifier-border;
+    color: @text-primary;
+    font-family: var(--font-monospace);
+    font-size: 0.75em;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+// ── Action row ───────────────────────────────────────────────────────
+.session-tips-popover__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: @spacing-sm;
+    padding-top: @spacing-xs;
+    border-top: 1px solid @bg-modifier-border;
+}
+
+.session-tips-popover__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    padding: @spacing-sm @spacing-md;
+    border: 1px solid transparent;
+    border-radius: @radius-sm;
+    font-size: 0.82em;
+    line-height: 1.2;
+    cursor: pointer;
+    transition: background @duration-fast, color @duration-fast, border-color @duration-fast, opacity @duration-fast;
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: default;
+        pointer-events: none;
+    }
+}
+
+.session-tips-popover__btn--secondary {
+    background: transparent;
+    color: @text-secondary;
+    border-color: @bg-modifier-border;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+.session-tips-popover__btn--primary {
+    background: @text-accent;
+    color: var(--text-on-accent);
+
+    &:hover:not(:disabled) {
+        background: var(--interactive-accent-hover);
+    }
+}
+
+.session-tips-popover__btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+
+    svg {
+        width: 13px;
+        height: 13px;
+    }
+}
+
+// Mobile: width is already container-bound via `max-width: 100% - ...`
+// so we don't need to override it. Just enlarge tap targets so the
+// popover stays usable on touch.
+@media (max-width: @breakpoint-mobile) {
+    .session-tips-popover__btn {
+        padding: @spacing-md @spacing-lg;
+    }
+
+    .session-tips-popover__nav-btn {
+        width: 28px;
+        height: 28px;
+
+        svg {
+            width: 16px;
+            height: 16px;
+        }
+    }
+}
