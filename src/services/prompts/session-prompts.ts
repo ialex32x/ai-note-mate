@@ -43,6 +43,46 @@ export const COMMON_RULES = `\
  * stay in their respective tool descriptions because they describe
  * runtime behaviour of one tool, not cross-tool routing.
  */
+/**
+ * Usage rules for the `manage_todos` tool. Promoted into both the
+ * single-agent and multi-agent system prompts so the model gets the
+ * same "when to use / how to use" framing regardless of mode.
+ *
+ * Goals:
+ * - Make the tool the EXCEPTION, not the default. Calling it for
+ *   every tiny question would push pointless `tool_call` history
+ *   into the context and clutter the user's pinned panel.
+ * - Encode the "one in_progress at a time" discipline so the panel
+ *   gives users a meaningful current-step signal.
+ * - Force the two-audience split: `brief` is the user-facing
+ *   headline, `content` is the per-item scratchpad the model
+ *   re-reads when returning to a step. The asymmetry is what makes
+ *   the tool useful for long-horizon tasks (anti-drift across
+ *   intervening tool calls and context compressions).
+ */
+export const TODO_USAGE_RULES = `## TODO planning rules
+You have a session-scoped TODO list via the \`manage_todos\` tool. The list is pinned in the chat UI for the user, and the full current state is returned to you on every call.
+- Use it ONLY when the user request is non-trivial: ≥ 3 concrete subtasks, multi-file edits, multi-step research, or anything where you would otherwise lose track between tool calls.
+- Do NOT use it for casual questions, single-step lookups, short edits, or anything where the plan would be obvious from one assistant reply.
+- Workflow:
+  1. Call \`manage_todos({ action: "write", items: [...] })\` ONCE at the start with the complete plan. Every entry needs a short stable \`id\` (e.g. "step-1", "draft", "verify"), a \`brief\`, and a \`content\` (see field semantics below). Leave \`status\` unset (defaults to \`pending\`).
+  2. Before starting an item, call \`manage_todos({ action: "update", id: "<id>", status: "in_progress" })\`. Keep AT MOST ONE item \`in_progress\` at a time.
+  3. When an item is finished, call \`manage_todos({ action: "update", id: "<id>", status: "completed" })\` and then move on to the next.
+  4. When an item is no longer needed (the user changed direction, or it turned out to be unnecessary), use \`status: "cancelled"\` rather than removing it.
+  5. After every item is \`completed\` or \`cancelled\`, write your final user-facing reply summarising what was done.
+- After a session reload or context compression, call \`manage_todos({ action: "list" })\` to re-sync the snapshot before deciding what to do next.
+- Tool response shape: \`write\` returns every item in full so you can verify what landed. \`update\` and \`list\` return a TIERED view to keep the payload bounded on long plans — \`pending\` / \`in_progress\` items come back with \`content\`, while \`completed\` / \`cancelled\` items come back as \`{id, brief, status}\` only. If you ever need to re-read a completed item's \`content\`, scroll back to the original \`write\` / \`update\` tool result in this conversation; do NOT re-author it from memory.
+- **\`brief\` (user-facing, ≤ 80 chars)** — a single-line headline rendered verbatim in the user's TODO panel. Write it in the SAME LANGUAGE the user is using. Keep it scannable: imperative verb + concrete object, not implementation detail. Example: "Add dark-mode toggle to settings page", not "Edit src/settings.ts to flip the boolean".
+- **\`content\` (machine-facing, ≤ 700 chars)** — your per-item scratchpad. This is what YOU re-read when you return to this item after other tool calls or a context compression, so encode everything "future you" needs:
+  * concrete files / functions / line ranges where applicable,
+  * the actual operations to perform,
+  * any dependencies (e.g. "needs step-1 done first because…"),
+  * the success criterion ("done when …"). 
+  Treat \`content\` as a contract with your future self — if you only read this one field a few turns from now, could you resume the work without re-deriving the plan? If not, add what's missing.
+- When you replan a step (the user changed direction, you discovered new files, the success criterion shifted), \`update\` BOTH \`brief\` and \`content\` to stay in sync. A stale \`content\` will mislead you on the next pass.
+- Do NOT replan from scratch on every turn; \`update\` existing items rather than rewriting the whole list unless the plan genuinely needs to be restructured.
+`;
+
 export const VAULT_HARD_RULES = `## Vault hard rules
 - Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`edit_file_tags\`. Never simulate this via \`replace_text\` / \`edit_lines\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`edit_file_tags\` preserves.
 - Vault-wide tag rename → \`rename_tag\`.
@@ -74,6 +114,8 @@ You are a helpful assistant for Obsidian to help me manage/improve my notes in t
 - When first exploring an unfamiliar vault, start with \`get_overview\`, then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately
 
 ${VAULT_HARD_RULES}
+
+${TODO_USAGE_RULES}
 
 ${COMMON_RULES}`;
 
@@ -229,6 +271,8 @@ If you ever see \`result.needs_main: true\`, the sub-agent is signalling that th
 ${vaultTips}
 
 ${VAULT_HARD_RULES}
+
+${TODO_USAGE_RULES}
 
 ## HINTS
 - "Note" typically refers to markdown files in the current vault, while "file" is a broader term

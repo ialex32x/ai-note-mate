@@ -28,6 +28,7 @@ import { createSkillTools } from '../../services/tools/skill-toolcall';
 import { createImageTool } from '../../services/tools/image-toolcall';
 import { createConversationTools } from '../../services/tools/conversation-toolcall';
 import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
+import { createTodoTool, type TodoStateSource } from '../../services/tools/todo-toolcall';
 import { inferModelContextWindow } from '../../services/model-context-window';
 import { getAppSecret } from 'utils/secret-helper';
 
@@ -158,6 +159,15 @@ export interface ChatAgentCallbacks {
      * case the recall tool is not registered.
      */
     getArtifactStore?(): ArtifactStore | null;
+    /**
+     * Returns the per-session TODO state source used by the main
+     * agent's `manage_todos` tool. Same lifetime contract as
+     * {@link getArtifactStore}: return a stable reference for the
+     * runtime's whole life. Returning `null` disables the tool
+     * (useful for some tests / single-agent-without-runtime call
+     * paths). In production the runtime factory always wires this.
+     */
+    getTodoStateSource?(): TodoStateSource | null;
 }
 
 /**
@@ -389,6 +399,16 @@ export function createChatAgent(
             // would unbind it (lint: @typescript-eslint/unbound-method).
             chat.registerTool(createRecallArtifactTool(() => callbacks.getArtifactStore!()));
         }
+
+        // `manage_todos` — session-scoped planning checklist for the
+        // main agent. Registered only when the host wired a state
+        // source (production: SessionRuntime supplies one; some test
+        // call paths intentionally omit it to keep the tool surface
+        // minimal). Sub-agents never see this tool by design — see
+        // todo-toolcall.ts for the rationale.
+        if (callbacks.getTodoStateSource) {
+            chat.registerTool(createTodoTool(() => callbacks.getTodoStateSource!()));
+        }
     } else {
         // Fallback: single-agent mode (all tools on one ChatStream)
         chat = new ChatStream(chatStreamConfig);
@@ -401,6 +421,15 @@ export function createChatAgent(
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
         createJavaScriptTools(plugin).forEach(tool => chat.registerTool(tool));
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
+
+        // `manage_todos` — same single source-of-truth registration
+        // path as the multi-agent branch. Single-agent sessions
+        // benefit from the planning channel too, especially when the
+        // user kicks off a multi-step vault refactor that runs end
+        // to end without delegation.
+        if (callbacks.getTodoStateSource) {
+            chat.registerTool(createTodoTool(() => callbacks.getTodoStateSource!()));
+        }
     }
     return chat;
 }

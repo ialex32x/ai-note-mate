@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import type { ChatMessage, ConversationSummary, AgentTokenBreakdown } from './services/chat-stream';
 import type { TokenUsage } from './services/llm-provider';
 import type { InsightCardState } from './services/insights';
+import type { TodoState } from './services/tools/todo-state';
 
 type ReadonlyChatMessages = ReadonlyArray<ChatMessage>;
 
@@ -37,8 +38,21 @@ interface SessionMessagesFile {
      * - v1: messages + summaries only
      * - v2: adds `subAgentMessages` (inline sub-agent bubbles for the UI)
      * - v3: adds `agentTokenBreakdown` (per-agent token usage split)
+     * - v4: adds `todos` (per-session TODO state maintained by the
+     *       `manage_todos` tool; pinned to the top of the chat UI).
+     *       Items carried `content` (required) + `displayContent`
+     *       (optional, user-facing override).
+     * - v5: reshapes each TODO item to carry TWO required strings —
+     *       `brief` (short user-facing summary, replaces v4's
+     *       `displayContent`) and `content` (long machine-facing task
+     *       spec). The loader migrates v4 items in place:
+     *         · `displayContent` → `brief` when present,
+     *         · `content[:80]` as a synthesized `brief` when neither
+     *           was set (so old plans render in the panel without
+     *           losing data).
+     *       New writes always emit v5 once todos are involved.
      */
-    version: 1 | 2 | 3;
+    version: 1 | 2 | 3 | 4 | 5;
     id: string;
     messages: ChatMessage[];
     /** Conversation summaries for context compression (persisted separately from messages) */
@@ -56,6 +70,13 @@ interface SessionMessagesFile {
      * (ChatStream) sessions. Optional for backward compatibility with v1/v2.
      */
     agentTokenBreakdown?: AgentTokenBreakdown;
+    /**
+     * TODO state maintained by the `manage_todos` tool. Persisted so
+     * the pinned panel + the model's view of in-progress subtasks
+     * survive reloads. Absent / empty list in v1-v3 files is treated
+     * as "no todos" by the loader.
+     */
+    todos?: TodoState;
 }
 
 /** List file content (stored in sessions/list.json) */
@@ -93,6 +114,12 @@ export class SessionManager {
     private subAgentMessagesCache: Map<string, Record<string, ChatMessage[]>> = new Map();
     /** Loaded per-agent token usage breakdown cache, keyed by sessionId */
     private agentTokenBreakdownCache: Map<string, AgentTokenBreakdown> = new Map();
+    /**
+     * Loaded TODO state cache, keyed by sessionId. Absent entry means
+     * "no todos for this session" — callers should not rely on a
+     * sentinel empty state from this map.
+     */
+    private todosCache: Map<string, TodoState> = new Map();
     /** Set of session IDs whose messages have been loaded */
     private loadedMessages: Set<string> = new Set();
 
@@ -277,6 +304,42 @@ export class SessionManager {
         this.setSessionLastInsights(sessionId, undefined);
     }
 
+    /**
+     * Get the persisted TODO state for a specific session. Returns
+     * `undefined` when nothing is on file (the session predates v4 or
+     * the model never wrote anything). Callers that need a guaranteed
+     * non-null snapshot should fall back to `emptyTodoState()`.
+     */
+    getSessionTodos(sessionId: string): TodoState | undefined {
+        return this.todosCache.get(sessionId);
+    }
+
+    /**
+     * Record the TODO state for a specific session. Pass `undefined`
+     * or a state with an empty `items` array to clear the entry.
+     *
+     * Only mutates in-memory caches; the next {@link saveToCache}
+     * (or `runtime.persist`) flushes to disk.
+     */
+    setSessionTodos(sessionId: string, state: TodoState | undefined): void {
+        if (!this.metadataMap.has(sessionId)) return;
+        if (!state || state.items.length === 0) {
+            this.todosCache.delete(sessionId);
+            return;
+        }
+        // Defensive clone so callers can't accidentally mutate the
+        // cached snapshot after handing it off.
+        this.todosCache.set(sessionId, {
+            items: state.items.map(item => ({ ...item })),
+            updatedAt: state.updatedAt,
+        });
+    }
+
+    /** Convenience: clear the TODO state for a specific session. */
+    clearSessionTodos(sessionId: string): void {
+        this.setSessionTodos(sessionId, undefined);
+    }
+
     /** Get the first user message content from the active session */
     getFirstUserMessage(): string | null {
         const messages = this.messagesCache.get(this._activeSessionId);
@@ -302,6 +365,7 @@ export class SessionManager {
         summaries?: ConversationSummary[],
         subAgentMessages?: Record<string, ChatMessage[]>,
         agentTokenBreakdown?: AgentTokenBreakdown,
+        todos?: TodoState,
     ): Promise<void> {
         const meta = this.metadataMap.get(sessionId);
         if (!meta) return;
@@ -341,6 +405,14 @@ export class SessionManager {
             } else {
                 this.agentTokenBreakdownCache.delete(sessionId);
             }
+        }
+
+        // Update TODO state cache (undefined means "no change"; an
+        // empty list explicitly clears, mirroring the subAgentMessages
+        // convention). Defensive clone so the caller's snapshot stays
+        // independent from the cache.
+        if (todos !== undefined) {
+            this.setSessionTodos(sessionId, todos);
         }
 
         // Update firstUserMessage if not already set
@@ -478,6 +550,8 @@ export class SessionManager {
         this.subAgentMessagesCache.delete(id);
         // Clean up per-agent token usage breakdown cache
         this.agentTokenBreakdownCache.delete(id);
+        // Clean up TODO state cache
+        this.todosCache.delete(id);
 
         // If deleted session was active, switch to another session
         if (wasActive) {
@@ -587,7 +661,7 @@ export class SessionManager {
                 const content = await adapter.read(msgPath);
                 const data = JSON.parse(content) as SessionMessagesFile;
 
-                if ((data.version === 1 || data.version === 2 || data.version === 3) && data.id === id) {
+                if ((data.version === 1 || data.version === 2 || data.version === 3 || data.version === 4 || data.version === 5) && data.id === id) {
                     this.messagesCache.set(id, data.messages);
                     // Load summaries if present (for context compression)
                     if (data.summaries && Array.isArray(data.summaries)) {
@@ -601,6 +675,59 @@ export class SessionManager {
                     if (data.agentTokenBreakdown && typeof data.agentTokenBreakdown === 'object'
                         && data.agentTokenBreakdown.main && data.agentTokenBreakdown.subAgents) {
                         this.agentTokenBreakdownCache.set(id, data.agentTokenBreakdown);
+                    }
+                    // Load TODO state (v4+ only). Validate shape defensively
+                    // so a corrupt or partial file can't poison the runtime.
+                    //
+                    // v4 → v5 in-place migration: v4 items carried `content`
+                    // + optional `displayContent` (user-facing). v5 items
+                    // carry required `brief` + required `content` with
+                    // disjoint audiences. We migrate per-item:
+                    //   · `displayContent` ⇒ `brief` (verbatim if present),
+                    //   · otherwise synthesize `brief` from `content` by
+                    //     truncating to MAX_BRIEF_LEN so the panel always
+                    //     has something to render.
+                    // The migration is read-only; the upgraded shape only
+                    // becomes durable when the runtime next persists.
+                    if (data.todos
+                        && typeof data.todos === 'object'
+                        && Array.isArray(data.todos.items)
+                        && data.todos.items.length > 0) {
+                        // Must stay in sync with `MAX_TODO_BRIEF_LENGTH` in
+                        // todo-toolcall.ts — synthesised brief must satisfy
+                        // the same cap the tool would enforce on a fresh write.
+                        const MAX_BRIEF_LEN = 80;
+                        this.todosCache.set(id, {
+                            items: data.todos.items.map((item) => {
+                                const legacy = item as Partial<TodoState['items'][number]> & {
+                                    displayContent?: unknown;
+                                };
+                                const content = typeof legacy.content === 'string' ? legacy.content : '';
+                                let brief: string;
+                                if (typeof legacy.brief === 'string' && legacy.brief.trim()) {
+                                    brief = legacy.brief;
+                                } else if (typeof legacy.displayContent === 'string' && legacy.displayContent.trim()) {
+                                    brief = legacy.displayContent;
+                                } else if (content.trim()) {
+                                    brief = content.length <= MAX_BRIEF_LEN
+                                        ? content
+                                        : content.slice(0, MAX_BRIEF_LEN - 1).trimEnd() + '…';
+                                } else {
+                                    brief = '(untitled)';
+                                }
+                                return {
+                                    id: String(legacy.id ?? ''),
+                                    brief,
+                                    content,
+                                    status: legacy.status ?? 'pending',
+                                    createdAt: typeof legacy.createdAt === 'number' ? legacy.createdAt : Date.now(),
+                                    updatedAt: typeof legacy.updatedAt === 'number' ? legacy.updatedAt : Date.now(),
+                                };
+                            }),
+                            updatedAt: typeof data.todos.updatedAt === 'number'
+                                ? data.todos.updatedAt
+                                : Date.now(),
+                        });
                     }
                 } else {
                     console.warn('[SessionManager] Invalid messages file format:', id);
@@ -643,9 +770,27 @@ export class SessionManager {
             const hasBreakdownData = !!agentTokenBreakdown
                 && (Object.keys(agentTokenBreakdown.subAgents).length > 0
                     || agentTokenBreakdown.main.totalTokens > 0);
+            // Get TODO state for this session (may be absent / empty)
+            const todos = this.todosCache.get(id);
+            const hasTodoData = !!todos && todos.items.length > 0;
 
-            // Pick the minimal schema version that encodes all present fields.
-            const version: 1 | 2 | 3 = hasBreakdownData ? 3 : (hasSubAgentData ? 2 : 1);
+            // Pick the minimal schema version that encodes all present
+            // fields. Newer fields force the version up so older builds
+            // refuse to overwrite a file they don't understand.
+            //
+            // NOTE: when todos are present we always write v5 (not v4),
+            // because the per-item shape changed in v5 (`brief` +
+            // `content` instead of v4's `content` + optional
+            // `displayContent`). Writing v4 with v5-shaped items would
+            // tag the file with the wrong schema and silently confuse
+            // any future reader that took the version literally.
+            const version: 1 | 2 | 3 | 4 | 5 = hasTodoData
+                ? 5
+                : hasBreakdownData
+                    ? 3
+                    : hasSubAgentData
+                        ? 2
+                        : 1;
 
             const data: SessionMessagesFile = {
                 version,
@@ -654,6 +799,7 @@ export class SessionManager {
                 summaries: summaries && summaries.length > 0 ? summaries : undefined,
                 subAgentMessages: hasSubAgentData ? subAgentMessages : undefined,
                 agentTokenBreakdown: hasBreakdownData ? agentTokenBreakdown : undefined,
+                todos: hasTodoData ? todos : undefined,
             };
 
             const msgPath = `${this.sessionsDir}/${id}.json`;
@@ -707,6 +853,7 @@ export class SessionManager {
             this.summariesCache.clear();
             this.subAgentMessagesCache.clear();
             this.agentTokenBreakdownCache.clear();
+            this.todosCache.clear();
             this.loadedMessages.clear();
 
             for (const meta of data.sessions) {

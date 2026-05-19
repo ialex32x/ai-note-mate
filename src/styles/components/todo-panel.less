@@ -1,0 +1,354 @@
+/*
+ * Session TODO panel — read-only, docked just above the input
+ * container so the user can reach it without leaving the compose
+ * area. The host slot (`.session-todo-panel-host`) is always
+ * present; the panel root (`.session-todo-panel`) only mounts when
+ * the LLM has actually populated todos for the active session.
+ *
+ * Layout direction: bottom-sheet. The header sits at the BOTTOM
+ * of the panel (DOM-last in a flex column), the list grows
+ * UPWARD from there when expanded. Collapsed state is a single
+ * header bar glued to the input top edge.
+ *
+ * Overlay behaviour: the list is `position: absolute` and is
+ * removed from the flow, so expanding the panel never displaces
+ * the input box nor pushes the message list up — the list simply
+ * floats on top of the chat bubbles above the header. The host
+ * slot's z-index raises the whole panel above the message column
+ * for unambiguous painting order.
+ *
+ * Visual language: callout-style card. Multiple cues stack so the
+ * panel stands clearly apart from both the messages above and the
+ * compose card below, even on themes where `bg-primary` and
+ * `bg-secondary` are nearly indistinguishable:
+ *   - left accent stripe (Obsidian's native "important info" cue,
+ *     same pattern as built-in callouts / admonitions)
+ *   - subtle accent-tinted background via color-mix, falling back
+ *     to `bg-secondary` for browsers without color-mix support
+ *   - rounded corners + outer margin so the card "floats" above
+ *     the input instead of seaming into either neighbour
+ *   - thin three-sided border for definition on flat themes
+ *
+ * Mobile-friendly: tighter spacing, smaller icons.
+ */
+
+.session-todo-panel-host {
+    // Pure layout slot. `position: relative` + a small `z-index`
+    // anchors the absolutely positioned list overlay and lifts the
+    // panel's stacking context above the message list so the
+    // expanded overlay paints on top of chat bubbles. `flex: 0 0
+    // auto` keeps an absent panel at zero height and lets the
+    // input container hug the message list when nothing is there.
+    position: relative;
+    flex: 0 0 auto;
+    z-index: 10;
+}
+
+// The panel itself is a thin flex shell now — all card chrome
+// (border, accent stripe, background, radius) lives on the
+// children so the floating list can carry its own complete card
+// look without depending on its parent's box.
+//
+// The panel's flow height = header height (the list is absolutely
+// positioned and removed from the flow). That way expanding the
+// panel never shifts the input box or pushes the messages up;
+// the list just floats over the message area on top.
+.session-todo-panel {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    // Margin: separates the docked header from the input below and
+    // from the messages above. Sides match other docked chrome so
+    // the card aligns horizontally with the compose area.
+    margin: @spacing-sm @spacing-md @spacing-xs;
+    animation: session-todo-panel-fade-in @duration-slow ease-out;
+}
+
+// Card-skin mixin re-used by both the header and the floating
+// list so they look like one continuous panel without coupling
+// their geometry through a shared parent box.
+.session-todo-panel-card() {
+    padding: @spacing-sm @spacing-md;
+    border: 1px solid @bg-modifier-border;
+    border-left: 3px solid @text-accent;
+    background-color: @bg-secondary;
+    background-color: ~"color-mix(in srgb, var(--interactive-accent) 6%, var(--background-secondary))";
+}
+
+.session-todo-panel__header {
+    .session-todo-panel-card();
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    cursor: pointer;
+    user-select: none;
+    // Collapsed default: all four corners rounded — the header is
+    // the entire visible card. Shadow tilts upward to read as a
+    // lid lifted slightly off the input below it.
+    border-radius: @radius-md;
+    box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.05);
+    transition: background-color @duration-normal ease, border-radius @duration-normal ease;
+
+    &:hover {
+        // Re-derive the tint slightly stronger on hover so the
+        // accent stays consistent instead of falling back to the
+        // generic hover wash.
+        background-color: ~"color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary))";
+    }
+
+    &:focus-visible {
+        outline: 2px solid @text-accent;
+        outline-offset: 1px;
+    }
+}
+
+// Expanded state: the floating list sits flush on top of the
+// header, so flatten the header's top corners to make them read
+// as one continuous card.
+.session-todo-panel:not(.session-todo-panel--collapsed) .session-todo-panel__header {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.session-todo-panel__title {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.85em;
+    color: @text-secondary;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.session-todo-panel__title-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: @text-accent;
+
+    .svg-icon {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-todo-panel__title-label {
+    color: @text-secondary;
+}
+
+.session-todo-panel__count {
+    flex: 0 0 auto;
+    font-size: 0.75em;
+    color: @text-secondary;
+    font-variant-numeric: tabular-nums;
+    padding: 1px 6px;
+    border-radius: @radius-sm;
+    // Punch against the accent-tinted card background — pure
+    // bg-primary stands out without competing with the accent stripe.
+    background-color: @bg-primary;
+    border: 1px solid @bg-modifier-border;
+}
+
+.session-todo-panel__chevron {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    color: @text-secondary;
+    transition: color @duration-normal ease;
+
+    .svg-icon {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-todo-panel__header:hover .session-todo-panel__chevron {
+    color: @text-primary;
+}
+
+.session-todo-panel__list {
+    .session-todo-panel-card();
+    // Float the list ABOVE the header without affecting layout
+    // flow. `bottom: 100%` glues the list's bottom edge to the
+    // header's top edge so the two appear as one continuous card,
+    // and the negative `margin-bottom` collapses the duplicate
+    // border between them. `left/right: 0` makes the list track
+    // the header's width exactly, regardless of margin.
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    margin-bottom: -1px;
+    // Round the TOP corners only; the bottom edge butts up against
+    // the header which keeps the round corners on the bottom.
+    border-top-left-radius: @radius-md;
+    border-top-right-radius: @radius-md;
+    border-bottom: none;
+    // Stronger upward shadow than the header because the list is
+    // actually floating over the message column — the extra blur
+    // gives the user a clear sense of depth / overlay.
+    box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.08);
+
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    // Cap the panel's vertical footprint. Anything beyond this is
+    // reachable via internal scroll — the chat area stays the
+    // primary surface even when a plan grows to dozens of items.
+    // Items are ~24px tall, so 240px shows ~9 rows comfortably
+    // before scrolling kicks in.
+    max-height: 240px;
+    overflow-y: auto;
+    // Small padding-right reserves room for the scrollbar so item
+    // text doesn't shift left as soon as the scrollbar appears.
+    padding-right: @spacing-md - 2px;
+}
+
+.session-todo-panel__item {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: 2px @spacing-xs;
+    border-radius: @radius-sm;
+    line-height: 1.35;
+    font-size: 0.9em;
+    color: @text-primary;
+    min-width: 0;
+}
+
+.session-todo-panel__status {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: @text-secondary;
+
+    .svg-icon {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-todo-panel__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// Status-specific theming. The status class is added to each row
+// (`session-todo-panel__item--<status>`) so we can colour the icon
+// and the row text without touching the markup again.
+.session-todo-panel__item--pending {
+    .session-todo-panel__status {
+        color: @text-faint;
+    }
+}
+
+.session-todo-panel__item--in_progress {
+    .session-todo-panel__status {
+        color: @text-accent;
+        animation: session-todo-panel-spin 1.4s linear infinite;
+    }
+
+    .session-todo-panel__text {
+        color: @text-primary;
+        font-weight: 600;
+    }
+}
+
+.session-todo-panel__item--completed {
+    .session-todo-panel__status {
+        color: @text-success;
+    }
+
+    .session-todo-panel__text {
+        color: @text-faint;
+        text-decoration: line-through;
+    }
+}
+
+.session-todo-panel__item--cancelled {
+    .session-todo-panel__status {
+        color: @text-faint;
+    }
+
+    .session-todo-panel__text {
+        color: @text-faint;
+        text-decoration: line-through;
+        font-style: italic;
+    }
+}
+
+@keyframes session-todo-panel-fade-in {
+    from {
+        opacity: 0;
+        // Slide up from below — the panel lives just above the
+        // input, so the appearance reads as "rising from the
+        // compose area" rather than "dropping from the toolbar".
+        transform: translateY(4px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes session-todo-panel-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+// Mobile: tighten the layout and drop the count chip if it would
+// crowd the title. Items stay single-line but with smaller icons so
+// the panel does not eat noticeable vertical space on small screens.
+// Reduce outer margin too — on narrow screens the floating card
+// would otherwise leave a noticeable horizontal gutter on each side.
+@media (max-width: @breakpoint-mobile) {
+    .session-todo-panel {
+        margin: @spacing-sm @spacing-sm @spacing-xs;
+    }
+
+    .session-todo-panel__header,
+    .session-todo-panel__list {
+        padding-top: @spacing-xs;
+        padding-bottom: @spacing-xs;
+        padding-left: @spacing-sm;
+        padding-right: @spacing-sm;
+    }
+
+    .session-todo-panel__item {
+        font-size: 0.85em;
+        gap: @spacing-xs;
+    }
+
+    // Mobile screens are smaller and the chat area is even more
+    // precious — drop the scrollable list cap to ~6 rows.
+    .session-todo-panel__list {
+        max-height: 160px;
+    }
+
+    .session-todo-panel__status {
+        width: 14px;
+        height: 14px;
+
+        .svg-icon {
+            width: 12px;
+            height: 12px;
+        }
+    }
+
+    .session-todo-panel__count {
+        // Keep the count visible but compact.
+        font-size: 0.7em;
+        padding: 1px 4px;
+    }
+}

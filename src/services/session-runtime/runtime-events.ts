@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../chat-stream';
 import type { InsightCardState } from '../insights';
+import type { TodoState } from '../tools/todo-state';
 
 /**
  * Discriminated union of all events that a {@link SessionRuntime} may
@@ -91,7 +92,17 @@ export type RuntimeEvent =
      * `SessionRuntime.getInsightState()`. Terminal phases are also
      * persisted into session metadata for cold-load recovery.
      */
-    | { type: 'insight-update'; state: InsightCardState | null };
+    | { type: 'insight-update'; state: InsightCardState | null }
+
+    /**
+     * The TODO state changed (the `manage_todos` tool ran a `write`,
+     * `update`, or `clear`). The runtime mutates its in-memory copy
+     * BEFORE emitting, so listeners always observe the post-mutation
+     * snapshot. Listeners that miss the event (no view attached) can
+     * recover by reading {@link SessionRuntime.getTodoState} on next
+     * attach — the runtime is the source of truth.
+     */
+    | { type: 'todo-update'; state: TodoState };
 
 /**
  * Listener signature. Listeners are pure event sinks — they MUST NOT

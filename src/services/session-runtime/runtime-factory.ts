@@ -83,6 +83,19 @@ export function createSessionRuntime(
         // bound to it. Returning the runtime's own field keeps the
         // store's lifetime perfectly aligned with the runtime.
         getArtifactStore: () => runtime.artifactStore,
+        // Surface a thin adapter over the runtime's TODO state to the
+        // chat factory so the main agent's `manage_todos` tool can
+        // reach the live snapshot for every operation. The adapter is
+        // recreated on each call but its methods all delegate to the
+        // same long-lived runtime instance, so identity equality is
+        // irrelevant — what matters is that every method ultimately
+        // hits `runtime`. This mirrors how `getArtifactStore` works.
+        getTodoStateSource: () => ({
+            get: () => runtime.getTodoState(),
+            replaceAll: (items) => runtime.replaceTodos(items),
+            update: (id, patch) => runtime.updateTodo(id, patch),
+            clear: () => runtime.clearTodos(),
+        }),
         onStart: () => {
             runtime.markBusy();
             // A new turn supersedes any previously-extracted insights

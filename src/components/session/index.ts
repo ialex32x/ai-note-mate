@@ -8,3 +8,4 @@ export { DraftInputController } from './draft-input-controller';
 export { FollowUpBar } from './follow-up-bar';
 export type { FollowUpPickHandler } from './follow-up-bar';
 export { InsightCard } from './insight-card';
+export { TodoPanel } from './todo-panel';

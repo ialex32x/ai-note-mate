@@ -5,6 +5,14 @@
 // Unified input container (file ref + thinking + input)
 .session-input-container {
     position: relative;
+    // Lift the entire compose card above ambient chrome (todo
+    // panel, scroll-to-bottom button) so any upward popup it owns
+    // — checkpoint dropdown, model selector, completion menus —
+    // paints on top of the panels below the message list, not
+    // underneath them. Must stay > `.session-todo-panel-host`
+    // (10) and `.session-scroll-to-bottom-btn` (10) but below
+    // `@z-dropdown` (100) so global dropdown layers still win.
+    z-index: 20;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;

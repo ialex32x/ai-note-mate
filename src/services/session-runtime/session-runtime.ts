@@ -4,6 +4,11 @@ import { ArtifactStore, type ArtifactStoreOptions } from '../artifact-store';
 import type { InsightCardState } from '../insights';
 import type { CheckpointStore } from '../vault';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
+import {
+    emptyTodoState,
+    type TodoItem,
+    type TodoState,
+} from '../tools/todo-state';
 
 /**
  * In-memory runtime container for a single chat session.
@@ -130,6 +135,21 @@ export class SessionRuntime {
      * been superseded by a newer extraction or by a new turn starting.
      */
     private _insightGen = 0;
+
+    /**
+     * Live TODO list maintained by the `manage_todos` tool. Owned by
+     * the runtime (not the chat agent) for two reasons:
+     *   - It is session state, not turn state: it survives across
+     *     individual `prompt()` calls and persists to disk via the
+     *     same `persist()` path as messages / summaries.
+     *   - The UI panel renders it as a sibling of the chat bubbles,
+     *     never as an entry in `chat.messages`, so binding it to the
+     *     runtime keeps the data plane out of the chat history.
+     *
+     * Mutated through {@link replaceTodos}, {@link updateTodo}, and
+     * {@link clearTodos}; restored on cold-load via {@link restoreTodos}.
+     */
+    private _todoState: TodoState = emptyTodoState();
 
     /**
      * Per-session artifact store backing `delegate_task` envelopes
@@ -337,7 +357,111 @@ export class SessionRuntime {
             chat.summaries,
             subAgentMessagesObj,
             chat.agentTokenBreakdown,
+            this._todoState,
         );
+    }
+
+    // ── TODO list state ──────────────────────────────────────────────
+
+    /**
+     * Read the current TODO snapshot. Returns the live reference held
+     * by the runtime — callers MUST treat it as read-only. The UI
+     * panel relies on this on attach so a session-switch can replay
+     * the snapshot without waiting for the next mutation.
+     */
+    getTodoState(): TodoState {
+        return this._todoState;
+    }
+
+    /**
+     * Replace the entire TODO list. Each input item supplies the
+     * canonical fields; `createdAt` / `updatedAt` defaults to "now"
+     * when the caller does not provide them, so the tool can pass
+     * partial item shapes from raw model arguments.
+     *
+     * Persists the new state into the session manager's metadata
+     * cache and emits `todo-update`. Disk flush is deferred to the
+     * next `persist()` call (turn-end), matching how other session
+     * state is written.
+     */
+    replaceTodos(items: ReadonlyArray<Partial<TodoItem> & { id: string; brief: string; content: string }>): TodoState {
+        const now = Date.now();
+        this._todoState = {
+            items: items.map(item => ({
+                id: item.id,
+                brief: item.brief,
+                content: item.content,
+                status: item.status ?? 'pending',
+                createdAt: item.createdAt ?? now,
+                updatedAt: item.updatedAt ?? now,
+            })),
+            updatedAt: now,
+        };
+        this.commitTodoMutation();
+        return this._todoState;
+    }
+
+    /**
+     * Patch a single TODO item by id. Returns the updated state on
+     * success and `null` when no item with the given id exists (the
+     * tool surfaces this as an error to the model so it can correct
+     * itself).
+     */
+    updateTodo(
+        id: string,
+        patch: Partial<Pick<TodoItem, 'status' | 'brief' | 'content'>>,
+    ): TodoState | null {
+        const idx = this._todoState.items.findIndex(item => item.id === id);
+        if (idx < 0) return null;
+        const now = Date.now();
+        const current = this._todoState.items[idx]!;
+        const next: TodoItem = {
+            ...current,
+            ...(patch.status !== undefined ? { status: patch.status } : {}),
+            ...(patch.brief !== undefined ? { brief: patch.brief } : {}),
+            ...(patch.content !== undefined ? { content: patch.content } : {}),
+            updatedAt: now,
+        };
+        const items = this._todoState.items.slice();
+        items[idx] = next;
+        this._todoState = { items, updatedAt: now };
+        this.commitTodoMutation();
+        return this._todoState;
+    }
+
+    /**
+     * Drop every TODO item. Used by the tool's `clear` action and
+     * available to internal callers that need a hard reset.
+     */
+    clearTodos(): TodoState {
+        if (this._todoState.items.length === 0) return this._todoState;
+        this._todoState = emptyTodoState();
+        this.commitTodoMutation();
+        return this._todoState;
+    }
+
+    /**
+     * Initialise the in-memory state from a previously persisted
+     * snapshot (cold-load path). Does NOT emit — the caller's replay
+     * pass reads via {@link getTodoState} and renders directly.
+     */
+    restoreTodos(state: TodoState): void {
+        // Defensive clone so the persistence cache cannot be mutated
+        // through the runtime's reference (and vice versa).
+        this._todoState = {
+            items: state.items.map(item => ({ ...item })),
+            updatedAt: state.updatedAt,
+        };
+    }
+
+    /**
+     * Shared tail of every mutation: sync the session manager cache so
+     * the next `saveToCache` writes the new state even if the runtime
+     * has not yet completed a turn, and notify attached listeners.
+     */
+    private commitTodoMutation(): void {
+        this.sessionManager.setSessionTodos(this.sessionId, this._todoState);
+        this.emit({ type: 'todo-update', state: this._todoState });
     }
 
     // ── Insight card state ────────────────────────────────────────────

@@ -212,6 +212,15 @@ export class BubbleRenderer extends Component {
             bubble.addClass('session-bubble--hidden');
             return;
         }
+        // manage_todos tool calls are surfaced exclusively through the
+        // pinned TodoPanel; keep the chat bubble itself collapsed so
+        // mid-stream re-renders (e.g. when toolCallResult arrives)
+        // don't briefly flash the default tool-call chrome.
+        if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'manage_todos') {
+            bubble.empty();
+            bubble.addClass('session-bubble--hidden');
+            return;
+        }
         bubble.removeClass('session-bubble--hidden');
 
         // For streaming assistant messages, try to do an incremental update
@@ -331,6 +340,21 @@ export class BubbleRenderer extends Component {
         if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
             renderDelegateTaskBubble(bubble, msg);
             this.onScrollNeeded();
+            return;
+        }
+
+        // manage_todos: the entire UI surface for this tool lives in
+        // the pinned TodoPanel above the message list. Rendering a
+        // per-call bubble in the conversation flow would be noise —
+        // a long plan can produce 20+ updates that mean nothing to
+        // the user once the panel state is already correct. We hide
+        // the bubble with a dedicated class so the chat history file
+        // still records the call (so future replays remain accurate)
+        // but it takes no space. The `tool_call` ChatMessage stays
+        // intact for the chat agent's own context.
+        if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'manage_todos') {
+            bubble.addClass('session-bubble--hidden');
+            bubble.empty();
             return;
         }
 

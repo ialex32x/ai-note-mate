@@ -25,6 +25,7 @@ import {
     DraftInputController,
     FollowUpBar,
     InsightCard,
+    TodoPanel,
 } from '../components/session';
 import { extractSuggestions, type SuggestedAction } from '../services/suggestions';
 import {
@@ -158,6 +159,14 @@ export class SessionView extends ItemView {
      * state to show on its own.
      */
     private insightCard!: InsightCard;
+    /**
+     * Pinned-at-top TODO list for the active session, populated by
+     * the `manage_todos` tool. Read-only on the user side; the LLM
+     * is the single writer. Driven by {@link SessionRuntime}'s
+     * `todo-update` event channel and rehydrated from disk via
+     * {@link hydrateRuntimeFromDisk}.
+     */
+    private todoPanel!: TodoPanel;
 
     constructor(leaf: WorkspaceLeaf, plugin: NoteAssistantPlugin) {
         super(leaf);
@@ -350,6 +359,15 @@ export class SessionView extends ItemView {
             }
             case 'insight-update':
                 this.renderInsightFromRuntimeState(ev.state);
+                break;
+            case 'todo-update':
+                // The runtime mutated its TODO snapshot — refresh the
+                // pinned panel. Empty snapshots are translated into
+                // `applyState(null)` by the runtime ... wait, no: the
+                // runtime always emits the snapshot it just committed,
+                // even when empty. TodoPanel.applyState handles the
+                // empty case by tearing itself down.
+                this.todoPanel.applyState(ev.state);
                 break;
         }
     }
@@ -620,6 +638,18 @@ export class SessionView extends ItemView {
                 () => this.isStreaming,
             );
             this.scroller.attach();
+
+            // ── TODO panel (docked just above the input container) ──────────────
+            //
+            // Lives below the message list and above the compose
+            // card so it is always within thumb / cursor reach. The
+            // panel collapses to a single-line header by default and
+            // expands UPWARD (list rendered above the header) when
+            // clicked — same ergonomic as a mobile bottom sheet, so
+            // the user never has to scroll to the top of the chat to
+            // see what the LLM is working on next.
+            const todoPanelHost = root.createEl('div', { cls: 'session-todo-panel-host' });
+            this.todoPanel = new TodoPanel(todoPanelHost);
 
             // ── Input container ───────────────────────────────────────────────────────
             const inputContainer = root.createEl('div', { cls: 'session-input-container' });
@@ -979,6 +1009,10 @@ export class SessionView extends ItemView {
         // SessionRuntime and stored in session metadata) survive the
         // switch so they reappear when the user returns to this session.
         this.insightCard?.hide();
+        // Same contract for the TODO panel: hide the DOM but leave
+        // the runtime's snapshot intact. `replayRuntimeUI` re-renders
+        // the new runtime's snapshot below.
+        this.todoPanel?.hide();
         // Detach the singleton streaming loader before emptying, then
         // reattach so it remains the sole instance and still lives at
         // the tail of messagesEl.
@@ -1059,6 +1093,15 @@ export class SessionView extends ItemView {
         if (lastInsights) {
             runtime.restoreInsightState(lastInsights);
         }
+
+        // Persisted TODO state (v4 sessions only). Always restore the
+        // runtime's snapshot from disk before the replay pass — the
+        // panel is then projected from `runtime.getTodoState()` in
+        // `replayRuntimeUI`, matching how insight state is handled.
+        const todos = this.sessionManager.getSessionTodos(runtime.sessionId);
+        if (todos) {
+            runtime.restoreTodos(todos);
+        }
     }
 
     /**
@@ -1080,7 +1123,12 @@ export class SessionView extends ItemView {
         const messages = chat.messages;
 
         if (messages.length === 0) {
-            // Empty session (typical "new chat" case).
+            // Empty session (typical "new chat" case). The runtime
+            // may still carry a non-empty TODO snapshot if a previous
+            // background turn populated one without producing
+            // assistant messages yet, so project it defensively —
+            // the panel hides itself when the snapshot is empty.
+            this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
             this.draftController.restore();
             this.updateSessionStatusDisplay();
             this.updateNewChatBtnState();
@@ -1128,6 +1176,11 @@ export class SessionView extends ItemView {
         // (each `appendBubble` defensively hides them).
         this.maybeShowFollowUpSuggestions();
         this.renderInsightFromRuntimeState(this.runtime?.getInsightState() ?? null);
+        // Project the runtime's TODO snapshot onto the pinned panel.
+        // The host sits outside `messagesEl` so this is independent
+        // of the bubble loop — but the data still lives on the
+        // runtime, so use it as the source of truth.
+        this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
 
         // If we just bound a busy runtime (background turn still in
         // flight), bring the streaming loader + locked input back so
