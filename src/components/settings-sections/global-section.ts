@@ -1,4 +1,4 @@
-import { Setting, setTooltip } from "obsidian";
+import { Notice, Setting, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
 import {
@@ -6,6 +6,8 @@ import {
 	createDropdownField,
 	createTextField,
 	createToggleField,
+	isAdvancedSettingsVisible,
+	markSettingAdvanced,
 	markSettingRequiresSessionRestart,
 } from "../settings-components";
 import { ALL_TOOL_CAPABILITIES, type ToolCapability } from "../../services/llm-provider";
@@ -60,6 +62,13 @@ export class GlobalSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
+
+		// Reset usage tips (action-only row, not a real config value).
+		// Clearing `knownTipIds` makes every previously-dismissed/run tip
+		// eligible again in the input toolbar popover. The button itself
+		// is disabled when the list is already empty so the row keeps
+		// the "what does it do" affordance even before any tip is run.
+		this.renderResetTipsRow(container);
 
 		// Built-in web search tool toggle
 		createToggleField({
@@ -263,6 +272,42 @@ export class GlobalSettingsSection implements SettingsSection {
 				plugin.settings.allowedCapabilities = ALL_TOOL_CAPABILITIES.filter(c => current.has(c));
 				void plugin.saveSettings();
 			});
+		}
+	}
+
+	private renderResetTipsRow(container: HTMLElement): void {
+		const { plugin, refreshSection } = this.ctx;
+		const known = plugin.settings.knownTipIds;
+		const hasKnown = known.length > 0;
+
+		const setting = new Setting(container)
+			.setName(t('settings.resetTips'))
+			.setDesc(t('settings.resetTipsDesc'))
+			.addButton(btn => {
+				btn.setButtonText(t('settings.resetTipsBtn'))
+					.setIcon('rotate-ccw')
+					.setDisabled(!hasKnown)
+					.onClick(async () => {
+						// Defensive: the button is already disabled when
+						// the list is empty, but recompute here so a stale
+						// click (e.g. while the section is mid-refresh)
+						// can't trigger a no-op save + Notice.
+						if (plugin.settings.knownTipIds.length === 0) return;
+						plugin.settings.knownTipIds = [];
+						await plugin.saveSettings();
+						new Notice(t('settings.resetTipsDone'));
+						refreshSection(this);
+					});
+			});
+
+		// Mirrors the advanced-handling baked into `applySettingIndicators`:
+		// when advanced is on, decorate the row with the badge + hint;
+		// otherwise hide it via the shared collapse class so toggling
+		// "Show advanced" makes the row appear/disappear without rebuild.
+		if (isAdvancedSettingsVisible()) {
+			markSettingAdvanced(setting);
+		} else {
+			setting.settingEl.addClass('oap-setting--advanced-collapsed');
 		}
 	}
 

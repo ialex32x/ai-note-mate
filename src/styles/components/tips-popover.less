@@ -76,6 +76,41 @@
     padding: @spacing-md;
 }
 
+// Pin both views (the tips list AND the preview / confirm panel) to a
+// stable height — both a floor AND a ceiling — so the nav row /
+// action buttons sit at fixed coordinates regardless of which tip is
+// shown, whether the preview has settings changes, or how long the
+// prompt block is. The popover is anchored from its bottom edge, so
+// without a ceiling the TOP would balloon upward every time a tall
+// preview was opened, re-introducing the jumping-button problem the
+// floor alone was meant to fix.
+//
+// The body is turned into the single scroll region for the view: it
+// flex-grows to fill the slack between nav and actions, and overflows
+// internally when the content (typically a long prompt block in the
+// preview) exceeds the available space. `min-height: 0` is the
+// standard incantation that lets a flex child shrink below its
+// content size so `overflow-y: auto` can actually take effect.
+//
+// `margin-top: auto` on the actions row is now redundant in the
+// strict-height case (the body absorbs all slack) but kept for
+// cheap defence in depth — if a future tweak relaxes the ceiling,
+// short content will still glue the action buttons to the bottom.
+.session-tips-popover__view {
+    min-height: 220px;
+    max-height: 220px;
+
+    .session-tips-popover__body {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+    }
+
+    .session-tips-popover__actions {
+        margin-top: auto;
+    }
+}
+
 // ── Header (nav arrows + counter / preview title) ────────────────────
 .session-tips-popover__nav {
     display: flex;
@@ -116,16 +151,18 @@
     }
 }
 
-.session-tips-popover__nav-spacer {
-    display: inline-block;
-    width: 22px;
-    height: 22px;
-}
-
 .session-tips-popover__counter {
     font-size: 0.78em;
     color: @text-faint;
     user-select: none;
+}
+
+// Preview view's nav row hosts only the static title (the back arrow
+// was removed because the action row already exposes a "Back" button).
+// Override `space-between` from the base nav rule so the lone title
+// centres under the bordered header instead of clinging to the left.
+.session-tips-popover__view--preview .session-tips-popover__nav {
+    justify-content: center;
 }
 
 // ── Body ─────────────────────────────────────────────────────────────
@@ -237,11 +274,16 @@
     font-weight: 500;
 }
 
+// No `max-height` + internal scroll here on purpose: the body itself
+// is now the single scroll region for the popover (see the
+// `.session-tips-popover__view` rule), so capping the prompt block
+// independently would produce nested scrollbars on long prompts.
+// Letting the prompt grow to its natural height inline keeps the
+// description and settings changes pinned at the top of body's
+// scroll, with the prompt naturally below them.
 .session-tips-popover__preview-prompt {
     margin: 0;
     padding: @spacing-sm @spacing-md;
-    max-height: 160px;
-    overflow-y: auto;
     border-radius: @radius-sm;
     background: @bg-secondary;
     border: 1px solid @bg-modifier-border;
@@ -261,6 +303,19 @@
     gap: @spacing-sm;
     padding-top: @spacing-xs;
     border-top: 1px solid @bg-modifier-border;
+}
+
+// In the tips list view, push the dismiss button ("Got it") to the
+// far left and keep the commit button ("Try it") on the right. The
+// two actions have very different consequences — dismissing the tip
+// permanently versus running a settings mutation / chat dispatch —
+// so visually separating them reduces the chance of a misclick on
+// repeated paging through tips. The preview / confirm view keeps the
+// default `flex-end` because Cancel there is just "go back" (no
+// destructive consequence) and the symmetric grouping reads cleaner.
+.session-tips-popover__view:not(.session-tips-popover__view--preview)
+    .session-tips-popover__actions {
+    justify-content: space-between;
 }
 
 .session-tips-popover__btn {
@@ -330,5 +385,15 @@
             width: 16px;
             height: 16px;
         }
+    }
+
+    // Mobile bumps the nav and action buttons by ~6–8px each, so
+    // raise the locked height by the same amount; otherwise the
+    // longest tip would either clip or re-introduce a jumping-button
+    // problem on touch devices. Both floor and ceiling go up together
+    // so the strict-height invariant is preserved across breakpoints.
+    .session-tips-popover__view {
+        min-height: 240px;
+        max-height: 240px;
     }
 }

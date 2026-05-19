@@ -236,29 +236,17 @@ export function createTipsButton(
         previewView = popover.createEl('div', { cls: 'session-tips-popover__view session-tips-popover__view--preview' });
         tipsView = null;
 
-        // ── Header: back arrow + title ─────────────────────────────
+        // ── Header: title only ─────────────────────────────────────
+        // The action row at the bottom already exposes a "Back" button,
+        // so a second arrow up here would just duplicate the affordance
+        // and force the user to scan two locations to know how to bail.
+        // The CSS centres the lone title within the bordered nav row.
         const header = previewView.createEl('div', { cls: 'session-tips-popover__nav' });
-
-        const backBtn = header.createEl('button', {
-            cls: 'session-tips-popover__nav-btn',
-            attr: { type: 'button', 'aria-label': t('tips.preview.cancel') },
-        });
-        setIcon(backBtn, 'chevron-left');
-        setTooltip(backBtn, t('tips.preview.cancel'));
-        backBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            renderTipsView();
-        });
 
         header.createEl('span', {
             cls: 'session-tips-popover__counter',
             text: t('tips.preview.title'),
         });
-
-        // Right-side spacer so the title stays centred between the back
-        // arrow and a placeholder matching the arrow's footprint.
-        header.createEl('span', { cls: 'session-tips-popover__nav-spacer' });
 
         // ── Body: description + settings changes + prompt preview ──
         const body = previewView.createEl('div', { cls: 'session-tips-popover__body' });
