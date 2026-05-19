@@ -8,6 +8,39 @@ import { sanitizeStreamingMarkdown } from '../../utils/markdown-sanitizer';
 const DEFAULT_MIN_INTERVAL = 100;
 
 /**
+ * Content length (chars) above which streaming switches to a longer
+ * render interval. Long markdown documents — especially those containing
+ * tables, code blocks, or KaTeX — make each `MarkdownRenderer.render`
+ * call disproportionately more expensive (Obsidian's renderer reparses
+ * the whole document from scratch each time, not incrementally). At
+ * 30 KB+ a single render can easily blow past the default 100 ms
+ * throttle window on mid-range devices, leaving the main thread
+ * saturated for the entire streaming phase and making the app feel
+ * frozen. Stretching the throttle reclaims headroom for input events
+ * and the rest of the UI without measurably hurting perceived
+ * smoothness (the user is already reading a long answer).
+ */
+const LARGE_CONTENT_THRESHOLD = 30 * 1024;
+
+/**
+ * Render interval (ms) used when {@link LARGE_CONTENT_THRESHOLD} is
+ * exceeded. 400 ms ≈ 2-3 FPS — still fast enough to feel like live
+ * streaming, while leaving a comfortable margin for a single render
+ * pass on heavy content.
+ */
+const LARGE_CONTENT_INTERVAL = 400;
+
+/**
+ * Minimum total time (ms) for a single doRender pass before a debug
+ * log is emitted (sanitize + MarkdownRenderer.render combined). Below
+ * this we stay silent — fast renders are uninteresting and would just
+ * spam the console. 50 ms is half the default throttle window, i.e.
+ * "starting to eat into the budget" territory; once renders exceed
+ * that on every tick the UI will start to feel sluggish.
+ */
+const DORENDER_SLOW_LOG_THRESHOLD_MS = 50;
+
+/**
  * Controls the rendering of streaming markdown content with:
  * 1. **Throttling** — enforces a minimum interval between renders.
  * 2. **Async mutex** — prevents concurrent MarkdownRenderer.render() calls.
@@ -139,8 +172,9 @@ export class StreamingMarkdownController {
         // If a timer is already pending, it will pick up the latest content
         if (this.pendingTimer !== null) return;
 
+        const interval = this.effectiveInterval();
         const elapsed = Date.now() - this.lastRenderTime;
-        if (elapsed >= this.minInterval) {
+        if (elapsed >= interval) {
             // Enough time has passed — render immediately
             void this.doRender();
         } else {
@@ -150,23 +184,53 @@ export class StreamingMarkdownController {
                 if (!this.disposed) {
                     void this.doRender();
                 }
-            }, this.minInterval - elapsed);
+            }, interval - elapsed);
         }
+    }
+
+    /**
+     * Effective render throttle for the current content size. Returns
+     * the configured base interval for small content, but stretches to
+     * {@link LARGE_CONTENT_INTERVAL} once {@link LARGE_CONTENT_THRESHOLD}
+     * is exceeded. Recomputed on every {@link scheduleRender} call so
+     * a streaming response that grows past the threshold mid-flight
+     * picks up the longer interval on the very next tick.
+     *
+     * The `Math.max` guard is defensive: a caller that explicitly set
+     * a large `minInterval` (e.g. tests, future tuning) must not be
+     * shortened by the large-content branch.
+     */
+    private effectiveInterval(): number {
+        if (this.latestContent.length > LARGE_CONTENT_THRESHOLD) {
+            return Math.max(this.minInterval, LARGE_CONTENT_INTERVAL);
+        }
+        return this.minInterval;
     }
 
     private async doRender(): Promise<void> {
         if (this.disposed || !this.contentEl) return;
 
         this.isRendering = true;
+        // Timing instrumentation: track sanitize + render separately so
+        // a slow log line can attribute the cost. Both default to 0 so
+        // an early "duplicate output" return still produces a coherent
+        // (zero-ish) log when total time happens to exceed the bar.
+        const passStart = performance.now();
+        let sanitizeMs = 0;
+        let renderMs = 0;
+        let skippedDuplicate = false;
         try {
             const contentToRender = this.latestContent;
+            const sanitizeStart = performance.now();
             const sanitized = sanitizeStreamingMarkdown(contentToRender);
+            sanitizeMs = performance.now() - sanitizeStart;
 
             // Skip rendering if the sanitized output is identical to what's
             // already on screen.  This avoids unnecessary DOM rebuilds that
             // cause table column-width recalculations and layout jumps.
             if (sanitized === this.lastRenderedSanitized) {
                 this.lastRenderedContent = contentToRender;
+                skippedDuplicate = true;
                 return;
             }
 
@@ -174,6 +238,7 @@ export class StreamingMarkdownController {
             // swap children in one go to avoid the empty-state layout flash
             // that would occur with contentEl.empty() + async render().
             const buffer = createEl('div');
+            const renderStart = performance.now();
             await MarkdownRenderer.render(
                 this.app,
                 sanitized,
@@ -181,6 +246,7 @@ export class StreamingMarkdownController {
                 '',
                 this.component
             );
+            renderMs = performance.now() - renderStart;
 
             // Swap: replace all children atomically to avoid intermediate
             // empty state that would trigger a layout reflow.
@@ -194,6 +260,29 @@ export class StreamingMarkdownController {
         } finally {
             this.isRendering = false;
             this.lastRenderTime = Date.now();
+
+            // Slow-render telemetry. Logs only when a single pass
+            // exceeds the budget so the console isn't polluted by
+            // fast (<50 ms) renders. Fields are deliberately compact
+            // so a noisy streaming session is still grep-able:
+            //   content: current latest length (chars), NOT the
+            //     rendered slice — handy for spotting "we're well
+            //     past the LARGE_CONTENT_THRESHOLD and renders are
+            //     still expensive".
+            //   sanitize / render / total: per-phase ms.
+            //   skipped: duplicate-output early-return path (render
+            //     phase didn't run; total ≈ sanitize).
+            const totalMs = performance.now() - passStart;
+            if (totalMs >= DORENDER_SLOW_LOG_THRESHOLD_MS) {
+                console.debug(
+                    `[StreamingMarkdownController] slow render: ` +
+                    `content=${this.latestContent.length} chars, ` +
+                    `sanitize=${sanitizeMs.toFixed(1)}ms, ` +
+                    `render=${renderMs.toFixed(1)}ms, ` +
+                    `total=${totalMs.toFixed(1)}ms` +
+                    (skippedDuplicate ? ' (skipped: duplicate)' : ''),
+                );
+            }
 
             // Notify any waiter (finalize) that the render is done
             this.renderCompleteResolve?.();

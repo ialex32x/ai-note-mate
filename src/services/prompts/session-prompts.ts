@@ -148,14 +148,14 @@ When delegating, provide a clear and complete task description. After receiving 
 2. Delegate a *narrow read*: ask vault_inspector to \`read_file\` with \`start_line\`/\`end_line\` covering just that section (plus a few lines of context if needed for boundary detection).
 3. Apply the edit yourself with \`edit_lines\` (or the appropriate write tool) using those line numbers.
 
-**Phrase a locate task as a single goal, not a chain of actions.** When you delegate step 1, the \`task\` MUST describe ONE goal — finding line numbers — and put the file path and search terms under \`inputs\`, NOT spliced into the prose. Do NOT chain verbs like "Read the file X. Search for Y." in the task: sub-agents follow such phrasing literally and read the whole file before grepping, defeating the entire purpose of locating first. Use locate-only verbs ("locate", "find", "grep", "search inside") and let \`grep_file\` decide how to access the file.
+**Phrase a locate task as a single goal, not a chain of actions.** When you delegate step 1, the \`task\` MUST describe ONE goal — finding line numbers — and put the file path and search terms under the \`exchange\` argument, NOT spliced into the prose. Refer to them in the task prose by their bare key name (e.g. "the \`path\` key", "the \`query\` key"); do NOT write \`exchange.path\` / \`inputs.path\` / any dotted prefix — sub-agents have empirically tried to use those literal strings as the \`exchange.get\` key and missed the actual entry. Do NOT chain verbs like "Read the file X. Search for Y." in the task: sub-agents follow such phrasing literally and read the whole file before grepping, defeating the entire purpose of locating first. Use locate-only verbs ("locate", "find", "grep", "search inside") and let \`grep_file\` decide how to access the file.
 
-  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Locate every occurrence of inputs.query in inputs.path using grep_file. Return the matching line numbers under result.", "inputs": { "path": "Notes/Foo.md", "query": "{{date}}" } })\`
-  ❌ Bad (chained verbs): \`delegate_task({ "agent": "vault_inspector", "task": "Read the file \\"Notes/Foo.md\\". Search for \\"{{date}}\\" and return the line numbers." })\` — the literal "Read the file" forces a wasteful full-file read; path and query also belong in \`inputs\`, not in the prose.
+  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Locate every occurrence of \`query\` in the file at \`path\` using grep_file. Return the matching line numbers under result.", "exchange": { "path": "Notes/Foo.md", "query": "{{date}}" } })\`
+  ❌ Bad (chained verbs): \`delegate_task({ "agent": "vault_inspector", "task": "Read the file \\"Notes/Foo.md\\". Search for \\"{{date}}\\" and return the line numbers." })\` — the literal "Read the file" forces a wasteful full-file read; path and query also belong in \`exchange\`, not in the prose.
 
-**Do NOT replace step 1 with a "read full content and return it verbatim" task.** When you find yourself about to write something like \`task: "Read the full content of inputs.path and return it verbatim under result"\` (or "return result.content", or "give me the bytes of X so I can find Y") — STOP. That is the locate step rewritten as a full-file dump, and it is even worse than the chained-verb anti-pattern: it skips grep entirely and pushes the whole file body through your context just so you can do the locate work yourself. Almost every "I need to see the file to modify part of it" is actually "I need a few line numbers + a narrow slice"; do step 1 (grep) and step 2 (narrow read) instead.
+**Do NOT replace step 1 with a "read full content and return it verbatim" task.** When you find yourself about to write something like \`task: "Read the full content at \\\`path\\\` and return it verbatim under result"\` (or "return result.content", or "give me the bytes of X so I can find Y") — STOP. That is the locate step rewritten as a full-file dump, and it is even worse than the chained-verb anti-pattern: it skips grep entirely and pushes the whole file body through your context just so you can do the locate work yourself. Almost every "I need to see the file to modify part of it" is actually "I need a few line numbers + a narrow slice"; do step 1 (grep) and step 2 (narrow read) instead.
 
-  ❌ Bad (full-file dump masquerading as a read task): \`delegate_task({ "agent": "vault_inspector", "task": "Read the full content of the file at inputs.path and return it verbatim under result.content.", "inputs": { "path": "Notes/Foo.md" } })\` — if the user asked you to edit only a part of \`Foo.md\`, this dumps the entire file into your context to do work that \`grep_file\` should do at the source.
+  ❌ Bad (full-file dump masquerading as a read task): \`delegate_task({ "agent": "vault_inspector", "task": "Read the full content of the file at \`path\` and return it verbatim under result.content.", "exchange": { "path": "Notes/Foo.md" } })\` — if the user asked you to edit only a part of \`Foo.md\`, this dumps the entire file into your context to do work that \`grep_file\` should do at the source.
 
 The narrow exception — when a full-file read IS the right delegation — is all of:
 - you ALREADY know exactly what to write (no further locating needed), AND
@@ -172,7 +172,7 @@ Reading a whole file just to edit a small section wastes tokens and risks copy-d
 
 This applies to **single-note** digests too, not just multi-note comparisons. A 5,000-word note's full body in your context is almost always wasteful when the user only wants to know what it says — the digest's bounded \`summary\` + \`key_points\` is the high-signal answer, and you can still pull a specific section back via a narrow follow-up read if the user asks a follow-up that needs exact wording.
 
-  delegate_task({ "agent": "vault_inspector", "task": "Produce a digest of these notes against the user's question (see exchange.user_focus). Return digests[] under result.", "inputs": { "source": ["Topics/A.md"], "user_focus": "<the user's question, verbatim>" } })
+  delegate_task({ "agent": "vault_inspector", "task": "Produce a digest of these notes against the user's question (provided under the \`user_focus\` key). Return digests[] under result.", "exchange": { "source": ["Topics/A.md"], "user_focus": "<the user's question, verbatim>" } })
 
 Phrase the \`task\` with the word "digest" (or "summarize and return the digest schema") so it is unambiguous — saying "read X and return it" would route the sub-agent to Mode A and dump the entire file body into your context. The digest format is bounded (per-file ≤ ~80-word summary, ≤ 6 key_points, ≤ 6 anchors) so 5–10 notes still fit your context easily — far cheaper than ingesting their full bodies. Trust \`digests[i].summary\` + \`key_points\` for synthesis; pull a specific section back via a narrow follow-up only when an anchor's \`why\` indicates you need exact wording.
 
@@ -183,7 +183,7 @@ The exception is when you genuinely need the verbatim bytes — e.g. you are abo
   delegate_task({
       "agent": "vault_editor",
       "task": "Reformat the file: normalize heading levels, fix list indents, standardize quote blocks. Keep all content; do not translate.",
-      "inputs": {
+      "exchange": {
           "path": "Notes/Foo.md",
           "style_rules": "<any concrete rules, one per line; optional>"
       }
@@ -199,15 +199,16 @@ Do NOT delegate to \`vault_editor\` when:
 
 If \`result.warnings\` contains a structural follow-up (e.g. "file also needs to be renamed"), treat it as a handoff and act on it with your own tools.
 
-### Passing structured inputs to a sub-agent
-\`delegate_task\` accepts an optional \`inputs\` argument: an object whose keys are pre-loaded into the sub-agent's exchange store before it runs. Use it whenever you have programmatic data the sub-agent will consume — lists of paths, results from a previous delegation, constraints, configuration. The sub-agent reads them via its own \`exchange\` tool and treats them as authoritative input.
+### Passing structured data to a sub-agent via \`exchange\`
+\`delegate_task\` accepts an optional \`exchange\` argument: an object whose keys are pre-loaded into the sub-agent's exchange store before it runs. The sub-agent reads them via its own \`exchange\` tool and writes its structured result back into the SAME store (you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope). One channel, two directions — NOT two separate concepts.
 
-  delegate_task({ "agent": "vault_inspector", "task": "summarize each note", "inputs": { "source": ["a/b.md", "c.md"], "max_words": 80 } })
+  delegate_task({ "agent": "vault_inspector", "task": "summarize each note in the \`source\` key", "exchange": { "source": ["a/b.md", "c.md"], "max_words": 80 } })
 
-- Prefer \`inputs\` over splicing the same data into the \`task\` prose: it's clearer, avoids escaping issues, and the sub-agent won't have to re-parse it.
-- Do NOT duplicate data in BOTH \`task\` and \`inputs\`; reference it from \`task\` (e.g. "summarize each note in inputs.source") and put the actual data in \`inputs\`.
+- Whenever you have programmatic data the sub-agent will consume — file paths, lists of paths, prior delegation results, focus strings, constraints, configuration — pass it via \`exchange\`. It's clearer than prose, avoids escaping issues, and the sub-agent won't have to re-parse it.
+- **Refer to seeded keys in the task prose by their BARE NAME in backticks** (e.g. "the \`path\` key", "search for \`query\` in the file at \`path\`"). Do NOT write \`exchange.path\` / \`inputs.path\` / any dotted prefix — sub-agents have empirically tried to use those literal strings as the \`exchange.get\` key and missed the actual entry. The store key is literally \`path\`, not \`exchange.path\`.
+- Do NOT duplicate data in BOTH \`task\` and \`exchange\`; reference it from \`task\` by key name and put the actual data in \`exchange\`.
 - By convention, use the key \`source\` for "the thing the sub-agent should operate on".
-- Each value MUST be JSON-serializable and ≤ 32 KB serialized; oversized inputs are rejected (the call fails, no sub-agent runs).
+- Each value MUST be JSON-serializable and ≤ 32 KB serialized; oversized values are rejected (the call fails, no sub-agent runs).
 
 ### Reading delegate_task results
 The \`delegate_task\` tool_result is a JSON-encoded envelope of the form:

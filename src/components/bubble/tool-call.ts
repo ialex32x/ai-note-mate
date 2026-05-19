@@ -52,7 +52,10 @@ export function renderToolCallContent(
     });
 
     if (msg.toolCallResult) {
-        const statusIcon = msg.toolCallResult.status === 'error' ? '✕' : '✓';
+        const statusIcon =
+            msg.toolCallResult.status === 'error' ? '✕' :
+            msg.toolCallResult.status === 'warning' ? '⚠' :
+            '✓';
         const statusCls = `session-bubble__tool-status session-bubble__tool-status--${msg.toolCallResult.status}`;
         headerRow.createEl('span', { cls: statusCls, text: statusIcon });
     }

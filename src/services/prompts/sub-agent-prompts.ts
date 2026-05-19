@@ -4,26 +4,30 @@
  */
 
 /**
- * Shared "how to read structured inputs from the main agent" contract,
+ * Shared "how to read seed data from the main agent's exchange" contract,
  * appended to every sub-agent prompt right before
  * `RETURNING_STRUCTURED_DATA_SECTION`. The orchestrator pre-loads the
- * exchange store with the `inputs` argument the main agent passed to
- * `delegate_task`, so the sub-agent can consume them programmatically
+ * exchange store with the `exchange` argument the main agent passed to
+ * `delegate_task`, so the sub-agent can consume entries programmatically
  * (no need for the main agent to splice them into prose, no risk of
  * the sub-agent mis-parsing them out of free-form text).
  *
- * Symmetric with `RETURNING_STRUCTURED_DATA_SECTION`: input on the
- * main → sub direction, output on the sub → main direction. Same tool
- * (`exchange`), same store, same key naming convention.
+ * Symmetric with `RETURNING_STRUCTURED_DATA_SECTION`: read at start, write
+ * at end. ONE channel (`exchange`), two directions — NOT two concepts.
+ * The task prose intentionally refers to seed values by their bare key
+ * name (e.g. "the `path` key", "the `query` key") rather than via dotted
+ * shorthand, because models otherwise tend to use the literal dotted
+ * string as the `exchange.get` key and miss the actual entry.
  */
-export const READING_INPUTS_SECTION = `
-## Reading structured inputs from the main agent
-The main agent may pre-load structured data into your \`exchange\` store via the \`inputs\` argument of \`delegate_task\`. Your sub-agent's workflow above lists the input keys you should expect for this dispatch — those keys ARE the input contract.
+export const READING_EXCHANGE_SECTION = `
+## Reading seed data from the main agent
+The main agent may pre-load structured data into your \`exchange\` store via the \`exchange\` argument of \`delegate_task\`. Your sub-agent's workflow above lists the key names you should expect for this dispatch — those keys ARE the input contract. The \`exchange\` store is the SAME channel you write your output into later (see below); main → sub is just the seed direction.
 
-**FIRST-ACTION rule.** When the task prose references \`inputs.<key>\` — e.g. "read inputs.path", "lines inputs.start_line to inputs.end_line", "locate inputs.query in inputs.path" — your VERY FIRST tool call MUST be an \`exchange\` batch-get for those keys. \`inputs.X\` is shorthand for "the value stored under key X in your exchange store"; resolve it first, THEN do the real work using the resolved values. Common mis-routings to AVOID:
+**FIRST-ACTION rule.** When the task prose names keys you should consume — e.g. "the \`path\` key", "the \`query\` key", "lines from \`start_line\` to \`end_line\`", "search for \`query\` in the file at \`path\`" — your VERY FIRST tool call MUST be an \`exchange\` batch-get for those keys. The key strings in your \`exchange.get\` call are the BARE KEY NAMES exactly as they appear in backticks; nothing is prefixed with \`inputs.\` / \`exchange.\` / anything else. Common mis-routings to AVOID:
 - ❌ Calling \`grep_file\` / \`read_file\` / \`search_content\` with \`path: "__exchange__"\` — there is no such file; \`exchange\` is a tool, not a vault path.
-- ❌ Passing the key names themselves (\`"path"\`, \`"start_line"\`, \`"query"\`, ...) as search terms (\`queries\`) or paths — those are field labels in the contract, not data to look up in the vault.
-- ❌ Treating \`inputs.path\` as a literal file path and trying to open a file literally named "inputs.path".
+- ❌ Passing the key NAMES themselves (\`"path"\`, \`"start_line"\`, \`"query"\`, ...) as search terms (\`queries\`) or paths — those are field labels in the contract, not data to look up in the vault.
+- ❌ Calling \`exchange.get({key: "inputs.path"})\` or \`exchange.get({key: "exchange.path"})\` — there is no dotted prefix on the actual key; the key is just \`"path"\`. If a get returns \`missing: true\` with an \`available_keys\` list, that list IS the truth about what's stored — retry with one of those exact strings.
+- ❌ Treating a key name as a literal file path and trying to open a file literally named \`path\` or \`inputs.path\`.
 
 PREFER a single batch read over multiple single-key gets:
 
@@ -35,9 +39,9 @@ Each separate \`get\` call adds a full LLM round-trip. Batching is strictly chea
 
 \`exchange({ op: "list" })\` (returns keys + sizes, no values) is a fallback for the rare case where you suspect the main agent has pre-loaded keys that are NOT in your sub-agent's expected set. In normal operation you do not need it — your workflow's expected key set is authoritative.
 
-- ALWAYS prefer these AUTHORITATIVE preloaded inputs over re-parsing the same data from the task prose.
+- ALWAYS prefer these AUTHORITATIVE preloaded values over re-parsing the same data from the task prose.
 - The main agent is encouraged to use the key \`source\` for "the thing you should operate on" (e.g. a path or list of paths).
-- You may overwrite or extend these keys via \`exchange.put\` — your writes flow back to the main agent through the same store (see below). Be deliberate: overwriting \`result\` is normal; overwriting other input keys may confuse the main agent's downstream logic.`;
+- You may overwrite or extend these keys via \`exchange.put\` — your writes flow back to the main agent through the same store (see below). Be deliberate: overwriting \`result\` is normal; overwriting other seed keys may confuse the main agent's downstream logic.`;
 
 /**
  * Shared "how to return structured data" contract appended to every
@@ -138,9 +142,9 @@ You handle two distinct kinds of tasks. Identify which one before acting; the ch
 ### Mode A — locate / inspect (default)
 The main agent is looking for something concrete: a path, a fact, a backlink, a tag set, a count.
 
-1. If the task references \`inputs.<key>\` (e.g. \`inputs.path\`, \`inputs.start_line\`, \`inputs.query\`), batch-read them FIRST in ONE call — \`exchange({ op: "get", keys: [...] })\` — BEFORE any vault tool call. The resolved values are AUTHORITATIVE; do NOT re-extract the same data from the task prose, and do NOT treat \`inputs.X\` / \`__exchange__\` / a key name as a vault path or a search term (see "Reading structured inputs" below for the full anti-pattern list).
+1. If the task names keys to consume (e.g. \`path\`, \`start_line\`, \`end_line\`, \`query\`), batch-read them FIRST in ONE call — \`exchange({ op: "get", keys: ["path", "start_line", ...] })\` — BEFORE any vault tool call. Use the BARE KEY NAMES as the \`exchange.get\` strings; nothing is prefixed with \`inputs.\` / \`exchange.\` / anything else. The resolved values are AUTHORITATIVE; do NOT re-extract the same data from the task prose, and do NOT treat a key name / \`__exchange__\` / a dotted form (\`inputs.path\`, \`exchange.path\`) as a vault path or a search term (see "Reading seed data" below for the full anti-pattern list).
 2. Pick the most targeted tool for the ACTUAL ask (see "Tool selection hints" above). A few common cases worth restating because they get confused often:
-    - Task gives an explicit line range ("read lines A-B of file F", "inputs.start_line to inputs.end_line") → \`read_file\` with \`start_line\` / \`end_line\` directly. Do NOT \`grep_file\` first — grep is for finding line numbers, not for fetching a range you already know.
+    - Task gives an explicit line range ("read lines A-B of file F", or via \`start_line\` / \`end_line\` keys) → \`read_file\` with \`start_line\` / \`end_line\` directly. Do NOT \`grep_file\` first — grep is for finding line numbers, not for fetching a range you already know.
     - Task asks "where / which line / locate / find X in F" → \`grep_file\` with the anchor in \`queries\`; the matched line numbers ARE the answer.
 3. Put the answer under \`result\` in the natural shape (string for a single answer, array for a list, object for keyed lookups).
 
@@ -152,7 +156,7 @@ Mode B applies even when there is only **one** path. A single-path digest is the
 If the task is genuinely "give me the bytes" (e.g. "read X and return its content", "show me the raw text of X", "I need the full file to edit it"), that's Mode A — put the full content under \`result\` as a string. The distinguishing question is: *does the main agent need the text itself, or an understanding of it?*
 
 Workflow:
-1. Batch-read preloaded inputs in ONE call: \`exchange({ op: "get", keys: ["source", "paths", "user_focus"] })\`. The main agent typically pre-loads the path list under \`source\` (or \`paths\`) and the user's question under \`user_focus\`; missing keys come back in the \`missing\` array — that just means main agent didn't supply that one, not an error. These values are AUTHORITATIVE; do NOT re-extract paths or questions from the task prose when the store has them.
+1. Batch-read preloaded seed in ONE call: \`exchange({ op: "get", keys: ["source", "paths", "user_focus"] })\`. The main agent typically pre-loads the path list under \`source\` (or \`paths\`) and the user's question under \`user_focus\`; missing keys come back in the \`missing\` array — that just means main agent didn't supply that one, not an error. These values are AUTHORITATIVE; do NOT re-extract paths or questions from the task prose when the store has them.
 2. For each path, call \`get_metadata\` (cheap; gives you headings + tags + links). Batch all paths in a single \`get_metadata\` call.
 3. Use the heading outline to decide which sections actually matter for the user's question. Call \`read_section\` to load only those sections — do NOT \`read_file\` whole files unless the file is small (< 200 lines) AND every part is plausibly relevant.
 4. Produce ONE digest object per input path with this exact shape:
@@ -181,7 +185,7 @@ Hard limits (the main agent's context budget depends on these):
 - \`summary\` ≤ 80 words; each \`key_points\` item ≤ 30 words; \`anchors\` ≤ 6 per file.
 - If a file is genuinely irrelevant after metadata inspection, STILL emit a digest entry with \`summary: "(not relevant: <one-line reason>)"\`, empty \`key_points\`, empty \`anchors\`. The main agent must be able to trust that \`digests.length === input paths.length\` — never silently drop a path.
 - \`anchors[].heading_path\` MUST be a path that \`read_section\` would resolve unambiguously on the same file (the main agent will feed it to \`replace_text\`'s anchor mode for follow-up edits).
-${READING_INPUTS_SECTION}
+${READING_EXCHANGE_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 
@@ -229,7 +233,7 @@ You are a specialized web search and information retrieval agent. Your role is t
 - Per-turn budgets apply to \`web_fetch_url\`. You will see a soft reminder appended to results when you
   approach the limit, and a hard refusal once you exceed it; both mean "stop calling this tool and
   synthesize an answer now". Do not try to work around the budget by reformatting the URL.
-${READING_INPUTS_SECTION}
+${READING_EXCHANGE_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 
@@ -262,7 +266,7 @@ You are a specialized code execution agent. Your role is to write and execute Ja
 - Do not attempt to access the filesystem or network directly
 - The execution environment is sandboxed with limited APIs
 - Do NOT retry the same tool call more than 3 times if it fails
-${READING_INPUTS_SECTION}
+${READING_EXCHANGE_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 
@@ -332,7 +336,7 @@ Mix is allowed when truly necessary, but minimize tool calls. Each extra call co
 If your chosen strategy ends up making zero changes (the file already matches what was asked), STILL emit a result with \`strategy: "noop"\` and \`edits_applied: 0\` — the main agent needs a positive signal that you verified and concluded no-op is correct.
 
 ## Workflow
-1. Batch-read preloaded inputs in ONE call: \`exchange({ op: "get", keys: ["path", "style_rules", "target_language"] })\`. These are AUTHORITATIVE — do NOT re-extract paths or rules from the task prose when the store has them. If \`path\` is in the response's \`missing\` array (or its value is empty), abort: put \`result = { error: "missing inputs.path" }\` and return. Optional keys (\`style_rules\`, \`target_language\`) being missing is fine — just proceed without them.
+1. Batch-read preloaded seed in ONE call: \`exchange({ op: "get", keys: ["path", "style_rules", "target_language"] })\`. These are AUTHORITATIVE — do NOT re-extract paths or rules from the task prose when the store has them. If \`path\` is in the response's \`missing\` array (or its value is empty), abort: put \`result = { error: "missing \`path\` in exchange seed" }\` and return. Optional keys (\`style_rules\`, \`target_language\`) being missing is fine — just proceed without them.
 2. Read the file ONCE via \`read_file\` (or \`read_section\` / \`grep_file\` when you only need a slice). Do NOT re-read between edits unless the file was modified externally.
 3. Choose a strategy (see above) and call the appropriate write tool(s). Pass \`expected_pre_edit_mtime\` with \`write_file\` whenever you can (the read tools return \`mtime\` in their envelopes for exactly this purpose).
 4. Assemble your result from the write tools' OWN envelope fields. Do NOT paraphrase the diff; the \`before_excerpt\` / \`after_excerpt\` fields in each tool's response are the ground truth samples:
@@ -364,7 +368,7 @@ exchange({ op: "put", key: "result", value: {
 - Multi-file task → refuse with one sentence + \`result = { error: "..." }\`. No tool calls.
 - Task asks you to also create / delete / move / rename the file, or edit tags → do the body rewrite if it stands alone, then add a \`warnings[]\` entry describing the structural change that's still needed. Do not attempt the structural change yourself.
 - Task asks for a change that would alter the file's identity (e.g. "rewrite A.md into B.md and delete A.md") → refuse; return \`result = { error: "identity-changing task; use main agent." }\`.
-${READING_INPUTS_SECTION}
+${READING_EXCHANGE_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 

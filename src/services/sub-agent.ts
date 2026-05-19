@@ -247,6 +247,16 @@ export class SubAgent {
         this._currentExecToolCallEndHandler = options.onToolCallEnd;
         this._currentExchangeStore = options.exchangeStore ?? null;
 
+        // Snapshot the exchange store's initial keys so we can later tell
+        // "keys the main agent pre-loaded as inputs" from "keys the sub-agent
+        // wrote back as outputs". The auto-fill safety net below only
+        // synthesizes a stand-in reply when the sub-agent ACTUALLY produced
+        // something new — purely-consuming runs that emit no text reply stay
+        // as genuinely empty replies.
+        const initialExchangeKeys: ReadonlySet<string> = options.exchangeStore
+            ? new Set(options.exchangeStore.keys())
+            : new Set<string>();
+
         // Build the user message: task + optional context
         const userMessage = options.context
             ? `## Task\n${task}\n\n## Context from conversation\n${options.context}`
@@ -342,6 +352,34 @@ export class SubAgent {
         // truncation, etc.).
         summary = stripLoneSurrogates(summary);
 
+        // Auto-fill safety net for the "silent put" case.
+        //
+        // Some models treat `exchange.put` as the final action of the turn and
+        // end without producing a text reply. That leaves `summary === ""` here
+        // and `payload.text === ""` in the envelope the orchestrator builds.
+        // Empirically the main agent's LLM then mis-reads the empty `text` as
+        // "sub-agent failed / returned nothing" and ignores the `result` field
+        // sitting right next to it, even though the prompt tells it to prefer
+        // `result`. Synthesize a brief stand-in here so the channel always
+        // carries a positive signal when structured data IS available.
+        //
+        // We intentionally:
+        //  - skip the abort path (its synthetic "[aborted...]" summary already
+        //    explains the empty content),
+        //  - require at least one NEW key (so a run that only consumed
+        //    pre-loaded inputs without writing anything back stays empty,
+        //    which is the truthful signal),
+        //  - leave `fullContent` and the ChatStream message history untouched,
+        //    so the UI's empty-bubble hide path (bubble-renderer.ts) keeps
+        //    working — only the main-agent-facing summary changes.
+        if (!aborted && !summary.trim() && options.exchangeStore) {
+            const synthesized = this._synthesizeExchangeSummary(
+                options.exchangeStore,
+                initialExchangeKeys,
+            );
+            if (synthesized) summary = synthesized;
+        }
+
         // Clean up active references (but keep _reusableChatStream for reuse)
         this._chatStream = null;
         this._abortController = null;
@@ -385,6 +423,50 @@ export class SubAgent {
     /** Get the execution log from the last execution */
     getExecutionLog(): SubAgentExecutionLog | null {
         return this._executionLog;
+    }
+
+    /**
+     * Build a brief stand-in `summary` for the "silent put" case — the
+     * sub-agent stored structured data via `exchange` but ended the turn
+     * without producing a text reply.
+     *
+     * Compares the store's current keys against the snapshot taken at
+     * the start of `execute()` (which records the keys the main agent
+     * pre-loaded as inputs). Only keys that were ADDED during the run
+     * count as sub-agent output:
+     *   - if `result` was added → lead with it (it's the canonical return
+     *     key per the prompt contract);
+     *   - any other added keys are listed as extras;
+     *   - if nothing was added (pure consume / overwrite-only) → return
+     *     null so the caller leaves `summary` empty, which is the
+     *     truthful "the sub-agent really produced nothing" signal.
+     *
+     * Wording is English on purpose — this text is read by the MAIN
+     * AGENT's LLM (not the user). The bracketed form mirrors the
+     * `[Sub-agent "..." was aborted...]` synthetic summary used on the
+     * abort path so downstream prompts treating "[Sub-agent ...]" as a
+     * machine-emitted marker keep working uniformly.
+     */
+    private _synthesizeExchangeSummary(
+        store: ExchangeStore,
+        initialKeys: ReadonlySet<string>,
+    ): string | null {
+        const addedKeys: string[] = [];
+        for (const k of store.keys()) {
+            if (!initialKeys.has(k)) addedKeys.push(k);
+        }
+        if (addedKeys.length === 0) return null;
+
+        const hasResult = addedKeys.includes('result');
+        const extras = addedKeys.filter(k => k !== 'result');
+
+        if (hasResult && extras.length === 0) {
+            return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`result\` in the envelope.]`;
+        }
+        if (hasResult) {
+            return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`result\` (plus extras: ${extras.join(', ')}) in the envelope.]`;
+        }
+        return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`extras\`: ${extras.join(', ')}.]`;
     }
 
     /**

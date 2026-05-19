@@ -199,6 +199,135 @@ describe('SubAgent — exchange store wiring', () => {
         expect(peekStore(agent)).toBeNull();
     });
 
+    // ── Auto-fill safety net for the "silent put" case ─────────
+    //
+    // Some models call `exchange.put` and then end the turn without
+    // producing a text reply. SubAgent.execute() should synthesize a
+    // brief stand-in `summary` so the orchestrator's envelope carries a
+    // positive signal (otherwise `payload.text` would be `""` and the
+    // main agent's LLM may mis-read the envelope as "sub-agent failed",
+    // even though `result` is right there).
+
+    it('F: synthesizes a summary when sub-agent added `result` but produced no text reply', async () => {
+        const agent = new SubAgent(makeConfig());
+        const store: ExchangeStore = new Map();
+
+        // Probe runs DURING the active execute() — mutate the store like
+        // a real `exchange.put` would, then yield an empty content turn.
+        const provider = createProbingProvider(() => {
+            store.set('result', { found: 42 });
+        }, '');
+
+        const result = await agent.execute('task', {
+            provider: provider as never,
+            exchangeStore: store,
+        });
+
+        // fullContent reflects what the model actually produced (empty)
+        expect(result.fullContent).toBe('');
+        // summary is the synthesized stand-in
+        expect(result.summary).not.toBe('');
+        expect(result.summary).toMatch(/result/);
+        expect(result.summary).toMatch(/exchange-test-agent/);
+    });
+
+    it('F2: synthesizes including extras when sub-agent added `result` plus auxiliary keys', async () => {
+        const agent = new SubAgent(makeConfig());
+        const store: ExchangeStore = new Map();
+
+        const provider = createProbingProvider(() => {
+            store.set('result', { ok: true });
+            store.set('warnings', ['legacy frontmatter']);
+            store.set('candidates', ['A.md', 'B.md']);
+        }, '');
+
+        const result = await agent.execute('task', {
+            provider: provider as never,
+            exchangeStore: store,
+        });
+
+        expect(result.summary).toMatch(/result/);
+        expect(result.summary).toMatch(/warnings/);
+        expect(result.summary).toMatch(/candidates/);
+    });
+
+    it('F3: synthesizes from extras alone when sub-agent wrote no `result`', async () => {
+        const agent = new SubAgent(makeConfig());
+        const store: ExchangeStore = new Map();
+
+        const provider = createProbingProvider(() => {
+            store.set('warnings', ['anomaly']);
+        }, '');
+
+        const result = await agent.execute('task', {
+            provider: provider as never,
+            exchangeStore: store,
+        });
+
+        // No `result` key was written, but a non-canonical extra was.
+        // Synthesis still kicks in so the main agent learns extras exist.
+        expect(result.summary).not.toBe('');
+        expect(result.summary).toMatch(/warnings/);
+        expect(result.summary).not.toMatch(/`result`/);
+    });
+
+    it('F4: does NOT synthesize when sub-agent only consumed pre-loaded seed (no new keys)', async () => {
+        const agent = new SubAgent(makeConfig());
+        // Pre-loaded by the main agent's `exchange` argument — counts as
+        // "seed keys", NOT sub-agent output.
+        const store: ExchangeStore = new Map([
+            ['source', 'path/to/note.md'],
+            ['user_focus', 'find typos'],
+        ]);
+
+        // Probe does not mutate the store: the sub-agent only read the seed.
+        const provider = createProbingProvider(() => { /* read-only */ }, '');
+
+        const result = await agent.execute('task', {
+            provider: provider as never,
+            exchangeStore: store,
+        });
+
+        // No new keys were added; the empty reply is the truthful signal
+        // ("the sub-agent really produced nothing"). Don't paper over it.
+        expect(result.summary).toBe('');
+    });
+
+    it('F5: keeps the model\'s non-empty reply verbatim (no synthesis)', async () => {
+        const agent = new SubAgent(makeConfig());
+        const store: ExchangeStore = new Map();
+
+        const provider = createProbingProvider(() => {
+            store.set('result', { x: 1 });
+        }, 'Done — see structured result.');
+
+        const result = await agent.execute('task', {
+            provider: provider as never,
+            exchangeStore: store,
+        });
+
+        // Real reply wins; synthesizer only fires on empty/whitespace summary.
+        expect(result.summary).toBe('Done — see structured result.');
+    });
+
+    it('F6: whitespace-only reply triggers synthesis (treated as empty)', async () => {
+        const agent = new SubAgent(makeConfig());
+        const store: ExchangeStore = new Map();
+
+        const provider = createProbingProvider(() => {
+            store.set('result', { x: 1 });
+        }, '   \n  ');
+
+        const result = await agent.execute('task', {
+            provider: provider as never,
+            exchangeStore: store,
+        });
+
+        // A reply of just whitespace conveys nothing to the main agent
+        // LLM — same failure mode as empty, same fix.
+        expect(result.summary).toMatch(/result/);
+    });
+
     it('E: provider errors during streaming still leave _currentExchangeStore null afterwards', async () => {
         const agent = new SubAgent(makeConfig());
         const storeA: ExchangeStore = new Map();

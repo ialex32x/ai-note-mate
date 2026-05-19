@@ -190,9 +190,33 @@ export function createExchangeTool(source: ExchangeStoreSource): RegisteredTool 
         : () => source;
 
     return {
-        // Only invoked when the model decides it needs to read/write structured
-        // payload. Not relevant to every turn.
-        ondemand: true,
+        // ALWAYS-ON: this is a control-plane tool, not a content tool.
+        //
+        // We previously had `ondemand: true`, relying on the embedding-based
+        // tool filter to surface `exchange` only when the model's query was
+        // topically similar to its description. That was wrong for two
+        // independent reasons that compounded into a hard bug:
+        //
+        //   1) The description is generic ("read/write a key-value store"),
+        //      so its embedding score against typical sub-agent prompts
+        //      ("read this file", "search for X") is low — and it kept being
+        //      dropped from `filteredTools`.
+        //   2) Sub-agents have *no* `onToolCall` fallback wired into their
+        //      ChatStream. When the model called `exchange` from system-prompt
+        //      memory after the filter had dropped it, the dispatch loop in
+        //      chat-stream.ts threw an "unhandled tool" error mid-turn,
+        //      leaving the tool_call bubble visibly stuck at `…` forever (the
+        //      `_finalizeStuckToolCallMessages` safety net now catches this
+        //      and logs a console.warn, but the underlying gap is here).
+        //
+        // The whole point of every sub-agent's `execute()` is to RETURN
+        // STRUCTURED DATA via this tool — see `sub-agent-prompts.ts` — so it
+        // must be visible on every single turn, regardless of how the
+        // conversation has drifted topically. The schema is small
+        // (~1KB of description + parameters) so the token cost of having it
+        // always on is negligible compared to the cost of silently dropping
+        // the agent's only structured-return channel.
+        ondemand: false,
 
         // Purely in-memory data routing — no vault, no network, no execution.
         capabilities: [],

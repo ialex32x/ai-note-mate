@@ -332,28 +332,34 @@ export function buildDelegatePayload(
 }
 
 // ─────────────────────────────────────────────
-// delegate_task inputs (main → sub direction)
+// delegate_task exchange seed (main → sub direction)
 // ─────────────────────────────────────────────
 
 /**
- * Error thrown when the main agent supplies an `inputs` object on
- * `delegate_task` that cannot be safely handed to the sub-agent (non-
- * serializable value, or a single value that exceeds the per-key size cap).
+ * Error thrown when the main agent supplies an `exchange` object on
+ * `delegate_task` that cannot be safely seeded into the sub-agent's
+ * exchange store (non-serializable value, or a single value that exceeds
+ * the per-key size cap).
  *
  * We surface this as a hard failure (caught by `_dispatchSubAgent` and
  * converted to a `success: false` tool_result) rather than silently
- * dropping or mangling the input, because:
- *  - inputs are programmatic by design (the main LLM constructed them
+ * dropping or mangling the entry, because:
+ *  - the seed is programmatic by design (the main LLM constructed it
  *    deliberately); silently losing one would change the sub-agent's
  *    interpretation of the task in ways the main agent cannot detect;
  *  - the main LLM gets a clear error message and can self-correct on the
- *    next turn (e.g. re-delegate with the input narrowed or moved into
+ *    next turn (e.g. re-delegate with the value narrowed or moved into
  *    `task` prose).
  *
  * This is asymmetric with the *output* side (`buildDelegatePayload`),
  * which degrades oversized values to `omitted` markers — there the cost
  * of generation has already been paid, so soft degradation is preferable
  * to a hard failure that wastes the sub-agent's whole turn.
+ *
+ * (The class name retains "Input" for historical reasons — renaming would
+ * be a breaking error-class identity change for any consumer catching on
+ * `err.name`. The user-facing message strings use the new "exchange"
+ * terminology.)
  */
 export class InvalidDelegateInputError extends Error {
     constructor(message: string) {
@@ -363,66 +369,73 @@ export class InvalidDelegateInputError extends Error {
 }
 
 /**
- * Build the initial exchange store for a `delegate_task` dispatch from the
- * main agent's `inputs` argument. Each (key, value) pair becomes a
+ * Build the initial exchange store for a `delegate_task` dispatch from
+ * the main agent's `exchange` argument. Each (key, value) pair becomes a
  * pre-populated entry the sub-agent can read via `exchange.get` (single
- * key OR `keys: string[]` for a batched lookup) / `exchange.list()` before
- * deciding how to act.
+ * key OR `keys: string[]` for a batched lookup) / `exchange.list()`
+ * before deciding how to act.
+ *
+ * The parameter name `seed` reflects the role: this is the main-side
+ * seed of the SAME store the sub-agent will later read and write via
+ * its `exchange` tool. Historically it was called "inputs", but having
+ * two names for one channel proved to be a frequent source of model
+ * confusion (LLMs would treat `inputs.X` prose as a separate concept
+ * from the exchange store and either skip the get or mis-spell the key).
  *
  * Validation rules (mirrored from the exchange tool's `put` path so the
  * main → sub direction has the same safety guarantees as the sub → sub
  * direction):
- *  - `inputs` may be `undefined` / `null` / an empty object → returns an
+ *  - `seed` may be `undefined` / `null` / an empty object → returns an
  *    empty store; this is the common case (no structured input).
- *  - `inputs` MUST be a plain object (not an array, not a class instance);
+ *  - `seed` MUST be a plain object (not an array, not a class instance);
  *    keys are strings, values are JSON-serializable per
  *    `validateSerializable`.
  *  - Each value's serialized size MUST be ≤ `EXCHANGE_VALUE_MAX_BYTES`.
- *    Oversized inputs are REJECTED (not truncated) — see
+ *    Oversized entries are REJECTED (not truncated) — see
  *    `InvalidDelegateInputError` doc for rationale.
  *
  * Exported for tests.
  */
-export function buildInitialStore(inputs?: Record<string, unknown> | null): ExchangeStore {
+export function buildInitialStore(seed?: Record<string, unknown> | null): ExchangeStore {
     const store: ExchangeStore = new Map();
-    if (inputs === undefined || inputs === null) {
+    if (seed === undefined || seed === null) {
         return store;
     }
 
     // Reject anything that isn't a plain object. Arrays / Maps / class
     // instances would silently lose structure when treated as a kv bag.
-    if (typeof inputs !== "object" || Array.isArray(inputs)) {
+    if (typeof seed !== "object" || Array.isArray(seed)) {
         throw new InvalidDelegateInputError(
-            `inputs must be a plain object mapping string keys to JSON-serializable values; got ${Array.isArray(inputs) ? "array" : typeof inputs}.`
+            `\`exchange\` must be a plain object mapping string keys to JSON-serializable values; got ${Array.isArray(seed) ? "array" : typeof seed}.`
         );
     }
-    const proto: object | null = Object.getPrototypeOf(inputs) as object | null;
+    const proto: object | null = Object.getPrototypeOf(seed) as object | null;
     if (proto !== null && proto !== Object.prototype) {
         throw new InvalidDelegateInputError(
-            `inputs must be a plain object (Object.prototype or null prototype); got an instance of ${proto?.constructor?.name ?? "<unknown>"}.`
+            `\`exchange\` must be a plain object (Object.prototype or null prototype); got an instance of ${proto?.constructor?.name ?? "<unknown>"}.`
         );
     }
 
-    for (const [key, value] of Object.entries(inputs)) {
+    for (const [key, value] of Object.entries(seed)) {
         // Same key constraints the exchange tool enforces internally — keep
-        // them aligned so a key accepted as input is also a legal key for
-        // the sub-agent's later `exchange.put` overwrites.
+        // them aligned so a key accepted at seed time is also a legal key
+        // for the sub-agent's later `exchange.put` overwrites.
         if (key.length === 0) {
-            throw new InvalidDelegateInputError(`inputs contains an empty key.`);
+            throw new InvalidDelegateInputError(`\`exchange\` contains an empty key.`);
         }
 
         const reason = validateSerializable(value);
         if (reason !== null) {
             throw new InvalidDelegateInputError(
-                `inputs[${JSON.stringify(key)}] is not JSON-serializable: ${reason}`
+                `\`exchange[${JSON.stringify(key)}]\` is not JSON-serializable: ${reason}`
             );
         }
 
         const size = estimateValueSize(value);
         if (size > EXCHANGE_VALUE_MAX_BYTES) {
             throw new InvalidDelegateInputError(
-                `inputs[${JSON.stringify(key)}] is too large (${size} bytes > ${EXCHANGE_VALUE_MAX_BYTES} cap); ` +
-                `narrow the input or pass a reference (e.g. a vault path) and let the sub-agent fetch it.`
+                `\`exchange[${JSON.stringify(key)}]\` is too large (${size} bytes > ${EXCHANGE_VALUE_MAX_BYTES} cap); ` +
+                `narrow the value or pass a reference (e.g. a vault path) and let the sub-agent fetch it.`
             );
         }
 
@@ -549,14 +562,17 @@ export class AgentOrchestrator implements IChatAgent {
                     const taskContext = typeof toolArgs["context"] === "string"
                         ? toolArgs["context"]
                         : undefined;
-                    // Accept `inputs` here too so the same fail-soft routing
-                    // works when a weaker model calls e.g. `vault_inspector({ task,
-                    // inputs })` directly instead of the proper
-                    // `delegate_task({ agent: "vault_inspector", inputs })` shape.
-                    const rawInputs = toolArgs["inputs"];
-                    const inputs = rawInputs === undefined
+                    // Accept the exchange seed here too so the same fail-soft
+                    // routing works when a weaker model calls e.g.
+                    // `vault_inspector({ task, exchange })` directly instead of
+                    // the proper `delegate_task({ agent: "vault_inspector",
+                    // exchange })` shape. Also accept the legacy `inputs` key
+                    // (some models may have memorised it) as a transitional
+                    // fallback so a stale name doesn't silently drop data.
+                    const rawExchange = toolArgs["exchange"] ?? toolArgs["inputs"];
+                    const exchange = rawExchange === undefined
                         ? undefined
-                        : (rawInputs as Record<string, unknown>);
+                        : (rawExchange as Record<string, unknown>);
 
                     console.warn(
                         `[AgentOrchestrator] Model called tool "${toolName}" directly; ` +
@@ -569,7 +585,7 @@ export class AgentOrchestrator implements IChatAgent {
                         task,
                         taskContext,
                         parentToolCallId: toolCallId,
-                        inputs,
+                        exchange,
                     });
                     return result.content;
                 }
@@ -857,14 +873,15 @@ export class AgentOrchestrator implements IChatAgent {
         taskContext?: string;
         parentToolCallId?: string;
         /**
-         * Structured inputs from the main agent. Pre-populated into the
-         * exchange store before the sub-agent runs; the sub-agent reads
-         * them via its `exchange` tool. See `buildInitialStore` for the
-         * validation rules.
+         * Initial seed of the sub-agent's exchange store, as supplied by
+         * the main agent via the `exchange` argument of `delegate_task`.
+         * Pre-populated into the store before the sub-agent runs; the
+         * sub-agent reads it via its own `exchange` tool. See
+         * `buildInitialStore` for the validation rules.
          */
-        inputs?: Record<string, unknown>;
+        exchange?: Record<string, unknown>;
     }): Promise<{ success: boolean; content: string }> {
-        const { agentName, task, taskContext, parentToolCallId, inputs } = params;
+        const { agentName, task, taskContext, parentToolCallId, exchange } = params;
         const agentNames = Array.from(this._subAgents.keys());
 
         const subAgent = this._subAgents.get(agentName);
@@ -882,19 +899,19 @@ export class AgentOrchestrator implements IChatAgent {
             };
         }
 
-        // Validate `inputs` BEFORE notifying the UI / mutating any state,
-        // so a bad input doesn't leave the UI in a "sub-agent started but
-        // never finished" zombie state. `buildInitialStore` is a pure
-        // synchronous validator — fail-fast here means no sub-agent
+        // Validate the exchange seed BEFORE notifying the UI / mutating any
+        // state, so a bad value doesn't leave the UI in a "sub-agent
+        // started but never finished" zombie state. `buildInitialStore` is
+        // a pure synchronous validator — fail-fast here means no sub-agent
         // tokens are spent and no UI lifecycle callbacks fire.
         let exchangeStore: ExchangeStore;
         try {
-            exchangeStore = buildInitialStore(inputs);
+            exchangeStore = buildInitialStore(exchange);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             return {
                 success: false,
-                content: `Error: invalid \`inputs\` for delegate_task(agent="${agentName}"): ${msg}`,
+                content: `Error: invalid \`exchange\` for delegate_task(agent="${agentName}"): ${msg}`,
             };
         }
 
@@ -909,7 +926,7 @@ export class AgentOrchestrator implements IChatAgent {
         }
 
         // Per-dispatch exchange store ownership reminder:
-        //   - main → sub: pre-populated above by `buildInitialStore(inputs)`,
+        //   - main → sub: pre-populated above by `buildInitialStore(exchange)`,
         //     readable by the sub-agent via `exchange.get` / `exchange.list`.
         //   - sub → main: the sub-agent further writes into the same store
         //     via `exchange.put`; on success we read it back via
@@ -1073,13 +1090,13 @@ export class AgentOrchestrator implements IChatAgent {
                                 type: "string",
                                 description: "Optional additional context from the conversation that the sub-agent needs.",
                             },
-                            inputs: {
+                            exchange: {
                                 type: "object",
                                 description:
-                                    `Optional structured inputs for the sub-agent. Each (key, value) is pre-loaded into the sub-agent's exchange store; the sub-agent reads them via \`exchange.get(key)\` or \`exchange.list()\` before deciding how to act. ` +
-                                    `Use this for data the sub-agent will consume programmatically — lists of paths, prior results, constraints, configuration. Do NOT duplicate the same data in the \`task\` prose. ` +
+                                    `Initial seed of the sub-agent's exchange store. Each (key, value) pair is pre-loaded so the sub-agent can read it via \`exchange.get(key)\` / \`exchange({op:"get", keys:[...]})\` / \`exchange.list()\` at the start of its turn. The SAME store is then written back to by the sub-agent via its own \`exchange.put\` calls; you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope. There is ONE channel ("exchange"), two directions — not two separate concepts. ` +
+                                    `Use this for data the sub-agent will consume programmatically — file paths, lists of paths, prior results, focus strings, constraints, configuration. Do NOT duplicate the same data in the \`task\` prose. ` +
                                     `Values MUST be JSON-serializable (string / number / boolean / null / plain array / plain object); each value's serialized size MUST be ≤ 32 KB. ` +
-                                    `By convention, the key \`source\` is a good default for "the thing the sub-agent should operate on".`,
+                                    `By convention, the key \`source\` is a good default for "the thing the sub-agent should operate on" (e.g. a path or a list of paths).`,
                                 additionalProperties: true,
                             },
                         },
@@ -1091,16 +1108,23 @@ export class AgentOrchestrator implements IChatAgent {
                 const agentName = args["agent"] as string;
                 const task = args["task"] as string;
                 const taskContext = args["context"] as string | undefined;
-                // `inputs` is `additionalProperties: true` so the JSON
+                // `exchange` is `additionalProperties: true` so the JSON
                 // schema doesn't constrain the value shape — we accept
                 // any plain object and let `buildInitialStore` validate.
                 // Anything that's not a plain object (e.g. string, array)
                 // is forwarded as-is so `buildInitialStore` can produce
                 // a consistent error message via `InvalidDelegateInputError`.
-                const rawInputs = args["inputs"];
-                const inputs = rawInputs === undefined
+                //
+                // Transitional fallback: some models may still emit the
+                // legacy `inputs` key from older training data / cached
+                // tool schemas. Accept it as a secondary alias so the
+                // payload doesn't silently disappear; the prompts and
+                // schema description above point exclusively at `exchange`,
+                // so over time this fallback will go cold.
+                const rawExchange = args["exchange"] ?? args["inputs"];
+                const exchange = rawExchange === undefined
                     ? undefined
-                    : (rawInputs as Record<string, unknown>);
+                    : (rawExchange as Record<string, unknown>);
                 const parentToolCallId = context?.toolCallId;
 
                 const result = await this._dispatchSubAgent({
@@ -1108,7 +1132,7 @@ export class AgentOrchestrator implements IChatAgent {
                     task,
                     taskContext,
                     parentToolCallId,
-                    inputs,
+                    exchange,
                 });
                 return {
                     success: result.success,

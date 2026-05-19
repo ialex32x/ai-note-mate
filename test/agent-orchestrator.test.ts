@@ -988,24 +988,24 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
 // ─── buildInitialStore ─────────────────────────────────────
 //
 // Pure function — covers the validation rules for the main → sub
-// direction (the `inputs` argument of delegate_task). End-to-end wiring
-// (the orchestrator actually calls this and refuses to start the
-// sub-agent on InvalidDelegateInputError) is covered by TS type-checking
-// + manual smoke; the behaviour that CAN drift — what counts as a valid
-// input — is tested directly here.
+// direction (the `exchange` argument of delegate_task — historically
+// called `inputs`). End-to-end wiring (the orchestrator actually calls
+// this and refuses to start the sub-agent on InvalidDelegateInputError)
+// is covered by TS type-checking + manual smoke; the behaviour that
+// CAN drift — what counts as a valid seed entry — is tested directly here.
 
 describe('buildInitialStore', () => {
-    it('returns an empty store when inputs is undefined or null', () => {
-        // The common case: main agent didn't pass `inputs` at all.
+    it('returns an empty store when the seed is undefined or null', () => {
+        // The common case: main agent didn't pass `exchange` at all.
         // Must NOT throw, must NOT pre-populate anything — the sub-agent
-        // sees a clean store, identical to pre-inputs behaviour.
+        // sees a clean store, identical to pre-seed behaviour.
         expect(buildInitialStore(undefined).size).toBe(0);
         expect(buildInitialStore(null).size).toBe(0);
     });
 
     it('returns an empty store for an empty object', () => {
         // Edge case: explicitly `{}`. Should be indistinguishable from
-        // "no inputs" — no special marker, no thrown error.
+        // "no seed" — no special marker, no thrown error.
         expect(buildInitialStore({}).size).toBe(0);
     });
 
@@ -1056,15 +1056,15 @@ describe('buildInitialStore', () => {
 
     it('rejects non-JSON-serializable values with the offending path in the message', () => {
         // Defence in depth: validateSerializable is the canonical
-        // checker; we re-run it here so a bad input fails BEFORE any
+        // checker; we re-run it here so a bad seed fails BEFORE any
         // sub-agent tokens are spent (cheaper than discovering the
         // problem when the orchestrator JSON.stringify's the envelope).
         // The error message must reference the failing key so the main
         // LLM can self-correct.
-        const inputs = { good: 1, bad: () => 42 };
-        expect(() => buildInitialStore(inputs as unknown as Record<string, unknown>))
+        const seed = { good: 1, bad: () => 42 };
+        expect(() => buildInitialStore(seed as unknown as Record<string, unknown>))
             .toThrow(InvalidDelegateInputError);
-        expect(() => buildInitialStore(inputs as unknown as Record<string, unknown>))
+        expect(() => buildInitialStore(seed as unknown as Record<string, unknown>))
             .toThrow(/"bad"/);
     });
 
@@ -1100,5 +1100,151 @@ describe('buildInitialStore', () => {
         expect(a).not.toBe(b);
         expect(a.get('x')).toBe(1);
         expect(b.get('x')).toBe(2);
+    });
+});
+
+// ─── delegate_task.exec — seed extraction & legacy `inputs` fallback ───
+//
+// The `delegate_task` tool's `exec` handler is ~3 lines of glue, but it
+// owns a non-obvious responsibility: pulling the seed out of the
+// model-emitted args under EITHER the canonical key (`exchange`) or the
+// transitional legacy key (`inputs`), then forwarding it to
+// `_dispatchSubAgent` under the unified field name `exchange`.
+//
+// Historically we relied on TS type-checking + manual smoke for this
+// "wiring" layer (see the long comment above `buildDelegatePayload`),
+// but a user-reported regression where a model still emitted `inputs:`
+// against the new schema showed why a fast, direct regression guard
+// belongs here: a typo / inverted ?? / missed key would silently drop
+// the seed and the bug would only surface in a live multi-turn run.
+//
+// These tests deliberately bypass the full ChatStream multi-turn loop
+// (which is brittle to mock) and instead invoke the registered tool's
+// `exec` directly with a spy on `_dispatchSubAgent`, asserting on the
+// forwarded payload. That's the smallest unit of code that owns the
+// extraction contract.
+
+describe('delegate_task.exec — seed extraction', () => {
+    // Helper: build an orchestrator with one sub-agent and pull the
+    // dynamically-registered `delegate_task` tool out of the main agent.
+    // The cast to `any` is intentional — `_mainAgent` is private; we
+    // accept the test-internal coupling so we can hit the exact code
+    // path the live runtime hits (vs. recreating the schema in the
+    // test, which would let the two drift).
+    function makeOrch() {
+        const orchestrator = new AgentOrchestrator({
+            systemPrompt: 'Test',
+            subAgents: [
+                { name: 'vault', description: 'd', systemPrompt: 's', tools: [] },
+            ],
+        });
+        const mainAgent = (orchestrator as unknown as { _mainAgent: { findRegisteredTool: (n: string) => RegisteredTool | undefined } })._mainAgent;
+        const tool = mainAgent.findRegisteredTool('delegate_task');
+        if (!tool) throw new Error('delegate_task tool not registered');
+        return { orchestrator, tool };
+    }
+
+    it('forwards `exchange` arg as the seed', async () => {
+        // Happy path under the canonical name: model emits the new
+        // `exchange` key, orchestrator must forward it unchanged.
+        const { orchestrator, tool } = makeOrch();
+        const spy = vi
+            .spyOn(orchestrator as unknown as { _dispatchSubAgent: (...a: unknown[]) => Promise<unknown> }, '_dispatchSubAgent')
+            .mockResolvedValue({ success: true, content: 'ok' });
+
+        await tool.exec(
+            null as never,
+            {
+                agent: 'vault',
+                task: 'go',
+                exchange: { path: 'Inbox/Foo.base' },
+            },
+            undefined,
+            { toolCallId: 'tc-1', toolCallMessage: {} as ChatMessage },
+        );
+
+        expect(spy).toHaveBeenCalledOnce();
+        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
+        expect(payload.exchange).toEqual({ path: 'Inbox/Foo.base' });
+    });
+
+    it('falls back to legacy `inputs` arg when `exchange` is absent', async () => {
+        // The regression guard: some models still emit the old
+        // parameter name (`inputs`) from training-data muscle memory
+        // or a cached tool schema. The exec MUST treat `inputs` as a
+        // transparent alias of `exchange` — anything else means the
+        // seed silently disappears and the sub-agent runs against an
+        // empty store, which is exactly the bug a user hit in the
+        // field.
+        const { orchestrator, tool } = makeOrch();
+        const spy = vi
+            .spyOn(orchestrator as unknown as { _dispatchSubAgent: (...a: unknown[]) => Promise<unknown> }, '_dispatchSubAgent')
+            .mockResolvedValue({ success: true, content: 'ok' });
+
+        await tool.exec(
+            null as never,
+            {
+                agent: 'vault',
+                task: 'go',
+                inputs: { path: 'Inbox/Foo.base' },
+            },
+            undefined,
+            { toolCallId: 'tc-1', toolCallMessage: {} as ChatMessage },
+        );
+
+        expect(spy).toHaveBeenCalledOnce();
+        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
+        expect(payload.exchange).toEqual({ path: 'Inbox/Foo.base' });
+    });
+
+    it('prefers `exchange` over `inputs` when both are present', async () => {
+        // Defensive: a confused model could emit both keys. The
+        // canonical name wins — same as the `?? `-style resolution
+        // order in the source. Documenting this prevents a future
+        // "merge them" refactor from accidentally clobbering the
+        // intended seed.
+        const { orchestrator, tool } = makeOrch();
+        const spy = vi
+            .spyOn(orchestrator as unknown as { _dispatchSubAgent: (...a: unknown[]) => Promise<unknown> }, '_dispatchSubAgent')
+            .mockResolvedValue({ success: true, content: 'ok' });
+
+        await tool.exec(
+            null as never,
+            {
+                agent: 'vault',
+                task: 'go',
+                exchange: { path: 'A.md' },
+                inputs: { path: 'B.md' },
+            },
+            undefined,
+            { toolCallId: 'tc-1', toolCallMessage: {} as ChatMessage },
+        );
+
+        expect(spy).toHaveBeenCalledOnce();
+        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
+        expect(payload.exchange).toEqual({ path: 'A.md' });
+    });
+
+    it('forwards undefined when neither key is present', async () => {
+        // Sanity: no seed at all → undefined reaches the dispatcher,
+        // which `buildInitialStore(undefined)` turns into an empty
+        // store. Asserting `undefined` (not `{}`) keeps the contract
+        // explicit so future refactors don't paper over a missing
+        // seed by silently defaulting to `{}`.
+        const { orchestrator, tool } = makeOrch();
+        const spy = vi
+            .spyOn(orchestrator as unknown as { _dispatchSubAgent: (...a: unknown[]) => Promise<unknown> }, '_dispatchSubAgent')
+            .mockResolvedValue({ success: true, content: 'ok' });
+
+        await tool.exec(
+            null as never,
+            { agent: 'vault', task: 'go' },
+            undefined,
+            { toolCallId: 'tc-1', toolCallMessage: {} as ChatMessage },
+        );
+
+        expect(spy).toHaveBeenCalledOnce();
+        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
+        expect(payload.exchange).toBeUndefined();
     });
 });

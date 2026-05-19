@@ -151,16 +151,20 @@ export function wrapInSubAgentCollapsible(
  * tool bubbles (rendered as sibling messages) already convey that
  * information, so duplicating it here would only add clutter.
  *
- * If the main agent passed structured `inputs` to `delegate_task`, they
- * are rendered as a collapsible JSON block beneath the task text. The
- * block defaults to collapsed because `inputs` is supplementary
- * information (the task prose already references it by key); users who
+ * If the main agent passed an `exchange` seed to `delegate_task`, it is
+ * rendered as a collapsible JSON block beneath the task text. The block
+ * defaults to collapsed because the seed is supplementary information
+ * (the task prose already references its entries by key); users who
  * want to inspect the literal payload can toggle it open.
+ *
+ * The lookup falls back to the legacy `inputs` key so messages persisted
+ * before the `inputs` → `exchange` rename still render their seed block.
  */
 export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage): void {
     const agentName = (msg.toolCallMeta?.toolArgs?.['agent'] as string | undefined) ?? 'agent';
     const taskText = (msg.toolCallMeta?.toolArgs?.['task'] as string | undefined) ?? '';
-    const inputs = msg.toolCallMeta?.toolArgs?.['inputs'];
+    const exchangeSeed = msg.toolCallMeta?.toolArgs?.['exchange']
+        ?? msg.toolCallMeta?.toolArgs?.['inputs'];
 
     // Agent badge (same visual treatment as sub-agent bubbles so the
     // "main agent → sub-agent" handoff reads naturally).
@@ -175,14 +179,14 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
         });
     }
 
-    // Inputs: only render when we actually have a non-empty plain object.
+    // Exchange seed: only render when we actually have a non-empty plain object.
     // - undefined / null → nothing to show
     // - non-object (string, array, etc.) → defensive skip; the orchestrator
     //   already rejects these before dispatch, so reaching this branch
     //   means a stale persisted message; rendering would just be confusing
     // - empty object `{}` → a "0 keys" toggle adds noise without value
-    if (isNonEmptyPlainObject(inputs)) {
-        renderDelegateInputsCollapsible(bubble, inputs);
+    if (isNonEmptyPlainObject(exchangeSeed)) {
+        renderDelegateInputsCollapsible(bubble, exchangeSeed);
     }
 
     // No per-bubble streaming cursor: the single trailing `…` loader at
@@ -190,8 +194,9 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
 }
 
 /**
- * Type guard for "the kind of value we want to render as a JSON inputs
- * block": a non-null, non-array object with at least one own key.
+ * Type guard for "the kind of value we want to render as a JSON
+ * exchange-seed block": a non-null, non-array object with at least
+ * one own key.
  *
  * Mirrors (loosely) `buildInitialStore`'s validation so the UI only
  * renders shapes the orchestrator would also accept; arrays / class
@@ -205,7 +210,10 @@ function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Render the collapsible `inputs` block.
+ * Render the collapsible block that shows the exchange seed (the
+ * `delegate_task` `exchange` arg — historically named `inputs`, hence
+ * the legacy CSS classes / dataset keys kept here unchanged for the
+ * sake of any user-side custom CSS targeting them).
  *
  * Reuses the visual vocabulary of `wrapInSubAgentCollapsible` (same arrow
  * + summary + body classes) so the two collapsibles look consistent in a
@@ -215,7 +223,7 @@ function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
  *
  * The body is rendered as a `<pre>` of pretty-printed JSON, NOT through
  * the markdown pipeline:
- *   - `inputs` is structured data; monospaced JSON is the most accurate
+ *   - the seed is structured data; monospaced JSON is the most accurate
  *     visual encoding (preserves whitespace, quotes, key/value alignment).
  *   - Going through markdown would re-interpret strings (auto-links,
  *     headings starting with `#`, etc.), which would lie about what the
@@ -223,7 +231,7 @@ function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
  */
 function renderDelegateInputsCollapsible(
     bubble: HTMLElement,
-    inputs: Record<string, unknown>,
+    seed: Record<string, unknown>,
 ): void {
     const previouslyExpanded = bubble.dataset['delegateInputsExpanded'] === '1';
 
@@ -259,9 +267,9 @@ function renderDelegateInputsCollapsible(
     // marker rather than crashing the whole bubble render.
     let json: string;
     try {
-        json = JSON.stringify(inputs, null, 2);
+        json = JSON.stringify(seed, null, 2);
     } catch {
-        json = '<unrenderable inputs>';
+        json = '<unrenderable exchange seed>';
     }
     const body = wrapper.createEl('pre', {
         cls: previouslyExpanded

@@ -482,6 +482,32 @@ export interface ChatStreamConfig {
 // Internal helper
 // ─────────────────────────────────────────────
 
+/**
+ * Per-chunk throttle interval (ms) for streaming UI updates inside
+ * {@link ChatStream._processStream}. When a provider emits stream
+ * chunks faster than this (e.g. Gemini Flash, Groq, local llama.cpp
+ * on a fast model can do hundreds per second), chunks arriving within
+ * the same window have their `onMessageUpdate` emit coalesced — only
+ * the most-recent state is forwarded downstream, the rest are dropped.
+ *
+ * Safe to drop intermediate emits because every emit carries the
+ * *latest full snapshot* of `streamingMessage` (not a delta), and the
+ * post-loop final emit unconditionally fires with the terminal state
+ * — so no content is ever lost, and the on-screen "latest text" never
+ * lags by more than one window.
+ *
+ * 30 ms sits well below the rendering controller's own 100 ms (or
+ * 400 ms for large content) throttle, so this does NOT change the
+ * on-screen update cadence. Its purpose is to cut the per-chunk
+ * synchronous callback chain (runtime.emit → view.handleMessageUpdate
+ * → bubble re-render dispatch → streaming-controller.update), which
+ * fires for every chunk even when the next render is already pending.
+ * On hot streams that chain was costing several milliseconds per
+ * chunk × hundreds of chunks per second, fully saturating the main
+ * thread before the renderer even got a turn.
+ */
+const STREAM_EMIT_THROTTLE_MS = 30;
+
 /** Generate a simple unique ID */
 function generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -1379,10 +1405,40 @@ export class ChatStream implements IChatAgent {
                         this._messages.push(toolCallMessage);
                         this._config.onMessageUpdate?.({ ...toolCallMessage });
 
-                        // Find the registered handler
-                        const registered = filteredTools.find((t) => {
+                        // Find the registered handler.
+                        //
+                        // Two-stage lookup:
+                        //
+                        //   1) `filteredTools.find(...)` — the tool was offered
+                        //      to the model this iteration (passed both capability
+                        //      and embedding filters). This is the normal case.
+                        //
+                        //   2) Fallback: the model called a tool that did NOT
+                        //      pass the embedding filter this iteration, but is
+                        //      otherwise capability-allowed. This happens when
+                        //      the model recalls a tool from system-prompt or
+                        //      conversation memory whose description didn't
+                        //      score well against the current query. We MUST
+                        //      dispatch it anyway: refusing to (the previous
+                        //      behaviour) left the tool_call message stuck in
+                        //      `streaming: true` forever because the throw at
+                        //      the bottom of this branch bypassed finalization,
+                        //      producing the "exchange bubble shows `…`
+                        //      forever, never gets a ✓/✕" bug — see
+                        //      `_finalizeStuckToolCallMessages` for the
+                        //      defensive safety net that catches the symptom.
+                        //
+                        // Capability-rejected tools are deliberately NOT
+                        // recovered: a profile that disabled e.g. `write_file`
+                        // wants the call refused, not silently honoured.
+                        const filterHit = filteredTools.find((t) => {
                             return t.schema.function.name === toolName;
                         });
+                        const registered: RegisteredTool | undefined = filterHit
+                            ?? capabilityFilteredTools.find(
+                                t => t.schema.function.name === toolName,
+                            );
+                        const recoveredFromFilterMiss = !filterHit && !!registered;
 
                         // ── Sticky on-demand bookkeeping ───────────────────
                         // The model has now invoked this tool — mark it
@@ -1395,7 +1451,10 @@ export class ChatStream implements IChatAgent {
                         // corrected args instead of hallucinating around
                         // a now-invisible schema. Always-on tools never
                         // need stickiness (they're never filtered) so
-                        // gate on `ondemand`.
+                        // gate on `ondemand`. This also applies to the
+                        // recovered path: if we just rescued a filtered-out
+                        // tool, pin it for the rest of the turn so the
+                        // model gets a stable schema on follow-up calls.
                         if (registered?.ondemand) {
                             stickyOndemandToolNames.add(toolName);
                         }
@@ -1404,24 +1463,20 @@ export class ChatStream implements IChatAgent {
                         // When the model calls a tool that is *registered* on
                         // this agent (passes capability filtering) but didn't
                         // make it through embedding-based filtering, log a
-                        // debug line. This is the most useful single signal
-                        // for diagnosing "AI suddenly can't do X" reports —
-                        // it pinpoints whether the threshold / topK / tool
-                        // description quality is at fault, without changing
-                        // runtime behaviour. (Capability-rejected tools and
-                        // genuinely-unregistered names are excluded; they
-                        // are not embedding-filter misses.)
-                        if (!registered) {
-                            const missed = capabilityFilteredTools.find(
-                                t => t.schema.function.name === toolName,
+                        // debug line. We now dispatch it instead of throwing
+                        // (see the two-stage lookup above), but the breadcrumb
+                        // is still the single most useful signal for
+                        // diagnosing "AI suddenly can't do X" reports — it
+                        // pinpoints whether the threshold / topK / tool
+                        // description quality should be tuned. Capability-
+                        // rejected tools and genuinely-unregistered names are
+                        // excluded; they are not embedding-filter misses.
+                        if (recoveredFromFilterMiss) {
+                            console.debug(
+                                `[embedding tool filter] miss recovered: model called "${toolName}" `
+                                + `but it was filtered out (capability-allowed, dispatching directly; `
+                                + `consider lowering threshold or revising its description)`,
                             );
-                            if (missed) {
-                                console.debug(
-                                    `[embedding tool filter] miss: model called "${toolName}" `
-                                    + `but it was filtered out (registered & capability-allowed, `
-                                    + `consider lowering threshold or revising its description)`,
-                                );
-                            }
                         }
 
                         // ── Per-turn call-budget enforcement ────────────────
@@ -1526,7 +1581,24 @@ export class ChatStream implements IChatAgent {
                                     }
                                 }
                             } catch (err) {
-                                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                                if (err instanceof DOMException && err.name === 'AbortError') {
+                                    // Finalize the in-flight tool_call message before
+                                    // unwinding. Without this the bubble stays stuck
+                                    // in `streaming: true` with `toolCallResult ===
+                                    // undefined` — i.e. only the ARGUMENTS section
+                                    // renders, the RESULT section is silently
+                                    // omitted, and the user reasonably reads that
+                                    // as "the tool returned nothing" even though
+                                    // the model never actually saw a result either.
+                                    // See `renderToolCallContent` for the
+                                    // `if (msg.toolCallResult)` gate this restores.
+                                    this._finalizeAbortedToolCallMessage(
+                                        toolCallMessage,
+                                        Date.now() - toolCallStartTime,
+                                        '[Aborted during tool execution: the tool was interrupted before it could return a result.]',
+                                    );
+                                    throw err;
+                                }
                                 const error = err instanceof Error ? err : new Error(String(err));
                                 toolResult = `Error: ${error.message}`;
                             }
@@ -1534,6 +1606,21 @@ export class ChatStream implements IChatAgent {
 
                         // Check if aborted after tool execution
                         if (!this._abortController || this._abortController.signal.aborted) {
+                            // Symmetric finalization for the "tool finished but the
+                            // turn was aborted before we got to record the result"
+                            // path. The exec itself ran to completion (we just
+                            // can't surface its result to the model because the
+                            // turn is being torn down), so the bubble would
+                            // otherwise stay in the same "streaming forever"
+                            // limbo as the catch path above. We mark this branch
+                            // distinctly so the user can tell "the tool actually
+                            // ran but its output was discarded" apart from "the
+                            // tool itself was interrupted mid-flight".
+                            this._finalizeAbortedToolCallMessage(
+                                toolCallMessage,
+                                Date.now() - toolCallStartTime,
+                                '[Aborted after tool returned: the tool finished but the turn was interrupted before its result reached the model.]',
+                            );
                             throw new DOMException("Aborted", "AbortError");
                         }
 
@@ -1609,6 +1696,14 @@ export class ChatStream implements IChatAgent {
             // end the iterator instead of throwing AbortError).
             const wasAborted = this._abortController?.signal.aborted ?? false;
 
+            // Safety net: regardless of which epilogue runs below, the
+            // turn is over and no further per-tool-call updates will
+            // fire. Force-finalize any tool_call message that's still
+            // visually stuck. See `_finalizeStuckToolCallMessages` for
+            // why this exists (it's a defence against silent gaps in
+            // the chat-pipeline message-update forwarding).
+            this._finalizeStuckToolCallMessages();
+
             if (wasAborted) {
                 this._state = "aborted";
                 this._abortController = null;
@@ -1645,6 +1740,15 @@ export class ChatStream implements IChatAgent {
             }
         } catch (err) {
             this._abortController = null;
+
+            // Mirror the safety net from the normal-exit path: if the
+            // turn unwound via a thrown error (including AbortError
+            // that came through the throw channel rather than the
+            // wasAborted flag), any tool_call message still flagged
+            // streaming MUST be patched up here too. Skipping this
+            // would leave the abort-via-throw path showing the same
+            // "stuck …" bubbles the wasAborted path now avoids.
+            this._finalizeStuckToolCallMessages();
 
             // Check if this was a user-initiated abort
             if (err instanceof Error && err.name === 'AbortError') {
@@ -1702,6 +1806,92 @@ export class ChatStream implements IChatAgent {
      * assistant text on subsequent rounds (so the filter tracks the model's
      * current next-step intent, not just the original question).
      */
+    /**
+     * Finalize a tool_call message that is being torn down by an abort, so
+     * its bubble doesn't stay stuck in `streaming: true` with no
+     * `toolCallResult`. Used by both abort branches around tool dispatch:
+     * one for `AbortError` thrown from inside `registered.exec`, the
+     * other for the post-exec check that catches an abort signalled
+     * while exec ran to completion. Without this finalization the UI
+     * renders the bubble with only the ARGUMENTS section and silently
+     * drops the RESULT section (see `renderToolCallContent`'s
+     * `if (msg.toolCallResult)` gate) — which reads as "the tool
+     * returned nothing", even though from the model's perspective the
+     * call was simply never observed.
+     *
+     * Marks the call as a warning rather than an error: nothing
+     * malfunctioned, the user just interrupted the flow.
+     */
+    private _finalizeAbortedToolCallMessage(
+        toolCallMessage: ChatMessage,
+        elapsedMs: number,
+        note: string,
+    ): void {
+        toolCallMessage.streaming = false;
+        const baseName = toolCallMessage.toolCallMeta?.toolName ?? toolCallMessage.content;
+        toolCallMessage.content = `${baseName}  (${elapsedMs}ms, aborted)`;
+        toolCallMessage.toolCallResult = {
+            status: 'warning',
+            result: note,
+        };
+        this._config.onMessageUpdate?.({ ...toolCallMessage });
+    }
+
+    /**
+     * End-of-turn safety net: walk `_messages` and finalize any
+     * `tool_call` message that's still flagged `streaming: true`.
+     *
+     * Background: under normal operation every tool_call reaches the
+     * `toolCallMessage.streaming = false; toolCallMessage.toolCallResult = ...;
+     * onMessageUpdate(...)` block in the dispatch loop before the
+     * next iteration starts, and the bubble visibly transitions from
+     * `name  …` to `name  (Xms)` with a ✓ / ✕ icon. But the chat
+     * pipeline (chat-stream → SubAgent forwarder → orchestrator
+     * bucket → runtime emit → session-view re-render) has many
+     * hand-offs and an unrelated bug along it could silently swallow
+     * the second emit — leaving a bubble visually stuck at `…` even
+     * though the LLM-facing tool_result was delivered correctly.
+     * That class of bug is exactly what the user reported for the
+     * `exchange` tool.
+     *
+     * Re-emitting one final time at the end of the turn turns "stuck
+     * forever" into "stuck for at most the turn's duration", which
+     * is good enough to never confuse the user, and gives them a
+     * console.warn breadcrumb to forward back so the real upstream
+     * gap can be found and fixed.
+     *
+     * Idempotent: a no-op when the dispatch loop already finalized
+     * everything (the common case).
+     */
+    private _finalizeStuckToolCallMessages(): void {
+        for (const msg of this._messages) {
+            if (msg.role !== 'tool_call') continue;
+            if (!msg.streaming) continue;
+            // The tool_call message escaped the dispatch loop with
+            // its in-progress flag still set. Log loudly so the
+            // missing-update path can be diagnosed, then patch the
+            // UI state so the bubble shows *something* rather than
+            // spinning forever.
+            console.warn(
+                `[ChatStream] Tool_call message "${msg.toolCallMeta?.toolName ?? msg.content}" ` +
+                `(id=${msg.id}) left turn with streaming=true and no toolCallResult — ` +
+                `forcing finalization. This indicates an upstream bug in tool-call message lifecycle.`,
+            );
+            msg.streaming = false;
+            if (!msg.toolCallResult) {
+                const baseName = msg.toolCallMeta?.toolName ?? msg.content;
+                msg.content = `${baseName}  (no result captured)`;
+                msg.toolCallResult = {
+                    status: 'warning',
+                    result: '[Tool finished but no result was captured by the chat pipeline. ' +
+                        'This is a UI-side artifact; the model itself may still have received the actual result. ' +
+                        'Please report this to the plugin author with the console log above.]',
+                };
+            }
+            this._config.onMessageUpdate?.({ ...msg });
+        }
+    }
+
     private async _getBestMatchedTools(
         config: MinimalModelConfig | undefined,
         query: string,
@@ -1826,7 +2016,22 @@ export class ChatStream implements IChatAgent {
         let usageData: { promptTokens: number; completionTokens: number; totalTokens: number } | null = null;
         const thoughtSignatures: string[] = [];
 
+        // ── Per-chunk emit throttle (see STREAM_EMIT_THROTTLE_MS) ──
+        // Tracks the wall-clock timestamp of the most recent emit so
+        // sub-30ms-apart chunks coalesce into a single emit. Both the
+        // content branch and the thinking branch share this clock —
+        // a content emit also "covers" the thinking state because the
+        // emitted message carries the *latest* snapshot of both fields.
+        const streamStart = performance.now();
+        let lastEmitAt = 0;
+        let chunkCount = 0;
+        let contentEmits = 0;
+        let contentSkips = 0;
+        let thinkingEmits = 0;
+        let thinkingSkips = 0;
+
         for await (const chunk of stream) {
+            chunkCount++;
             finishReason = chunk.finishReason ?? null;
 
             // Extract usage from the final chunk
@@ -1842,16 +2047,41 @@ export class ChatStream implements IChatAgent {
                 if (isFirstContent && streamingMessage.thinkingContent) {
                     streamingMessage.thinkingComplete = true;
                 }
-                // On the very first content chunk, emit the initial streaming bubble;
-                // subsequent chunks emit a shallow copy as usual.
-                this._config.onMessageUpdate?.(isFirstContent ? streamingMessage : { ...streamingMessage });
+                // First content always emits — the bubble must appear
+                // immediately, otherwise the user sees nothing until
+                // the throttle window opens (typical TTFB perception
+                // problem). Subsequent emits are throttled.
+                //
+                // First-content emit passes the live `streamingMessage`
+                // reference (not a copy) on purpose: see the comment
+                // at the original emit site for the rationale.
+                const now = performance.now();
+                if (isFirstContent || now - lastEmitAt >= STREAM_EMIT_THROTTLE_MS) {
+                    this._config.onMessageUpdate?.(
+                        isFirstContent ? streamingMessage : { ...streamingMessage },
+                    );
+                    lastEmitAt = now;
+                    contentEmits++;
+                } else {
+                    contentSkips++;
+                }
             }
 
             // Accumulate reasoning/thinking content
             if (chunk.reasoningContent) {
                 streamingMessage.thinkingContent = (streamingMessage.thinkingContent ?? "") + chunk.reasoningContent;
-                // Emit update so the UI can show the thinking indicator
-                this._config.onMessageUpdate?.({ ...streamingMessage });
+                // Shares the same throttle clock as content emits —
+                // see the streamStart/lastEmitAt comment above for why
+                // a content emit also "covers" thinking. The terminal
+                // emit after the loop will catch any pending state.
+                const now = performance.now();
+                if (now - lastEmitAt >= STREAM_EMIT_THROTTLE_MS) {
+                    this._config.onMessageUpdate?.({ ...streamingMessage });
+                    lastEmitAt = now;
+                    thinkingEmits++;
+                } else {
+                    thinkingSkips++;
+                }
             }
 
             // Accumulate tool_call deltas (streamed in fragments)
@@ -1885,6 +2115,27 @@ export class ChatStream implements IChatAgent {
         streamingMessage.streaming = false;
         if (streamingMessage.content || streamingMessage.thinkingContent) {
             this._config.onMessageUpdate?.({ ...streamingMessage });
+        }
+
+        // Per-stream telemetry — useful for diagnosing "AI is streaming
+        // but the UI froze" reports. Logged at debug level so the
+        // console isn't polluted during normal use; users with devtools
+        // open can spot the offending stream at a glance.
+        //
+        // Only logs on "interesting" streams so short replies stay
+        // silent: many chunks, long duration, or substantial coalescing
+        // — any of which indicates the throttle is actually doing work
+        // (or wishes it could). Pure-tool-call streams (no chunks
+        // emitted to UI) also stay quiet.
+        const streamMs = performance.now() - streamStart;
+        const totalSkips = contentSkips + thinkingSkips;
+        if (chunkCount > 50 || streamMs > 500 || totalSkips > 10) {
+            console.debug(
+                `[ChatStream._processStream] ${chunkCount} chunk(s) in ${streamMs.toFixed(0)}ms; ` +
+                `emitted content=${contentEmits}/${contentEmits + contentSkips} ` +
+                `thinking=${thinkingEmits}/${thinkingEmits + thinkingSkips} ` +
+                `(saved ${totalSkips} downstream renders)`,
+            );
         }
 
         // Build the final tool_calls list
