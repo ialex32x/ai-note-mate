@@ -12,6 +12,7 @@ import {
 import { createDefaultProfile, generateId } from "../../settings/defaults";
 import type { ProviderProfile } from "../../settings/types";
 import {
+	applyAdvancedOnlyGroupHeading,
 	createApiKeyField,
 	createDropdownField,
 	createTabBar,
@@ -404,9 +405,10 @@ export class ProfileSettingsSection implements SettingsSection {
 		// Section divider — same DOM shape as the modalities title above
 		// (a Setting row with name+desc only, no control), so the editor
 		// keeps a consistent rhythm.
-		new Setting(container)
+		const contextCompressionHeading = new Setting(container)
 			.setName(t('settings.contextCompression'))
 			.setHeading();
+		applyAdvancedOnlyGroupHeading(contextCompressionHeading);
 
 		// Compression threshold (0 = use plugin default)
 		createTextField({
@@ -415,6 +417,7 @@ export class ProfileSettingsSection implements SettingsSection {
 			desc: t('settings.contextCompressionThresholdDesc'),
 			placeholder: '0',
 			value: String(profile.contextCompressionThreshold),
+			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
 				profile.contextCompressionThreshold = isNaN(num) || num < 0 ? 0 : num;
