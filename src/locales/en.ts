@@ -288,7 +288,6 @@ export const en: Record<string, string> = {
 	'settings.mcpToolNoDescription': 'No description provided.',
 	'settings.mcpServerSlug': 'Tool ID slug',
 	'settings.mcpServerSlugDesc': 'Auto-generated identifier used to build tool names exposed to AI (mcp_<slug>_<tool>). Stable across renames so Skill files can reference these names reliably.',
-	'settings.mcpSlugCopy': 'Copy slug',
 	'settings.mcpSlugRegenerate': 'Regenerate slug from display name',
 	'settings.mcpSlugPreviewLabel': 'Tool ID prefix:',
 	'settings.mcpSlugDivergenceNote': 'Slug differs from current display name (regenerating would produce "{suggested}").',

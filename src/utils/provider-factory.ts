@@ -2,6 +2,7 @@ import type NoteAssistantPlugin from "../main";
 import { createLLMProvider } from "../services/providers";
 import type { LLMProvider } from "../services/llm-provider";
 import { getActiveProfile } from "../settings";
+import { getAppSecret } from "./secret-helper";
 
 /**
  * Resolved provider bundle for the currently active profile.
@@ -35,7 +36,7 @@ export function createProviderForActiveProfile(plugin: NoteAssistantPlugin): Act
     const settings = plugin.settings;
     const profile = getActiveProfile(settings);
 
-    const apiKey = plugin.app.secretStorage.getSecret(profile.apiKey) ?? profile.apiKey;
+    const apiKey = getAppSecret(plugin.app, profile.apiKey);
 
     const provider = createLLMProvider(profile.provider, {
         apiKey,

@@ -29,6 +29,7 @@ import { createImageTool } from '../../services/tools/image-toolcall';
 import { createConversationTools } from '../../services/tools/conversation-toolcall';
 import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
 import { inferModelContextWindow } from '../../services/model-context-window';
+import { getAppSecret } from 'utils/secret-helper';
 
 function createModelConfigFromProfile(
     plugin: NoteAssistantPlugin,
@@ -72,7 +73,7 @@ export function createEmbeddingConfig(plugin: NoteAssistantPlugin): MinimalModel
     const embeddingConfig = getActiveEmbeddingConfig(settings);
     if (!embeddingConfig) return undefined;
 
-    const apiKey = plugin.app.secretStorage.getSecret(embeddingConfig.apiKey) ?? embeddingConfig.apiKey;
+    const apiKey = getAppSecret(plugin.app, embeddingConfig.apiKey);
     if (!apiKey) return undefined;
 
     return {

@@ -287,7 +287,6 @@ export const zhCN: Record<string, string> = {
 	'settings.mcpToolNoDescription': '未提供描述。',
 	'settings.mcpServerSlug': '工具 ID 标识',
 	'settings.mcpServerSlugDesc': '自动生成的标识符，用于构建暴露给 AI 的工具名称（mcp_<slug>_<tool>）。重命名服务器时保持稳定，Skill 文件可以可靠地引用这些名称。',
-	'settings.mcpSlugCopy': '复制标识',
 	'settings.mcpSlugRegenerate': '根据显示名称重新生成标识',
 	'settings.mcpSlugPreviewLabel': '工具 ID 前缀：',
 	'settings.mcpSlugDivergenceNote': '标识与当前显示名称不一致（重新生成后将为 "{suggested}"）。',

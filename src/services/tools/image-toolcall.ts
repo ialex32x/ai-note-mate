@@ -2,7 +2,7 @@ import type NoteAssistantPlugin from "../../main";
 import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
 import type { ImageGenResult, ReferenceImage } from "../image-gen/types";
-import { getActiveImageGenConfig, type ImageGenConfig } from "../../settings";
+import { DEFAULT_SETTINGS, getActiveImageGenConfig, type ImageGenConfig } from "../../settings";
 import { sha256 } from "../../utils/hash";
 import { base64ToArrayBuffer, arrayBufferToBase64, normalizePath, TFile, type App } from "obsidian";
 import { joinPath } from "../../utils/path-helper";
@@ -390,7 +390,7 @@ async function saveImageToVault(
     base64Data: string,
 ): Promise<string | null> {
     const vault = plugin.app.vault;
-    const imageDownloadDir = plugin.settings.imageDownloadDir || 'Attachments';
+    const imageDownloadDir = plugin.settings.imageDownloadDir || DEFAULT_SETTINGS.imageDownloadDir;
 
     const vaultRoot = vault.getRoot().path;
     const saveDir = joinPath(vaultRoot, imageDownloadDir);

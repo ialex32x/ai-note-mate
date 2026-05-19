@@ -288,7 +288,6 @@ export const zhTW: Record<string, string> = {
 	'settings.mcpToolNoDescription': '未提供描述。',
 	'settings.mcpServerSlug': '工具 ID 識別碼',
 	'settings.mcpServerSlugDesc': '自動生成的識別碼，用於建構暴露給 AI 的工具名稱（mcp_<slug>_<tool>）。重新命名伺服器時保持穩定，Skill 檔案可以可靠地引用這些名稱。',
-	'settings.mcpSlugCopy': '複製識別碼',
 	'settings.mcpSlugRegenerate': '根據顯示名稱重新生成識別碼',
 	'settings.mcpSlugPreviewLabel': '工具 ID 前綴：',
 	'settings.mcpSlugDivergenceNote': '識別碼與目前顯示名稱不一致（重新生成後將為 "{suggested}"）。',

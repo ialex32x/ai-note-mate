@@ -288,7 +288,6 @@ export const ja: Record<string, string> = {
 	'settings.mcpToolNoDescription': '説明がありません。',
 	'settings.mcpServerSlug': 'ツール ID スラッグ',
 	'settings.mcpServerSlugDesc': 'AI に公開されるツール名（mcp_<slug>_<tool>）を構築するための自動生成識別子。サーバー名を変更しても安定しているため、Skill ファイルからこれらの名前を確実に参照できます。',
-	'settings.mcpSlugCopy': 'スラッグをコピー',
 	'settings.mcpSlugRegenerate': '表示名からスラッグを再生成',
 	'settings.mcpSlugPreviewLabel': 'ツール ID プレフィックス：',
 	'settings.mcpSlugDivergenceNote': 'スラッグが現在の表示名と異なります（再生成すると "{suggested}" になります）。',

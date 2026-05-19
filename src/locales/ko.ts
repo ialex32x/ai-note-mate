@@ -288,7 +288,6 @@ export const ko: Record<string, string> = {
 	'settings.mcpToolNoDescription': '설명이 제공되지 않았습니다.',
 	'settings.mcpServerSlug': '도구 ID 슬러그',
 	'settings.mcpServerSlugDesc': 'AI에 노출되는 도구 이름(mcp_<slug>_<tool>)을 구성하는 데 사용되는 자동 생성 식별자입니다. 서버 이름을 변경해도 안정적이므로 Skill 파일이 이 이름을 안정적으로 참조할 수 있습니다.',
-	'settings.mcpSlugCopy': '슬러그 복사',
 	'settings.mcpSlugRegenerate': '표시 이름에서 슬러그 재생성',
 	'settings.mcpSlugPreviewLabel': '도구 ID 접두사:',
 	'settings.mcpSlugDivergenceNote': '슬러그가 현재 표시 이름과 다릅니다 (재생성하면 "{suggested}"가 됩니다).',

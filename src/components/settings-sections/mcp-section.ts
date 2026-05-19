@@ -352,12 +352,6 @@ export class MCPSettingsSection implements SettingsSection {
 		slugInfoEl = slugSetting.descEl.createDiv({ cls: 'oap-mcp-slug-info' });
 
 		slugSetting.addExtraButton(btn => btn
-			.setIcon('copy')
-			.setTooltip(t('settings.mcpSlugCopy'))
-			.onClick(() => {
-				void copyToClipboard(server.slug ?? '');
-			}));
-		slugSetting.addExtraButton(btn => btn
 			.setIcon('refresh-cw')
 			.setTooltip(t('settings.mcpSlugRegenerate'))
 			.onClick(async () => {
