@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.5
+
+### What's new
+
+- **Session task list** — For multi-step work, the assistant can maintain a per-session todo list and keep it in sync as tasks move forward. A **Todo** panel pinned above the input shows progress at a glance; the list is saved with the session and survives reloads.
+- **Usage tips** — A **Tips** button on the input toolbar opens contextual guidance (create your first skill, try Obsidian Bases or Canvas, and more). Use **Try it** to run a tip with a preview, or **Got it** to dismiss it. Restore dismissed tips under **Settings → Note Mate → Reset usage tips**.
+- **Dedicated insights profile** — Choose a separate provider profile for **Extract insights** when you want stronger structured output than your context summarizer, or keep the default to reuse the summarizer.
+- **Advanced settings** — Turn on **Show advanced** to reveal parameters that should only be changed when you know their effect; advanced options are labeled in the UI. Context compression threshold is now grouped with other advanced profile settings.
+- **Clearer sub-agent bubbles** — Role labels appear only when they add context; delegate handoff bubbles are easier to scan.
+- **Copy polish** — Clearer descriptions for built-in tool capabilities and related settings across supported languages.
+
+### Fixes
+
+- **Delegated tasks** — Sub-agent handoff data is shown as a collapsible exchange block (with backward compatibility for older sessions). Invalid exchange payloads surface clearer errors.
+- **Long streamed replies** — Markdown rendering during streaming is more efficient on larger assistant messages.
+
+---
+
 ## 1.2.4
 
 ### What's new
