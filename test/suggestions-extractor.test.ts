@@ -223,6 +223,24 @@ describe('extractSuggestions / structured block — client actions', () => {
 });
 
 describe('extractSuggestions / heuristic fallback', () => {
+    it('does not treat YAML tag lists inside fenced blocks as follow-ups', () => {
+        const md = [
+            '已搞定。`summary` 已添加到 frontmatter：',
+            '',
+            '```yaml',
+            '---',
+            'tags:',
+            '  - app/p4',
+            '  - topic/tech',
+            'summary: Perforce 核心概念速查（面向 Git 迁移者）：Changelist 是全局递增整数的原子提交单位（无本地 commit）；Shelve 相当于服务端 stash 可跨 workspace；Stream 是推荐的声明式分支方案（按类型+层级约束 merge 方向）；父→子用 p4 merge、子→父用 p4 copy。',
+            '---',
+            '```',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([]);
+    });
+
     it('still allows label === prompt for list-based heuristics', () => {
         const md = [
             '这是回答正文。',

@@ -32,6 +32,19 @@ export function stripStructuredBlock(markdown: string): string {
 }
 
 /**
+ * Remove fenced code blocks (``` … ``` and ~~~ … ~~~) from markdown.
+ *
+ * Used before heuristic follow-up extraction so YAML / shell / JSON snippets
+ * in the reply are not mistaken for suggestion lists (e.g. frontmatter
+ * `tags:\n  - app/p4` matching the "colon + bullet list" fallback).
+ */
+function stripFencedCodeBlocks(markdown: string): string {
+    return markdown
+        .replace(/```[\s\S]*?```/g, '')
+        .replace(/~~~[\s\S]*?~~~/g, '');
+}
+
+/**
  * Main entry point. Returns an ordered list of suggested actions parsed
  * from the assistant's final message content. Returns an empty array
  * when nothing meaningful is found.
@@ -205,8 +218,9 @@ function tailParagraphs(markdown: string): string[] {
 }
 
 function parseHeuristic(markdown: string): SuggestedAction[] {
-    // Always strip the structured block to avoid double-matching it in heuristic mode.
-    const cleaned = stripStructuredBlock(markdown);
+    // Strip machine-oriented blocks before heuristics — suggestions are
+    // never meant to live inside HTML comments or fenced code.
+    const cleaned = stripFencedCodeBlocks(stripStructuredBlock(markdown));
     const tail = tailParagraphs(cleaned).join('\n\n');
     if (!tail) return [];
 
