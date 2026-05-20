@@ -1,4 +1,6 @@
 import {
+    COLON_LIST_INTRO_HINTS,
+    DESCRIPTIVE_INTRO_LINE_RES,
     FOLLOWUP_HEADERS,
     OFFER_PREFIXES_AT_START,
     OR_CHOICE_SEPARATORS,
@@ -244,13 +246,35 @@ function parseHeuristic(markdown: string): SuggestedAction[] {
         return closingQs;
     }
 
-    // Even without an explicit header, if the last paragraph is a short
-    // numbered list right after a colon, treat them as suggestions.
-    if (items.length >= 2 && /[:：]\s*$/.test(tailBeforeList(tail))) {
-        return items.map((t) => ({ label: t, prompt: t }));
+    // Header-less fallback: colon-intro + list. Require the intro to read as an
+    // invitation (see `isInvitingColonListIntro`) so glossaries like
+    // "标签说明：" + tag bullets are not mistaken for next-step chips.
+    if (items.length >= 2) {
+        const intro = tailBeforeList(tail);
+        if (/[:：]\s*$/.test(intro) && isInvitingColonListIntro(intro)) {
+            return items.map((t) => ({ label: t, prompt: t }));
+        }
     }
 
     return [];
+}
+
+/**
+ * True when the text immediately before a list looks like the assistant
+ * inviting a next action, not documenting fields/tags/examples.
+ */
+function isInvitingColonListIntro(intro: string): boolean {
+    const colonLine = lastNonEmptyLine(intro);
+    if (!colonLine || !/[:：]\s*$/.test(colonLine)) return false;
+    if (DESCRIPTIVE_INTRO_LINE_RES.some((re) => re.test(colonLine))) return false;
+    const lower = intro.toLowerCase();
+    return COLON_LIST_INTRO_HINTS.some((h) => lower.includes(h));
+}
+
+/** Last trimmed non-empty line of a multi-line intro block. */
+function lastNonEmptyLine(block: string): string {
+    const lines = block.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 0);
+    return lines[lines.length - 1] ?? block.trim();
 }
 
 /**

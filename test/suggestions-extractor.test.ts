@@ -258,6 +258,39 @@ describe('extractSuggestions / heuristic fallback', () => {
         expect(out[0]).toEqual({ label: '总结要点', prompt: '总结要点' });
         expect(out[1]).toEqual({ label: '翻译为英文', prompt: '翻译为英文' });
     });
+
+    it('does not treat descriptive "标签说明：" glossaries as follow-ups', () => {
+        const md = [
+            '已更新 frontmatter。',
+            '',
+            '标签说明：',
+            '',
+            '- resources/food — 饮食类资源笔记',
+            '- topic/culture — 饮食文化主题',
+            '- topic/tcm — 涉及中医寒性食物、驱寒等概念',
+            '- location/shanghai — 以上海为核心的江南时令文化',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([]);
+    });
+
+    it('still extracts colon-led lists when the intro invites a next step', () => {
+        const md = [
+            '正文结束。',
+            '',
+            '你可以尝试：',
+            '',
+            '- 按季节整理一版索引',
+            '- 把相关笔记链到这篇',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '按季节整理一版索引', prompt: '按季节整理一版索引' },
+            { label: '把相关笔记链到这篇', prompt: '把相关笔记链到这篇' },
+        ]);
+    });
 });
 
 describe('extractSuggestions / closing-question splitter', () => {

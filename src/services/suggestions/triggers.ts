@@ -76,3 +76,44 @@ export const OFFER_PREFIXES_AT_START: readonly string[] = [
  */
 export const OR_CHOICE_SEPARATORS: RegExp =
     /[,，、]?\s*(?:或者|或是|还是|還是)\s*|\s+or\s+/i;
+
+/**
+ * Phrases that must appear in the text *before* a bullet/numbered list when we
+ * use the header-less "colon + list" fallback (`标签说明：` alone is NOT enough).
+ *
+ * Matched case-insensitively against the intro block (usually the last line
+ * ending with `:` / `：`). Kept separate from {@link FOLLOWUP_HEADERS} so we can
+ * add invitation wording ("你可以尝试") without widening header detection on the
+ * entire tail.
+ */
+export const COLON_LIST_INTRO_HINTS: readonly string[] = [
+    // zh-cn / zh-tw — next-step / invitation
+    '接下来', '接下來', '下一步', '后续', '後續',
+    '要不要', '需要我', '是否需要', '你希望', '您希望',
+    '要我帮', '要我幫', '可以尝试', '可以嘗試', '你可以', '您可以', '不妨',
+    '是否要', '是否继续', '是否繼續', '或者选', '或者選', '选一', '選一',
+    '可选', '可選', '选择', '選擇',
+
+    // en
+    'next step', 'would you like', 'do you want', 'do you need',
+    'try', 'choose', 'pick', 'option',
+    'shall i', 'should i', 'want me to', 'let me know if',
+
+    // ja
+    '次のステップ', '次は', '続け', 'ご希望',
+
+    // ko
+    '다음 단계', '원하시면', '계속',
+];
+
+/**
+ * The colon-intro line (last non-empty line before the list) matching any of
+ * these patterns is treated as documentation/annotation, not a follow-up
+ * invitation — even when bullet items follow.
+ */
+export const DESCRIPTIVE_INTRO_LINE_RES: readonly RegExp[] = [
+    /(?:标签|標籤|字段|欄位|术语|術語|备注|備註|legend)\s*(?:说明|說明|含义|含義|解释|解釋)?\s*[:：]\s*$/iu,
+    /(?:含义|含義|解释|解釋|定义|定義|说明|說明)\s*[:：]\s*$/u,
+    /^(?:示例|例子|样例|樣例|sample|example|eg\.?|e\.g\.)\s*[:：]\s*$/iu,
+    /^tags?\s*[:：]\s*$/i,
+];
