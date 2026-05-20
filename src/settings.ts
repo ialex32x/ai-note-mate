@@ -15,5 +15,7 @@ export {
 	getActiveProfile,
 	getSummarizerProfile,
 	getInsightsProfile,
+	isActiveProfileConfigured,
+	hasMcpServersConfigured,
 } from "./settings/helpers";
 export { NoteAssistantSettingTab } from "./settings/settings-tab";

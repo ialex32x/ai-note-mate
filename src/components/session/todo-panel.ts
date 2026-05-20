@@ -32,11 +32,10 @@ export class TodoPanel {
     private el: HTMLElement | null = null;
     /**
      * True when the user has folded the panel down to a single-line
-     * header. New sessions start expanded so the plan is visible the
-     * moment the LLM writes it; we then preserve the user's choice
-     * across subsequent `todo-update` re-renders.
+     * header. New sessions start collapsed; we preserve the user's
+     * choice across subsequent `todo-update` re-renders.
      */
-    private collapsed = false;
+    private collapsed = true;
     /** Latest state snapshot. Source of truth for re-renders. */
     private currentState: TodoState | null = null;
 
@@ -75,9 +74,8 @@ export class TodoPanel {
         }
         this.currentState = null;
         // Reset the fold preference too — switching sessions starts
-        // fresh, so the next session's plan is visible on first
-        // arrival without forcing the user to re-expand.
-        this.collapsed = false;
+        // fresh with the default collapsed state.
+        this.collapsed = true;
     }
 
     // ── Internals ───────────────────────────────────────────────────

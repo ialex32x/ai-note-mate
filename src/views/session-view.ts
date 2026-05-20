@@ -1295,6 +1295,7 @@ export class SessionView extends ItemView {
      */
     private buildTipSessionViewAdapter(): TipSessionViewAdapter {
         return {
+            isPromptInputEmpty: () => this.cmInput.getContent().trim().length === 0,
             isStreaming: () => this.isStreaming,
             sendPromptForTip: async (text: string) => {
                 // Guard streaming again at dispatch time. The popover

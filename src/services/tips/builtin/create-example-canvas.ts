@@ -1,6 +1,7 @@
 import { t } from '../../../i18n';
 import type { TipDefinition } from '../types';
 import { inboxPath, resolveInboxFolder } from './_inbox';
+import { isPromptInputEmpty } from './_input';
 
 const EXAMPLE_CANVAS_FILENAME = 'example.canvas';
 
@@ -13,10 +14,9 @@ const EXAMPLE_CANVAS_FILENAME = 'example.canvas';
  * "Default location for new notes" config (the closest thing to an
  * "inbox" Obsidian exposes), falling back to the vault root.
  *
- * Always available until the user runs or dismisses it; even people
- * with existing canvases often want a "vault overview" canvas as a
- * navigation hub, so we don't gate on the presence of other `.canvas`
- * files.
+ * Shown while the chat input is empty until the user runs or dismisses
+ * it. We don't gate on existing `.canvas` files — a "vault overview"
+ * canvas is often useful even when the user already has other canvases.
  *
  * Like the Bases tip, the prompt is parked in the input editor via
  * `fillPromptDraft` rather than submitted directly. Canvas layouts
@@ -28,8 +28,8 @@ export const createExampleCanvasTip: TipDefinition = {
     id: 'create-example-canvas',
     titleKey: 'tips.createExampleCanvas.title',
     bodyKey: 'tips.createExampleCanvas.body',
-    available: () => true,
-    disqualified: () => false,
+    available: (ctx) => isPromptInputEmpty(ctx),
+    disqualified: (ctx) => !isPromptInputEmpty(ctx),
     preview: (ctx) => {
         const target = inboxPath(resolveInboxFolder(ctx), EXAMPLE_CANVAS_FILENAME);
         return {

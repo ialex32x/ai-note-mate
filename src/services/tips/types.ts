@@ -7,6 +7,8 @@ import type NoteAssistantPlugin from 'main';
  * is explicitly contracted here.
  */
 export interface TipSessionViewAdapter {
+    /** True when the chat input has no user-authored text (trimmed). */
+    isPromptInputEmpty(): boolean;
     /** True when the currently-bound runtime is producing output. */
     isStreaming(): boolean;
     /**

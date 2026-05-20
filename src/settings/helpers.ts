@@ -1,11 +1,33 @@
+import type { App } from "obsidian";
 import { createDefaultProfile } from "./defaults";
 import { ARTIFACT_STORE_DEFAULTS, type ArtifactStoreOptions } from "../services/artifact-store";
+import { getAppSecret } from "../utils/secret-helper";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
 	NoteAssistantPluginSettings,
 	ProviderProfile,
 } from "./types";
+
+/**
+ * True when the active profile has non-empty `baseUrl`, `model`, and a
+ * resolvable API key (including values stored in Obsidian secret storage).
+ */
+export function isActiveProfileConfigured(
+	app: App,
+	settings: NoteAssistantPluginSettings,
+): boolean {
+	if (settings.profiles.length === 0) return false;
+	const profile = getActiveProfile(settings);
+	if ((profile.baseUrl?.trim() ?? '').length === 0) return false;
+	if ((profile.model?.trim() ?? '').length === 0) return false;
+	return getAppSecret(app, profile.apiKey).trim().length > 0;
+}
+
+/** True when at least one MCP server entry exists in settings. */
+export function hasMcpServersConfigured(settings: NoteAssistantPluginSettings): boolean {
+	return (settings.mcpServers?.length ?? 0) > 0;
+}
 
 /** Helper: get the currently active profile from settings (with fallback) */
 export function getActiveProfile(settings: NoteAssistantPluginSettings): ProviderProfile {

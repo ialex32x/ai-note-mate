@@ -1,6 +1,7 @@
 import { t } from '../../../i18n';
 import type { TipDefinition } from '../types';
 import { inboxPath, resolveInboxFolder } from './_inbox';
+import { isPromptInputEmpty } from './_input';
 
 const EXAMPLE_BASE_FILENAME = 'example.base';
 
@@ -12,10 +13,10 @@ const EXAMPLE_BASE_FILENAME = 'example.base';
  * closest thing to an "inbox" Obsidian exposes), falling back to the
  * vault root.
  *
- * Always available until the user runs or dismisses it: even users
- * with existing `.base` files often welcome a fresh "list orphan
- * small notes" base as a maintenance helper, so we don't gate on the
- * presence of other base files.
+ * Shown while the chat input is empty (so fillPromptDraft won't
+ * refuse) until the user runs or dismisses it. We don't gate on
+ * existing `.base` files — even users with other bases often welcome a
+ * fresh "list orphan small notes" base as a maintenance helper.
  *
  * Unlike create-first-skill (which submits the prompt directly), this
  * tip parks the prompt in the input editor via `fillPromptDraft`, so
@@ -27,8 +28,8 @@ export const createExampleBaseTip: TipDefinition = {
     id: 'create-example-base',
     titleKey: 'tips.createExampleBase.title',
     bodyKey: 'tips.createExampleBase.body',
-    available: () => true,
-    disqualified: () => false,
+    available: (ctx) => isPromptInputEmpty(ctx),
+    disqualified: (ctx) => !isPromptInputEmpty(ctx),
     preview: (ctx) => {
         const target = inboxPath(resolveInboxFolder(ctx), EXAMPLE_BASE_FILENAME);
         return {
