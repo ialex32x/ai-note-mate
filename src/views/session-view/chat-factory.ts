@@ -16,6 +16,7 @@ import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
 import { buildSubAgentConfigs } from '../../services/sub-agent-registry';
 import { buildSkillSystemPromptForQuery } from '../../skills/skill-catalogue';
+import { buildMemorySystemPromptPrefix } from '../../services/memory';
 import type { ArtifactStore } from '../../services/artifact-store';
 import { createObsidianTools, createObsidianMutationTools } from '../../services/tools/obsidian';
 import { createWebSearchTools, createImageDownloadTools } from '../../services/tools/web-search-toolcall';
@@ -243,16 +244,41 @@ export function createChatAgent(
         // Errors degrade silently to the full catalogue —
         // `ChatStream.prompt()` also swallows non-abort errors from
         // this callback as an extra safety net.
-        systemPromptPrefix: (query: string, signal?: AbortSignal) =>
-            buildSkillSystemPromptForQuery({
-                skillManager: plugin.skillManager,
-                query,
-                embeddingConfig: createEmbeddingConfig(plugin) ?? null,
-                filterOpts: createSkillFilterOptions(plugin),
-                hintThreshold: settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
-                autoInjectThreshold: settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
-                signal,
-            }),
+        systemPromptPrefix: async (query: string, signal?: AbortSignal) => {
+            // Memory and skills both want to live ABOVE the static
+            // system prompt; we build them in parallel and concatenate
+            // memory-first so the model treats long-term facts as
+            // background context BEFORE the per-turn skill catalogue.
+            // Either path may fail silently (returning '') — the chat
+            // turn must never block on either.
+            const embeddingConfig = createEmbeddingConfig(plugin) ?? null;
+            const [memoryPrefix, skillPrefix] = await Promise.all([
+                buildMemorySystemPromptPrefix({
+                    plugin,
+                    store: plugin.memoryStore,
+                    query,
+                    embeddingConfig,
+                    signal,
+                }).catch(err => {
+                    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                    console.warn('[chat-factory] memory prefix failed, ignoring:', err);
+                    return '';
+                }),
+                buildSkillSystemPromptForQuery({
+                    skillManager: plugin.skillManager,
+                    query,
+                    embeddingConfig,
+                    filterOpts: createSkillFilterOptions(plugin),
+                    hintThreshold: settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
+                    autoInjectThreshold: settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
+                    signal,
+                }),
+            ]);
+            if (!memoryPrefix && !skillPrefix) return '';
+            if (!memoryPrefix) return skillPrefix;
+            if (!skillPrefix) return memoryPrefix;
+            return `${memoryPrefix}\n${skillPrefix}`;
+        },
         compressionOptions,
         dynamicTools: () => callbacks.getDynamicTools(),
         // Forward the runtime's per-session artifact store. Two consumers

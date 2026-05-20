@@ -13,6 +13,7 @@ import { registerRewriteSelection, type AISubmenuItem } from './edit-history/rew
 import { SessionManager } from './session-manager';
 import { SessionRuntimePool } from './services/session-runtime';
 import { VaultMutator, GlobalFileLockManager, SnapshotManager } from './services/vault';
+import { MemoryStore } from './services/memory';
 
 export default class NoteAssistantPlugin extends Plugin {
 	settings!: NoteAssistantPluginSettings;
@@ -64,6 +65,13 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * whole directory.
 	 */
 	snapshotManager!: SnapshotManager;
+	/**
+	 * Long-term memory note CRUD. Backs the per-turn system-prompt
+	 * prefix (auto recall) and the `memory_store` / `memory_delete`
+	 * tools. Single store shared across all sessions so a write from
+	 * one chat is immediately visible to the next.
+	 */
+	memoryStore!: MemoryStore;
 
 	private readonly _settingsListeners: Array<() => void> = [];
 
@@ -147,6 +155,11 @@ export default class NoteAssistantPlugin extends Plugin {
 		// Constructed AFTER `vaultEditLog` because it reads from
 		// `plugin.vaultEditLog` to record audit entries.
 		this.vaultMutator = new VaultMutator(this);
+		// Memory store is plugin-scoped (one note serves every session).
+		// Constructed after settings/app are ready; the store reads the
+		// configured path lazily so changes to `memoryNotePath` take
+		// effect on the next access without an explicit reload.
+		this.memoryStore = new MemoryStore(this);
 		this.registerView(
 			EditHistoryView.VIEW_TYPE,
 			(leaf) => new EditHistoryView(leaf, this, this.editHistory, this.vaultEditLog),
@@ -364,6 +377,16 @@ export default class NoteAssistantPlugin extends Plugin {
 	async loadSettings() {
 		const saved = await this.loadData() as Partial<NoteAssistantPluginSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, saved ?? {});
+
+		// Legacy: the old `memories` array (stored in data.json) has been
+		// retired in favour of a vault-note-backed `MemoryStore`. The
+		// data is intentionally NOT migrated — users author their own
+		// memories in the new note. Strip the stale field so it does not
+		// linger in saved data forever.
+		const legacy = this.settings as unknown as Record<string, unknown>;
+		if ('memories' in legacy) {
+			delete legacy.memories;
+		}
 
 		// Migrate legacy profile fields. Older versions stored a single
 		// `supportsVision: boolean`; we now use a `modalities` array so users

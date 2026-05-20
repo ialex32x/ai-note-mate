@@ -4,6 +4,7 @@ import { maybeGenerateSessionTitle } from '../../views/session-view/session-titl
 import { deriveArtifactStoreOptions } from '../../settings/helpers';
 import { SessionRuntime } from './session-runtime';
 import { maybeExtractInsightsAfterFinish } from './insight-runner';
+import { maybeExtractMemoriesAfterFinish } from '../memory';
 import { CheckpointStore } from '../vault';
 import type { ChatMessage } from '../chat-stream';
 
@@ -149,6 +150,11 @@ export function createSessionRuntime(
                 // detached one will read via getInsightState() on next
                 // attach. Fire-and-forget — errors are logged inside.
                 void maybeExtractInsightsAfterFinish(plugin, runtime);
+                // Memory auto-extraction. Gated by `memoryAutoExtract`
+                // (off by default), so users who don't opt in pay
+                // nothing. Failures are swallowed internally — memory
+                // must NEVER block or alter the chat turn.
+                void maybeExtractMemoriesAfterFinish(plugin, runtime);
             });
         },
         onAbort: (msg: ChatMessage) => {

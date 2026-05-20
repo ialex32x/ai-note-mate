@@ -1,15 +1,30 @@
 import type NoteAssistantPlugin from "../../main";
 import type { RegisteredTool, ToolCallResult } from "../chat-stream";
+import { MemoryStoreError } from "../memory";
 
 /**
- * Create memory tools collection
- * @param plugin Plugin instance
- * @returns Array of registered tools
+ * Tool layer for the memory feature.
+ *
+ * Behaviour notes for the new (vault-note-backed) implementation:
+ * - `memory_recall` has been REMOVED. Memories that match the current
+ *   user query (and all critical entries) are now injected into the
+ *   system prompt automatically via {@link buildMemorySystemPromptPrefix}.
+ *   There is no value in an explicit recall round-trip.
+ * - `memory_store` upserts a `## heading` section in the configured
+ *   memory note. The `critical` flag controls whether the heading is
+ *   written with the ` [!]` marker (every-turn injection) or plain
+ *   (embedding-shortlisted).
+ * - `memory_delete` removes one section by its logical heading
+ *   (without the marker). Deleting a non-existent entry is a no-op
+ *   with a success message — same UX as the legacy implementation.
+ *
+ * All write operations are routed through {@link MemoryStore} so the
+ * settings UI, the auto extractor, and these tools share one
+ * serialisation / cache layer.
  */
 export function createMemoryTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     return [
         createMemoryStoreTool(plugin),
-        createMemoryRecallTool(plugin),
         createMemoryDeleteTool(plugin),
     ];
 }
@@ -18,10 +33,6 @@ export function createMemoryTools(plugin: NoteAssistantPlugin): RegisteredTool[]
 // Tool: memory_store
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Tool to store a memory entry with key-value pair
- * Automatically records the current timestamp
- */
 function createMemoryStoreTool(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: false,
@@ -31,169 +42,86 @@ function createMemoryStoreTool(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "memory_store",
                 description:
-                    "Store an important piece of information in long-term memory. " +
-                    "Use this when you learn something important about the user that should be remembered " +
-                    "across conversations (preferences, facts, context, etc.). " +
-                    "The memory will persist and can be recalled later.",
+                    "Save a long-term memory entry into the user's memory note. " +
+                    "Use this ONLY when the user explicitly asks you to remember something, " +
+                    "or when you have identified durable context (preferences, identities, " +
+                    "naming conventions, hard rules) that will help future turns. " +
+                    "If a memory with the same heading already exists, it is replaced. " +
+                    "Set `critical: true` only for entries the assistant MUST recall on every " +
+                    "turn (personal identity, fixed reply rules, hard refusals); everything " +
+                    "else stays non-critical and is recalled by relevance to the current query.",
                 parameters: {
                     type: "object",
                     properties: {
-                        key: {
+                        heading: {
                             type: "string",
                             description:
-                                "A concise identifier or category for this memory " +
-                                "(e.g., 'user_name', 'preferred_language', 'project_context'). " +
-                                "If a memory with this key already exists, it will be updated.",
+                                "Short, descriptive title of the memory entry (≤ 60 chars), " +
+                                "in the user's language. Used as the `## heading` in the memory " +
+                                "note and as the de-duplication key — re-using a heading replaces " +
+                                "the existing entry. Do NOT add the ` [!]` marker yourself; set " +
+                                "the `critical` field instead.",
                         },
-                        value: {
+                        body: {
                             type: "string",
                             description:
-                                "The information to store. Should be descriptive and self-contained " +
-                                "so it can be understood when recalled later.",
+                                "Memory content. One or two sentences (or a short bullet list) " +
+                                "expressing the durable fact as a directive the assistant can " +
+                                "read literally — not as a description of the conversation. " +
+                                "Same language as the user.",
+                        },
+                        critical: {
+                            type: "boolean",
+                            description:
+                                "Whether this entry is injected into the system prompt on EVERY " +
+                                "turn (true) or only when it appears relevant to the user's " +
+                                "current query (false). Default false; reserve true for entries " +
+                                "that must influence every reply.",
                         },
                     },
-                    required: ["key", "value"],
+                    required: ["heading", "body"],
                 },
             },
         },
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const key = args["key"] as string;
-            const value = args["value"] as string;
+            const heading = typeof args["heading"] === 'string' ? args["heading"].trim() : '';
+            const body = typeof args["body"] === 'string' ? args["body"].trim() : '';
+            const critical = args["critical"] === true;
 
-            if (!key || !key.trim()) {
+            if (!heading) {
                 return {
                     success: false,
                     type: "text",
-                    content: "Error: Memory key cannot be empty.",
+                    content: "Error: Memory heading cannot be empty.",
                 };
             }
-
-            if (!value || !value.trim()) {
+            if (!body) {
                 return {
                     success: false,
                     type: "text",
-                    content: "Error: Memory value cannot be empty.",
+                    content: "Error: Memory body cannot be empty.",
                 };
             }
 
-            const timestamp = Date.now();
-            const trimmedKey = key.trim();
-            const trimmedValue = value.trim();
-
-            // Check if key already exists (update) or is new (insert)
-            const existingIndex = plugin.settings.memories.findIndex(
-                (m) => m.key === trimmedKey
-            );
-
-            if (existingIndex >= 0) {
-                // Update existing memory
-                plugin.settings.memories[existingIndex] = {
-                    key: trimmedKey,
-                    value: trimmedValue,
-                    timestamp,
-                };
-            } else {
-                // Add new memory
-                plugin.settings.memories.push({
-                    key: trimmedKey,
-                    value: trimmedValue,
-                    timestamp,
-                });
-            }
-
-            await plugin.saveSettings();
-
-            const action = existingIndex >= 0 ? "updated" : "stored";
-            return {
-                success: true,
-                type: "text",
-                content: `Memory ${action} successfully: "${trimmedKey}"`,
-            };
-        },
-    };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tool: memory_recall
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Tool to recall memories from storage
- * Can retrieve a specific memory by key or list all memories
- */
-function createMemoryRecallTool(plugin: NoteAssistantPlugin): RegisteredTool {
-    return {
-        ondemand: false,
-
-        schema: {
-            type: "function",
-            function: {
-                name: "memory_recall",
-                description:
-                    "Recall stored memories. Use this to retrieve previously stored information. " +
-                    "Can recall a specific memory by key, or list all memories if no key is provided.",
-                parameters: {
-                    type: "object",
-                    properties: {
-                        key: {
-                            type: "string",
-                            description:
-                                "Optional. The specific memory key to recall. " +
-                                "If not provided, all stored memories will be returned.",
-                        },
-                    },
-                },
-            },
-        },
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const key = args["key"] as string | undefined;
-            const memories = plugin.settings.memories;
-
-            if (memories.length === 0) {
+            try {
+                const entry = await plugin.memoryStore.upsert(heading, critical, body);
                 return {
                     success: true,
                     type: "text",
-                    content: "No memories stored yet.",
+                    content: `Memory stored: "${entry.logicalHeading}"${entry.critical ? ' (critical)' : ''}.`,
                 };
-            }
-
-            if (key && key.trim()) {
-                // Recall specific memory
-                const trimmedKey = key.trim();
-                const memory = memories.find((m) => m.key === trimmedKey);
-
-                if (!memory) {
+            } catch (err) {
+                if (err instanceof MemoryStoreError) {
                     return {
-                        success: true,
+                        success: false,
                         type: "text",
-                        content: `No memory found with key "${trimmedKey}".`,
+                        content: `Error: ${err.message}`,
                     };
                 }
-
                 return {
-                    success: true,
-                    type: "object",
-                    content: {
-                        key: memory.key,
-                        value: memory.value,
-                        timestamp: memory.timestamp,
-                        storedAt: new Date(memory.timestamp).toISOString(),
-                    },
-                };
-            } else {
-                // Return all memories
-                return {
-                    success: true,
-                    type: "object",
-                    content: {
-                        count: memories.length,
-                        memories: memories.map((m) => ({
-                            key: m.key,
-                            value: m.value,
-                            timestamp: m.timestamp,
-                            storedAt: new Date(m.timestamp).toISOString(),
-                        })),
-                    },
+                    success: false,
+                    type: "text",
+                    content: `Error: ${err instanceof Error ? err.message : String(err)}`,
                 };
             }
         },
@@ -204,9 +132,6 @@ function createMemoryRecallTool(plugin: NoteAssistantPlugin): RegisteredTool {
 // Tool: memory_delete
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Tool to delete a memory entry by key
- */
 function createMemoryDeleteTool(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: false,
@@ -216,56 +141,58 @@ function createMemoryDeleteTool(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "memory_delete",
                 description:
-                    "Delete a stored memory by its key. " +
-                    "Use this when previously stored information is no longer relevant or accurate. " +
-                    "This action cannot be undone.",
+                    "Delete a memory entry by its heading. " +
+                    "Use this ONLY when the user explicitly rescinds, replaces, or corrects " +
+                    "a previously stored memory in the current turn. Never delete based on " +
+                    "inference, silence, or apparent contradiction. " +
+                    "Deleting a non-existent entry is a safe no-op.",
                 parameters: {
                     type: "object",
                     properties: {
-                        key: {
+                        heading: {
                             type: "string",
                             description:
-                                "The key of the memory to delete. " +
-                                "Must match an existing memory key exactly.",
+                                "Logical heading of the memory to delete, exactly as it was " +
+                                "stored (without the ` [!]` critical marker — the store strips " +
+                                "it on read). Matching is case-insensitive.",
                         },
                     },
-                    required: ["key"],
+                    required: ["heading"],
                 },
             },
         },
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const key = args["key"] as string;
-
-            if (!key || !key.trim()) {
+            const heading = typeof args["heading"] === 'string' ? args["heading"].trim() : '';
+            if (!heading) {
                 return {
                     success: false,
                     type: "text",
-                    content: "Error: Memory key cannot be empty.",
+                    content: "Error: Memory heading cannot be empty.",
                 };
             }
-
-            const trimmedKey = key.trim();
-            const existingIndex = plugin.settings.memories.findIndex(
-                (m) => m.key === trimmedKey
-            );
-
-            if (existingIndex < 0) {
+            try {
+                const removed = await plugin.memoryStore.delete(heading);
                 return {
                     success: true,
                     type: "text",
-                    content: `No memory found with key "${trimmedKey}". Nothing to delete.`,
+                    content: removed
+                        ? `Memory deleted: "${heading}".`
+                        : `No memory found with heading "${heading}". Nothing to delete.`,
+                };
+            } catch (err) {
+                if (err instanceof MemoryStoreError) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `Error: ${err.message}`,
+                    };
+                }
+                return {
+                    success: false,
+                    type: "text",
+                    content: `Error: ${err instanceof Error ? err.message : String(err)}`,
                 };
             }
-
-            // Remove the memory
-            plugin.settings.memories.splice(existingIndex, 1);
-            await plugin.saveSettings();
-
-            return {
-                success: true,
-                type: "text",
-                content: `Memory deleted successfully: "${trimmedKey}"`,
-            };
         },
     };
 }

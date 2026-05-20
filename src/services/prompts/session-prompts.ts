@@ -83,6 +83,40 @@ You have a session-scoped TODO list via the \`manage_todos\` tool. The list is p
 - Do NOT replan from scratch on every turn; \`update\` existing items rather than rewriting the whole list unless the plan genuinely needs to be restructured.
 `;
 
+/**
+ * Usage rules for the long-term Memory tools (`memory_store` /
+ * `memory_delete`). Promoted into both the single-agent and
+ * multi-agent system prompts.
+ *
+ * Why a rule block at all (the tool descriptions already cover most of
+ * this):
+ * - Memory writes are persistent and global across sessions. Tool-
+ *   description nudges alone are too easy to skip when the model is
+ *   focused on the current turn; the rule block forces the criteria
+ *   into the steering layer.
+ * - The model needs a hard rule that memory writes are EXPLICIT —
+ *   asking-for-permission style — not opportunistic. Auto-extraction
+ *   exists as a separate, configurable channel; the in-band tools must
+ *   not duplicate that channel's behaviour.
+ * - "Critical" vs "relevant" is a single-bit decision the model gets
+ *   wrong by default (it likes promoting everything). The rules call
+ *   out specific allowed cases so the bar stays high.
+ */
+export const MEMORY_USAGE_RULES = `## Memory rules
+You have access to long-term Memory via the \`memory_store\` and \`memory_delete\` tools, plus an automatic recall channel: relevant memory entries are injected into the system prompt every turn (you see them under the "## Memory" block when present). You do NOT need a separate recall tool.
+- Treat any "## Memory" block you see as authoritative background — written by the user or previously accepted by you across earlier sessions. Apply those facts unless the user explicitly revises them in THIS turn.
+- Call \`memory_store\` ONLY when one of the following is true:
+  1. The user explicitly asks you to remember something (e.g. "remember that…", "记住…", "覚えておいて…").
+  2. The user volunteered a durable preference / identity / convention / hard rule that would clearly help future turns AND is NOT already covered by an existing memory entry.
+  Otherwise, do NOT store. Empty action is the right answer for almost every casual turn.
+- \`critical: true\` is reserved for entries you MUST recall on EVERY future turn (personal identity, fixed reply rules, communication preferences, hard refusals). Default to \`false\`; the relevance-based recall channel will surface non-critical entries when applicable.
+- The \`heading\` is a short title (≤ 60 chars) in the user's language. Do NOT include the \` [!]\` marker — the runtime adds it based on the \`critical\` flag.
+- The \`body\` is one or two sentences (or a short bullet list) written as a directive you can read literally next turn — not a third-person description of this conversation.
+- Do NOT put Obsidian callouts (\`> [!note]\`, \`> [!warning]\`, etc.) in memory bodies. Callouts are reserved for the user's own private annotations inside the memory note and are filtered out before you ever read them back — anything you write inside one is wasted tokens.
+- Call \`memory_delete\` ONLY when the user explicitly rescinds or corrects a previously stored entry in the current turn. Never delete based on inference, silence, or apparent contradiction.
+- Do NOT store: greetings, transient task state, tool outputs, the exact wording of this turn's question or reply, secrets/passwords/private data the user did not ask to remember.
+`;
+
 export const VAULT_HARD_RULES = `## Vault hard rules
 - Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`edit_file_tags\`. Never simulate this via \`replace_text\` / \`edit_lines\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`edit_file_tags\` preserves.
 - Vault-wide tag rename → \`rename_tag\`.
@@ -116,6 +150,8 @@ You are a helpful assistant for Obsidian to help me manage/improve my notes in t
 ${VAULT_HARD_RULES}
 
 ${TODO_USAGE_RULES}
+
+${MEMORY_USAGE_RULES}
 
 ${COMMON_RULES}`;
 
@@ -273,6 +309,8 @@ ${vaultTips}
 ${VAULT_HARD_RULES}
 
 ${TODO_USAGE_RULES}
+
+${MEMORY_USAGE_RULES}
 
 ## HINTS
 - "Note" typically refers to markdown files in the current vault, while "file" is a broader term

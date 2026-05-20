@@ -119,16 +119,6 @@ export interface EmbeddingConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Memory
-// ─────────────────────────────────────────────────────────────────────────────
-
-export interface NoteAssistantMemory {
-	key: string;
-	value: string;
-	timestamp: number;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Plugin Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -277,9 +267,67 @@ export interface NoteAssistantPluginSettings {
 	 */
 	skillAutoInjectThreshold: number;
 
-	// ── Memories ───────────────────────────────────────────────────────────
+	// ── Memory (heading-anchored note store) ───────────────────────────────
+	/**
+	 * Master switch for the Memory feature. When false, the memory tools are
+	 * not registered, no memory prompt prefix is injected, and the auto
+	 * extractor never runs — regardless of {@link memoryAutoExtract}.
+	 */
 	memoryEnabled: boolean;
-	memories: NoteAssistantMemory[];
+	/**
+	 * Vault-relative path of the markdown note that stores memory entries.
+	 * Each entry is a `##` section; titles ending in `[!]` (after trimming)
+	 * are treated as critical (every-turn injection), the rest enter the
+	 * embedding-shortlisted pool.
+	 *
+	 * Empty string disables the feature at runtime (same effect as
+	 * {@link memoryEnabled} being false). The file is auto-created with a
+	 * starter template the first time a write hits a missing path.
+	 */
+	memoryNotePath: string;
+	/**
+	 * When true, after every user → assistant turn an extra (cheap) LLM call
+	 * extracts candidate memory upserts/deletes and applies them to the
+	 * memory note. Default off — the explicit `memory_store` / `memory_delete`
+	 * tool path remains the no-cost-by-default channel.
+	 */
+	memoryAutoExtract: boolean;
+	/**
+	 * Soft cap on the total character budget of critical memories injected
+	 * every turn. Critical entries exceeding this budget are dropped from
+	 * the prefix (with a console warning) instead of overrunning the prompt.
+	 * Counts the rendered list text only — not embedding or relevant pool.
+	 */
+	memoryCriticalMaxChars: number;
+	/**
+	 * Maximum number of relevant (non-critical) memory entries selected per
+	 * turn via embedding similarity to the user message. Critical entries do
+	 * not count toward this cap. Range [0, 30]; 0 disables the relevant pool.
+	 */
+	memoryRelevantTopK: number;
+	/**
+	 * Minimum cosine similarity for a relevant memory entry to be kept after
+	 * embedding-based filtering. Range [0, 1]; clamped at use-site. Tune to
+	 * match your embedding model's score distribution.
+	 */
+	memoryRelevantMinSimilarity: number;
+	/**
+	 * Per-turn upper bound on `upsert` operations the auto extractor may
+	 * apply. Prevents a single noisy reply from saturating the memory note.
+	 */
+	memoryExtractMaxUpserts: number;
+	/**
+	 * Per-turn upper bound on `delete` operations the auto extractor may
+	 * apply. Kept smaller than upserts — deletes are higher-stakes since
+	 * they remove information the user once authored or accepted.
+	 */
+	memoryExtractMaxDeletes: number;
+	/**
+	 * Minimum length (in characters, after stripping the structured
+	 * follow-up block) of the assistant reply before the auto extractor
+	 * runs. Replies shorter than this are skipped.
+	 */
+	memoryExtractMinReplyChars: number;
 
 	// ── Follow-up quick-pick suggestions ────────────────────────────────────
 	/** Master switch: render quick-pick buttons for next actions proposed at the end of an assistant reply. */

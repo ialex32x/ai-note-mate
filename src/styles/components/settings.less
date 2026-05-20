@@ -948,84 +948,12 @@
     }
 }
 
-// Memory settings
-.oap-settings-memory-list {
-    .flex-column();
-    gap: @spacing-md;
-    margin-top: @spacing-md;
-    max-height: 300px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-}
-
-.oap-settings-memory-item {
-    position: relative;
-    padding: @spacing-md @spacing-lg;
-    border-radius: @radius-md;
-    background: @bg-secondary;
-    border: 1px solid @bg-modifier-border;
-
-    &:hover {
-        .oap-settings-memory-delete-btn {
-            opacity: 1;
-            pointer-events: auto;
-        }
-    }
-}
-
-.oap-settings-memory-delete-btn {
-    position: absolute;
-    top: @spacing-sm;
-    right: @spacing-sm;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
+// Memory settings — slim status row. Wrapped in `.setting-item` so
+// it picks up Obsidian's padding / border-top and aligns with the
+// surrounding rows; we strip the inner element's own padding to
+// avoid stacking on top of the wrapper's padding.
+.oap-settings-memory-status-row .oap-settings-memory-status {
     padding: 0;
-    border: none;
-    border-radius: @radius-sm;
-    background: transparent;
-    color: @text-faint;
-    cursor: pointer;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity @duration-fast ease, color @duration-fast ease, background @duration-fast ease;
-
-    svg {
-        .icon-size(14px);
-    }
-
-    &:hover {
-        color: @text-error;
-    }
-}
-
-.oap-settings-memory-item-header {
-    .flex-between();
-    gap: @spacing-md;
-    margin-bottom: @spacing-sm;
-}
-
-.oap-settings-memory-key {
-    font-size: 0.85em;
-    font-weight: 600;
-    color: @text-primary;
-    .text-truncate();
-}
-
-.oap-settings-memory-timestamp {
-    font-size: 0.75em;
-    color: @text-faint;
-    flex-shrink: 0;
-}
-
-.oap-settings-memory-value {
-    font-size: 0.82em;
-    color: @text-secondary;
-    line-height: 1.4;
-    word-break: break-word;
-    .text-multiline-truncate(3);
 }
 
 // Settings warning icon
