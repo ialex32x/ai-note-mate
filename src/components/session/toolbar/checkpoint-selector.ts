@@ -145,13 +145,16 @@ export function createCheckpointSelector(
 
     const updateButtonText = () => {
         const cps = runtime?.checkpointStore.checkpoints ?? [];
-        const pendingCount = cps.filter(c => c.status === 'pending').length;
-        const totalCount = cps.length;
-        if (totalCount === 0) {
+        const pendingCount = runtime?.checkpointStore.pendingCount
+            ?? cps.filter(c => c.status === 'pending').length;
+        if (pendingCount === 0) {
             wrapper.addClass('session-checkpoint-selector--empty');
             labelEl.setText('');
             acceptAllBtn.disabled = true;
             discardAllBtn.disabled = true;
+            if (dropdownManager.isActive(wrapper)) {
+                dropdownManager.closeActive();
+            }
             return;
         }
         wrapper.removeClass('session-checkpoint-selector--empty');

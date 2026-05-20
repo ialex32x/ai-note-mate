@@ -104,9 +104,8 @@
     }
 }
 
-// Selector button is hidden entirely when the session has no
-// checkpoints yet — Phase 1 keeps the input row uncluttered until
-// the user actually has something to manage.
+// Hidden when there are no pending checkpoints (including before
+// the first vault mutation and after every checkpoint is resolved).
 .session-checkpoint-selector--empty {
     display: none !important;
 }
