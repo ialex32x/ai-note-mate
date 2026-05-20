@@ -251,8 +251,12 @@ describe('extractSuggestions / closing-question splitter', () => {
         ].join('\n');
 
         const out = extractSuggestions(md, { allowStructured: true });
+        // The chip label keeps the AI-facing "帮你 …" phrasing so it reads
+        // as a proposal; the outgoing prompt is rewritten to first person
+        // ("帮我 …") so when sent back to the model it reads as the user
+        // accepting / instructing, not echoing the AI's question.
         expect(out).toEqual([
-            { label: '帮你整理成笔记', prompt: '帮你整理成笔记' },
+            { label: '帮你整理成笔记', prompt: '帮我整理成笔记' },
             { label: '继续生成更多内容', prompt: '继续生成更多内容' },
         ]);
     });
@@ -261,6 +265,7 @@ describe('extractSuggestions / closing-question splitter', () => {
         const md = '要不要我先列大纲或者直接展开正文呢？';
 
         const out = extractSuggestions(md, { allowStructured: true });
+        // No 2nd-person pronouns to swap → label and prompt stay identical.
         expect(out).toEqual([
             { label: '先列大纲', prompt: '先列大纲' },
             { label: '直接展开正文', prompt: '直接展开正文' },
@@ -281,27 +286,70 @@ describe('extractSuggestions / closing-question splitter', () => {
         const md = 'Should I summarize the article, or generate more content?';
 
         const out = extractSuggestions(md, { allowStructured: true });
+        // No "you/your" inside either option → label and prompt stay
+        // identical for both.
         expect(out).toEqual([
             { label: 'summarize the article', prompt: 'summarize the article' },
             { label: 'generate more content', prompt: 'generate more content' },
         ]);
     });
 
-    it('falls back to the whole sentence when no or-choice connector is present', () => {
+    it('cleans a single-suggestion fallback by stripping the offer prefix and yes/no tail', () => {
         const md = '需要我先帮你整理大纲吗？';
 
         const out = extractSuggestions(md, { allowStructured: true });
-        // Single-suggestion fallback keeps the original sentence verbatim,
-        // matching the pre-split behaviour of `extractSingleQuestion`.
+        // Single-suggestion path now strips the recognised "需要我" prefix
+        // and the trailing "吗？", and swaps "你" → "我" in the prompt so
+        // the outgoing message reads as the user instructing the assistant.
         expect(out).toEqual([
-            { label: '需要我先帮你整理大纲吗？', prompt: '需要我先帮你整理大纲吗？' },
+            { label: '先帮你整理大纲', prompt: '先帮我整理大纲' },
         ]);
     });
 
-    it('does not split when the offer prefix does not sit at the start', () => {
+    it('cleans the user-supplied food-recommendation offer (regression)', () => {
+        // Regression for the original example that motivated the prompt
+        // rewrite: both the leading "帮你" and the possessive "你附近" should
+        // flip to "帮我" / "我附近" in the outgoing prompt so the model gets
+        // a clean first-person instruction rather than an echoed question.
+        const md = '要不要我帮你整理一份你附近值得一试的生煎/小馄饨推荐？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            {
+                label: '帮你整理一份你附近值得一试的生煎/小馄饨推荐',
+                prompt: '帮我整理一份我附近值得一试的生煎/小馄饨推荐',
+            },
+        ]);
+    });
+
+    it('cleans an English single-suggestion fallback and swaps you/your', () => {
+        const md = 'Would you like me to summarize your meeting notes?';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            {
+                label: 'summarize your meeting notes',
+                prompt: 'summarize my meeting notes',
+            },
+        ]);
+    });
+
+    it('swaps multiple 2nd-person references inside a single offer (你的 + 你 …)', () => {
+        // Both the leading "帮你" and the inner possessive "你的" should flip
+        // to first person in the outgoing prompt.
+        const md = '需要我帮你检查你的代码吗？';
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '帮你检查你的代码', prompt: '帮我检查我的代码' },
+        ]);
+    });
+
+    it('keeps the whole sentence when the offer prefix does not sit at the start', () => {
         // "对了" is filler, not a recognised offer prefix — the candidate no
-        // longer starts with `需要我`, so the splitter bails and the original
-        // single-question path returns the whole sentence.
+        // longer starts with `需要我`, so the splitter bails and the
+        // single-suggestion path can't safely identify the action portion,
+        // so it preserves the original sentence verbatim for both fields.
         const md = '对了，需要我帮你整理成笔记，或者继续生成更多内容吗？';
 
         const out = extractSuggestions(md, { allowStructured: true });
@@ -313,10 +361,12 @@ describe('extractSuggestions / closing-question splitter', () => {
         ]);
     });
 
-    it('keeps Japanese sentence-final offers as a single suggestion', () => {
+    it('keeps Japanese sentence-final offers as a verbatim single suggestion', () => {
         // `しましょうか` is in SINGLE_QUESTION_HINTS but intentionally not in
         // OFFER_PREFIXES_AT_START (it sits at the end, not the start), so the
-        // splitter must not fire here.
+        // splitter must not fire here. Without a strippable prefix the
+        // single-suggestion path also can't safely clean the action portion,
+        // so the verbatim fallback applies and label === prompt.
         const md = '整理しましょうか？';
 
         const out = extractSuggestions(md, { allowStructured: true });

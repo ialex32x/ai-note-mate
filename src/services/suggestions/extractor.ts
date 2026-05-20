@@ -222,10 +222,12 @@ function parseHeuristic(markdown: string): SuggestedAction[] {
 
     // Fallback: single-question closer ("要不要我帮你 xxx?") — possibly
     // split into multiple parallel options when the question offers an
-    // explicit "A 或者 B" / "A or B" choice.
+    // explicit "A 或者 B" / "A or B" choice. The extractor already returns
+    // ready-to-render `{ label, prompt }` pairs (label may keep "帮你" while
+    // prompt swaps it to "帮我" — see `buildOfferPair`).
     const closingQs = extractSingleQuestion(tail, lower);
     if (closingQs && closingQs.length > 0) {
-        return closingQs.map((q) => ({ label: q, prompt: q }));
+        return closingQs;
     }
 
     // Even without an explicit header, if the last paragraph is a short
@@ -284,12 +286,26 @@ function tailBeforeList(tail: string): string {
 
 /**
  * Detect a single-sentence follow-up question at the very end of the reply.
- * Returns the candidate option(s) or null.
+ * Returns the candidate suggestion(s) or null.
  *
- * Usually we emit one entry (the cleaned sentence itself). When the closer
- * is a parallel offer like "需要我 A，或者 B 吗?" we additionally try to
- * split it into the two underlying actions so each becomes its own
- * one-click suggestion — see `splitOrChoiceQuestion` for details.
+ * Each returned entry is a `{ label, prompt }` pair where:
+ * - `label` is what the user sees on the chip — kept in the AI's second-
+ *   person phrasing ("帮你整理…") so it still reads as the AI's proposal.
+ * - `prompt` is what gets sent back to the model on click — rewritten to
+ *   first person ("帮我整理…") so the outgoing message reads as the user
+ *   accepting / instructing instead of literally echoing the AI's question.
+ *
+ * Three sub-paths produce that pair:
+ *   1. Or-choice split (`需要我 A，或者 B 吗?`) — see `splitOrChoiceQuestion`.
+ *      Each parallel option becomes its own suggestion.
+ *   2. Single-suggestion with a recognised offer prefix at the start
+ *      (`要不要我 / Would you like me to / …`) — the prefix and yes/no tail
+ *      are stripped, leaving a chip-friendly action phrase.
+ *   3. Whole-sentence fallback — used when no `OFFER_PREFIXES_AT_START`
+ *      matches (e.g. Japanese `しましょうか`, Korean `해드릴까요`, or
+ *      filler-led variants like `对了，需要我…吗？`). The original sentence
+ *      is preserved verbatim for both label and prompt because we cannot
+ *      safely identify the action portion to flip the pronouns on.
  *
  * We only treat the last *sentence* (split by `。.!！?？\n`) as the candidate,
  * not the entire trailing paragraph — otherwise a closing remark like
@@ -300,7 +316,7 @@ function tailBeforeList(tail: string): string {
  * question marks, which usually signals an open-ended choice question
  * ("A？或者 B？") rather than a clean one-click action.
  */
-function extractSingleQuestion(tail: string, _lowerTail: string): string[] | null {
+function extractSingleQuestion(tail: string, _lowerTail: string): SuggestedAction[] | null {
     // Only the last paragraph.
     const paragraphs = tail.split(/\n\s*\n/);
     const last = paragraphs[paragraphs.length - 1]?.trim();
@@ -337,18 +353,32 @@ function extractSingleQuestion(tail: string, _lowerTail: string): string[] | nul
     if (oneLine.length > 80) return null;
 
     // Try splitting a parallel "A 或者 B 吗?" / "A or B?" offer into two
-    // independent actions. Falls back to the whole sentence when the
-    // pattern doesn't apply.
+    // independent actions. Falls back to the single-suggestion path when
+    // the pattern doesn't apply.
     const split = splitOrChoiceQuestion(oneLine);
     if (split) return split;
 
-    return [oneLine];
+    // Single-suggestion path: when we can recognise the offer prefix at the
+    // start, strip it (and the trailing yes/no marker) so the chip is an
+    // action label, not a question echo. When no prefix is recognised
+    // (Japanese sentence-final hints, or filler-led variants) we fall back
+    // to the original whole-sentence behaviour so the user still sees the
+    // proposal verbatim.
+    const lowerOne = oneLine.toLowerCase();
+    const prefix = OFFER_PREFIXES_AT_START.find((p) => lowerOne.startsWith(p));
+    if (prefix) {
+        const rest = oneLine.slice(prefix.length).trimStart();
+        const pair = buildOfferPair(rest);
+        if (pair.label.length >= 2) return [pair];
+    }
+
+    return [{ label: oneLine, prompt: oneLine }];
 }
 
 /**
  * Try to break a closing offer like "需要我 A，或者 B 吗?" into parallel
- * option strings. Returns `null` when the pattern doesn't apply so the
- * caller can fall back to the original whole-sentence suggestion.
+ * option chips. Returns `null` when the pattern doesn't apply so the
+ * caller can fall back to the single-suggestion path.
  *
  * Strategy:
  *   1. The candidate must start with an offer prefix that sits at the
@@ -356,15 +386,15 @@ function extractSingleQuestion(tail: string, _lowerTail: string): string[] | nul
  *      markers (`しましょうか`, `해드릴까요`) deliberately don't qualify.
  *   2. Strip that prefix, then split the remainder on an "or"-style
  *      connector (`或者 / 或是 / 还是 / 還是 / " or "`).
- *   3. Trim trailing yes-no particles (`吗 / 嗎 / 呢 / 呀 / 啊`) and
- *      stray punctuation from each piece. The cleaned pieces become
- *      parallel suggestions where label === prompt — matching the
- *      contract used by the list-based heuristic path.
+ *   3. Feed each piece to `buildOfferPair` so the chip label keeps the
+ *      AI-facing "帮你 …" phrasing while the outgoing prompt is rewritten
+ *      to first person ("帮我 …"). The yes/no tail is stripped as part of
+ *      that helper.
  *
  * Returning ≥ 2 cleaned pieces is required; otherwise the split is
  * considered spurious and we bail out.
  */
-function splitOrChoiceQuestion(candidate: string): string[] | null {
+function splitOrChoiceQuestion(candidate: string): SuggestedAction[] | null {
     const lower = candidate.toLowerCase();
     const prefix = OFFER_PREFIXES_AT_START.find((p) => lower.startsWith(p));
     if (!prefix) return null;
@@ -374,11 +404,72 @@ function splitOrChoiceQuestion(candidate: string): string[] | null {
     const rest = candidate.slice(prefix.length).trimStart();
     const parts = rest
         .split(OR_CHOICE_SEPARATORS)
-        .map((s) => stripYesNoTail(s))
-        .filter((s) => s.length >= 2);
+        .map((s) => buildOfferPair(s))
+        .filter((p) => p.label.length >= 2);
     if (parts.length < 2) return null;
 
     return parts;
+}
+
+/**
+ * Build a chip-ready `{ label, prompt }` pair from the *action portion* of a
+ * follow-up offer.
+ *
+ * The caller must have already identified that the surrounding sentence
+ * matches the "<offer prefix> <action> [yes/no marker]" template (via
+ * `OFFER_PREFIXES_AT_START`) and stripped the prefix. That template is what
+ * guarantees any 2nd-person reference inside `phrase` refers to the user, so
+ * the pronoun swap performed here is safe.
+ *
+ * - `label` keeps the original 2nd-person phrasing — the chip should still
+ *   read as the AI proposing something to the user ("帮你整理…").
+ * - `prompt` swaps 2nd person to 1st person ("帮我整理…") so the message
+ *   sent back to the model reads as the user accepting / instructing,
+ *   instead of a literal echo of the AI's question.
+ * - Trailing yes/no markers (`吗?/呢?/?` and friends) are stripped from
+ *   both because they don't belong on a button label or on an outgoing
+ *   instruction.
+ *
+ * Not used by the list-based heuristic path: list items may themselves be
+ * *questions the user might ask the AI* ("- 你的看法是什么？") in which case
+ * "你" refers to the AI and swapping would be wrong. The list path keeps
+ * `label === prompt` unchanged.
+ */
+function buildOfferPair(phrase: string): { label: string; prompt: string } {
+    const cleaned = stripYesNoTail(phrase);
+    return {
+        label: cleaned,
+        prompt: swapToFirstPerson(cleaned),
+    };
+}
+
+/**
+ * Swap 2nd-person references to 1st person inside an offer action phrase.
+ *
+ * Scope: applied only to phrases already confirmed to be the *action portion*
+ * of an AI-to-user offer template (see `buildOfferPair`). Doing it elsewhere
+ * is unsafe because outside that template "你/you" may legitimately refer to
+ * the AI.
+ *
+ * Languages handled:
+ * - zh: 你/您 → 我. The negative lookahead on `好` is a cheap safety net for
+ *   the (vanishingly unlikely) case where 你好/您好 ends up inside an action
+ *   phrase — we'd rather keep the greeting verbatim than turn it into 我好.
+ * - en: word-boundary swaps for the object-form pronouns that remain after
+ *   stripping an offer prefix ("help you …" → "help me …", "your code" →
+ *   "my code"). Case-insensitive with lower-case replacement; the cleaned
+ *   phrase is short and rarely sentence-initial after prefix stripping.
+ *
+ * Japanese / Korean offers don't typically embed a 2nd-person subject in the
+ * action portion (the verb-final politeness form `しましょうか / 해드릴까요`
+ * sits at the end of the sentence and would not match `OFFER_PREFIXES_AT_START`
+ * anyway), so no rule is needed for those languages here.
+ */
+function swapToFirstPerson(s: string): string {
+    return s
+        .replace(/[你您](?!好)/g, '我')
+        .replace(/\byou\b/gi, 'me')
+        .replace(/\byour\b/gi, 'my');
 }
 
 /**
