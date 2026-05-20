@@ -79,6 +79,7 @@ export const ja: Record<string, string> = {
 	'view.permissions': '権限',
 	'view.profile': 'プロファイル',
 	'view.profileSummarizerBadge': 'コンテキスト要約器として使用中',
+	'view.profileInsightsBadge': 'インサイト抽出器として使用中',
 	'view.permissionsAll': '全て',
 	'view.permissionsNone': 'なし',
 	'view.capReadFile': '読取',

@@ -79,6 +79,7 @@ export const ko: Record<string, string> = {
 	'view.permissions': '권한',
 	'view.profile': '프로필',
 	'view.profileSummarizerBadge': '컨텍스트 요약기로 사용 중',
+	'view.profileInsightsBadge': '인사이트 추출기로 사용 중',
 	'view.permissionsAll': '전체',
 	'view.permissionsNone': '없음',
 	'view.capReadFile': '읽기',

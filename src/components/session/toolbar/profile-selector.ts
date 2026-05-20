@@ -49,6 +49,15 @@ export function createProfileSelector(
         });
         profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.profiles') });
 
+        // Effective insights extractor id: explicit dedicated profile when set
+        // and valid, otherwise the summarizer (matches createInsightsConfig
+        // fallback in chat-factory.ts).
+        const dedicatedInsightsId = current.insightsProfileId;
+        const effectiveInsightsId =
+            dedicatedInsightsId && current.profiles.some(pr => pr.id === dedicatedInsightsId)
+                ? dedicatedInsightsId
+                : current.summarizerProfileId;
+
         for (const p of current.profiles) {
             const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
             const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
@@ -60,7 +69,13 @@ export function createProfileSelector(
                 });
                 setIcon(badge, 'scroll-text');
                 setTooltip(badge, t('view.profileSummarizerBadge'));
-                setTooltip(item, t('view.profileSummarizerBadge'));
+            }
+            if (effectiveInsightsId && p.id === effectiveInsightsId) {
+                const badge = item.createEl('span', {
+                    cls: 'session-dropdown-item__badge session-dropdown-item__badge--insights',
+                });
+                setIcon(badge, 'lightbulb');
+                setTooltip(badge, t('view.profileInsightsBadge'));
             }
             if (p.id === current.activeProfileId) {
                 item.addClass('session-dropdown-item--active');

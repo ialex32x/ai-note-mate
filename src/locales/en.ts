@@ -79,6 +79,7 @@ export const en: Record<string, string> = {
 	'view.permissions': 'Permissions',
 	'view.profile': 'Profile',
 	'view.profileSummarizerBadge': 'Used as context summarizer',
+	'view.profileInsightsBadge': 'Used as insights extractor',
 	'view.permissionsAll': 'All',
 	'view.permissionsNone': 'None',
 	'view.capReadFile': 'Read',

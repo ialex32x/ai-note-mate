@@ -79,6 +79,7 @@ export const zhTW: Record<string, string> = {
 	'view.permissions': '權限',
 	'view.profile': '設定檔',
 	'view.profileSummarizerBadge': '目前用作上下文摘要器',
+	'view.profileInsightsBadge': '目前用作見解萃取器',
 	'view.permissionsAll': '全部',
 	'view.permissionsNone': '無',
 	'view.capReadFile': '讀取',

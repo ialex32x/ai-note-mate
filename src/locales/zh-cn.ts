@@ -79,6 +79,7 @@ export const zhCN: Record<string, string> = {
 	'view.permissions': '权限',
 	'view.profile': '方案',
 	'view.profileSummarizerBadge': '当前用作上下文摘要器',
+	'view.profileInsightsBadge': '当前用作见解提炼器',
 	'view.permissionsAll': '全部',
 	'view.permissionsNone': '无',
 	'view.capReadFile': '读取',
