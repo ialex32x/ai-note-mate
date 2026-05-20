@@ -128,8 +128,6 @@ export const ja: Record<string, string> = {
 	'view.toggleSubAgentReply': 'サブエージェントの回答を切り替え',
 
 	// ── Settings ──────────────────────────────────────────
-	'settings.language': '言語',
-	'settings.languageDesc': 'プラグインの表示言語。',
 	'settings.baseUrl': 'ベース URL',
 	'settings.baseUrlDesc': 'API のベース URL を入力してください',
 	'settings.baseUrlPlaceholder': 'ベース URL を入力',
@@ -503,7 +501,6 @@ export const ja: Record<string, string> = {
 	'tips.empty': '今のところヒントはありません。引き続き探索してみてください！',
 	'tips.prev': '前のヒント',
 	'tips.next': '次のヒント',
-	'tips.counter': '{current}/{total}',
 	'tips.gotIt': 'わかりました',
 	'tips.tryIt': '試してみる',
 	'tips.preview.title': '確認',

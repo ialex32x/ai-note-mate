@@ -132,7 +132,7 @@ export function createTipsButton(
 
         header.createEl('span', {
             cls: 'session-tips-popover__counter',
-            text: t('tips.counter', { current: currentIndex + 1, total: currentList.length }),
+            text: `${currentIndex + 1}/${currentList.length}`,
         });
 
         const nextBtn = header.createEl('button', {

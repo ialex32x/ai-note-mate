@@ -128,8 +128,6 @@ export const zhTW: Record<string, string> = {
 	'view.toggleSubAgentReply': '切換子代理回覆顯示',
 
 	// ── Settings ──────────────────────────────────────────
-	'settings.language': '語言',
-	'settings.languageDesc': '外掛介面顯示語言。',
 	'settings.baseUrl': '介面地址',
 	'settings.baseUrlDesc': '輸入 API 的基礎 URL',
 	'settings.baseUrlPlaceholder': '輸入 API 基礎 URL',
@@ -503,7 +501,6 @@ export const zhTW: Record<string, string> = {
 	'tips.empty': '目前沒有提示，繼續探索吧！',
 	'tips.prev': '上一條提示',
 	'tips.next': '下一條提示',
-	'tips.counter': '{current}/{total}',
 	'tips.gotIt': '知道了',
 	'tips.tryIt': '試試看',
 	'tips.preview.title': '確認操作',

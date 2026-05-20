@@ -127,8 +127,6 @@ export const zhCN: Record<string, string> = {
 	'view.subAgentReplySummary': '回复（点击展开）',
 	'view.toggleSubAgentReply': '切换子代理回复显示',
 	// ── Settings ──────────────────────────────────────────
-	'settings.language': '语言',
-	'settings.languageDesc': '插件界面显示语言。',
 	'settings.baseUrl': '接口地址',
 	'settings.baseUrlDesc': '输入 API 的基础 URL',
 	'settings.baseUrlPlaceholder': '输入 API 基础 URL',
@@ -502,7 +500,6 @@ export const zhCN: Record<string, string> = {
 	'tips.empty': '暂无提示，继续探索吧！',
 	'tips.prev': '上一条提示',
 	'tips.next': '下一条提示',
-	'tips.counter': '{current}/{total}',
 	'tips.gotIt': '知道了',
 	'tips.tryIt': '试试看',
 	'tips.preview.title': '确认操作',

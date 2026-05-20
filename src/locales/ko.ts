@@ -128,8 +128,6 @@ export const ko: Record<string, string> = {
 	'view.toggleSubAgentReply': '하위 에이전트 답변 토글',
 
 	// ── Settings ──────────────────────────────────────────
-	'settings.language': '언어',
-	'settings.languageDesc': '플러그인 표시 언어.',
 	'settings.baseUrl': '기본 URL',
 	'settings.baseUrlDesc': 'API의 기본 URL을 입력하세요',
 	'settings.baseUrlPlaceholder': '기본 URL 입력',
@@ -503,7 +501,6 @@ export const ko: Record<string, string> = {
 	'tips.empty': '지금은 팁이 없습니다. 계속 탐색해 보세요!',
 	'tips.prev': '이전 팁',
 	'tips.next': '다음 팁',
-	'tips.counter': '{current}/{total}',
 	'tips.gotIt': '알겠어요',
 	'tips.tryIt': '해보기',
 	'tips.preview.title': '확인',

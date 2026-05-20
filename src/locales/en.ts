@@ -128,8 +128,6 @@ export const en: Record<string, string> = {
 	'view.toggleSubAgentReply': 'Toggle sub-agent reply',
 
 	// ── Settings ──────────────────────────────────────────
-	'settings.language': 'Language',
-	'settings.languageDesc': 'Display language for the plugin UI.',
 	'settings.baseUrl': 'Base URL',
 	'settings.baseUrlDesc': 'Enter the base URL for the API',
 	'settings.baseUrlPlaceholder': 'Enter the base URL',
@@ -503,7 +501,6 @@ export const en: Record<string, string> = {
 	'tips.empty': 'No tips right now. Keep exploring!',
 	'tips.prev': 'Previous tip',
 	'tips.next': 'Next tip',
-	'tips.counter': '{current}/{total}',
 	'tips.gotIt': 'Got it',
 	'tips.tryIt': 'Try it',
 	'tips.preview.title': 'Confirm',
