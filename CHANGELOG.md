@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.2.6
+
+### What's new
+
+- **Memory, rebuilt around a vault note** — Long-term memory is now backed by a markdown note in your vault that you can read, edit, and search like any other note. Each `##` heading is one entry; add a trailing ` [!]` to mark an entry as **critical** (injected on every turn). Plain headings are kept in a *relevant* pool and recalled by embedding similarity to your current question. Obsidian callouts (`> [!info]`, `> [!note]`, …) inside an entry body stay **private**—they are visible to you but stripped before the assistant ever sees them, so you can leave yourself reminders about why an entry exists.
+- **Auto-extract memories (opt-in)** — Turn on **Settings → Note Mate → Memory → Auto-extract memories from replies** to let a cheap follow-up LLM call distill durable facts from each reply into memory upserts/deletes. Per-turn caps for upserts, deletes, and minimum reply length keep a noisy reply from overrunning your note.
+- **Memory settings panel** — Master toggle, note-path field with **Open** / **Create from template** buttons, a live entry-count status row, and advanced knobs for auto-extract caps and recall tuning (critical budget, relevant top-K, similarity threshold). Per-entry editing happens in the note itself—nothing else to learn.
+- **New onboarding tips**
+  - **Set up your AI profile** — surfaces when Base URL / model / API key are still empty; opens straight to the Profile section.
+  - **Connect MCP servers** — surfaces when no MCP server is configured.
+  - **Add an illustration to your note** — when an image-generation profile is set up and the active note has no images, parks a starter prompt for a 512×512 cover illustration.
+  - **Reference notes with `[[`** — drops a starter prompt ending in `[[` and opens the file picker so you can pick a note and send.
+  - **Try the memory feature** — creates your memory note from the default template with an example critical entry that demonstrates both the `[!]` marker and the callout-as-private-annotation pattern.
+- **Friendlier tool error hints** — When the assistant calls `get_metadata` or `write_file` with the wrong argument shape (a bare string, or singular `path` instead of `paths`), the tool now responds with a corrective example instead of a generic failure, so the next attempt is usually right.
+- **Clearer inspector tool guidance** — `get_metadata` is now described as the primary inspector for markdown structure and batch inspection; `get_file_state` is reserved for single non-markdown files or simple stat lookups, with an explicit reminder to reuse the `mtime` returned by `read_file` / `read_section` / `get_metadata` instead of calling again.
+- **Tip prompts as drafts** — Analyze-vault-structure, Create example base, Create example canvas, and Reference-notes tips now park their starter prompt in the input editor (with the cursor at the end) instead of submitting it, so you can review and tweak before sending. These tips also stay hidden while you're already typing.
+
+### Refinements
+
+- **Checkpoint selector auto-hides** — The toolbar's checkpoint button disappears entirely when there are no pending checkpoints left, and its dropdown closes automatically the moment you accept or discard the last pending entry.
+- **Todo panel starts collapsed** — New sessions open with the todo panel folded into a single-line header to keep the input row compact; expand it whenever you want the full list. Your fold preference is preserved across `todo-update` re-renders as before.
+- **Todo panel polish** — Tighter spacing and improved contrast for better readability.
+
+### Heads-up
+
+- **Legacy memory data is dropped.** The old `memories` array stored in `data.json` is no longer used and is removed on first load of this version. If you had memories saved under the previous format and want to keep them, **export them before upgrading**. After the upgrade, seed your new memory note via **Tips → Try the memory feature** or write entries directly in the note.
+- **`memory_recall` tool removed.** Recall now happens automatically via the system-prompt prefix. The model continues to use `memory_store` (with `heading` / `body` / `critical`) and `memory_delete` (by `heading`).
+
+---
+
 ## 1.2.5
 
 ### What's new
