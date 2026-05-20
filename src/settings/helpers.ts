@@ -65,6 +65,24 @@ export function getActiveImageGenConfig(settings: NoteAssistantPluginSettings): 
 	return settings.imageGenConfigs[0]!;
 }
 
+/**
+ * True when the active image generation config has a model, a resolvable
+ * API key, and (for OpenAI-compatible schemes) a non-empty base URL.
+ */
+export function isActiveImageGenConfigured(
+	app: App,
+	settings: NoteAssistantPluginSettings,
+): boolean {
+	const config = getActiveImageGenConfig(settings);
+	if (!config) return false;
+	if ((config.model?.trim() ?? '').length === 0) return false;
+	if (getAppSecret(app, config.apiKey).trim().length === 0) return false;
+	if (config.apiScheme === 'openai' && (config.baseUrl?.trim() ?? '').length === 0) {
+		return false;
+	}
+	return true;
+}
+
 /** Helper: get the currently active embedding config from settings (may be null) */
 export function getActiveEmbeddingConfig(settings: NoteAssistantPluginSettings): EmbeddingConfig | null {
 	if (!settings.embeddingEnabled) return null;

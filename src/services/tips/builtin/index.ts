@@ -7,6 +7,7 @@ import { createExampleCanvasTip } from './create-example-canvas';
 import { enableEmbeddingFilterTip } from './enable-embedding-filter';
 import { analyzeVaultStructureTip } from './analyze-vault-structure';
 import { configureMcpServersTip } from './configure-mcp-servers';
+import { noteIllustrationTip } from './note-illustration';
 
 /**
  * Authored order also dictates the navigation order in the popover.
@@ -14,6 +15,7 @@ import { configureMcpServersTip } from './configure-mcp-servers';
  */
 export const BUILTIN_TIPS: readonly TipDefinition[] = [
     configureProfileTip,
+    noteIllustrationTip,
     fileRefTriggerTip,
     createFirstSkillTip,
     createExampleBaseTip,

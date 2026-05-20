@@ -10,6 +10,11 @@ import {
     type TipSessionViewAdapter,
 } from '../../../services/tips';
 import type NoteAssistantPlugin from 'main';
+import {
+    invalidateActiveNoteImageCache,
+    warmActiveNoteImageCache,
+} from '../../../services/tips/builtin/_active-note';
+import { TFile } from 'obsidian';
 
 export interface TipsButtonHandle {
     /** Unsubscribe settings listener; safe to call multiple times. */
@@ -360,6 +365,14 @@ export function createTipsButton(
         },
     });
 
+    const refreshActiveNoteCacheAndVisibility = (): void => {
+        void warmActiveNoteImageCache(plugin.app).then(() => {
+            updateVisibility();
+            if (!dropdownManager.isActive(wrapper) || previewView) return;
+            renderTipsView();
+        });
+    };
+
     const onSettingsChanged = () => {
         // Refresh button visibility on every settings change so the
         // button hides as soon as the user completes the last eligible
@@ -380,11 +393,29 @@ export function createTipsButton(
     };
     plugin.onSettingsChange(onSettingsChanged);
 
-    updateVisibility();
+    const onActiveNoteContextChanged = (): void => {
+        invalidateActiveNoteImageCache();
+        refreshActiveNoteCacheAndVisibility();
+    };
+    const onVaultModify = (file: TFile): void => {
+        if (file.path !== plugin.app.workspace.getActiveFile()?.path) return;
+        invalidateActiveNoteImageCache();
+        refreshActiveNoteCacheAndVisibility();
+    };
+
+    const activeLeafRef = plugin.app.workspace.on('active-leaf-change', onActiveNoteContextChanged);
+    const fileOpenRef = plugin.app.workspace.on('file-open', onActiveNoteContextChanged);
+    const vaultModifyRef = plugin.app.vault.on('modify', onVaultModify);
+
+    void warmActiveNoteImageCache(plugin.app).then(() => updateVisibility());
 
     return {
         dispose: () => {
             plugin.offSettingsChange(onSettingsChanged);
+            plugin.app.workspace.offref(activeLeafRef);
+            plugin.app.workspace.offref(fileOpenRef);
+            plugin.app.vault.offref(vaultModifyRef);
+            invalidateActiveNoteImageCache();
         },
     };
 }
