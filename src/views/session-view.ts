@@ -1311,6 +1311,7 @@ export class SessionView extends ItemView {
                 await this.sendPrompt(text);
             },
             fillPromptDraft: (text: string) => this.fillPromptDraft(text),
+            triggerFileRefSuggest: () => this.cmInput.triggerFileRefSuggest(),
         };
     }
 

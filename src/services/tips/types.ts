@@ -24,6 +24,12 @@ export interface TipSessionViewAdapter {
      * false + Notice) when the input already contains user-authored text.
      */
     fillPromptDraft(text: string): boolean;
+    /**
+     * Open the file-reference completion popup at the cursor (same as the
+     * @ toolbar button). When the cursor is already after `[[`, only the
+     * picker is shown.
+     */
+    triggerFileRefSuggest(): void;
 }
 
 /**

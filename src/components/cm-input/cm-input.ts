@@ -328,7 +328,7 @@ export class CMInput {
         return this.view.state.doc.toString();
     }
 
-    /** Set editor content */
+    /** Set editor content and place the cursor at the end. */
     setContent(content: string): void {
         this.view.dispatch({
             changes: {
@@ -336,6 +336,7 @@ export class CMInput {
                 to: this.view.state.doc.length,
                 insert: content,
             },
+            selection: { anchor: content.length, head: content.length },
         });
     }
 

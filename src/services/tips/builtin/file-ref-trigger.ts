@@ -14,6 +14,12 @@ export const fileRefTriggerTip: TipDefinition = {
     available: (ctx) => isPromptInputEmpty(ctx),
     disqualified: (ctx) => !isPromptInputEmpty(ctx),
     execute: async (ctx) => {
-        ctx.sessionView.fillPromptDraft(t('tips.fileRefTrigger.draft'));
+        const filled = ctx.sessionView.fillPromptDraft(t('tips.fileRefTrigger.draft'));
+        if (!filled) return;
+        // Defer one frame so setContent + popover teardown finish before
+        // CodeMirror runs startCompletion (same rAF deferral as @ button).
+        window.requestAnimationFrame(() => {
+            ctx.sessionView.triggerFileRefSuggest();
+        });
     },
 };
