@@ -13,6 +13,7 @@ import {
     MAX_PDF_INLINE_BYTES,
     mediaKindFromMime,
     PREVIEW_LINE_COUNT,
+    normalizeVaultPathsArg,
     requireFile,
     validateLineRange,
 } from "./_shared";
@@ -609,17 +610,22 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Get parsed frontmatter, structural info (headings / tags / links), and basic file " +
                     "state (mtime / ctime / size) of one or more markdown files — without reading the " +
-                    "full content. Accepts up to 200 paths in a single call; ALWAYS batch over " +
-                    "sequential single-path calls.",
+                    "full content. Primary inspector for notes: use this (not `get_file_state`) when you need " +
+                    "structure or batch inspection. For a single non-markdown file where you only need " +
+                    "timestamps/size with no structure, use `get_file_state` instead. REQUIRED argument shape: " +
+                    "`paths` as a JSON array of strings — even for a single file use {\"paths\": [\"note.md\"]}, " +
+                    "not a bare string and not the `path` key. Accepts up to 200 paths per call; batch multiple " +
+                    "files in one call instead of repeated single-path calls.",
                 parameters: {
                     type: "object",
                     properties: {
                         paths: {
                             type: "array",
                             items: { type: "string" },
+                            minItems: 1,
                             description:
-                                "Array of vault-relative paths to markdown files (1–200 paths). " +
-                                "Example: ['Notes/A.md', 'Notes/B.md'].",
+                                "JSON array of vault-relative markdown paths (1–200). Single file: " +
+                                "['Notes/A.md']. Multiple: ['Notes/A.md', 'Notes/B.md']. Never a bare string.",
                         },
                     },
                     required: ["paths"],
@@ -628,11 +634,10 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
         },
         capabilities: ["read_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal) => {
-            const rawPaths = args["paths"] as string[];
+            const pathsOrErr = normalizeVaultPathsArg(args);
+            if (isFailure(pathsOrErr)) return pathsOrErr;
+            const rawPaths = pathsOrErr;
 
-            if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
-                return { success: false, type: "text", content: "paths must be a non-empty array of file paths." };
-            }
             if (rawPaths.length > 200) {
                 return { success: false, type: "text", content: `Too many paths (${rawPaths.length}); maximum is 200.` };
             }
@@ -722,9 +727,12 @@ export function vaultGetFileState(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "get_file_state",
                 description:
-                    "Get the state information (creation time, modification time, size) for a file. " +
-                    "Use this when the user asks about when a file was created, modified, last edited, " +
-                    "or its size/file size. Time is represented as a Unix timestamp in milliseconds.",
+                    "Get timestamps and size for one file (ctime, mtime, size) without reading content or " +
+                    "parsing note structure. Use for non-markdown files (images, PDFs, etc.) or when you " +
+                    "only need stat fields for a single path. Do NOT use for markdown structure (headings, " +
+                    "tags, links, frontmatter) or batch inspection — use `get_metadata` instead. If you " +
+                    "already called `read_file`, `read_section`, or `get_metadata`, reuse their `mtime` " +
+                    "rather than calling this tool again. Times are Unix timestamps in milliseconds.",
                 parameters: {
                     type: "object",
                     properties: {

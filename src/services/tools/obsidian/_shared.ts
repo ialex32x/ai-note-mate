@@ -179,6 +179,57 @@ export function isFailure(value: unknown): value is ToolCallResult {
     return typeof value === "object" && value !== null && (value as ToolCallResult).success === false;
 }
 
+const VAULT_PATHS_ARG_EXAMPLE = '{"paths": ["Notes/A.md"]}';
+
+/**
+ * Normalize a batched `paths` tool argument.
+ *
+ * Accepts the canonical shape (`paths: string[]`) and common LLM mistakes:
+ * - `paths` as a single string → wrapped as a one-element array
+ * - singular `path` when `paths` is absent → same wrap (legacy alias)
+ *
+ * Returns a failure `ToolCallResult` with a corrective example when the value
+ * cannot be coerced.
+ */
+export function normalizeVaultPathsArg(args: Record<string, unknown>): string[] | ToolCallResult {
+    let raw: unknown = args["paths"];
+
+    if (raw === undefined || raw === null) {
+        const singlePath = args["path"];
+        if (typeof singlePath === "string" && singlePath.length > 0) {
+            raw = [singlePath];
+        }
+    } else if (typeof raw === "string") {
+        raw = raw.length > 0 ? [raw] : [];
+    }
+
+    if (!Array.isArray(raw) || raw.length === 0) {
+        const hint =
+            typeof args["paths"] === "string"
+                ? "`paths` must be a JSON array, not a bare string."
+                : args["path"] !== undefined
+                  ? "Use `paths` (array), not `path`. Example: " + VAULT_PATHS_ARG_EXAMPLE
+                  : "`paths` must be a non-empty array.";
+        return {
+            success: false,
+            type: "text",
+            content: `${hint} Example: ${VAULT_PATHS_ARG_EXAMPLE}. For one file, use ["Notes/A.md"].`,
+        };
+    }
+
+    if (raw.some((p) => typeof p !== "string" || p.length === 0)) {
+        return {
+            success: false,
+            type: "text",
+            content:
+                "Each entry in `paths` must be a non-empty string. " +
+                `Example: ${VAULT_PATHS_ARG_EXAMPLE}.`,
+        };
+    }
+
+    return raw as string[];
+}
+
 /**
  * Validate a 1-based inclusive line range.
  *

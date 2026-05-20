@@ -122,7 +122,8 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                             minimum: 0,
                             description:
                                 "Optional Unix timestamp in milliseconds that the caller believes is the file's " +
-                                "current `mtime` (obtainable from `read_file` / `read_section` / `get_file_state`, " +
+                                "current `mtime` (obtainable from `read_file` / `read_section` / `get_metadata` / " +
+                                "`get_file_state`, " +
                                 "or chained from a prior write tool's `new_mtime`). If provided and the actual " +
                                 "on-disk `mtime` differs, the call fails — use this to guard against concurrent " +
                                 "external modifications.",
