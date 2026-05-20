@@ -30,7 +30,13 @@
  *   - thin three-sided border for definition on flat themes
  *
  * Mobile-friendly: tighter spacing, smaller icons.
+ *
+ * Accent: green/success palette — distinct from the global
+ * interactive accent so the panel reads as "task progress" rather
+ * than a warning or theme-primary chrome.
  */
+
+@session-todo-accent: var(--color-green, @text-success);
 
 .session-todo-panel-host {
     // Pure layout slot. `position: relative` + a small `z-index`
@@ -70,9 +76,9 @@
 .session-todo-panel-card() {
     padding: @spacing-sm @spacing-md;
     border: 1px solid @bg-modifier-border;
-    border-left: 3px solid @text-accent;
+    border-left: 3px solid @session-todo-accent;
     background-color: @bg-secondary;
-    background-color: ~"color-mix(in srgb, var(--interactive-accent) 6%, var(--background-secondary))";
+    background-color: color-mix(in srgb, @session-todo-accent 6%, @bg-secondary);
 }
 
 .session-todo-panel__header {
@@ -93,11 +99,11 @@
         // Re-derive the tint slightly stronger on hover so the
         // accent stays consistent instead of falling back to the
         // generic hover wash.
-        background-color: ~"color-mix(in srgb, var(--interactive-accent) 10%, var(--background-secondary))";
+        background-color: color-mix(in srgb, @session-todo-accent 10%, @bg-secondary);
     }
 
     &:focus-visible {
-        outline: 2px solid @text-accent;
+        outline: 2px solid @session-todo-accent;
         outline-offset: 1px;
     }
 }
@@ -126,7 +132,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    color: @text-accent;
+    color: @session-todo-accent;
 
     .svg-icon {
         width: 14px;
@@ -255,7 +261,7 @@
 
 .session-todo-panel__item--in_progress {
     .session-todo-panel__status {
-        color: @text-accent;
+        color: @session-todo-accent;
         animation: session-todo-panel-spin 1.4s linear infinite;
     }
 
