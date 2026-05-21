@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.2.7
+
+### What's new
+
+- **Refine prompt** — A new **Refine prompt** button (sparkle wand) sits beside **Send** in the input toolbar. Tap it to have your summarizer model rewrite the current draft into a clearer, more precise version of the same request, using the previous turn for context when helpful. Requires a summarizer profile under **Settings → Note Mate → Summarizer**.
+- **Issue tracer** — When the plugin hits a known-problem code path, it now records an in-memory diagnostic clue instead of leaving you with only a silent failure. A toolbar button appears when clues are present; open it to review details, copy a snapshot for a bug report, or clear the list. Especially useful on mobile where DevTools is not available.
+
+### Refinements
+
+- **Smarter tool & skill selection** — On-demand tools and per-turn skills are now ranked by a unified retriever that combines keyword matching with embedding similarity when configured. Separate similarity-threshold knobs for tools are gone; tune **Tool retriever: top-K** and **Skill retriever: top-K** instead. The skill trigger tester reflects the new ranking.
+- **Sharper "Next steps" chips** — Follow-up suggestion buttons are extracted more reliably from closing questions, including header-less colon lists, and code blocks in the reply no longer produce spurious chips.
+- **Stop cancels more work** — Pressing **Stop** while a reply is streaming now propagates cancellation through sub-agents, embeddings, and other long-running steps, so the session settles faster instead of finishing hidden work in the background.
+- **Insights extractor badge** — The session profile dropdown marks which profile is currently used as the insights extractor, making it easier to see what will run when you tap **Extract insights**.
+- **Input toolbar layout** — **Refine prompt** and **Send** are grouped on the right edge of the toolbar; secondary actions sit to the left of the primary send button for a clearer tweak-then-send flow.
+- **Tips popover polish** — Navigation controls inside the tips panel use dedicated icons and tighter mobile sizing for easier browsing on small screens.
+
+---
+
 ## 1.2.6
 
 ### What's new
