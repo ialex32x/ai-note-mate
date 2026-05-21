@@ -756,6 +756,7 @@ export class ContextReducer {
         rawMessages: T[],
         existingSummaries: ConversationSummary[] = [],
         options?: ContextReduceOptions,
+        signal?: AbortSignal,
     ): Promise<ContextReduceResult<T>> {
         // ── 0. Resolve effective tunables ─────────────────────────────────
         // Each option follows the "<=0 = use built-in default" convention so
@@ -1023,7 +1024,7 @@ export class ContextReducer {
             ? "[Conversation Summary]\n"
             : `[Summary of Previous Summaries (Level ${newSummaryLevel})]\n`;
 
-        const summaryContent = await summarizeConversation(modelConfig, prompt, oldMessages, newSummaryLevel);
+        const summaryContent = await summarizeConversation(modelConfig, prompt, oldMessages, newSummaryLevel, signal);
 
         // ── 9b. Summary generation failed — degrade to "no compression" ───
         // A null return means the summarizer threw; inserting an empty assistant
@@ -1853,19 +1854,31 @@ export class ContextReducer {
  *
  * @param modelConfig API config including provider type
  * @param inputMessages Messages to send to the LLM
+ * @param signal Optional AbortSignal forwarded to the underlying provider
+ *   SDK so the call can be interrupted mid-flight (e.g. when the user
+ *   hits the global stop button during a long summarization round).
+ *   Without this the surrounding `reduce()` could block the abort
+ *   response by 15–40 s on large contexts.
  * @returns The assistant's reply content
- */export function createChatCompletion(modelConfig: MinimalModelConfig, inputMessages: { role: string, content: string }[]): Promise<string> {
+ */
+export function createChatCompletion(
+    modelConfig: MinimalModelConfig,
+    inputMessages: { role: string, content: string }[],
+    signal?: AbortSignal,
+): Promise<string> {
     const providerType = modelConfig.type;
     switch (providerType) {
         case "openai":
             return createOpenAICompletion(
                 { baseURL: modelConfig.baseURL, apiKey: modelConfig.apiKey, model: modelConfig.model },
                 inputMessages,
+                signal,
             );
         case "gemini":
             return createGeminiCompletion(
                 { apiKey: modelConfig.apiKey, model: modelConfig.model },
                 inputMessages,
+                signal,
             );
         default:
             throw new Error(`Unknown provider type: ${String(providerType)}`);
@@ -1885,7 +1898,8 @@ export async function summarizeConversation(
     modelConfig: MinimalModelConfig,
     prompt: PromptConfig,
     messages: HistoryMessage[],
-    level: number = 1
+    level: number = 1,
+    signal?: AbortSignal,
 ): Promise<string | null> {
     let userInstruction: string;
 
@@ -1910,7 +1924,7 @@ export async function summarizeConversation(
 
     try {
         // console.log(`[ContextReducer] Generating summary (level ${level}) for ${messages.length} messages...`);
-        const summary = await createChatCompletion(modelConfig, summarizerMessages);
+        const summary = await createChatCompletion(modelConfig, summarizerMessages, signal);
 
         // console.log(`[ContextReducer] Generated summary (level ${level}):`, summary);
         const trimmed = summary.trim();
@@ -1920,6 +1934,13 @@ export async function summarizeConversation(
         }
         return trimmed;
     } catch (e) {
+        // User-initiated aborts must propagate, NOT degrade to the
+        // "summarization failed → send raw context" fallback below —
+        // the whole turn is being torn down, so silently returning
+        // null here would just defer the abort response until the
+        // next aborted step trips a check. Re-throw so the calling
+        // `reduce()` / chat-stream loop unwinds immediately.
+        if (e instanceof DOMException && e.name === 'AbortError') throw e;
         console.error("[ContextReducer] Summarization failed:", e);
         console.warn("[ContextReducer] Returning null to signal fallback (no-compression) to the caller");
         return null;

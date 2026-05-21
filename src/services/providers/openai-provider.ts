@@ -348,6 +348,7 @@ function openaiAudioFormat(mime: string): string | null {
 export async function createOpenAICompletion(
     config: { baseURL?: string; apiKey: string; model: string },
     messages: { role: string; content: string }[],
+    signal?: AbortSignal,
 ): Promise<string> {
     const client = new OpenAI({
         baseURL: config.baseURL || "https://api.openai.com/v1",
@@ -355,10 +356,18 @@ export async function createOpenAICompletion(
         dangerouslyAllowBrowser: true,
     });
 
-    const response = await client.chat.completions.create({
-        model: config.model,
-        messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-    });
+    // Forward the AbortSignal through the SDK's request options so the
+    // user can interrupt long-running auxiliary calls (e.g. context
+    // summarization) without waiting for the network round-trip to
+    // finish. The SDK throws an AbortError on abort which the caller
+    // is expected to surface or re-throw as appropriate.
+    const response = await client.chat.completions.create(
+        {
+            model: config.model,
+            messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
+        },
+        { signal },
+    );
 
     return response.choices[0]?.message?.content || "";
 }
@@ -370,6 +379,7 @@ export async function createOpenAICompletion(
 export async function createOpenAIEmbeddings(
     config: { baseURL?: string; apiKey: string; model: string },
     texts: string[],
+    signal?: AbortSignal,
 ): Promise<number[][]> {
     const client = new OpenAI({
         baseURL: config.baseURL || "https://api.openai.com/v1",
@@ -377,10 +387,17 @@ export async function createOpenAIEmbeddings(
         dangerouslyAllowBrowser: true,
     });
 
-    const response = await client.embeddings.create({
-        model: config.model,
-        input: texts,
-    });
+    // Forward the AbortSignal so embed calls invoked from the per-turn
+    // tool / skill / memory shortlisters can be interrupted mid-flight
+    // by the global stop button — without this the wait spans the full
+    // network round-trip even after the user cancelled.
+    const response = await client.embeddings.create(
+        {
+            model: config.model,
+            input: texts,
+        },
+        { signal },
+    );
 
     // Sort by index to ensure correct order (API may return in different order)
     const sorted = response.data.sort((a, b) => a.index - b.index);

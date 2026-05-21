@@ -29,13 +29,14 @@ function chunk<T>(arr: readonly T[], size: number): T[][] {
 function dispatchEmbeddings(
     config: MinimalModelConfig,
     texts: string[],
+    signal?: AbortSignal,
 ): Promise<number[][]> {
     const providerType = config.type;
     switch (providerType) {
         case "openai":
-            return createOpenAIEmbeddings(config, texts);
+            return createOpenAIEmbeddings(config, texts, signal);
         case "gemini":
-            return createGeminiEmbeddings(config, texts);
+            return createGeminiEmbeddings(config, texts, signal);
         default:
             throw new Error(`Unknown provider type for embedding: ${String(providerType)}`);
     }
@@ -51,11 +52,17 @@ function dispatchEmbeddings(
  *
  * @param config Provider configuration including API key, model, etc.
  * @param texts  Array of text strings to embed
+ * @param signal Optional AbortSignal forwarded to the underlying provider
+ *   SDK so the embedding HTTP call(s) can be cancelled mid-flight when
+ *   the caller's surrounding turn aborts. Without this, an already-
+ *   aborted turn still pays the full embedding round-trip before the
+ *   next signal check fires.
  * @returns      Array of embedding vectors in the same order as `texts`
  */
 export async function createEmbeddings(
     config: MinimalModelConfig,
     texts: string[],
+    signal?: AbortSignal,
 ): Promise<number[][]> {
     if (texts.length === 0) return [];
     const chunks = texts.length <= EMBEDDING_BATCH_SIZE
@@ -66,11 +73,11 @@ export async function createEmbeddings(
     );
 
     if (chunks.length === 1) {
-        return dispatchEmbeddings(config, chunks[0]!);
+        return dispatchEmbeddings(config, chunks[0]!, signal);
     }
 
     const chunkResults = await Promise.all(
-        chunks.map((c) => dispatchEmbeddings(config, c)),
+        chunks.map((c) => dispatchEmbeddings(config, c, signal)),
     );
 
     const out: number[][] = new Array<number[]>(texts.length);

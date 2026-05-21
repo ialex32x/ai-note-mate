@@ -207,11 +207,17 @@ export class SubAgent {
              * Optional confirmation callback forwarded from the main agent.
              * When provided and a sub-agent tool has `requiresConfirmation: true`,
              * the user will be prompted via the main agent's UI before execution.
+             *
+             * Receives the sub-agent's per-execution AbortSignal as `args.signal`
+             * so the handler can reject the confirmation promise when the user
+             * cancels the turn mid-dialog — see `ChatStreamConfig.onConfirmToolCall`
+             * for the same contract on the main agent's side.
              */
             onConfirmToolCall?: (args: {
                 toolName: string;
                 toolArgs: Record<string, unknown>;
                 messageId: string;
+                signal?: AbortSignal;
             }) => Promise<boolean>;
             /**
              * Per-dispatch exchange store. When provided, the sub-agent's
@@ -276,132 +282,159 @@ export class SubAgent {
         // (ChatStream.sessionTokenUsage is cumulative across reuses)
         const tokenBefore: TokenUsage = { ...chatStream.sessionTokenUsage };
 
+        // All post-prompt work (token accounting, optional LLM
+        // summarization of the result, exchange-store auto-fill) lives
+        // inside the `try` below so the `finally` can guarantee per-
+        // execution state is cleared on every exit path — including
+        // when `_summarizeResult` propagates an AbortError or
+        // `chatStream.prompt` throws a non-Abort failure. Pre-existing
+        // behaviour leaked `_chatStream` / `_abortController` /
+        // `_currentExec*` on the throw path, which was harmless for
+        // most users (the next `execute()` overwrites them all) but
+        // tripped diagnostics that asserted clean idle state between
+        // dispatches.
         try {
-            await chatStream.prompt(userMessage, {
-                provider: options.provider,
-                thinkingLevel: options.thinkingLevel,
-                allowedCapabilities: options.allowedCapabilities,
-                summarizer: options.summarizer,
-                embedding: options.embedding,
-                embeddingFilter: options.embeddingFilter,
-            });
-        } catch (err) {
-            if (err instanceof Error && err.name === 'AbortError') {
-                aborted = true;
-            } else {
-                // Re-throwing here skips the normal cleanup further down,
-                // but `_currentExchangeStore` MUST be cleared on every exit
-                // so the next dispatch's exchange tool calls don't see a
-                // stale store. Clear it before propagating.
-                this._currentExchangeStore = null;
-                throw err;
+            try {
+                await chatStream.prompt(userMessage, {
+                    provider: options.provider,
+                    thinkingLevel: options.thinkingLevel,
+                    allowedCapabilities: options.allowedCapabilities,
+                    summarizer: options.summarizer,
+                    embedding: options.embedding,
+                    embeddingFilter: options.embeddingFilter,
+                });
+            } catch (err) {
+                if (err instanceof Error && err.name === 'AbortError') {
+                    aborted = true;
+                } else {
+                    throw err;
+                }
             }
+
+            const endTime = Date.now();
+            const messages = [...chatStream.messages];
+            // Compute delta token usage for THIS execution only
+            // (sessionTokenUsage is cumulative; subtracting the snapshot gives the delta)
+            const tokenAfter = chatStream.sessionTokenUsage;
+            const tokenUsage: TokenUsage = {
+                promptTokens: tokenAfter.promptTokens - tokenBefore.promptTokens,
+                completionTokens: tokenAfter.completionTokens - tokenBefore.completionTokens,
+                totalTokens: tokenAfter.totalTokens - tokenBefore.totalTokens,
+            };
+
+            // Extract the final assistant message content
+            const assistantMessages = messages.filter(m => m.role === 'assistant');
+            const fullContent = assistantMessages.length > 0
+                ? assistantMessages[assistantMessages.length - 1]!.content
+                : '';
+
+            // Build execution log
+            this._executionLog = {
+                agentName: this.name,
+                task,
+                messages,
+                toolCalls: [...this._toolCallSummaries],
+                startTime,
+                endTime,
+                tokenUsage,
+                aborted,
+            };
+
+            // Determine if result needs summarization
+            const resultMaxTokens = this._config.resultMaxTokens ?? 10000;
+            const estimatedTokens = estimateTokens(fullContent);
+            let summary: string;
+
+            if (aborted) {
+                // console.log(`[SubAgent:${this.name}] Aborted after ${endTime - startTime}ms, partial content: ${fullContent.length} chars`);
+                summary = `[Sub-agent "${this.name}" was aborted. Partial result: ${safeSliceHead(fullContent, 200)}...]`;
+            } else if (estimatedTokens > resultMaxTokens) {
+                // Result is too large — summarize via LLM if summarizer is available
+                // console.log(`[SubAgent:${this.name}] Result exceeds threshold (${estimatedTokens} tokens > ${resultMaxTokens}), attempting LLM summarization...`);
+                summary = await this._summarizeResult(
+                    fullContent,
+                    this._toolCallSummaries,
+                    options.summarizer,
+                    this._abortController?.signal,
+                );
+            } else {
+                // console.log(`[SubAgent:${this.name}] Result within threshold (${estimatedTokens} tokens <= ${resultMaxTokens}), returning as-is`);
+                summary = fullContent;
+            }
+
+            // Defensive sanitization: the summary will be embedded as a tool_result
+            // content string in the main agent's request body. Some OpenAI-compatible
+            // gateways reject lone UTF-16 surrogates with errors like
+            // "unexpected end of hex escape". Strip any here as a final guard,
+            // regardless of where they came from (streaming chunk splits, upstream
+            // truncation, etc.).
+            summary = stripLoneSurrogates(summary);
+
+            // Auto-fill safety net for the "silent put" case.
+            //
+            // Some models treat `exchange.put` as the final action of the turn and
+            // end without producing a text reply. That leaves `summary === ""` here
+            // and `payload.text === ""` in the envelope the orchestrator builds.
+            // Empirically the main agent's LLM then mis-reads the empty `text` as
+            // "sub-agent failed / returned nothing" and ignores the `result` field
+            // sitting right next to it, even though the prompt tells it to prefer
+            // `result`. Synthesize a brief stand-in here so the channel always
+            // carries a positive signal when structured data IS available.
+            //
+            // We intentionally:
+            //  - skip the abort path (its synthetic "[aborted...]" summary already
+            //    explains the empty content),
+            //  - require at least one NEW key (so a run that only consumed
+            //    pre-loaded inputs without writing anything back stays empty,
+            //    which is the truthful signal),
+            //  - leave `fullContent` and the ChatStream message history untouched,
+            //    so the UI's empty-bubble hide path (bubble-renderer.ts) keeps
+            //    working — only the main-agent-facing summary changes.
+            if (!aborted && !summary.trim() && options.exchangeStore) {
+                const synthesized = this._synthesizeExchangeSummary(
+                    options.exchangeStore,
+                    initialExchangeKeys,
+                );
+                if (synthesized) summary = synthesized;
+            }
+
+            return {
+                summary,
+                fullContent,
+                toolCalls: [...this._toolCallSummaries],
+                tokenUsage,
+                aborted,
+            };
+        } finally {
+            // Per-dispatch cleanup runs on every exit — normal return,
+            // AbortError from `_summarizeResult`, or a non-Abort throw
+            // out of `chatStream.prompt`. `_reusableChatStream` is
+            // intentionally kept; only the per-execution references
+            // are cleared so the next dispatch starts with a clean
+            // slate. See `subAgent.abort()` for the cascading abort.
+            this._chatStream = null;
+            this._abortController = null;
+            this._currentExecIds = null;
+            this._currentExecParentToolCallId = undefined;
+            this._currentExecMessageHandler = undefined;
+            this._currentExecConfirmToolCall = undefined;
+            this._currentExecToolCallEndHandler = undefined;
+            this._currentExchangeStore = null;
         }
-
-        const endTime = Date.now();
-        const messages = [...chatStream.messages];
-        // Compute delta token usage for THIS execution only
-        // (sessionTokenUsage is cumulative; subtracting the snapshot gives the delta)
-        const tokenAfter = chatStream.sessionTokenUsage;
-        const tokenUsage: TokenUsage = {
-            promptTokens: tokenAfter.promptTokens - tokenBefore.promptTokens,
-            completionTokens: tokenAfter.completionTokens - tokenBefore.completionTokens,
-            totalTokens: tokenAfter.totalTokens - tokenBefore.totalTokens,
-        };
-
-        // Extract the final assistant message content
-        const assistantMessages = messages.filter(m => m.role === 'assistant');
-        const fullContent = assistantMessages.length > 0
-            ? assistantMessages[assistantMessages.length - 1]!.content
-            : '';
-
-        // Build execution log
-        this._executionLog = {
-            agentName: this.name,
-            task,
-            messages,
-            toolCalls: [...this._toolCallSummaries],
-            startTime,
-            endTime,
-            tokenUsage,
-            aborted,
-        };
-
-        // Determine if result needs summarization
-        const resultMaxTokens = this._config.resultMaxTokens ?? 10000;
-        const estimatedTokens = estimateTokens(fullContent);
-        let summary: string;
-
-        if (aborted) {
-            // console.log(`[SubAgent:${this.name}] Aborted after ${endTime - startTime}ms, partial content: ${fullContent.length} chars`);
-            summary = `[Sub-agent "${this.name}" was aborted. Partial result: ${safeSliceHead(fullContent, 200)}...]`;
-        } else if (estimatedTokens > resultMaxTokens) {
-            // Result is too large — summarize via LLM if summarizer is available
-            // console.log(`[SubAgent:${this.name}] Result exceeds threshold (${estimatedTokens} tokens > ${resultMaxTokens}), attempting LLM summarization...`);
-            summary = await this._summarizeResult(fullContent, this._toolCallSummaries, options.summarizer);
-        } else {
-            // console.log(`[SubAgent:${this.name}] Result within threshold (${estimatedTokens} tokens <= ${resultMaxTokens}), returning as-is`);
-            summary = fullContent;
-        }
-
-        // Defensive sanitization: the summary will be embedded as a tool_result
-        // content string in the main agent's request body. Some OpenAI-compatible
-        // gateways reject lone UTF-16 surrogates with errors like
-        // "unexpected end of hex escape". Strip any here as a final guard,
-        // regardless of where they came from (streaming chunk splits, upstream
-        // truncation, etc.).
-        summary = stripLoneSurrogates(summary);
-
-        // Auto-fill safety net for the "silent put" case.
-        //
-        // Some models treat `exchange.put` as the final action of the turn and
-        // end without producing a text reply. That leaves `summary === ""` here
-        // and `payload.text === ""` in the envelope the orchestrator builds.
-        // Empirically the main agent's LLM then mis-reads the empty `text` as
-        // "sub-agent failed / returned nothing" and ignores the `result` field
-        // sitting right next to it, even though the prompt tells it to prefer
-        // `result`. Synthesize a brief stand-in here so the channel always
-        // carries a positive signal when structured data IS available.
-        //
-        // We intentionally:
-        //  - skip the abort path (its synthetic "[aborted...]" summary already
-        //    explains the empty content),
-        //  - require at least one NEW key (so a run that only consumed
-        //    pre-loaded inputs without writing anything back stays empty,
-        //    which is the truthful signal),
-        //  - leave `fullContent` and the ChatStream message history untouched,
-        //    so the UI's empty-bubble hide path (bubble-renderer.ts) keeps
-        //    working — only the main-agent-facing summary changes.
-        if (!aborted && !summary.trim() && options.exchangeStore) {
-            const synthesized = this._synthesizeExchangeSummary(
-                options.exchangeStore,
-                initialExchangeKeys,
-            );
-            if (synthesized) summary = synthesized;
-        }
-
-        // Clean up active references (but keep _reusableChatStream for reuse)
-        this._chatStream = null;
-        this._abortController = null;
-        this._currentExecIds = null;
-        this._currentExecParentToolCallId = undefined;
-        this._currentExecMessageHandler = undefined;
-        this._currentExecConfirmToolCall = undefined;
-        this._currentExecToolCallEndHandler = undefined;
-        this._currentExchangeStore = null;
-
-        return {
-            summary,
-            fullContent,
-            toolCalls: [...this._toolCallSummaries],
-            tokenUsage,
-            aborted,
-        };
     }
 
     /** Abort the current execution */
     abort(): void {
+        // Abort both the inner ChatStream (so its in-flight provider /
+        // tool work unwinds) AND our own controller (so the
+        // post-prompt result-summarization step below can observe the
+        // same signal and bail out). Without aborting `_abortController`,
+        // a sub-agent that finished its main loop just before the user
+        // hit stop would still happily kick off `_summarizeResult` —
+        // potentially another 15–40 s of summarizer LLM work the user
+        // already implicitly cancelled.
         this._chatStream?.abort();
+        this._abortController?.abort();
     }
 
     /**
@@ -477,6 +510,7 @@ export class SubAgent {
         fullContent: string,
         toolCalls: ToolCallSummary[],
         summarizer?: MinimalModelConfig,
+        signal?: AbortSignal,
     ): Promise<string> {
         // Try LLM summarization first
         if (summarizer) {
@@ -500,7 +534,7 @@ export class SubAgent {
                 ];
 
                 // console.log(`[SubAgent:${this.name}] Sending ${estimateTokens(fullContent)} tokens to LLM summarizer...`);
-                const llmSummary = await createChatCompletion(summarizer, messages);
+                const llmSummary = await createChatCompletion(summarizer, messages, signal);
 
                 if (llmSummary && llmSummary.trim().length > 0) {
                     // console.log(`[SubAgent:${this.name}] LLM summarization complete: ${estimateTokens(fullContent)} → ${estimateTokens(llmSummary)} tokens`);
@@ -509,6 +543,13 @@ export class SubAgent {
 
                 console.warn(`[SubAgent:${this.name}] LLM summarizer returned empty result, falling back to truncation`);
             } catch (err) {
+                // Propagate user-initiated aborts: the surrounding
+                // `execute()` flow expects AbortError to bubble up so
+                // the orchestrator can unwind cleanly. Without this
+                // re-throw we'd silently fall back to truncation and
+                // ship a "completed" sub-agent result for a turn the
+                // user already cancelled.
+                if (err instanceof DOMException && err.name === 'AbortError') throw err;
                 console.error(`[SubAgent:${this.name}] LLM summarization failed, falling back to truncation:`, err);
             }
         } else {

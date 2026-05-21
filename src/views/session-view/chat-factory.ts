@@ -146,8 +146,18 @@ export interface ChatAgentCallbacks {
     onContextCompressed(): void;
     onEmergencyShrink(): void;
     onSubAgentMessageUpdate(agentName: string, msg: ChatMessage): void;
-    /** Registered only when tool confirmation is in "always" mode. */
-    onConfirmToolCall?: (messageId: string) => Promise<boolean>;
+    /**
+     * Registered only when tool confirmation is in "always" mode.
+     *
+     * The optional `signal` is the current chat turn's AbortSignal.
+     * Implementations that block on user input (e.g. the in-bubble
+     * Allow / Reject buttons) MUST observe this signal and reject the
+     * returned promise with an `AbortError` (DOMException) on abort —
+     * otherwise the chat-stream loop deadlocks awaiting a user decision
+     * that has been implicitly cancelled by the global stop button.
+     * See `runtime-factory.ts` for the canonical implementation.
+     */
+    onConfirmToolCall?: (messageId: string, signal?: AbortSignal) => Promise<boolean>;
     /** Returns the list of tools that can change dynamically per turn. */
     getDynamicTools(): ReturnType<typeof createBuiltinTools>;
     /**
@@ -337,11 +347,11 @@ export function createChatAgent(
         // pending → allowed flow — otherwise the UI would briefly render
         // an Allow button even though no user approval is actually needed.
         ...(plugin.settings.toolConfirmMode === 'always' && callbacks.onConfirmToolCall ? {
-            onConfirmToolCall: ({ messageId }: { messageId: string }) => {
+            onConfirmToolCall: ({ messageId, signal }: { messageId: string; signal?: AbortSignal }) => {
                 if (!callbacks.generationMatches()) {
                     return Promise.resolve(true);
                 }
-                return callbacks.onConfirmToolCall!(messageId);
+                return callbacks.onConfirmToolCall!(messageId, signal);
             },
         } : {}),
         onContextCompressed: () => {

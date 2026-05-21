@@ -198,14 +198,46 @@ export function createSessionRuntime(
                 console.warn('[SessionRuntime] emergency shrink triggered for the first time in this session');
             }
         },
-        onConfirmToolCall: (messageId: string) => {
+        onConfirmToolCall: (messageId: string, signal?: AbortSignal) => {
             // Build a promise pinned to the runtime's pending map. The
             // chat awaits this promise; if no view is attached the
             // promise simply doesn't resolve until the user later
             // re-attaches and decides. This is the explicit, intended
             // back-pressure mechanism for background tool confirmation.
-            return new Promise<boolean>((resolve) => {
-                runtime.enqueueConfirmation(messageId, resolve);
+            //
+            // The chat-stream forwards its per-turn AbortSignal here so
+            // we can break the await when the user hits the global stop
+            // button instead of clicking Allow / Reject. Without this,
+            // the surrounding `await onConfirmToolCall(...)` blocks
+            // forever — `abort()` flips `signal.aborted` but the promise
+            // never settles, so `isBusy` stays true and the UI shows
+            // ⏹ but nothing ever moves. See chat-stream.ts for the
+            // matching contract on `ChatStreamConfig.onConfirmToolCall`.
+            return new Promise<boolean>((resolve, reject) => {
+                if (signal?.aborted) {
+                    // Already aborted before we even queued; bail without
+                    // touching `pendingConfirmations` so we never leak an
+                    // entry that nothing will ever resolve.
+                    reject(new DOMException('Aborted', 'AbortError'));
+                    return;
+                }
+                const onAbort = () => {
+                    // Drop the queued resolver so future re-renders don't
+                    // see a stale pending entry, and unblock the awaiting
+                    // chat-stream with an AbortError it already knows how
+                    // to clean up around the tool_call bubble.
+                    runtime.pendingConfirmations.delete(messageId);
+                    reject(new DOMException('Aborted', 'AbortError'));
+                };
+                signal?.addEventListener('abort', onAbort, { once: true });
+                runtime.enqueueConfirmation(messageId, (approved) => {
+                    // Normal resolution path — detach the abort listener
+                    // so a later abort on the same (now-idle) signal
+                    // cannot retroactively try to delete the (already
+                    // removed) map entry or double-settle the promise.
+                    signal?.removeEventListener('abort', onAbort);
+                    resolve(approved);
+                });
             });
         },
     });

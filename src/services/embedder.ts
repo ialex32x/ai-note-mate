@@ -186,7 +186,13 @@ export class Embedder {
             }
             let fresh: number[][];
             try {
-                fresh = await createEmbeddings(this.config, missTexts);
+                // Forward signal so the underlying provider HTTP call(s)
+                // can be cancelled mid-flight, not just checked
+                // before/after. Without this the (cache-miss) embedding
+                // round-trip blocks the abort response by its full
+                // duration even when the surrounding turn has already
+                // been cancelled by the user.
+                fresh = await createEmbeddings(this.config, missTexts, signal);
             } catch (err) {
                 // Do not mark the service as unavailable for user-initiated aborts.
                 if (!(err instanceof DOMException && err.name === 'AbortError')) {

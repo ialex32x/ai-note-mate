@@ -409,11 +409,21 @@ export interface ChatStreamConfig {
      * Called when a tool with `requiresConfirmation` is about to execute.
      * Should return a Promise resolving to true (approved) or false (rejected).
      * If not provided, tools requiring confirmation are auto-approved.
+     *
+     * The optional `signal` is the current turn's AbortSignal. Implementers
+     * that block on user input (e.g. an in-UI Allow / Reject dialog) MUST
+     * observe this signal and reject the returned promise with an
+     * `AbortError` (DOMException) when the user aborts mid-confirmation —
+     * otherwise the prompt loop deadlocks waiting on a decision that the
+     * user has already implicitly cancelled by hitting "stop". Implementers
+     * are also responsible for cleaning up any UI / map entries they
+     * registered for this message id when handling abort.
      */
     onConfirmToolCall?: (args: {
         toolName: string;
         toolArgs: Record<string, unknown>;
         messageId: string;
+        signal?: AbortSignal;
     }) => Promise<boolean>;
 
     /**
@@ -1220,6 +1230,22 @@ export class ChatStream implements IChatAgent {
 
             // Tool-call loop: keep requesting until no more tool calls
             while (true) {
+                // Per-iteration abort guard. The downstream work in this
+                // iteration — embedding filter, context reduction, provider
+                // stream creation — each propagates the abort signal on
+                // their own, but `await`-ing through them between user
+                // input and the actual provider call still costs a few
+                // hundred ms even on the happy path. Bailing out here lets
+                // a user-initiated abort that lands between iterations
+                // unwind immediately instead of paying for those steps
+                // (and lets the abort visibly take effect before the next
+                // provider call's response window). The deeper checks
+                // remain so a mid-iteration abort during the in-flight
+                // embed / reduce / stream still unwinds promptly.
+                if (!this._abortController || this._abortController.signal.aborted) {
+                    throw new DOMException("Aborted", "AbortError");
+                }
+
                 // Re-run embedding-based filtering on every iteration so the
                 // on-demand tool set reflects the model's current direction.
                 // Tool descriptions are cached inside the shared Embedder, so
@@ -1234,6 +1260,7 @@ export class ChatStream implements IChatAgent {
                     filterQuery,
                     capabilityFilteredTools,
                     options.embeddingFilter,
+                    this._abortController?.signal,
                 );
 
                 // Re-add any sticky on-demand tools the embedding filter
@@ -1284,6 +1311,14 @@ export class ChatStream implements IChatAgent {
                             // mode doesn't supply a store.
                             artifactStore: this._config.getArtifactStore?.() ?? undefined,
                         },
+                        // Forward the per-turn AbortSignal so the
+                        // (potentially slow, 15–40 s) summarizer LLM
+                        // call can be interrupted by the global stop
+                        // button. Without this, the abort response is
+                        // delayed by the full summarization round-trip
+                        // before the next provider call observes the
+                        // already-aborted signal and unwinds.
+                        this._abortController?.signal,
                     );
                     messagesToSend = reduceResult.messagesToSend;
                     // console.log("Context reduced", reduceResult.compressed);
@@ -1566,6 +1601,7 @@ export class ChatStream implements IChatAgent {
                                         toolName,
                                         toolArgs,
                                         messageId: toolCallMessage.id,
+                                        signal: this._abortController?.signal,
                                     });
                                     toolCallMessage.confirmationState = approved ? 'allowed' : 'rejected';
                                     // Notify the UI so it can transition from the
@@ -1614,10 +1650,29 @@ export class ChatStream implements IChatAgent {
                                     // the model never actually saw a result either.
                                     // See `renderToolCallContent` for the
                                     // `if (msg.toolCallResult)` gate this restores.
+                                    //
+                                    // Distinguish two abort sub-cases by looking at
+                                    // confirmationState: when it's still 'pending',
+                                    // the user aborted while the Allow / Reject
+                                    // dialog was up — the tool never actually ran,
+                                    // so the bubble should say so instead of
+                                    // claiming an "interrupted execution" that
+                                    // never started. We also clear the pending
+                                    // state itself so the UI doesn't try to
+                                    // re-render the dialog when this message is
+                                    // restored from history later (streaming=false
+                                    // already suppresses it on the live render,
+                                    // but persisted snapshots round-trip the field).
+                                    const wasAwaitingConfirm = toolCallMessage.confirmationState === 'pending';
+                                    if (wasAwaitingConfirm) {
+                                        toolCallMessage.confirmationState = 'rejected';
+                                    }
                                     this._finalizeAbortedToolCallMessage(
                                         toolCallMessage,
                                         Date.now() - toolCallStartTime,
-                                        '[Aborted during tool execution: the tool was interrupted before it could return a result.]',
+                                        wasAwaitingConfirm
+                                            ? '[Aborted before confirmation: the tool was waiting for user approval and did not run.]'
+                                            : '[Aborted during tool execution: the tool was interrupted before it could return a result.]',
                                     );
                                     throw err;
                                 }
@@ -1936,6 +1991,7 @@ export class ChatStream implements IChatAgent {
         query: string,
         tools: RegisteredTool[],
         filterOpts?: EmbeddingFilterOptions,
+        signal?: AbortSignal,
     ): Promise<RegisteredTool[]> {
         if (!config) return tools;
         if (isQueryTooShort(query)) return tools;
@@ -1967,8 +2023,12 @@ export class ChatStream implements IChatAgent {
             // mixes name + description (or `embeddingDescription` override, see
             // `RegisteredTool.embeddingDescription`) + parameter names so the
             // ranking has more than just the description to bite on.
+            //
+            // Forwarding `signal` lets the embedding HTTP call abort when the
+            // user hits stop mid-turn instead of the abort response waiting
+            // for the (cache-miss) request to complete.
             const texts = [query, ...ondemand.map(buildToolEmbeddingText)];
-            const vectors = await embedder.embed(texts);
+            const vectors = await embedder.embed(texts, signal);
             const userEmbedding = vectors[0]!;
             const ondemandEmbeddings = vectors.slice(1);
 
@@ -2018,6 +2078,13 @@ export class ChatStream implements IChatAgent {
             );
             return [...always, ...results];
         } catch (err) {
+            // User-initiated aborts must propagate — without this re-throw
+            // the catch would silently fall back to "full tool set" and the
+            // prompt loop would happily move on to the next provider call
+            // (which then has to detect the abort itself, costing a full
+            // tool-schema serialisation + a provider round-trip's worth of
+            // latency before the user finally sees the abort take effect).
+            if (err instanceof DOMException && err.name === 'AbortError') throw err;
             // The embedder tracks its own status (see Embedder.status); we just
             // fall back to the full tool set here.
             console.error("failed to call embedding, fallback to full tool set", err);
@@ -2070,6 +2137,20 @@ export class ChatStream implements IChatAgent {
         let thinkingSkips = 0;
 
         for await (const chunk of stream) {
+            // Per-chunk abort guard. The provider SDK is responsible
+            // for surfacing the abort (OpenAI throws AbortError from
+            // the iterator; Gemini's adapter ends silently), but the
+            // exact moment when that happens is provider-dependent —
+            // some emit a few queued chunks after the signal fires
+            // before the iterator notices. Bailing here lets a mid-
+            // stream abort drop those tail chunks immediately rather
+            // than appending them to a message the user already
+            // cancelled. The outer prompt() catch treats AbortError as
+            // the normal abort path.
+            if (this._abortController?.signal.aborted) {
+                throw new DOMException("Aborted", "AbortError");
+            }
+
             chunkCount++;
             finishReason = chunk.finishReason ?? null;
 

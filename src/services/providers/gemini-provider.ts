@@ -381,6 +381,7 @@ function geminiFinishReasonToString(reason: string): string | null {
 export async function createGeminiCompletion(
     config: { apiKey: string; model: string },
     messages: { role: string; content: string }[],
+    signal?: AbortSignal,
 ): Promise<string> {
     const client = new GoogleGenAI({ apiKey: config.apiKey });
 
@@ -398,12 +399,19 @@ export async function createGeminiCompletion(
         }
     }
 
+    // Forward the AbortSignal via the SDK's `abortSignal` top-level
+    // option (same channel the streaming variant uses above). Keeps
+    // long-running auxiliary calls — context summarization being the
+    // big one — interruptible from the global stop button instead of
+    // blocking the abort response until Gemini returns.
     const response = await client.models.generateContent({
         model: config.model,
         contents: nonSystemMessages,
         config: {
             systemInstruction: systemInstruction,
         },
+        // @ts-expect-error -- abortSignal is supported but not yet in the type definitions
+        abortSignal: signal,
     });
 
     return response.text || "";
@@ -444,16 +452,26 @@ export function extractGeminiToolCalls(
 export async function createGeminiEmbeddings(
     config: { apiKey: string; model: string },
     texts: string[],
+    signal?: AbortSignal,
 ): Promise<number[][]> {
     const client = new GoogleGenAI({ apiKey: config.apiKey });
 
     const embeddings: number[][] = [];
 
-    // Gemini embedding API processes one text at a time
+    // Gemini embedding API processes one text at a time. Check abort
+    // BEFORE each request (cheap) and also forward via `abortSignal`
+    // (same channel the streaming / completion paths use) so the
+    // in-flight HTTP call itself can be cancelled by the SDK rather
+    // than running to completion before we notice the abort.
     for (const text of texts) {
+        if (signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
         const response = await client.models.embedContent({
             model: config.model,
             contents: text,
+            // @ts-expect-error -- abortSignal is supported but not yet in the type definitions
+            abortSignal: signal,
         });
 
         if (response.embeddings && response.embeddings.length > 0) {
