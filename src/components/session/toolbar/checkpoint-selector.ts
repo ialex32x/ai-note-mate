@@ -4,6 +4,7 @@ import { DropdownManager } from '../dropdown-manager';
 import { CheckpointActionConfirmModal } from '../../../modals/checkpoint-action-confirm-modal';
 import type { SessionRuntime } from '../../../services/session-runtime';
 import type { Checkpoint, CheckpointFileEntry } from '../../../services/vault';
+import { recordIssue } from '../../../services/diagnostics/issue-tracer';
 
 /**
  * Per-session input-row dropdown that exposes the session's
@@ -293,6 +294,14 @@ export function createCheckpointSelector(
                     }
                     void runtime.checkpointStore.accept(cp.id).catch((err: unknown) => {
                         console.error('[checkpoint-selector] accept failed', err);
+                        recordIssue({
+                            severity: 'error',
+                            source: 'checkpoint-selector',
+                            code: 'checkpoint-action-failed',
+                            message: `Accepting checkpoint failed: ${errorMessage(err)}`,
+                            context: { scope: 'accept-single', checkpointId: cp.id },
+                            error: err,
+                        });
                         new Notice(t('view.checkpointActionFailed'));
                     });
                 })();
@@ -319,6 +328,14 @@ export function createCheckpointSelector(
                     }
                     void runtime.checkpointStore.discard(cp.id).catch((err: unknown) => {
                         console.error('[checkpoint-selector] discard failed', err);
+                        recordIssue({
+                            severity: 'error',
+                            source: 'checkpoint-selector',
+                            code: 'checkpoint-action-failed',
+                            message: `Discarding checkpoint failed: ${errorMessage(err)}`,
+                            context: { scope: 'discard-single', checkpointId: cp.id },
+                            error: err,
+                        });
                         new Notice(t('view.checkpointActionFailed'));
                     });
                 })();
@@ -380,6 +397,14 @@ export function createCheckpointSelector(
             }
             void store.accept(target.id).catch((err: unknown) => {
                 console.error('[checkpoint-selector] accept all failed', err);
+                recordIssue({
+                    severity: 'error',
+                    source: 'checkpoint-selector',
+                    code: 'checkpoint-action-failed',
+                    message: `Accept-all failed: ${errorMessage(err)}`,
+                    context: { scope: 'accept-all', checkpointId: target.id },
+                    error: err,
+                });
                 new Notice(t('view.checkpointActionFailed'));
             });
         })();
@@ -407,6 +432,14 @@ export function createCheckpointSelector(
             }
             void store.discard(target.id).catch((err: unknown) => {
                 console.error('[checkpoint-selector] discard all failed', err);
+                recordIssue({
+                    severity: 'error',
+                    source: 'checkpoint-selector',
+                    code: 'checkpoint-action-failed',
+                    message: `Discard-all failed: ${errorMessage(err)}`,
+                    context: { scope: 'discard-all', checkpointId: target.id },
+                    error: err,
+                });
                 new Notice(t('view.checkpointActionFailed'));
             });
         })();
@@ -445,4 +478,9 @@ export function createCheckpointSelector(
             runtime = undefined;
         },
     };
+}
+
+function errorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    return String(err);
 }

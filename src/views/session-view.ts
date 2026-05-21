@@ -39,6 +39,7 @@ import {
     createCapabilitiesSelector, type CapabilitiesSelectorHandle,
     createCheckpointSelector, type CheckpointSelectorHandle,
     createTipsButton, type TipsButtonHandle,
+    createIssueTracerButton, type IssueTracerButtonHandle,
 } from '../components/session/toolbar';
 import type { TipSessionViewAdapter } from '../services/tips';
 import { CMInput } from '../components/cm-input';
@@ -137,6 +138,7 @@ export class SessionView extends ItemView {
     private capabilitiesSelector!: CapabilitiesSelectorHandle;
     private checkpointSelector!: CheckpointSelectorHandle;
     private tipsButton: TipsButtonHandle | null = null;
+    private issueTracerButton: IssueTracerButtonHandle | null = null;
     /** Settings-change listener that keeps the capabilities toolbar in sync. */
     private onSettingsChangedForCapabilities: (() => void) | null = null;
     /**
@@ -745,6 +747,11 @@ export class SessionView extends ItemView {
             };
             this.plugin.onSettingsChange(this.onSettingsChangedForCapabilities);
 
+            // ── Issue tracer button (mounted before Tips so Tips stays last) ──
+            // The wrapper hides itself via CSS when zero issues are recorded,
+            // so it costs no real estate during healthy sessions.
+            this.issueTracerButton = createIssueTracerButton(thinkingRow, this.app);
+
             // ── Tips button (last in the row so existing controls keep their position) ──
             this.tipsButton = createTipsButton(
                 thinkingRow,
@@ -792,6 +799,8 @@ export class SessionView extends ItemView {
         this.checkpointSelector?.dispose();
         this.tipsButton?.dispose();
         this.tipsButton = null;
+        this.issueTracerButton?.dispose();
+        this.issueTracerButton = null;
         if (this.onSettingsChangedForCapabilities) {
             this.plugin.offSettingsChange(this.onSettingsChangedForCapabilities);
             this.onSettingsChangedForCapabilities = null;

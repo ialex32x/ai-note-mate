@@ -21,6 +21,7 @@ import type {
 } from "./llm-provider";
 import { findSimilar, isQueryTooShort } from "./text-embedding";
 import { getGlobalEmbedder } from "./embedder";
+import { recordIssue } from "./diagnostics/issue-tracer";
 
 // ─────────────────────────────────────────────
 // Task 1: Core types & interfaces
@@ -1528,6 +1529,27 @@ export class ChatStream implements IChatAgent {
                                     message: toolCallMessage,
                                 });
                             } else {
+                                // Known-bug surface: this is the "unhandled
+                                // tool" mid-turn throw that historically left
+                                // exchange / sub-agent bubbles stuck at `…`.
+                                // The throw is preserved (the bubble safety
+                                // net needs it), but we add a tracer record
+                                // so mobile users see something more concrete
+                                // than the generic "no result captured" text.
+                                recordIssue({
+                                    severity: 'error',
+                                    source: 'chat-stream',
+                                    code: 'unhandled-tool',
+                                    message:
+                                        `Tool "${toolName}" was called but no handler is registered and ` +
+                                        `no onToolCall callback is provided. The dispatch loop will throw, ` +
+                                        `which may leave the tool_call bubble stuck pending a safety-net finalize.`,
+                                    context: {
+                                        toolName,
+                                        toolCallId,
+                                        messageId: toolCallMessage.id,
+                                    },
+                                });
                                 throw new Error(
                                     `Tool "${toolName}" was called but no handler is registered and no onToolCall callback is provided.`
                                 );
@@ -1872,11 +1894,28 @@ export class ChatStream implements IChatAgent {
             // missing-update path can be diagnosed, then patch the
             // UI state so the bubble shows *something* rather than
             // spinning forever.
+            const stuckToolName = msg.toolCallMeta?.toolName ?? msg.content;
             console.warn(
-                `[ChatStream] Tool_call message "${msg.toolCallMeta?.toolName ?? msg.content}" ` +
+                `[ChatStream] Tool_call message "${stuckToolName}" ` +
                 `(id=${msg.id}) left turn with streaming=true and no toolCallResult — ` +
                 `forcing finalization. This indicates an upstream bug in tool-call message lifecycle.`,
             );
+            // Mirror the warn into the in-memory IssueTracer so mobile
+            // users (who can't open DevTools) still get a breadcrumb
+            // surfaced via the toolbar bug button.
+            recordIssue({
+                severity: 'warning',
+                source: 'chat-stream',
+                code: 'stuck-tool-call',
+                message:
+                    `Tool_call "${stuckToolName}" left the turn with streaming=true and no result; ` +
+                    `forced finalization. Likely an upstream gap in the tool-call message lifecycle.`,
+                context: {
+                    toolName: msg.toolCallMeta?.toolName ?? null,
+                    messageId: msg.id,
+                    confirmationState: msg.confirmationState ?? null,
+                },
+            });
             msg.streaming = false;
             if (!msg.toolCallResult) {
                 const baseName = msg.toolCallMeta?.toolName ?? msg.content;

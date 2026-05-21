@@ -9,6 +9,7 @@ import { joinPath } from "../../utils/path-helper";
 import { generateImageWithGemini } from "../image-gen/gemini-image";
 import { generateImageWithQwen } from "../image-gen/qwen-image";
 import { generateImageWithOpenAI } from "../image-gen/openai-image";
+import { recordIssue } from "../diagnostics/issue-tracer";
 
 /**
  * Create the image generation tool based on the active image gen config.
@@ -361,6 +362,13 @@ function handleImageGenError(err: unknown): ToolCallResult {
     if (err instanceof DOMException && err.name === 'AbortError') throw err;
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[generate_image] Error:", err);
+    recordIssue({
+        severity: 'error',
+        source: 'image-toolcall',
+        code: 'image-gen-failed',
+        message: `Image generation failed: ${msg}`,
+        error: err,
+    });
     return {
         success: false,
         type: "text",

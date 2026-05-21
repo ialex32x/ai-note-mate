@@ -2,3 +2,4 @@ export { createProfileSelector, type ProfileSelectorHandle } from './profile-sel
 export { createCapabilitiesSelector, type CapabilitiesSelectorHandle, type CapabilitiesSelectorOptions } from './capabilities-selector';
 export { createCheckpointSelector, type CheckpointSelectorHandle, type CheckpointSelectorOptions } from './checkpoint-selector';
 export { createTipsButton, type TipsButtonHandle } from './tips-button';
+export { createIssueTracerButton, type IssueTracerButtonHandle } from './issue-tracer-button';

@@ -1,0 +1,336 @@
+/* ─────────────────────────────────────────────
+   Issue Tracer — toolbar button + modal
+   ───────────────────────────────────────────── */
+
+// ── Toolbar button ─────────────────────────────────────────────────
+.session-issue-tracer {
+    display: inline-flex;
+    align-items: center;
+    position: relative;
+}
+
+// Hidden when no issues are recorded (healthy session).
+.session-issue-tracer--hidden {
+    display: none;
+}
+
+.session-issue-tracer__btn {
+    position: relative;
+    color: @text-warning;
+
+    &:hover {
+        color: @text-error;
+    }
+}
+
+// Numeric badge overlaying the bug icon. Sized to fit "99+" without
+// overflowing the 14px svg target.
+.session-issue-tracer__badge {
+    display: none;
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: @text-error;
+    color: var(--text-on-accent, #ffffff);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.session-issue-tracer__badge--visible {
+    display: inline-block;
+}
+
+// One-shot attention pulse fired whenever a new record arrives.
+// Keeps animation entirely in CSS so the JS side can stay declarative
+// (toggle a class, the engine takes care of the rest).
+@keyframes session-issue-tracer-pulse {
+    0%   { transform: scale(1);    }
+    40%  { transform: scale(1.18); }
+    100% { transform: scale(1);    }
+}
+
+.session-issue-tracer--pulse .session-issue-tracer__btn {
+    animation: session-issue-tracer-pulse 0.35s ease-out;
+}
+
+// ── Modal ──────────────────────────────────────────────────────────
+//
+// Layout strategy: stay in block flow. We previously made the modal a
+// flex column to lay out intro/header/banner/list with a uniform gap,
+// but flex children default to `flex-shrink: 1`. The moment Obsidian's
+// own `.modal-content` height cap kicks in (or anything else clamps
+// the modal), the list got squeezed below its own `max-height` along
+// the main axis, which in turn squeezed individual items, and with
+// the item's `overflow: hidden` the message line was clipped to a
+// sliver. Block flow + plain margins keeps the list's `max-height` /
+// `overflow-y: auto` strictly self-managed regardless of what the
+// parent decides to do with the modal.
+.issue-tracer-modal {
+    display: block;
+
+    &__intro {
+        font-size: 0.85em;
+        color: @text-secondary;
+        line-height: 1.45;
+        margin-bottom: @spacing-md;
+    }
+
+    &__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: @spacing-md;
+        padding-bottom: @spacing-sm;
+        border-bottom: 1px solid @bg-modifier-border;
+        margin-bottom: @spacing-md;
+    }
+
+    &__count {
+        font-size: 0.9em;
+        color: @text-secondary;
+    }
+
+    &__actions {
+        display: flex;
+        gap: @spacing-sm;
+    }
+
+    &__btn {
+        display: inline-flex;
+        align-items: center;
+        gap: @spacing-sm;
+        padding: @spacing-sm @spacing-md;
+        border-radius: @radius-sm;
+        border: 1px solid @bg-modifier-border;
+        background: transparent;
+        color: @text-primary;
+        font-size: 0.85em;
+        cursor: pointer;
+        transition: background @duration-fast, border-color @duration-fast;
+
+        &:hover {
+            background: @bg-modifier-hover;
+            border-color: @text-secondary;
+        }
+
+        svg {
+            .icon-size(14px);
+        }
+    }
+
+    &__btn--danger {
+        color: @text-error;
+
+        &:hover {
+            border-color: @text-error;
+            background: var(--background-modifier-error-hover, @bg-modifier-hover);
+        }
+    }
+
+    // Capacity-exceeded notice, only shown when relevant.
+    &__banner {
+        display: none;
+        padding: @spacing-sm @spacing-md;
+        border-radius: @radius-sm;
+        background: var(--background-modifier-error, @bg-modifier-hover);
+        color: @text-error;
+        font-size: 0.8em;
+        margin-bottom: @spacing-md;
+    }
+
+    &__banner--visible {
+        display: block;
+    }
+
+    // Self-clamped scroll region (see modal comment above). The fixed
+    // `max-height` is the SOLE thing standing between the user and a
+    // 5000px-tall list, so don't be tempted to drop it in favour of
+    // flex sizing — that path leads to either "list collapses to 0"
+    // or "list silently grows past the viewport".
+    //
+    // `flex-shrink: 0` is belt-and-suspenders: even if a future change
+    // re-introduces a flex parent, the list won't be squeezed below
+    // its `max-height` along the main axis.
+    &__list {
+        display: flex;
+        flex-direction: column;
+        gap: @spacing-sm;
+        overflow-y: auto;
+        max-height: 55vh;
+        min-height: 0;
+        padding-right: @spacing-xs;
+        flex-shrink: 0;
+    }
+
+    &__empty {
+        padding: @spacing-lg;
+        text-align: center;
+        color: @text-faint;
+        font-size: 0.85em;
+        line-height: 1.5;
+    }
+}
+
+// ── Record card ────────────────────────────────────────────────────
+.issue-tracer-item {
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-sm;
+    background: @bg-secondary;
+    overflow: hidden;
+    // Prevent flex parents (the list is a flex column) from squeezing
+    // an item below its natural height — that's how the message line
+    // got clipped to a sliver in the earlier broken layout.
+    flex-shrink: 0;
+
+    &--error {
+        border-left: 3px solid @text-error;
+    }
+
+    &--warning {
+        border-left: 3px solid @text-warning;
+    }
+
+    &__head {
+        display: flex;
+        align-items: flex-start;
+        gap: @spacing-md;
+        padding: @spacing-sm @spacing-md;
+    }
+
+    &__icon {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 2px;
+
+        svg {
+            .icon-size(16px);
+        }
+    }
+
+    &--error &__icon { color: @text-error; }
+    &--warning &__icon { color: @text-warning; }
+
+    &__title-wrap {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    &__title-row {
+        display: flex;
+        align-items: center;
+        gap: @spacing-sm;
+        flex-wrap: wrap;
+    }
+
+    &__source {
+        font-size: 0.78em;
+        font-weight: 600;
+        color: @text-primary;
+        font-family: var(--font-monospace);
+    }
+
+    &__code {
+        font-size: 0.75em;
+        color: @text-faint;
+        font-family: var(--font-monospace);
+        padding: 1px 6px;
+        border-radius: 3px;
+        background: @bg-primary;
+    }
+
+    &__message {
+        font-size: 0.85em;
+        color: @text-primary;
+        line-height: 1.4;
+        word-break: break-word;
+    }
+
+    &__meta {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: @spacing-sm;
+    }
+
+    &__time {
+        font-size: 0.75em;
+        color: @text-faint;
+        font-family: var(--font-monospace);
+    }
+
+    &__toggle {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border-radius: @radius-sm;
+        border: none;
+        background: transparent;
+        color: @text-secondary;
+        cursor: pointer;
+
+        &:hover {
+            background: @bg-modifier-hover;
+            color: @text-primary;
+        }
+
+        svg {
+            .icon-size(14px);
+        }
+    }
+
+    &__details {
+        display: flex;
+        flex-direction: column;
+        gap: @spacing-sm;
+        padding: 0 @spacing-md @spacing-md;
+        border-top: 1px solid @bg-modifier-border;
+        padding-top: @spacing-sm;
+    }
+
+    &__section {
+        display: flex;
+        flex-direction: column;
+        gap: @spacing-xs;
+    }
+
+    &__section-label {
+        font-size: 0.72em;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: @text-faint;
+    }
+
+    &__code-block {
+        margin: 0;
+        padding: @spacing-sm @spacing-md;
+        background: @bg-primary;
+        border: 1px solid @bg-modifier-border;
+        border-radius: @radius-sm;
+        font-size: 0.78em;
+        line-height: 1.45;
+        font-family: var(--font-monospace);
+        color: @text-primary;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 240px;
+        overflow-y: auto;
+    }
+}
