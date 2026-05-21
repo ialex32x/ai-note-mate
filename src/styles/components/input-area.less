@@ -228,9 +228,19 @@
             .icon-size(14px);
         }
 
-        &:hover {
+        &:hover:not(:disabled) {
             color: @text-primary;
             background: @bg-modifier-hover;
+        }
+
+        // Shared disabled appearance for all toolbar icon buttons.
+        // Used today by the "Refine prompt" button when the draft is
+        // empty / streaming / a refinement is already in flight;
+        // available to future toolbar buttons with the same affordance.
+        &:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
         }
     }
 
@@ -273,6 +283,27 @@
             opacity: 0.85;
         }
     }
+}
+
+// Refine-prompt button — sits one slot to the left of the send button.
+// Uses the same `.session-thinking-row__icon-btn` base for sizing so it
+// blends with the rest of the toolbar; the `is-busy` modifier spins
+// whatever icon is currently inside the button while a refinement LLM
+// call is in flight. The TypeScript handler swaps `wand-sparkles` ↔
+// `loader-2` around the call so the rotation lands on the symmetric
+// spinner glyph (rotating the asymmetric wand looked wrong). Same
+// pairing as the send button's `is-streaming` modifier, just for the
+// loading affordance instead of the stop affordance.
+.session-optimize-btn {
+    &.is-busy svg {
+        animation: session-optimize-btn-spin 1s linear infinite;
+        transform-origin: 50% 50%;
+    }
+}
+
+@keyframes session-optimize-btn-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
 }
 
 // Profile selector

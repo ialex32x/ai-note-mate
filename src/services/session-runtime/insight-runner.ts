@@ -8,6 +8,7 @@ import {
 } from '../insights';
 import { stripStructuredBlock } from '../suggestions';
 import { createInsightsConfig } from '../../views/session-view/chat-factory';
+import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from './session-runtime';
 
 /**
@@ -131,38 +132,3 @@ async function runExtraction(
     void plugin.sessionManager.saveMetadata();
 }
 
-/**
- * Walk back from the tail of the message log to find the most recent
- * non-streaming assistant message and the user message that preceded
- * it (skipping intermediate tool calls / sub-agent traffic).
- *
- * Used by the auto path only; the manual path takes the assistant
- * message explicitly from the caller. We don't filter by
- * `abortedMessageIds` here because:
- *   - on `onFinish` the just-completed assistant is guaranteed clean
- *   - older aborted assistants in mid-conversation are fine to anchor
- *     against in principle, but the auto path only runs at the end of
- *     a clean turn so this case can't happen in practice.
- */
-function findTailTurn(messages: ReadonlyArray<ChatMessage>): {
-    user: ChatMessage | undefined;
-    assistant: ChatMessage | undefined;
-} {
-    let assistant: ChatMessage | undefined;
-    let user: ChatMessage | undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (!m) continue;
-        if (!assistant) {
-            if (m.role === 'assistant' && !m.streaming && m.content) {
-                assistant = m;
-            }
-            continue;
-        }
-        if (m.role === 'user' && m.content) {
-            user = m;
-            break;
-        }
-    }
-    return { user, assistant };
-}

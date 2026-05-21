@@ -22,9 +22,9 @@
  */
 
 import type NoteAssistantPlugin from '../../main';
-import type { ChatMessage } from '../chat-stream';
 import { stripStructuredBlock } from '../suggestions';
 import { createInsightsConfig } from '../../views/session-view/chat-factory';
+import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from '../session-runtime/session-runtime';
 import { extractMemoryOps, type MemoryExtractOp } from './memory-extractor';
 import { isMemoryConfigured, MemoryStoreError } from './memory-store';
@@ -99,31 +99,3 @@ export async function maybeExtractMemoriesAfterFinish(
     }
 }
 
-/**
- * Walk back from the message log tail to find the most recent
- * non-streaming assistant message and its anchoring user message.
- * Same shape as the insights runner's helper; duplicated here rather
- * than imported to keep the two features independently evolvable.
- */
-function findTailTurn(messages: ReadonlyArray<ChatMessage>): {
-    user: ChatMessage | undefined;
-    assistant: ChatMessage | undefined;
-} {
-    let assistant: ChatMessage | undefined;
-    let user: ChatMessage | undefined;
-    for (let i = messages.length - 1; i >= 0; i--) {
-        const m = messages[i];
-        if (!m) continue;
-        if (!assistant) {
-            if (m.role === 'assistant' && !m.streaming && m.content) {
-                assistant = m;
-            }
-            continue;
-        }
-        if (m.role === 'user' && m.content) {
-            user = m;
-            break;
-        }
-    }
-    return { user, assistant };
-}
