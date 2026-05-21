@@ -202,41 +202,27 @@ export interface NoteAssistantPluginSettings {
 	/** ID of the currently active embedding config */
 	activeEmbeddingId: string;
 	/**
-	 * Minimum cosine similarity for an on-demand tool to be kept after
-	 * embedding-based filtering. Range [0, 1]. Always-on tools (memory,
-	 * conversation history, etc.) are not affected.
-	 *
-	 * Different embedding models produce different similarity distributions
-	 * (e.g. `text-embedding-3-small` ≈ 0.2–0.5 cross-domain, BGE/Qwen tends
-	 * higher), so this is exposed for per-model tuning. Values outside
-	 * `[0, 1]` are clamped at use-site; 0 effectively disables the threshold
-	 * (only `toolFilterTopK` still applies).
-	 */
-	toolFilterSimilarityThreshold: number;
-	/**
 	 * Maximum number of on-demand tools surfaced to the model after
-	 * embedding-based filtering. Always-on tools are not counted toward this
-	 * cap. Range [1, 30]. Lower values produce smaller, more focused tool
-	 * schemas (helps on smaller-context models); higher values are safer for
-	 * vault-wide tasks that need many distinct on-demand tools in one turn.
+	 * the retriever (BM25, fused with embedding cosine via RRF when
+	 * embedding is configured) ranks them. Always-on tools are not
+	 * counted toward this cap. Range [1, 30]. Lower values produce
+	 * smaller, more focused tool schemas (helps on smaller-context
+	 * models); higher values are safer for vault-wide tasks that
+	 * need many distinct on-demand tools in one turn.
+	 *
+	 * There is intentionally no score threshold for the retriever —
+	 * BM25 and RRF scores have no stable cross-model scale to
+	 * threshold against. The escalation thresholds further below
+	 * (skill hint / auto-inject) remain cosine-based and only fire
+	 * when embedding is configured.
 	 */
 	toolFilterTopK: number;
 
 	/**
-	 * Minimum cosine similarity for a skill to be kept in the per-turn
-	 * skills catalogue after embedding-based filtering. Tuned separately
-	 * from {@link toolFilterSimilarityThreshold} because skills are
-	 * typically few, highly-specialized, and the user's natural-language
-	 * query rarely uses the exact wording of the skill's description —
-	 * so a more permissive default (lower threshold, higher topK) is the
-	 * right starting point. Range [0, 1]; clamped at use-site.
-	 */
-	skillFilterSimilarityThreshold: number;
-	/**
 	 * Maximum number of skills surfaced to the model in the per-turn
-	 * skills catalogue after embedding-based filtering. Range [1, 30].
-	 * See {@link skillFilterSimilarityThreshold} for the rationale on
-	 * defaulting higher than the tool-filter cap.
+	 * skills catalogue after retriever ranking. Range [1, 30].
+	 * Defaults higher than the tool-filter cap because skills are
+	 * usually few and the per-skill rendering is light.
 	 */
 	skillFilterTopK: number;
 
@@ -301,16 +287,11 @@ export interface NoteAssistantPluginSettings {
 	memoryCriticalMaxChars: number;
 	/**
 	 * Maximum number of relevant (non-critical) memory entries selected per
-	 * turn via embedding similarity to the user message. Critical entries do
-	 * not count toward this cap. Range [0, 30]; 0 disables the relevant pool.
+	 * turn by the retriever (BM25, fused with embedding cosine when
+	 * configured). Critical entries do not count toward this cap. Range
+	 * [0, 30]; 0 disables the relevant pool entirely.
 	 */
 	memoryRelevantTopK: number;
-	/**
-	 * Minimum cosine similarity for a relevant memory entry to be kept after
-	 * embedding-based filtering. Range [0, 1]; clamped at use-site. Tune to
-	 * match your embedding model's score distribution.
-	 */
-	memoryRelevantMinSimilarity: number;
 	/**
 	 * Per-turn upper bound on `upsert` operations the auto extractor may
 	 * apply. Prevents a single noisy reply from saturating the memory note.

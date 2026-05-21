@@ -2,29 +2,37 @@
  * Build the skills catalogue snippet that gets prepended to the main
  * agent's system prompt for a given user turn.
  *
- * Three escalating modes, picked transparently per turn:
+ * Ranking is delegated to the shared retriever (BM25 + embedding cosine
+ * fused via RRF when embedding is configured; BM25-only otherwise),
+ * then capped by `filterOpts.topK`. On top of the resulting shortlist
+ * three escalation modes are picked transparently per turn:
  *
- *   - **Auto-inject** (top-1 similarity ≥ {@link SKILL_AUTO_INJECT_THRESHOLD}):
+ *   - **Auto-inject** (top-1 cosine ≥ {@link DEFAULT_SKILL_AUTO_INJECT_THRESHOLD}):
  *     the full body of the top-matched skill is injected inline (above
  *     the catalogue). The model can follow it directly — no `load_skill`
  *     round trip needed. The skill is marked active so subsequent turns
  *     in the same session don't re-inject it.
  *
- *   - **Strong hint** (top-1 similarity ≥ {@link SKILL_HINT_THRESHOLD}):
+ *   - **Strong hint** (top-1 cosine ≥ {@link DEFAULT_SKILL_HINT_THRESHOLD}):
  *     the catalogue gets a one-line directive at the top naming the
  *     best match, but the full body stays out of context. Saves tokens
  *     vs. auto-inject while still concentrating the model's attention.
  *
- *   - **Plain shortlist**: the catalogue lists the top-K matching skills
- *     (and falls back to the best few when the threshold filters
- *     everyone out), without any extra steering. This is the historical
- *     behaviour.
+ *   - **Plain shortlist**: the catalogue lists the top-K matching skills,
+ *     without any extra steering. This is the historical behaviour.
  *
- * **Fallback path**: when embedding is not configured, the query is too
- * short, the embedder hasn't been initialized, or the embedding call
- * throws — return the full enabled-skill catalogue. This matches the
- * pre-embedding behaviour exactly, so a misconfigured embedding setup
- * can never *reduce* what the model can discover.
+ * Both escalation gates are cosine-based and therefore fire ONLY when
+ * embedding contributed (config supplied + embedder ready + call
+ * succeeded). Under pure-BM25 mode the model still gets a ranked
+ * shortlist, but no hint / auto-inject — BM25 scores have no stable
+ * cross-model scale to threshold against.
+ *
+ * **Fallback paths**:
+ *   - Query too short / signal-poor → full enabled-skill catalogue.
+ *   - Retriever returns zero results (BM25 found nothing AND embedding
+ *     wasn't used / failed) → full catalogue. A misconfigured embedding
+ *     setup can never *reduce* what the model can discover.
+ *   - Retriever throws (non-abort) → full catalogue.
  *
  * Active-skill tracking ({@link SkillManager.getActiveSkillNames}) is
  * woven through every mode: skills whose body is already in context are
@@ -33,8 +41,7 @@
  * the catalogue can re-trigger them again.
  */
 
-import { findSimilar, isQueryTooShort } from '../services/text-embedding';
-import { getGlobalEmbedder } from '../services/embedder';
+import { retrieve, isQueryTooShort } from '../services/retriever';
 import type { MinimalModelConfig } from '../services/llm-provider';
 import type { SkillManager, SkillDefinition } from './skill-manager';
 
@@ -55,24 +62,26 @@ export const DEFAULT_SKILL_AUTO_INJECT_THRESHOLD = 0.75;
  */
 export const DEFAULT_SKILL_HINT_THRESHOLD = 0.55;
 
-/** Knobs for the embedding-based shortlist. Same shape as `EmbeddingFilterOptions`. */
+/** Knobs for the per-turn skill shortlist. */
 export interface SkillCatalogueFilterOptions {
-    /** Minimum cosine similarity, clamped to `[0, 1]`. */
-    similarityThreshold: number;
-    /** Cap on the number of skills surfaced after filtering. */
+    /** Cap on the number of skills surfaced after retrieval ranking. */
     topK: number;
 }
 
 export interface BuildSkillSystemPromptParams {
     skillManager: SkillManager;
-    /** Current user input — drives the embedding similarity ranking. */
+    /** Current user input — drives the retriever ranking. */
     query: string;
     /**
-     * Embedding provider config. `null` / `undefined` → no shortlisting,
-     * the full catalogue is returned (assuming any skills are enabled).
+     * Embedding provider config. When `null` / `undefined` the retriever
+     * runs BM25-only — the catalogue is still ranked and shortlisted,
+     * just without the semantic signal. The hint / auto-inject
+     * escalations only fire when embedding IS configured (they need a
+     * cosine similarity on a stable scale; the retriever surfaces that
+     * via {@link RetrievalResult.cosineSimilarity}).
      */
     embeddingConfig: MinimalModelConfig | null | undefined;
-    /** Tunables for the shortlist. Required when `embeddingConfig` is given. */
+    /** Tunables for the shortlist. */
     filterOpts?: SkillCatalogueFilterOptions;
     /**
      * Cosine-similarity floor for the "strong skill match" hint mode.
@@ -125,75 +134,95 @@ export async function buildSkillSystemPromptForQuery(
 
     const activeNames = skillManager.getActiveSkillNames();
 
-    // ── Decide whether to shortlist or hand back the full catalogue ──
-    //
-    // Each of these branches is a "no embedding-based filtering" case;
-    // the user-visible behaviour matches the pre-embedding implementation
-    // exactly (modulo the new active-skill `[loaded]` marker, which is
-    // additive and always safe to render).
-    if (!embeddingConfig) {
-        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
-    }
+    // Short / signal-poor queries don't drive a meaningful retrieval
+    // ranking on either ranker (BM25 over 1–2 chars is noisy, cosine
+    // even more so). Fall back to the full catalogue in those cases
+    // so a "yes" / "继续" follow-up never starves the model of skills.
     if (isQueryTooShort(query)) {
         return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
     }
-    const embedder = getGlobalEmbedder();
-    if (!embedder) {
-        console.warn('SkillCatalogue: global embedder not initialized, falling back to full catalogue');
-        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
-    }
 
-    const similarityThreshold = Math.max(0, Math.min(1, filterOpts?.similarityThreshold ?? 0));
     const topK = Math.max(1, Math.floor(filterOpts?.topK ?? enabledSkills.length));
 
     try {
-        await embedder.updateConfig(embeddingConfig);
+        const candidateTexts = enabledSkills.map(buildSkillEmbeddingText);
+        const ranked = await retrieve(query, candidateTexts, {
+            embeddingConfig: embeddingConfig ?? null,
+            signal,
+        });
 
-        const texts = [query, ...enabledSkills.map(buildSkillEmbeddingText)];
-        const vectors = await embedder.embed(texts, signal);
-        const queryEmbedding = vectors[0]!;
-        const skillEmbeddings = vectors.slice(1);
-
-        const allRanked = findSimilar(queryEmbedding, skillEmbeddings, enabledSkills.length, 0);
-        let kept = allRanked
-            .filter(r => r.similarity >= similarityThreshold)
-            .slice(0, topK);
-
-        // Zero-pass fallback: if the threshold kicked everyone out,
-        // retain the best few so the model still has *something* to
-        // pick from. Respects the caller's topK cap (someone who set
-        // topK=1 doesn't want 3 fallback entries) and the genuine
-        // "no skills enabled" case (already returned above).
-        if (kept.length === 0 && allRanked.length > 0) {
-            const fallbackCount = Math.min(3, topK, allRanked.length);
-            kept = allRanked.slice(0, fallbackCount);
+        // ── Zero-pass fallback ─────────────────────────────────────
+        // If NO ranker covered anything (BM25 found no query-term
+        // overlap AND embedding unconfigured / failed) we degrade to
+        // the full catalogue — better to give the model everything
+        // than to silently hide skills based on a non-result. When
+        // we do have a ranking, top up to `min(3, topK)` so a very
+        // short ranking still leaves a workable surface area.
+        let kept: typeof ranked;
+        if (ranked.length === 0) {
+            // No signal anywhere; fall back to the historical full
+            // catalogue behaviour.
+            return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
+        } else {
+            const sliced = ranked.slice(0, topK);
+            const fallbackCount = Math.min(3, topK, enabledSkills.length);
+            kept = sliced.length < fallbackCount
+                ? ranked.slice(0, fallbackCount)
+                : sliced;
         }
 
-        // Detailed per-skill similarity log — same shape as the tool
-        // filter's diagnostic table so users / devs can read both logs
-        // with the same mental model.
+        // ── Diagnostics ─────────────────────────────────────────────
+        // Per-skill table mirroring the tool retriever shape. Skills
+        // that produced no signal (BM25-only mode + zero term overlap)
+        // are appended at the bottom so the table is still complete.
         const passedIndices = new Set(kept.map(s => s.index));
-        const scoreTable = allRanked.map(s => ({
+        const scoredIndices = new Set(ranked.map(s => s.index));
+        const scoreTable: Array<{
+            name: string;
+            score: number;
+            bm25: number | null;
+            cosine: number | null;
+            passed: boolean;
+        }> = ranked.map(s => ({
             name: enabledSkills[s.index]!.name,
-            similarity: Number(s.similarity.toFixed(4)),
+            score: Number(s.score.toFixed(4)),
+            bm25: s.bm25Score !== undefined ? Number(s.bm25Score.toFixed(4)) : null,
+            cosine: s.cosineSimilarity !== undefined ? Number(s.cosineSimilarity.toFixed(4)) : null,
             passed: passedIndices.has(s.index),
         }));
+        for (let i = 0; i < enabledSkills.length; i++) {
+            if (scoredIndices.has(i)) continue;
+            scoreTable.push({
+                name: enabledSkills[i]!.name,
+                score: 0,
+                bm25: null,
+                cosine: null,
+                passed: passedIndices.has(i),
+            });
+        }
         console.debug(scoreTable);
 
         const droppedCount = enabledSkills.length - kept.length;
         const filterRate = enabledSkills.length > 0
             ? droppedCount / enabledSkills.length
             : 0;
+        const mode = embeddingConfig
+            ? (ranked.some(r => r.cosineSimilarity !== undefined) ? 'hybrid' : 'bm25')
+            : 'bm25';
         console.debug(
-            `Skill catalogue filter: total=${enabledSkills.length} → kept ${kept.length}; ` +
+            `Skill catalogue retriever: total=${enabledSkills.length} → kept ${kept.length}; ` +
             `dropped ${droppedCount} (filterRate=${(filterRate * 100).toFixed(1)}%, ` +
-            `threshold=${similarityThreshold}, topK=${topK})`,
+            `topK=${topK}, mode=${mode})`,
         );
 
         const shortlisted = kept.map(r => enabledSkills[r.index]!);
         const top = kept[0];
         const topSkill = top ? enabledSkills[top.index]! : null;
-        const topSimilarity = top?.similarity ?? 0;
+        // Hint / auto-inject thresholds are cosine-based. They only
+        // fire when the embedding ranker actually contributed (so we
+        // have a stable score scale); without embedding, the model
+        // still sees the BM25-ordered catalogue but no escalation.
+        const topCosine = top?.cosineSimilarity;
 
         // ── Mode escalation: auto-inject > hint > plain ──
         //
@@ -205,7 +234,8 @@ export async function buildSkillSystemPromptForQuery(
         // model knows the full skill universe and that this one is now
         // loaded.
         if (topSkill
-            && topSimilarity >= autoInjectThreshold
+            && topCosine !== undefined
+            && topCosine >= autoInjectThreshold
             && !activeNames.has(topSkill.name)
         ) {
             const instructions = skillManager.buildSkillInstructions(topSkill.name);
@@ -218,14 +248,14 @@ export async function buildSkillSystemPromptForQuery(
                     shortlisted,
                     {
                         activeNames: refreshedActive,
-                        headerHint: formatStrongMatchHint(topSkill.name, topSimilarity, true),
+                        headerHint: formatStrongMatchHint(topSkill.name, topCosine, true),
                     },
                 );
                 const banner = [
                     '## Skill Pre-Loaded For This Turn',
                     '',
                     `The user's request strongly matches the **${topSkill.name}** skill ` +
-                    `(similarity ${topSimilarity.toFixed(2)}). Its full procedure is ` +
+                    `(similarity ${topCosine.toFixed(2)}). Its full procedure is ` +
                     'inlined immediately below — follow it directly, no `load_skill` ' +
                     'call needed.',
                     '',
@@ -238,37 +268,35 @@ export async function buildSkillSystemPromptForQuery(
             // through to the hint branch so we still surface the match.
         }
 
-        if (topSkill && topSimilarity >= hintThreshold) {
+        if (topSkill && topCosine !== undefined && topCosine >= hintThreshold) {
             return skillManager.buildSystemPromptForSkills(shortlisted, {
                 activeNames,
-                headerHint: formatStrongMatchHint(topSkill.name, topSimilarity, false),
+                headerHint: formatStrongMatchHint(topSkill.name, topCosine, false),
             });
         }
 
         return skillManager.buildSystemPromptForSkills(shortlisted, { activeNames });
     } catch (err) {
-        // The Embedder already marked itself as `unavailable` (see
-        // Embedder.embed); we just degrade to the full catalogue here.
-        // Aborts propagate through the embedder as DOMException — let
-        // the surrounding prompt() flow handle them; for everything else
-        // log + fall back so a broken embedding profile never blocks
-        // skill discovery.
+        // Aborts propagate through the retriever as DOMException — let
+        // the surrounding prompt() flow handle them; for everything
+        // else log + fall back so a broken retriever path never
+        // blocks skill discovery.
         if (err instanceof DOMException && err.name === 'AbortError') {
             throw err;
         }
-        console.error('SkillCatalogue: embedding failed, falling back to full catalogue', err);
+        console.error('SkillCatalogue: retriever failed, falling back to full catalogue', err);
         return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
     }
 }
 
 /**
- * Compose the text that represents a single skill in the embedding
- * space. Mirrors `buildToolEmbeddingText` in spirit — combine the
- * strongest semantic signals into one newline-separated blob so cosine
- * similarity has more than just a one-liner to bite on. Skill bodies
- * are deliberately NOT included: they live out-of-prompt behind
- * `load_skill` and embedding them would dilute the ranking with
- * implementation noise.
+ * Compose the text that represents a single skill in the embedding /
+ * BM25 candidate space. Mirrors `buildToolEmbeddingText` in spirit —
+ * combine the strongest semantic signals into one newline-separated
+ * blob so cosine similarity (and BM25 term overlap) has more than
+ * just a one-liner to bite on. Skill bodies are deliberately NOT
+ * included: they live out-of-prompt behind `load_skill` and embedding
+ * them would dilute the ranking with implementation noise.
  *
  * Includes (in order of authoring intent, which roughly mirrors signal
  * strength for the ranker):
@@ -278,11 +306,16 @@ export async function buildSkillSystemPromptForQuery(
  *   - triggers: short trigger phrases / synonyms the embedder can
  *     latch onto when the user's wording differs from the description
  *
+ * Exported so the trigger-tester in the Skills settings section can
+ * feed the retriever exactly the same candidate text the runtime sees
+ * — guaranteeing the tester's ranking is byte-for-byte what a real
+ * chat turn would produce.
+ *
  * Changes to this composition invalidate the embedder's per-text
  * cache (entries are keyed by sha256(text)). That's acceptable: at
  * worst one re-embed of every skill on next use.
  */
-function buildSkillEmbeddingText(skill: SkillDefinition): string {
+export function buildSkillEmbeddingText(skill: SkillDefinition): string {
     const parts: string[] = [skill.name];
     if (skill.description) parts.push(skill.description);
     if (skill.whenToUse) parts.push(skill.whenToUse);

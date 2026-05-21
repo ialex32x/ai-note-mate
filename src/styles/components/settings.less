@@ -409,9 +409,19 @@
     gap: 2px;
 }
 
+.oap-settings-skill-tester-banner {
+    padding: 6px 10px;
+    margin-bottom: 4px;
+    font-size: 0.82em;
+    color: @text-secondary;
+    background: @bg-secondary;
+    border-left: 3px solid @text-warning;
+    border-radius: 4px;
+}
+
 .oap-settings-skill-tester-result {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: auto 1fr auto auto auto;
     align-items: center;
     gap: @spacing-md;
     padding: 4px 8px;
@@ -432,10 +442,33 @@
         border-left-color: @bg-modifier-border;
     }
 
-    &--below-threshold {
-        border-left-color: transparent;
-        opacity: 0.6;
+    // Skills beyond the top-K catalogue cutoff (or with no signal at
+    // all) — the runtime never surfaces them, so we visually demote
+    // the row with reduced opacity + a muted border edge.
+    &--filtered-out {
+        border-left-color: @bg-modifier-border;
+        opacity: 0.55;
     }
+
+    // Highlight the row the runtime would actually evaluate against
+    // the hint / auto-inject thresholds. Subtle background lift + bold
+    // rank label keeps it scannable without competing with the band
+    // colour on the left edge.
+    &--top {
+        background: @bg-secondary;
+
+        .oap-settings-skill-tester-result-rank {
+            font-weight: 600;
+            color: @text-primary;
+        }
+    }
+}
+
+.oap-settings-skill-tester-result-rank {
+    color: @text-faint;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-monospace);
+    min-width: 2.5em;
 }
 
 .oap-settings-skill-tester-result-name {
@@ -443,10 +476,12 @@
     word-break: break-all;
 }
 
-.oap-settings-skill-tester-result-sim {
+.oap-settings-skill-tester-result-bm25,
+.oap-settings-skill-tester-result-cosine {
     color: @text-secondary;
     font-variant-numeric: tabular-nums;
     font-family: var(--font-monospace);
+    font-size: 0.85em;
 }
 
 .oap-settings-skill-tester-result-band {

@@ -22,7 +22,7 @@ import {
     ToolCallResult,
     IChatAgent,
     AgentTokenBreakdown,
-    type EmbeddingFilterOptions,
+    type ToolFilterOptions,
 } from "./chat-stream";
 import type { ConversationSummary } from "./context-reducer";
 import type {
@@ -817,7 +817,7 @@ export class AgentOrchestrator implements IChatAgent {
             allowedCapabilities?: ToolCapability[];
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
-            embeddingFilter?: EmbeddingFilterOptions;
+            embeddingFilter?: ToolFilterOptions;
             /**
              * Forwarded to the main agent so the view can render the user
              * bubble using the agent's own message id. See
@@ -856,7 +856,7 @@ export class AgentOrchestrator implements IChatAgent {
         allowedCapabilities?: ToolCapability[];
         summarizer?: MinimalModelConfig;
         embedding?: MinimalModelConfig;
-        embeddingFilter?: EmbeddingFilterOptions;
+        embeddingFilter?: ToolFilterOptions;
     } | null = null;
 
     // ── Private: delegate_task tool ──────────────────────────────────────────

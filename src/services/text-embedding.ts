@@ -128,38 +128,6 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 /**
- * Find the most similar texts to a query embedding.
- * Returns array of { index, similarity } sorted by similarity descending.
- *
- * @param queryEmbedding  The query vector to compare against
- * @param embeddings      Candidate vectors
- * @param topK            Maximum number of results to return (default 9)
- * @param minSimilarity   Minimum cosine similarity threshold; candidates below
- *                        this value are excluded from results (default 0, i.e. no filtering)
- */
-export function findSimilar(
-    queryEmbedding: number[],
-    embeddings: number[][],
-    topK: number = 9,
-    minSimilarity: number = 0,
-): Array<{ index: number; similarity: number }> {
-    const similarities = embeddings.map((emb, index) => ({
-        index,
-        similarity: cosineSimilarity(queryEmbedding, emb),
-    }));
-
-    // Sort by similarity descending
-    similarities.sort((a, b) => b.similarity - a.similarity);
-
-    // Apply similarity threshold filter, then take topK
-    const filtered = minSimilarity > 0
-        ? similarities.filter(s => s.similarity >= minSimilarity)
-        : similarities;
-
-    return filtered.slice(0, topK);
-}
-
-/**
  * Decide whether a query is too short / signal-poor to drive embedding-based
  * filtering. When this returns true, callers should fall back to the full
  * candidate set rather than risk wiping it out with a meaningless query.

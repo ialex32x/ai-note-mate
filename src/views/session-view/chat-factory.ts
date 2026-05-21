@@ -1,12 +1,10 @@
 import type NoteAssistantPlugin from 'main';
-import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type EmbeddingFilterOptions } from '../../services/chat-stream';
+import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type ToolFilterOptions } from '../../services/chat-stream';
 import { AgentOrchestrator } from '../../services/agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../../settings';
 import type { ProviderProfile } from '../../settings/types';
 import {
-    DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
     DEFAULT_TOOL_FILTER_TOP_K,
-    DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
     DEFAULT_SKILL_FILTER_TOP_K,
     DEFAULT_SKILL_HINT_THRESHOLD,
     DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
@@ -87,17 +85,13 @@ export function createEmbeddingConfig(plugin: NoteAssistantPlugin): MinimalModel
 }
 
 /**
- * Resolve the embedding-based tool filter options from settings, applying
- * the same fallbacks as the use-site in case a previously-saved settings
- * file lacks the field (forward compatibility for first plugin upgrade).
- *
- * Returned object is safe to forward unconditionally — when embedding is
- * not configured, ChatStream simply ignores this struct.
+ * Resolve the tool retriever options from settings. Safe to forward
+ * unconditionally — when embedding is not configured, the retriever
+ * runs BM25-only.
  */
-export function createEmbeddingFilterOptions(plugin: NoteAssistantPlugin): EmbeddingFilterOptions {
+export function createToolFilterOptions(plugin: NoteAssistantPlugin): ToolFilterOptions {
     const settings = plugin.settings;
     return {
-        similarityThreshold: settings.toolFilterSimilarityThreshold ?? DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
         topK: settings.toolFilterTopK ?? DEFAULT_TOOL_FILTER_TOP_K,
     };
 }
@@ -105,17 +99,15 @@ export function createEmbeddingFilterOptions(plugin: NoteAssistantPlugin): Embed
 /**
  * Resolve the skill-catalogue shortlist options from settings.
  *
- * Separate from {@link createEmbeddingFilterOptions} because skills
- * have their own defaults: they're few and the user's natural-language
- * phrasing rarely matches the description verbatim, so a more
- * permissive cosine threshold + larger topK is the right starting
- * point. Same shape as the tool-filter options so the catalogue
- * builder can consume it without translation.
+ * Separate from {@link createToolFilterOptions} because skills have
+ * their own defaults: they're few and the per-skill rendering is
+ * light, so a larger topK is the right starting point. Same shape
+ * as the tool-filter options so the catalogue builder can consume
+ * it without translation.
  */
-export function createSkillFilterOptions(plugin: NoteAssistantPlugin): EmbeddingFilterOptions {
+export function createSkillFilterOptions(plugin: NoteAssistantPlugin): ToolFilterOptions {
     const settings = plugin.settings;
     return {
-        similarityThreshold: settings.skillFilterSimilarityThreshold ?? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
         topK: settings.skillFilterTopK ?? DEFAULT_SKILL_FILTER_TOP_K,
     };
 }

@@ -19,8 +19,7 @@ import type {
     ToolCapability,
     ChatMessageRole,
 } from "./llm-provider";
-import { findSimilar, isQueryTooShort } from "./text-embedding";
-import { getGlobalEmbedder } from "./embedder";
+import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
 
 // ─────────────────────────────────────────────
@@ -173,19 +172,19 @@ export interface ToolCallResult {
 }
 
 /**
- * Tunable parameters for embedding-based on-demand tool filtering.
+ * Tunable parameters for the on-demand tool retriever.
  *
  * Forwarded by callers (typically the SessionView) into {@link IChatAgent.prompt}.
- * Missing fields fall back to the built-in defaults at the use-site
- * (see {@link DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD} / {@link DEFAULT_TOOL_FILTER_TOP_K}).
+ * Missing fields fall back to the built-in default at the use-site
+ * (see {@link DEFAULT_TOOL_FILTER_TOP_K}).
  *
- * - `similarityThreshold`: minimum cosine similarity, clamped to `[0, 1]`. `0`
- *   effectively disables the threshold (only `topK` matters).
  * - `topK`: cap on the number of on-demand tools surfaced to the model.
- *   Always-on tools are not counted toward this cap.
+ *   Always-on tools are not counted toward this cap. The retriever
+ *   itself (BM25 ± embedding RRF) does the ranking; there is no
+ *   user-tunable score threshold because BM25 / RRF scores have no
+ *   stable cross-model scale to threshold against.
  */
-export interface EmbeddingFilterOptions {
-    similarityThreshold: number;
+export interface ToolFilterOptions {
     topK: number;
 }
 
@@ -642,7 +641,7 @@ export interface IChatAgent {
              * Only consulted when `embedding` is also supplied. Missing fields
              * fall back to plugin defaults at use-site.
              */
-            embeddingFilter?: EmbeddingFilterOptions;
+            embeddingFilter?: ToolFilterOptions;
             /**
              * Called synchronously after the user message has been created
              * and appended to the agent's message history, but before any
@@ -955,7 +954,7 @@ export class ChatStream implements IChatAgent {
              * Tunable parameters for embedding-based on-demand tool filtering.
              * Only consulted when `embedding` is also supplied.
              */
-            embeddingFilter?: EmbeddingFilterOptions,
+            embeddingFilter?: ToolFilterOptions,
             /**
              * Synchronous notification fired after the user message is
              * created and appended to history, before any provider work
@@ -1990,93 +1989,89 @@ export class ChatStream implements IChatAgent {
         config: MinimalModelConfig | undefined,
         query: string,
         tools: RegisteredTool[],
-        filterOpts?: EmbeddingFilterOptions,
+        filterOpts?: ToolFilterOptions,
         signal?: AbortSignal,
     ): Promise<RegisteredTool[]> {
-        if (!config) return tools;
+        // Short / signal-poor queries (typically follow-ups like "yes" /
+        // "继续") should never collapse the on-demand surface — the user
+        // is implicitly referring to the previous turn's intent.
         if (isQueryTooShort(query)) return tools;
 
-        const similarityThreshold = Math.max(0, Math.min(1, filterOpts?.similarityThreshold ?? 0.3));
         const topK = Math.max(1, Math.floor(filterOpts?.topK ?? 9));
 
         try {
             const always = tools.filter(t => !t.ondemand);
             const ondemand = tools.filter(t => t.ondemand);
-
             if (ondemand.length === 0) return always;
 
-            const embedder = getGlobalEmbedder();
-            if (!embedder) {
-                // Embedder singleton hasn't been initialized yet (should not happen
-                // in normal plugin lifecycle, but be defensive).
-                console.warn("ChatStream: global embedder not initialized, skipping tool filtering");
-                return tools;
+            const candidateTexts = ondemand.map(buildToolEmbeddingText);
+            const ranked = await retrieve(query, candidateTexts, {
+                embeddingConfig: config ?? null,
+                signal,
+            });
+
+            // ── Zero-pass fallback ─────────────────────────────────────
+            // If NO ranker produced any signal (BM25 no matches and
+            // embedding unconfigured / failed), preserve the full set —
+            // dropping tools we can't even rank would be reckless. When
+            // we have a ranking but it happens to be very short, top up
+            // to `min(3, topK)` so the model always has a workable
+            // surface area to act on (matches the historical embedding-
+            // only behaviour).
+            let keptOndemandIndices: number[];
+            if (ranked.length === 0) {
+                keptOndemandIndices = ondemand.map((_, i) => i);
+            } else {
+                const fallbackCount = Math.min(3, topK, ondemand.length);
+                const take = Math.max(topK, fallbackCount);
+                keptOndemandIndices = ranked.slice(0, take).map(r => r.index);
             }
+            const keptIndexSet = new Set(keptOndemandIndices);
+            const selectedOndemand = keptOndemandIndices.map(i => ondemand[i]!);
 
-            // Keep the shared embedder aligned with the caller's current embedding
-            // config. updateConfig() is a no-op when the fingerprint is unchanged.
-            await embedder.updateConfig(config);
-
-            // Embed query + all on-demand tool descriptions in one batched call.
-            // The embedder handles per-text caching internally (hit rate will be high
-            // for tool descriptions, near-zero for queries). Each tool's embed text
-            // mixes name + description (or `embeddingDescription` override, see
-            // `RegisteredTool.embeddingDescription`) + parameter names so the
-            // ranking has more than just the description to bite on.
-            //
-            // Forwarding `signal` lets the embedding HTTP call abort when the
-            // user hits stop mid-turn instead of the abort response waiting
-            // for the (cache-miss) request to complete.
-            const texts = [query, ...ondemand.map(buildToolEmbeddingText)];
-            const vectors = await embedder.embed(texts, signal);
-            const userEmbedding = vectors[0]!;
-            const ondemandEmbeddings = vectors.slice(1);
-
-            // ── Rank ALL ondemand tools (no threshold) so we can log every score ──
-            const allRanked = findSimilar(userEmbedding, ondemandEmbeddings, ondemand.length, 0);
-            // Then apply the threshold + topK cap used for actual selection.
-            let similarities = allRanked
-                .filter(s => s.similarity >= similarityThreshold)
-                .slice(0, topK);
-
-            // ── Zero-pass fallback ─────────────────────────────────────────
-            // If the threshold filtered out every on-demand tool, retain the
-            // best `min(3, topK, ondemand.length)` so the model still has a
-            // workable on-demand surface area. Respects the user's `topK` cap
-            // (someone who set topK=1 doesn't want 3 fallback tools) and the
-            // genuine "no on-demand tools registered" case (already returned
-            // above). Without this, a misconfigured threshold or a follow-up
-            // whose embedding happens to miss every description could leave
-            // the model with only `always` tools and no way to act.
-            if (similarities.length === 0 && allRanked.length > 0) {
-                const fallbackCount = Math.min(3, topK, allRanked.length);
-                similarities = allRanked.slice(0, fallbackCount);
-            }
-
-            const results = similarities.map(s => ondemand[s.index]!);
-
-            // Detailed per-tool similarity log to help diagnose unexpected drops.
-            // Each row: { name, similarity, passed }
-            const passedIndices = new Set(similarities.map(s => s.index));
-            const scoreTable = allRanked.map(s => ({
-                name: ondemand[s.index]!.schema.function.name,
-                similarity: Number(s.similarity.toFixed(4)),
-                passed: passedIndices.has(s.index),
+            // ── Diagnostics ─────────────────────────────────────────────
+            // Per-tool table showing every score the ranker computed,
+            // plus a top-line summary. Mirrors the previous embedding-
+            // only log shape so existing reading habits / scripts still
+            // work, with the new sub-score columns (bm25 / cosine /
+            // ranks) when available. Tools that produced NO signal
+            // (e.g. BM25-only mode + zero term overlap) get a null-row
+            // appended at the bottom so the table is still complete.
+            const scoredIndices = new Set(ranked.map(r => r.index));
+            const scoreTable: Array<{
+                name: string;
+                score: number;
+                bm25: number | null;
+                cosine: number | null;
+                passed: boolean;
+            }> = ranked.map(r => ({
+                name: ondemand[r.index]!.schema.function.name,
+                score: Number(r.score.toFixed(4)),
+                bm25: r.bm25Score !== undefined ? Number(r.bm25Score.toFixed(4)) : null,
+                cosine: r.cosineSimilarity !== undefined ? Number(r.cosineSimilarity.toFixed(4)) : null,
+                passed: keptIndexSet.has(r.index),
             }));
+            for (let i = 0; i < ondemand.length; i++) {
+                if (scoredIndices.has(i)) continue;
+                scoreTable.push({
+                    name: ondemand[i]!.schema.function.name,
+                    score: 0,
+                    bm25: null,
+                    cosine: null,
+                    passed: keptIndexSet.has(i),
+                });
+            }
             console.debug(scoreTable);
 
-            // High-level summary of the filter outcome. `filterRate` is the
-            // proportion of on-demand tools that were dropped (1 - kept/total),
-            // so 0% means "kept everything", 100% means "kept nothing" (the
-            // zero-pass fallback above prevents the latter in practice).
-            const droppedOndemand = ondemand.length - results.length;
+            const droppedOndemand = ondemand.length - selectedOndemand.length;
             const filterRate = ondemand.length > 0
                 ? droppedOndemand / ondemand.length
                 : 0;
+            const mode = config ? (ranked.some(r => r.cosineSimilarity !== undefined) ? 'hybrid' : 'bm25') : 'bm25';
             console.debug(
-                `Tool filter: total=${tools.length} (always=${always.length}, ondemand=${ondemand.length}) → kept ${always.length + results.length} (always=${always.length}, ondemand=${results.length}); dropped ${droppedOndemand} ondemand (filterRate=${(filterRate * 100).toFixed(1)}%, threshold=${similarityThreshold}, topK=${topK})`,
+                `Tool retriever: total=${tools.length} (always=${always.length}, ondemand=${ondemand.length}) → kept ${always.length + selectedOndemand.length} (always=${always.length}, ondemand=${selectedOndemand.length}); dropped ${droppedOndemand} ondemand (filterRate=${(filterRate * 100).toFixed(1)}%, topK=${topK}, mode=${mode})`,
             );
-            return [...always, ...results];
+            return [...always, ...selectedOndemand];
         } catch (err) {
             // User-initiated aborts must propagate — without this re-throw
             // the catch would silently fall back to "full tool set" and the
@@ -2085,9 +2080,10 @@ export class ChatStream implements IChatAgent {
             // tool-schema serialisation + a provider round-trip's worth of
             // latency before the user finally sees the abort take effect).
             if (err instanceof DOMException && err.name === 'AbortError') throw err;
-            // The embedder tracks its own status (see Embedder.status); we just
-            // fall back to the full tool set here.
-            console.error("failed to call embedding, fallback to full tool set", err);
+            // The retriever already logged the underlying cause; fall
+            // back to the full tool set so the model never gets stuck
+            // with an empty surface.
+            console.error("Tool retriever failed, falling back to full tool set", err);
             return tools;
         }
     }

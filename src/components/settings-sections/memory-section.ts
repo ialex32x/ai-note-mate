@@ -1,7 +1,6 @@
 import { Notice, Setting } from "obsidian";
 import { t } from "../../i18n";
 import {
-	createTextField,
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
@@ -187,20 +186,6 @@ export class MemorySettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
-		createTextField({
-			container,
-			name: t('settings.memoryRelevantMinSimilarity'),
-			desc: t('settings.memoryRelevantMinSimilarityDesc'),
-			placeholder: '0.3',
-			value: formatNumber(plugin.settings.memoryRelevantMinSimilarity),
-			advanced: true,
-			onChange: async (raw) => {
-				const parsed = Number.parseFloat(raw);
-				if (!Number.isFinite(parsed)) return;
-				plugin.settings.memoryRelevantMinSimilarity = Math.max(0, Math.min(1, parsed));
-				await plugin.saveSettings();
-			},
-		});
 	}
 
 	/**
@@ -305,9 +290,4 @@ export class MemorySettingsSection implements SettingsSection {
 		}
 		new Notice(`Memory: ${err instanceof Error ? err.message : String(err)}`);
 	}
-}
-
-function formatNumber(n: number): string {
-	if (!Number.isFinite(n)) return '0';
-	return String(n);
 }

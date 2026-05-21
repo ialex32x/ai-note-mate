@@ -9,18 +9,17 @@
  *   - Critical entries (heading ends in ` [!]`) are ALWAYS included.
  *     Together they are capped at {@link NoteAssistantPluginSettings.memoryCriticalMaxChars}
  *     so a runaway critical pool can't take over the prompt.
- *   - Relevant entries are ranked by cosine similarity between the user
- *     query and each entry's embedding text (heading + body), then the
- *     top-K above the configured threshold are included.
- *   - When embedding is unavailable (no provider, query too short, or
- *     the embedder threw), we surface the relevant pool's first `topK`
- *     entries as a safe fallback so the user still gets *some* recall —
- *     better than silently dropping them on misconfigured setups.
+ *   - Relevant entries are ranked by the retriever (BM25, fused with
+ *     embedding cosine via RRF when embedding is configured), then
+ *     the top-K are included.
+ *   - When the query is too short or the retriever produces no
+ *     signal, we surface the relevant pool's first `topK` entries
+ *     as a safe fallback — the note's authoring order is a
+ *     meaningful default for low-signal queries.
  */
 
 import type NoteAssistantPlugin from '../../main';
-import { getGlobalEmbedder } from '../embedder';
-import { findSimilar, isQueryTooShort } from '../text-embedding';
+import { retrieve, isQueryTooShort } from '../retriever';
 import type { MinimalModelConfig } from '../llm-provider';
 import type { MemoryEntry } from './memory-note-parser';
 import type { MemoryStore } from './memory-store';
@@ -36,16 +35,17 @@ import { stripCallouts } from './body-sanitizer';
 export interface BuildMemoryPromptParams {
     plugin: NoteAssistantPlugin;
     store: MemoryStore;
-    /** Current user input — drives the embedding similarity ranking. */
+    /** Current user input — drives the retriever ranking. */
     query: string;
     /**
-     * Embedding provider config. `null` / `undefined` → no shortlisting;
-     * the first `memoryRelevantTopK` non-critical entries are used as a
-     * predictable fallback so configurations without embedding still
-     * benefit from non-critical memories.
+     * Embedding provider config. `null` / `undefined` → the retriever
+     * runs BM25-only over the relevant pool, which still shortlists
+     * by query-term overlap. Configurations without embedding no
+     * longer fall back to "first N" unconditionally — the retriever
+     * gives them genuine relevance ranking too.
      */
     embeddingConfig: MinimalModelConfig | null | undefined;
-    /** Forwarded to the embedder for user-initiated aborts. */
+    /** Forwarded to the retriever for user-initiated aborts. */
     signal?: AbortSignal;
 }
 
@@ -83,14 +83,12 @@ export async function buildMemorySystemPromptPrefix(
 
     const criticalBudget = Math.max(0, settings.memoryCriticalMaxChars | 0);
     const topK = Math.max(0, settings.memoryRelevantTopK | 0);
-    const similarityThreshold = clamp01(settings.memoryRelevantMinSimilarity);
 
     const criticalChosen = pickCriticalWithinBudget(critical, criticalBudget);
     const relevantChosen = await pickRelevant({
         candidates: relevant,
         query,
         topK,
-        similarityThreshold,
         embeddingConfig: embeddingConfig ?? null,
         signal,
     });
@@ -131,38 +129,45 @@ async function pickRelevant(opts: {
     candidates: readonly MemoryEntry[];
     query: string;
     topK: number;
-    similarityThreshold: number;
     embeddingConfig: MinimalModelConfig | null;
     signal?: AbortSignal;
 }): Promise<MemoryEntry[]> {
-    const { candidates, query, topK, similarityThreshold, embeddingConfig, signal } = opts;
+    const { candidates, query, topK, embeddingConfig, signal } = opts;
     if (candidates.length === 0) return [];
     if (topK <= 0) return [];
 
-    if (!embeddingConfig || isQueryTooShort(query)) {
-        return candidates.slice(0, topK);
-    }
-
-    const embedder = getGlobalEmbedder();
-    if (!embedder) {
-        console.warn('[Memory] global embedder not initialised; falling back to first N relevant entries');
+    // On signal-poor queries (1–2 chars, follow-ups like "yes" / "继续")
+    // BM25 ranking is essentially noise — let the relevant pool's
+    // existing order (whatever the user authored in the memory note)
+    // through unchanged instead. Skill / tool retrievers fall back to
+    // the FULL surface in this case; memory uses first-N because the
+    // pool can be large and exceeding `topK` would bloat the prompt.
+    if (isQueryTooShort(query)) {
         return candidates.slice(0, topK);
     }
 
     try {
-        await embedder.updateConfig(embeddingConfig);
-        const texts = [query, ...candidates.map(buildEmbeddingText)];
-        const vectors = await embedder.embed(texts, signal);
-        const queryVec = vectors[0]!;
-        const candidateVecs = vectors.slice(1);
-        const ranked = findSimilar(queryVec, candidateVecs, topK, similarityThreshold);
-        return ranked.map(r => candidates[r.index]!).filter(Boolean);
+        const candidateTexts = candidates.map(buildEmbeddingText);
+        const ranked = await retrieve(query, candidateTexts, {
+            embeddingConfig,
+            signal,
+        });
+        if (ranked.length === 0) {
+            // No ranker produced any signal — fall back to the same
+            // first-N behaviour as the short-query path so the user
+            // still benefits from the relevant pool on a degenerate
+            // input.
+            return candidates.slice(0, topK);
+        }
+        const top = ranked.slice(0, topK).map(r => candidates[r.index]!).filter(Boolean);
+        if (top.length === 0) return candidates.slice(0, topK);
+        return top;
     } catch (err) {
         // Aborts must propagate so the chat turn can cancel cleanly;
         // other errors are non-fatal — fall back to the same simple
-        // first-N behaviour as the no-embedding path.
+        // first-N behaviour as the no-embedding / short-query paths.
         if (err instanceof DOMException && err.name === 'AbortError') throw err;
-        console.warn('[Memory] embedding-based relevance failed, falling back:', err);
+        console.warn('[Memory] retriever failed, falling back:', err);
         return candidates.slice(0, topK);
     }
 }
@@ -236,7 +241,3 @@ function buildEmbeddingText(entry: MemoryEntry): string {
     return parts.join('\n');
 }
 
-function clamp01(n: number | undefined): number {
-    if (n === undefined || !Number.isFinite(n)) return 0;
-    return Math.max(0, Math.min(1, n));
-}

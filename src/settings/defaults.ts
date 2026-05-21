@@ -25,39 +25,38 @@ export const DEFAULT_WEB_FETCH_SOFT_LIMIT = 5;
 export const DEFAULT_WEB_FETCH_HARD_LIMIT = 12;
 
 /**
- * Default cosine similarity threshold for embedding-based on-demand tool
- * filtering. Tuned for `text-embedding-3-small` whose meaningful matches
- * typically land in the 0.3–0.6 range; users with other embedding models
- * may need to retune via the setting. Exported so the same fallback is
- * used wherever the setting is consumed (settings UI, runtime, tests).
+ * Default cap on the number of on-demand tools that pass the retriever
+ * ranking. Combined with the always-on tool set (~8 entries), this keeps
+ * the per-turn schema list at ~16 tools — within the comfortable range
+ * for current frontier models (OpenAI / Anthropic docs cite ~20 as the
+ * "tool soup" threshold past which selection accuracy drops sharply)
+ * and aligned with {@link DEFAULT_SKILL_FILTER_TOP_K} so the two
+ * retrievers behave consistently.
+ *
+ * Each on-demand tool's schema costs roughly 200–800 tokens of system
+ * prompt, so the cap also acts as a soft token-budget guard. 42+
+ * on-demand tools register in this project today; top-8 over that pool
+ * gives high recall (a turn rarely needs more than 1–3 specific on-
+ * demand tools).
  */
-export const DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD = 0.3;
-/**
- * Default cap on the number of on-demand tools that pass the embedding
- * filter. Combined with the always-on tool set (~6 entries), this keeps
- * the per-turn schema list under ~15 tools, which is comfortable even on
- * smaller-context models.
- */
-export const DEFAULT_TOOL_FILTER_TOP_K = 9;
+export const DEFAULT_TOOL_FILTER_TOP_K = 8;
 
 /**
- * Default cosine similarity threshold for the skills catalogue. Lower
- * than {@link DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD} because skills
- * are few and specialized — the user's natural-language phrasing rarely
- * matches the description verbatim, so a permissive default avoids
- * silently filtering out the relevant skill on real-world queries.
- * Users can retune if they have many similar skills and want stricter
- * pruning.
+ * Default cap on skills surfaced per turn. Picked to roughly match the
+ * tool-filter cap so the two retrievers behave consistently:
+ *
+ *   - For light users (≤ 8 skills) this is effectively no-op — every
+ *     enabled skill lands in the catalogue.
+ *   - For heavier users (15–30 skills) it engages the "lost in the
+ *     middle" benefit: the retriever's top-8 reliably covers the
+ *     query-relevant skills, while the longer tail (which would
+ *     otherwise dilute attention and add 60–100 tokens per entry)
+ *     stays out of the system prompt.
+ *
+ * Tunable in settings up to 30 for power users with very large skill
+ * libraries.
  */
-export const DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD = 0.2;
-/**
- * Default cap on skills surfaced per turn. Higher than the tool-filter
- * cap because the per-skill rendering is light (one bullet + optional
- * "When to use" line), so even 15 entries fit comfortably; meanwhile a
- * lower cap risks dropping the correct skill when the embedding model
- * compresses the score distribution.
- */
-export const DEFAULT_SKILL_FILTER_TOP_K = 15;
+export const DEFAULT_SKILL_FILTER_TOP_K = 8;
 
 /**
  * Default cosine-similarity floor for the "strong skill match" hint
@@ -147,9 +146,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	embeddingEnabled: false,
 	embeddingConfigs: [],
 	activeEmbeddingId: '',
-	toolFilterSimilarityThreshold: DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
 	toolFilterTopK: DEFAULT_TOOL_FILTER_TOP_K,
-	skillFilterSimilarityThreshold: DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
 	skillFilterTopK: DEFAULT_SKILL_FILTER_TOP_K,
 	skillHintThreshold: DEFAULT_SKILL_HINT_THRESHOLD,
 	skillAutoInjectThreshold: DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
@@ -158,7 +155,6 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	memoryAutoExtract: false,
 	memoryCriticalMaxChars: 2000,
 	memoryRelevantTopK: 3,
-	memoryRelevantMinSimilarity: 0.3,
 	memoryExtractMaxUpserts: 2,
 	memoryExtractMaxDeletes: 1,
 	memoryExtractMinReplyChars: 400,

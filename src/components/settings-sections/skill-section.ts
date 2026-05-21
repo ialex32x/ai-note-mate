@@ -1,16 +1,15 @@
 import { Notice, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
-import { getActiveEmbeddingConfig } from "../../settings";
 import {
-	DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
 	DEFAULT_SKILL_FILTER_TOP_K,
 	DEFAULT_SKILL_HINT_THRESHOLD,
 	DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
 } from "../../settings/defaults";
-import { getGlobalEmbedder } from "../../services/embedder";
-import { cosineSimilarity } from "../../services/text-embedding";
+import { retrieve, type RetrievalResult } from "../../services/retriever";
+import { buildSkillEmbeddingText } from "../../skills/skill-catalogue";
+import { createEmbeddingConfig } from "../../views/session-view/chat-factory";
 import { createTextField, isAdvancedSettingsVisible } from "../settings-components";
-import type { EmbeddingConfig, NoteAssistantPluginSettings } from "../../settings/types";
+import type { NoteAssistantPluginSettings } from "../../settings/types";
 import type { SkillDefinition } from "../../skills/skill-loader";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -224,12 +223,11 @@ export class SkillSettingsSection implements SettingsSection {
 	}
 
 	/**
-	 * Render the four matching-tuning fields:
+	 * Render the three matching-tuning fields:
 	 *
-	 *   1. catalogue similarity floor (`skillFilterSimilarityThreshold`)
-	 *   2. catalogue size cap (`skillFilterTopK`)
-	 *   3. strong-hint floor (`skillHintThreshold`)
-	 *   4. auto-inject floor (`skillAutoInjectThreshold`)
+	 *   1. catalogue size cap (`skillFilterTopK`)
+	 *   2. strong-hint floor (`skillHintThreshold`)
+	 *   3. auto-inject floor (`skillAutoInjectThreshold`)
 	 *
 	 * Validation mirrors the use-site clamping in `skill-catalogue.ts`
 	 * (range + ordering rules) so what the user types here is exactly
@@ -240,25 +238,15 @@ export class SkillSettingsSection implements SettingsSection {
 	 * embedding model has a different score distribution, and the
 	 * "right" threshold is "wherever your relevant skills score, plus
 	 * a small buffer".
+	 *
+	 * Both threshold fields gate cosine-similarity bands and therefore
+	 * only fire when an embedding profile is active — without embedding
+	 * the retriever still ranks skills (via BM25) and produces a
+	 * shortlist, but neither escalation triggers because there is no
+	 * stable similarity scale to threshold against.
 	 */
 	private renderMatchingTuning(container: HTMLElement): void {
 		const { plugin } = this.ctx;
-
-		createTextField({
-			container,
-			name: t('settings.skillFilterSimilarityThreshold'),
-			desc: t('settings.skillFilterSimilarityThresholdDesc'),
-			placeholder: String(DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD),
-			value: String(plugin.settings.skillFilterSimilarityThreshold),
-			advanced: true,
-			onChange: async (value) => {
-				const num = parseFloat(value);
-				plugin.settings.skillFilterSimilarityThreshold =
-					isNaN(num) ? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD
-					: Math.max(0, Math.min(1, num));
-				await plugin.saveSettings();
-			},
-		});
 
 		createTextField({
 			container,
@@ -312,17 +300,22 @@ export class SkillSettingsSection implements SettingsSection {
 	/**
 	 * Render the "test a trigger" panel.
 	 *
+	 * The panel runs the SAME retriever the runtime uses (BM25 fused
+	 * with embedding cosine via RRF when embedding is configured;
+	 * BM25-only otherwise) and feeds it the identical candidate
+	 * composition ({@link buildSkillEmbeddingText}). Result rows
+	 * therefore reflect the actual ordering a real chat turn would
+	 * produce — including the case where BM25 promotes an exact-name
+	 * match above a higher-cosine semantic match.
+	 *
 	 * The panel always renders fully interactive (no `disabled` state on
 	 * either the input or the button). Embedding-readiness is re-evaluated
 	 * at click time, not render time — that way the user can toggle
 	 * embedding on/off in another settings section and the tester will
 	 * just work on the next click, without depending on a cross-section
-	 * re-render notification.
-	 *
-	 * The trade-off (vs. statically disabling the button) is that the
-	 * user only learns embedding isn't ready when they click; we surface
-	 * a clear `Notice()` in that case so it doesn't feel like a silent
-	 * no-op.
+	 * re-render notification. Without embedding the tester degrades to
+	 * BM25-only and surfaces a banner explaining that hint / auto-inject
+	 * bands cannot be evaluated under that mode.
 	 */
 	private renderTriggerTester(
 		container: HTMLElement,
@@ -368,37 +361,30 @@ export class SkillSettingsSection implements SettingsSection {
 			const query = queryInput.value.trim();
 			if (!query) return;
 
-			// Re-read everything fresh on each click so toggling embedding
-			// in another section (or even in another window) is picked up
-			// without needing a settings-tab refresh.
-			const embeddingConfig = getActiveEmbeddingConfig(plugin.settings);
-			const embedder = getGlobalEmbedder();
-			if (!embeddingConfig || !embedder) {
-				new Notice(t('settings.skillTesterNotReady'));
-				return;
-			}
+			// Re-read on every click so toggling embedding in another
+			// settings section (or another window) is picked up without
+			// needing a tab refresh.
+			const embeddingConfig = createEmbeddingConfig(plugin);
 
 			runBtn.setAttr('disabled', 'true');
 			runBtn.setText(t('settings.skillTesterRunning'));
 			resultsEl.empty();
 
 			try {
-				await runEmbedAndScore({
-					plugin,
-					embedder,
-					embeddingConfig,
+				await runRetrieveAndRender({
 					query,
 					skills,
+					embeddingConfig: embeddingConfig ?? null,
 					resultsEl,
-					// Snapshot the user's current thresholds so the
-					// result rows show bands that match what would
-					// actually happen at runtime. Re-reading on each
-					// click means changes to the settings take effect
-					// without re-rendering the section.
+					// Snapshot every relevant knob at click time so the
+					// result table reflects the user's *current*
+					// settings (thresholds AND catalog cap) without
+					// requiring a section re-render.
 					bandThresholds: resolveBandThresholds(plugin.settings),
+					topK: Math.max(1, plugin.settings.skillFilterTopK | 0),
 				});
 			} catch (err) {
-				console.error('SkillTester: embed failed', err);
+				console.error('SkillTester: retriever failed', err);
 				resultsEl.createEl('div', {
 					cls: 'oap-settings-skill-tester-error',
 					text: t('settings.skillTesterFailed'),
@@ -420,68 +406,38 @@ export class SkillSettingsSection implements SettingsSection {
 }
 
 /**
- * Embed `query` plus each skill's representative text, score them by
- * cosine similarity, and render the result rows. Extracted so the
- * outer flow stays focused on UI state (button text, disabled flag,
- * error placement) and this function owns the embedding pipeline.
+ * Run the shared retriever against the query + skill set, then render
+ * the result rows.
  *
- * Throws on any error after surfacing a `Notice` for user-actionable
- * cases (missing API key) — the caller is responsible for the generic
- * "embedding failed" fallback row.
+ * The retriever and candidate composition are byte-for-byte identical
+ * to what {@link buildSkillSystemPromptForQuery} uses at chat time, so
+ * the panel's ordering is the ordering a real turn would produce —
+ * including the (occasionally unintuitive) case where BM25 promotes an
+ * exact-name match above a higher-cosine semantic match.
+ *
+ * Skills that produced no signal (BM25-only mode + zero term overlap)
+ * are appended at the bottom of the result table so the count always
+ * matches the loaded skill count.
+ *
+ * Throws on any error; the caller is responsible for the generic
+ * "retriever failed" fallback row.
  */
-async function runEmbedAndScore(opts: {
-	plugin: import("../../main").default;
-	embedder: NonNullable<ReturnType<typeof getGlobalEmbedder>>;
-	embeddingConfig: EmbeddingConfig;
+async function runRetrieveAndRender(opts: {
 	query: string;
 	skills: SkillDefinition[];
+	embeddingConfig: ReturnType<typeof createEmbeddingConfig> | null;
 	resultsEl: HTMLElement;
 	bandThresholds: BandThresholds;
+	topK: number;
 }): Promise<void> {
-	const { plugin, embedder, embeddingConfig, query, skills, resultsEl, bandThresholds } = opts;
+	const { query, skills, embeddingConfig, resultsEl, bandThresholds, topK } = opts;
 
-	const apiKey = plugin.app.secretStorage.getSecret(embeddingConfig.apiKey)
-		?? embeddingConfig.apiKey;
-	if (!apiKey) {
-		new Notice(t('settings.skillTesterNoApiKey'));
-		throw new Error('SkillTester: no API key');
-	}
-
-	await embedder.updateConfig({
-		type: embeddingConfig.type,
-		apiKey,
-		baseURL: embeddingConfig.baseUrl,
-		model: embeddingConfig.model,
+	const candidateTexts = skills.map(buildSkillEmbeddingText);
+	const ranked = await retrieve(query, candidateTexts, {
+		embeddingConfig: embeddingConfig ?? null,
 	});
 
-	const texts = [
-		query,
-		...skills.map(skillEmbeddingText),
-	];
-	const vectors = await embedder.embed(texts);
-	const queryVec = vectors[0]!;
-	const scored = skills.map((s, i) => ({
-		skill: s,
-		similarity: cosineSimilarity(queryVec, vectors[i + 1]!),
-	})).sort((a, b) => b.similarity - a.similarity);
-
-	renderTesterResults(resultsEl, scored, bandThresholds);
-}
-
-/**
- * Same composition as `buildSkillEmbeddingText` in skill-catalogue.ts.
- * Duplicated rather than imported to avoid an import cycle (skills →
- * catalogue → embedder → settings → skills) and because the function
- * is trivial.
- */
-function skillEmbeddingText(skill: SkillDefinition): string {
-	const parts: string[] = [skill.name];
-	if (skill.description) parts.push(skill.description);
-	if (skill.whenToUse) parts.push(skill.whenToUse);
-	if (skill.triggers && skill.triggers.length > 0) {
-		parts.push(skill.triggers.join(', '));
-	}
-	return parts.filter(Boolean).join('\n');
+	renderTesterResults(resultsEl, skills, ranked, bandThresholds, topK, !!embeddingConfig);
 }
 
 /**
@@ -519,14 +475,17 @@ function computeSkillLints(skill: SkillDefinition): SkillLint[] {
 }
 
 /**
- * Snapshot of the three thresholds that decide which band a similarity
- * score falls into. Captured at the moment a test fires so the result
- * rows reflect the user's *current* settings, not whatever was active
- * when the settings tab was first opened.
+ * Snapshot of the two cosine thresholds that decide which escalation
+ * band a similarity score falls into. Captured at the moment a test
+ * fires so the result rows reflect the user's *current* settings,
+ * not whatever was active when the settings tab was first opened.
+ *
+ * Note: the catalogue filter floor was removed — the retriever now
+ * ranks by RRF-fused BM25 + embedding and there is no fixed score
+ * threshold for "in the catalogue at all". Every skill in the
+ * shortlist ends up in one of the three bands below.
  */
 interface BandThresholds {
-	/** Floor for inclusion in the catalogue at all. */
-	filter: number;
 	/** Floor for the strong-hint band. */
 	hint: number;
 	/** Floor for the auto-inject band. */
@@ -542,9 +501,6 @@ interface BandThresholds {
 function resolveBandThresholds(
 	settings: NoteAssistantPluginSettings,
 ): BandThresholds {
-	const filter = clamp01(
-		settings.skillFilterSimilarityThreshold ?? DEFAULT_SKILL_FILTER_SIMILARITY_THRESHOLD,
-	);
 	const hint = clamp01(
 		settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
 	);
@@ -554,7 +510,7 @@ function resolveBandThresholds(
 			settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
 		),
 	);
-	return { filter, hint, autoInject };
+	return { hint, autoInject };
 }
 
 function clamp01(n: number): number {
@@ -563,18 +519,48 @@ function clamp01(n: number): number {
 }
 
 /**
- * Render the trigger-tester result list. Each row shows the skill name,
- * the rounded similarity score, and a tone indicator matching the
- * three-band escalation used by the catalogue at runtime (auto-inject /
- * hint / plain) so users can immediately see *what would happen* with
- * the current query under their current threshold settings.
+ * Render the trigger-tester result table.
+ *
+ * Layout per row (top-down ordering matches the retriever ranking):
+ *
+ *     #1  manage_todos   BM25 1.84   cos 0.62   [strong hint]    ← top row
+ *     #2  task_planner   BM25 0.92   cos 0.78   [listed]
+ *     #3  note_summary       —       cos 0.45   [listed]
+ *     ────────────────── topK cutoff ──────────────────
+ *     #4  code_reviewer      —       cos 0.32   [filtered out]
+ *     —   unused_skill       —           —      [no signal]
+ *
+ * Each row encodes two independent signals:
+ *
+ *   1. **Whether the skill makes it into the runtime catalogue**
+ *      (driven by `skillFilterTopK`): rows with `rank > topK`, and
+ *      rows that produced no signal at all (no BM25 hit AND no
+ *      cosine), share the `filtered-out` band. Either way the model
+ *      never sees them, so the same demoted styling applies.
+ *
+ *   2. **What escalation the top-1 row will trigger**
+ *      (driven by `skillHintThreshold` / `skillAutoInjectThreshold`,
+ *      both cosine-based): only the very first row can realistically
+ *      escalate at runtime — that's where the `--top` modifier and
+ *      the strong-hint / auto-inject bands live. Subsequent in-catalog
+ *      rows all show `listed` regardless of their cosine, because
+ *      that's what actually happens: hint / auto-inject is a
+ *      single-skill decision tied to the catalogue's top entry.
+ *
+ * When `hasEmbedding` is `false` a banner above the rows clarifies
+ * that hint / auto-inject bands cannot be evaluated under BM25-only
+ * mode — every in-catalog row falls into the `listed` band by
+ * definition.
  */
 function renderTesterResults(
 	container: HTMLElement,
-	scored: Array<{ skill: SkillDefinition; similarity: number }>,
+	skills: SkillDefinition[],
+	ranked: RetrievalResult[],
 	thresholds: BandThresholds,
+	topK: number,
+	hasEmbedding: boolean,
 ): void {
-	if (scored.length === 0) {
+	if (skills.length === 0) {
 		container.createEl('div', {
 			cls: 'oap-settings-skill-tester-empty',
 			text: t('settings.skillTesterNoSkills'),
@@ -582,18 +568,66 @@ function renderTesterResults(
 		return;
 	}
 
-	for (const { skill, similarity } of scored) {
-		const band = bandForSimilarity(similarity, thresholds);
-		const row = container.createEl('div', {
-			cls: `oap-settings-skill-tester-result oap-settings-skill-tester-result--${band}`,
+	if (!hasEmbedding) {
+		container.createEl('div', {
+			cls: 'oap-settings-skill-tester-banner',
+			text: t('settings.skillTesterBm25OnlyBanner'),
+		});
+	}
+
+	const scoredIndices = new Set(ranked.map(r => r.index));
+	type Row = {
+		skill: SkillDefinition;
+		rank: number | null;
+		bm25: number | null;
+		cosine: number | null;
+	};
+	const rows: Row[] = ranked.map((r, i) => ({
+		skill: skills[r.index]!,
+		rank: i + 1,
+		bm25: r.bm25Score ?? null,
+		cosine: r.cosineSimilarity ?? null,
+	}));
+	for (let i = 0; i < skills.length; i++) {
+		if (scoredIndices.has(i)) continue;
+		rows.push({
+			skill: skills[i]!,
+			rank: null,
+			bm25: null,
+			cosine: null,
+		});
+	}
+
+	for (let i = 0; i < rows.length; i++) {
+		const { skill, rank, bm25, cosine } = rows[i]!;
+		const band = resolveRowBand({ rowIndex: i, rank, cosine, topK, thresholds });
+		const classes = [
+			'oap-settings-skill-tester-result',
+			`oap-settings-skill-tester-result--${band}`,
+		];
+		// Mark the runtime-decisive row (rank #1 with a real score) so
+		// users can immediately spot which entry the hint /
+		// auto-inject gates would actually evaluate.
+		if (i === 0 && rank !== null) {
+			classes.push('oap-settings-skill-tester-result--top');
+		}
+		const row = container.createEl('div', { cls: classes.join(' ') });
+
+		row.createEl('span', {
+			cls: 'oap-settings-skill-tester-result-rank',
+			text: rank !== null ? `#${rank}` : '—',
 		});
 		row.createEl('span', {
 			cls: 'oap-settings-skill-tester-result-name',
 			text: skill.name,
 		});
 		row.createEl('span', {
-			cls: 'oap-settings-skill-tester-result-sim',
-			text: similarity.toFixed(3),
+			cls: 'oap-settings-skill-tester-result-bm25',
+			text: bm25 !== null ? `BM25 ${bm25.toFixed(2)}` : '—',
+		});
+		row.createEl('span', {
+			cls: 'oap-settings-skill-tester-result-cosine',
+			text: cosine !== null ? `cos ${cosine.toFixed(3)}` : '—',
 		});
 		row.createEl('span', {
 			cls: 'oap-settings-skill-tester-result-band',
@@ -602,13 +636,41 @@ function renderTesterResults(
 	}
 }
 
-type SimilarityBand = 'auto-inject' | 'hint' | 'plain' | 'below-threshold';
+type SimilarityBand = 'auto-inject' | 'hint' | 'plain' | 'filtered-out';
 
-function bandForSimilarity(s: number, thresholds: BandThresholds): SimilarityBand {
-	if (s >= thresholds.autoInject) return 'auto-inject';
-	if (s >= thresholds.hint) return 'hint';
-	if (s >= thresholds.filter) return 'plain';
-	return 'below-threshold';
+/**
+ * Per-row band decision for the trigger-tester table. The decision
+ * tree mirrors the runtime catalogue builder:
+ *
+ *   - Row with no signal (BM25 missed + embedding missed/unconfigured):
+ *     `filtered-out`. The retriever wouldn't surface it either.
+ *   - Row beyond the `topK` cutoff: `filtered-out`. Same outcome at
+ *     runtime — the model never sees it.
+ *   - Top-row (rank 1) with cosine ≥ auto-inject threshold:
+ *     `auto-inject`. This is the only row that can actually trigger
+ *     auto-inject at runtime.
+ *   - Top-row with cosine ≥ hint threshold: `hint`. Same reasoning.
+ *   - Anything else inside the catalogue: `plain` ("listed"). This
+ *     deliberately ignores cosine for non-top rows — hint /
+ *     auto-inject are single-skill decisions in the runtime; showing
+ *     a high-cosine `#3` as `hint` would falsely suggest it would
+ *     escalate, which it never does.
+ */
+function resolveRowBand(args: {
+	rowIndex: number;
+	rank: number | null;
+	cosine: number | null;
+	topK: number;
+	thresholds: BandThresholds;
+}): SimilarityBand {
+	const { rowIndex, rank, cosine, topK, thresholds } = args;
+	if (rank === null) return 'filtered-out';
+	if (rank > topK) return 'filtered-out';
+	if (rowIndex === 0 && cosine !== null) {
+		if (cosine >= thresholds.autoInject) return 'auto-inject';
+		if (cosine >= thresholds.hint) return 'hint';
+	}
+	return 'plain';
 }
 
 function bandLabelKey(band: SimilarityBand): string {
@@ -616,6 +678,6 @@ function bandLabelKey(band: SimilarityBand): string {
 		case 'auto-inject': return 'settings.skillTesterBandAutoInject';
 		case 'hint': return 'settings.skillTesterBandHint';
 		case 'plain': return 'settings.skillTesterBandPlain';
-		case 'below-threshold': return 'settings.skillTesterBandBelow';
+		case 'filtered-out': return 'settings.skillTesterBandFilteredOut';
 	}
 }

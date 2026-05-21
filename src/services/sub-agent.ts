@@ -8,7 +8,7 @@
  * to the main agent.
  */
 
-import { ChatStream, ChatMessage, RegisteredTool, type EmbeddingFilterOptions } from "./chat-stream";
+import { ChatStream, ChatMessage, RegisteredTool, type ToolFilterOptions } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
 import { estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
@@ -188,7 +188,7 @@ export class SubAgent {
             allowedCapabilities?: ToolCapability[];
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
-            embeddingFilter?: EmbeddingFilterOptions;
+            embeddingFilter?: ToolFilterOptions;
             /** Optional context from the main conversation */
             context?: string;
             /**

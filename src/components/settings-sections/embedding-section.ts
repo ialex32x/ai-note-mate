@@ -3,7 +3,6 @@ import { t } from "../../i18n";
 import type { EmbeddingProviderType } from "../../services/providers";
 import {
 	createDefaultEmbeddingConfig,
-	DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD,
 	DEFAULT_TOOL_FILTER_TOP_K,
 } from "../../settings/defaults";
 import type { EmbeddingConfig } from "../../settings/types";
@@ -46,26 +45,11 @@ export class EmbeddingSettingsSection implements SettingsSection {
 			experimental: true,
 		});
 
-		// ── Tool filter tuning (global, applies whenever embedding is used
-		//    to gate on-demand tools). Bounds are validated at the use-site
-		//    (ChatStream._getBestMatchedTools) so we don't need range UI here
-		//    beyond a sensible placeholder + light input parsing.
-		createTextField({
-			container,
-			name: t('settings.toolFilterSimilarityThreshold'),
-			desc: t('settings.toolFilterSimilarityThresholdDesc'),
-			placeholder: String(DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD),
-			value: String(plugin.settings.toolFilterSimilarityThreshold),
-			advanced: true,
-			onChange: async (value) => {
-				const num = parseFloat(value);
-				plugin.settings.toolFilterSimilarityThreshold =
-					isNaN(num) ? DEFAULT_TOOL_FILTER_SIMILARITY_THRESHOLD
-					: Math.max(0, Math.min(1, num));
-				await plugin.saveSettings();
-			},
-		});
-
+		// ── Tool retriever tuning (global, applies whenever the on-demand
+		//    tool retriever runs — BM25-only when embedding is unconfigured,
+		//    hybrid BM25 + cosine via RRF when embedding is configured).
+		//    Bounds are validated at the use-site (ChatStream._getBestMatchedTools)
+		//    so we don't need range UI here beyond a sensible placeholder.
 		createTextField({
 			container,
 			name: t('settings.toolFilterTopK'),

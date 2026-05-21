@@ -14,7 +14,7 @@ export {
     createSummarizerConfig,
     createInsightsConfig,
     createEmbeddingConfig,
-    createEmbeddingFilterOptions,
+    createToolFilterOptions,
     createProviderForActiveProfileOf,
     createChatAgent,
     buildDynamicTools,
