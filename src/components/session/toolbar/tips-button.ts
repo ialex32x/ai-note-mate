@@ -124,7 +124,8 @@ export function createTipsButton(
             cls: 'session-tips-popover__nav-btn',
             attr: { type: 'button', 'aria-label': t('tips.prev') },
         });
-        setIcon(prevBtn, 'chevron-left');
+        const prevIcon = prevBtn.createEl('span', { cls: 'session-tips-popover__nav-btn-icon' });
+        setIcon(prevIcon, 'chevron-left');
         setTooltip(prevBtn, t('tips.prev'));
         prevBtn.disabled = currentList.length <= 1;
         prevBtn.addEventListener('click', (e) => {
@@ -144,7 +145,8 @@ export function createTipsButton(
             cls: 'session-tips-popover__nav-btn',
             attr: { type: 'button', 'aria-label': t('tips.next') },
         });
-        setIcon(nextBtn, 'chevron-right');
+        const nextIcon = nextBtn.createEl('span', { cls: 'session-tips-popover__nav-btn-icon' });
+        setIcon(nextIcon, 'chevron-right');
         setTooltip(nextBtn, t('tips.next'));
         nextBtn.disabled = currentList.length <= 1;
         nextBtn.addEventListener('click', (e) => {

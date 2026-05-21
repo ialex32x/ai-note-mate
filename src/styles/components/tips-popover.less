@@ -125,14 +125,20 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    flex: 0 0 auto;
+    flex-shrink: 0;
     width: 22px;
     height: 22px;
+    min-width: 22px;
+    min-height: 22px;
     padding: 0;
     border: none;
     border-radius: @radius-sm;
     background: transparent;
     color: @text-secondary;
     cursor: pointer;
+    // Neutralise Obsidian mobile touch-size inflation on native <button>.
+    box-shadow: none;
     transition: background @duration-fast, color @duration-fast;
 
     &:hover:not(:disabled) {
@@ -144,16 +150,27 @@
         opacity: 0.3;
         cursor: default;
     }
+}
+
+.session-tips-popover__nav-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: inherit;
+    --icon-size: 14px;
 
     svg {
-        width: 14px;
-        height: 14px;
+        .icon-size(14px);
     }
 }
 
 .session-tips-popover__counter {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 0.78em;
     color: @text-faint;
+    text-align: center;
     user-select: none;
 }
 
@@ -369,31 +386,11 @@
     }
 }
 
-// Mobile: width is already container-bound via `max-width: 100% - ...`
-// so we don't need to override it. Just enlarge tap targets so the
-// popover stays usable on touch.
-@media (max-width: @breakpoint-mobile) {
-    .session-tips-popover__btn {
-        padding: @spacing-md @spacing-lg;
-    }
-
-    .session-tips-popover__nav-btn {
-        width: 28px;
-        height: 28px;
-
-        svg {
-            width: 16px;
-            height: 16px;
-        }
-    }
-
-    // Mobile bumps the nav and action buttons by ~6–8px each, so
-    // raise the locked height by the same amount; otherwise the
-    // longest tip would either clip or re-introduce a jumping-button
-    // problem on touch devices. Both floor and ceiling go up together
-    // so the strict-height invariant is preserved across breakpoints.
-    .session-tips-popover__view {
-        min-height: 240px;
-        max-height: 240px;
-    }
+// Native Obsidian mobile (incl. landscape where width may exceed the
+// narrow-sidebar media query): keep nav chevrons from being squashed
+// by flex and ensure Lucide strokes inherit `currentColor`.
+.is-mobile .session-tips-popover__nav-btn {
+    flex-shrink: 0;
+    min-width: 22px;
+    min-height: 22px;
 }
