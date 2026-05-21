@@ -194,40 +194,6 @@
     }
 }
 
-.session-send-btn {
-    flex: 0 0 auto;
-    .flex-center();
-    width: @input-min-height;
-    height: @input-min-height;
-    padding: 0;
-    border-radius: @radius-md;
-    cursor: pointer;
-    background: @text-accent;
-    color: var(--text-on-accent);
-    border: none;
-    transition: background @duration-fast;
-
-    svg {
-        .icon-size(18px);
-    }
-
-    &:hover:not(:disabled) {
-        background: var(--interactive-accent-hover);
-    }
-
-    &:disabled {
-        opacity: 1;
-        cursor: pointer;
-        background: @text-error;
-        color: var(--text-on-accent);
-
-        &:hover {
-            background: @text-error;
-            opacity: 0.85;
-        }
-    }
-}
-
 // Thinking level selector row (below input)
 .session-thinking-row {
     flex: 0 0 auto;
@@ -265,6 +231,46 @@
         &:hover {
             color: @text-primary;
             background: @bg-modifier-hover;
+        }
+    }
+
+    // Right-aligned bucket. Pushed to the right edge of the toolbar via
+    // `margin-left: auto` so the surrounding left-aligned controls keep
+    // their natural packing order. Designed as a group so additional
+    // right-aligned affordances can be appended later without further
+    // layout surgery.
+    &__right {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+    }
+}
+
+// Send button — now lives inside `.session-thinking-row__right` and reuses
+// `.session-thinking-row__icon-btn` for sizing/padding so it lines up
+// visually with the rest of the toolbar. Only the colour scheme is custom:
+// accent fill marks the primary action, and the `.is-streaming` modifier
+// flips the surface to error red to telegraph the secondary "click to
+// abort" affordance while a turn is in flight.
+.session-send-btn {
+    color: var(--text-on-accent);
+    background: @text-accent;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        color: var(--text-on-accent);
+        background: var(--interactive-accent-hover);
+    }
+
+    &.is-streaming {
+        background: @text-error;
+        color: var(--text-on-accent);
+
+        &:hover {
+            background: @text-error;
+            color: var(--text-on-accent);
+            opacity: 0.85;
         }
     }
 }

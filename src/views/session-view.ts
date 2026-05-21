@@ -698,12 +698,6 @@ export class SessionView extends ItemView {
                 () => this.cmInput.getContent(),
                 (v) => this.cmInput.setContent(v),
             );
-            this.sendBtn = inputRow.createEl('button', {
-                cls: 'session-send-btn',
-                attr: { 'aria-label': t('view.sendMessage') },
-            });
-            setIcon(this.sendBtn, 'send');
-            this.sendBtn.addEventListener('click', () => void this.handleSend());
 
             // ── Thinking level selector ───────────────────────────────────────────
             const thinkingRow = inputContainer.createEl('div', { cls: 'session-thinking-row' });
@@ -759,6 +753,24 @@ export class SessionView extends ItemView {
                 this.buildTipSessionViewAdapter(),
                 this.dropdownManager,
             );
+
+            // ── Right-aligned button group ────────────────────────────────────
+            // Holds buttons that should sit on the right edge of the toolbar.
+            // Pushed right via `margin-left: auto` on the group itself, so the
+            // left-aligned controls above keep their natural packing order.
+            // Currently hosts just the send button; future right-aligned
+            // affordances (e.g. attach / record / model-action toggles) should
+            // be appended here.
+            const thinkingRowRight = thinkingRow.createEl('div', {
+                cls: 'session-thinking-row__right',
+            });
+            this.sendBtn = thinkingRowRight.createEl('button', {
+                cls: 'session-thinking-row__icon-btn session-send-btn',
+                attr: { 'aria-label': t('view.sendMessage') },
+            });
+            setIcon(this.sendBtn, 'send');
+            setTooltip(this.sendBtn, t('view.send'));
+            this.sendBtn.addEventListener('click', () => void this.handleSend());
 
             // Reflect live MCP connection state in the session-status panel
             // while it is open. The panel is also refreshed on demand from
@@ -1729,9 +1741,14 @@ export class SessionView extends ItemView {
     }
 
     private setInputLocked(locked: boolean) {
-        this.sendBtn.setAttr('title', locked ? t('view.stop') : t('view.send'));
+        setTooltip(this.sendBtn, locked ? t('view.stop') : t('view.send'));
         this.sendBtn.setAttr('aria-label', locked ? t('view.stopGenerating') : t('view.sendMessage'));
         setIcon(this.sendBtn, locked ? 'square' : 'send');
+        // Flip the visual state — accent (send) ↔ error (stop) — via a
+        // modifier class so the toolbar-sized button stays distinguishable
+        // from neighbouring icon buttons while preserving the original
+        // "click again to abort" affordance.
+        this.sendBtn.toggleClass('is-streaming', locked);
         // Keep the insight card's "Deepen" buttons in lockstep with the
         // chat send button: while a turn is in flight, no new turn may
         // be triggered (including from the insight card).
