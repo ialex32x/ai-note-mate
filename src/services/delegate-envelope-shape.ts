@@ -112,11 +112,11 @@ export interface DelegatePayload {
     __kind: typeof DELEGATE_ENVELOPE_KIND;
     /** Schema version — always {@link DELEGATE_ENVELOPE_VERSION} on emit; consumers must check before parsing. */
     __v: typeof DELEGATE_ENVELOPE_VERSION;
-    /** Human-readable summary — the sub-agent's last assistant text, same as before exchange existed. */
+    /** Human-readable summary — the sub-agent's last assistant text, same as before the handoff channel existed. */
     text: string;
-    /** Canonical structured return value, present iff the sub-agent put something under key "result". */
+    /** Canonical structured return value, present iff the sub-agent handed off something under key "result". */
     result?: unknown;
-    /** Auxiliary keys the sub-agent put under names other than "result". */
+    /** Auxiliary keys the sub-agent handed off under names other than "result". */
     extras?: Record<string, unknown>;
     /**
      * References to fields that were diverted to the artifact store

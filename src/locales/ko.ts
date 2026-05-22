@@ -271,6 +271,8 @@ export const ko: Record<string, string> = {
 	'settings.embeddingEmpty': '임베딩이 설정되지 않았습니다. 추가하여 임베딩 기능을 활성화하세요.',
 	'settings.toolFilterTopK': '도구 검색기: 상위 K',
 	'settings.toolFilterTopKDesc': '검색기 순위 매김 후 모델에 노출되는 온디맨드 도구의 최대 개수 (1–30). 임베딩이 구성되지 않은 경우 BM25 만 사용하며, 임베딩이 활성화되면 RRF 로 BM25 와 임베딩 코사인 유사도를 융합합니다. 상시 도구는 이 상한에 포함되지 않습니다.',
+	'settings.subAgentFilterTopK': '서브 에이전트 검색기: 상위 K',
+	'settings.subAgentFilterTopKDesc': '매 턴 DELEGATION 블록 및 delegate_task 도구의 agent 목록에 포함되는 서브 에이전트의 최대 개수 (1–8). 도구 필터와 동일한 BM25 + 임베딩 하이브리드 검색기를 사용합니다. 값을 낮추면 서브 에이전트가 필요 없는 대화 턴에서 토큰을 절약할 수 있습니다. 같은 세션에서 이미 사용된 서브 에이전트는 항상 유지됩니다 (히스토리 스티키). 0 으로 설정하면 기본값이 사용됩니다.',
 	'settings.skillFilterTopK': '스킬 검색기: 상위 K',
 	'settings.skillFilterTopKDesc': '검색기 순위 매김 후 매 턴 카탈로그에 노출되는 스킬의 최대 개수 (1–30).',
 	'settings.skillHintThreshold': '스킬: 강력한 힌트 임계값',

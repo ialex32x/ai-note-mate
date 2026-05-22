@@ -4,6 +4,7 @@ import type { EmbeddingProviderType } from "../../services/providers";
 import {
 	createDefaultEmbeddingConfig,
 	DEFAULT_TOOL_FILTER_TOP_K,
+	DEFAULT_SUB_AGENT_FILTER_TOP_K,
 } from "../../settings/defaults";
 import type { EmbeddingConfig } from "../../settings/types";
 import {
@@ -62,6 +63,31 @@ export class EmbeddingSettingsSection implements SettingsSection {
 				plugin.settings.toolFilterTopK =
 					isNaN(num) ? DEFAULT_TOOL_FILTER_TOP_K
 					: Math.max(1, Math.min(30, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		// ── Sub-agent retriever tuning (multi-agent mode only —
+		//    in single-agent mode the orchestrator is never instantiated
+		//    so the setting is a no-op). Same hybrid BM25 + embedding
+		//    retriever as the tool filter, scoped to picking which
+		//    sub-agents land in the per-turn DELEGATION block and the
+		//    `delegate_task` enum. Lower values = bigger token savings
+		//    on casual turns; sticky-on-history union'ing inside the
+		//    orchestrator means a once-used sub-agent never silently
+		//    disappears mid-conversation regardless of this cap.
+		createTextField({
+			container,
+			name: t('settings.subAgentFilterTopK'),
+			desc: t('settings.subAgentFilterTopKDesc'),
+			placeholder: String(DEFAULT_SUB_AGENT_FILTER_TOP_K),
+			value: String(plugin.settings.subAgentFilterTopK),
+			advanced: true,
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.subAgentFilterTopK =
+					isNaN(num) ? DEFAULT_SUB_AGENT_FILTER_TOP_K
+					: Math.max(1, Math.min(8, num));
 				await plugin.saveSettings();
 			},
 		});

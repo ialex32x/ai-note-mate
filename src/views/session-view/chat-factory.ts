@@ -8,6 +8,7 @@ import {
     DEFAULT_SKILL_FILTER_TOP_K,
     DEFAULT_SKILL_HINT_THRESHOLD,
     DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
+    DEFAULT_SUB_AGENT_FILTER_TOP_K,
 } from '../../settings/defaults';
 import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provider';
 import { createProviderForActiveProfile } from '../../utils/provider-factory';
@@ -187,13 +188,15 @@ export function createChatAgent(
     // Build sub-agent configurations first (needed for system prompt)
     const subAgentConfigs = buildSubAgentConfigs(plugin);
 
-    // Build sub-agent descriptors for the dynamic system prompt
-    const subAgentDescriptors = subAgentConfigs.map(c => ({
-        name: c.name,
-        description: c.description,
-    }));
-
-    const builtinSystemPrompt = buildBuiltinSystemPrompt(subAgentDescriptors, {
+    // The DELEGATION block is no longer baked into the static system
+    // prompt — `AgentOrchestrator` injects it per-turn via
+    // `systemPromptSuffix`, scoped to whichever sub-agents the
+    // sub-agent router shortlists for the current user query. We just
+    // tell the prompt builder whether to use the multi-agent
+    // intro/HINTS flavour (slimmer, delegation-aware) or the
+    // single-agent one (richer, direct-tool-use framing).
+    const builtinSystemPrompt = buildBuiltinSystemPrompt({
+        multiAgent: subAgentConfigs.length > 0,
         structuredFollowUps: settings.followUpSuggestionsEnabled && settings.followUpSuggestionsStructured,
     });
 
@@ -381,6 +384,13 @@ export function createChatAgent(
         chat = new AgentOrchestrator({
             ...chatStreamConfig,
             subAgents: subAgentConfigs,
+            // Per-turn sub-agent shortlist cap. The orchestrator
+            // clamps and falls back internally; we just forward the
+            // current setting verbatim. Honour 0 as "use built-in
+            // default" the same way the other top-K knobs do.
+            subAgentFilterTopK: settings.subAgentFilterTopK > 0
+                ? settings.subAgentFilterTopK
+                : DEFAULT_SUB_AGENT_FILTER_TOP_K,
             onSubAgentMessageUpdate: (agentName, msg) => {
                 if (!callbacks.generationMatches()) return;
                 callbacks.onSubAgentMessageUpdate(agentName, msg);
@@ -419,7 +429,7 @@ export function createChatAgent(
         // future refactor that introduces store rebuilds.
         //
         // Sub-agents do NOT receive this tool (plan §1.4): they upload
-        // structured data through their own `exchange` store; the main
+        // structured data through their own handoff store; the main
         // agent reads via the envelope and recalls via this tool.
         if (callbacks.getArtifactStore) {
             // Capture inside an arrow to preserve `callbacks` as the

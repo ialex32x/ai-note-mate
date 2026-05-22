@@ -30,7 +30,7 @@
  *   the schema is small enough that the token cost is negligible.
  * - Registered ONLY on the main agent. Sub-agents are one-shot and
  *   should not maintain cross-call TODO state — they communicate
- *   structured results upward via their own `exchange` store.
+ *   structured results upward via their own handoff store.
  */
 
 import type { RegisteredTool, ToolCallResult } from '../chat-stream';
@@ -42,12 +42,12 @@ import {
 } from './todo-state';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Source pattern (same shape as exchange / recall_artifact)
+// Source pattern (same shape as handoff / recall_artifact)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Indirection layer the tool uses to reach the live runtime state.
- * Mirrors {@link createExchangeTool} / {@link createRecallArtifactTool}
+ * Mirrors {@link createHandoffTools} / {@link createRecallArtifactTool}
  * so the chat agent can be built once at construction time while the
  * actual {@link SessionRuntime} reference is owned by the runtime
  * factory. The closure-supplied source guarantees we always read /
@@ -83,7 +83,7 @@ export interface TodoStateInputItem {
  *
  * When the getter returns `null` the tool surfaces a clear runtime
  * error to the model rather than crashing — same convention as
- * `exchange` / `recall_artifact`.
+ * the handoff tools / `recall_artifact`.
  */
 export type TodoStateSourceSource = TodoStateSource | (() => TodoStateSource | null);
 

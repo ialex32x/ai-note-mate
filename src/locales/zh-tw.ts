@@ -271,6 +271,8 @@ export const zhTW: Record<string, string> = {
 	'settings.embeddingEmpty': '尚未配置嵌入。新增一個以啟用嵌入功能。',
 	'settings.toolFilterTopK': '工具檢索:Top-K',
 	'settings.toolFilterTopKDesc': '檢索器排名後最多保留多少個按需工具 (1–30)。未設定嵌入時僅使用 BM25,設定嵌入後透過 RRF 融合 BM25 與嵌入餘弦相似度。常駐工具不計入此上限。',
+	'settings.subAgentFilterTopK': '子代理檢索:Top-K',
+	'settings.subAgentFilterTopKDesc': '每輪注入到 DELEGATION 段和 delegate_task 工具列舉中的子代理上限 (1–8)。沿用與工具過濾相同的 BM25 + 嵌入混合檢索器。設為較低值可在不需要子代理的對話輪中節省 token;本會話中曾經呼叫過的子代理仍會保留(歷史黏性)。設為 0 表示使用內建預設值。',
 	'settings.skillFilterTopK': '技能檢索:Top-K',
 	'settings.skillFilterTopKDesc': '檢索器排名後每輪技能目錄最多保留多少個技能 (1–30)。',
 	'settings.skillHintThreshold': '技能:強提示閾值',

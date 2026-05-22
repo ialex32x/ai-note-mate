@@ -271,6 +271,8 @@ export const ja: Record<string, string> = {
 	'settings.embeddingEmpty': '埋め込みが設定されていません。追加して埋め込み機能を有効にしてください。',
 	'settings.toolFilterTopK': 'ツール検索:上位 K',
 	'settings.toolFilterTopKDesc': '検索器のランキング後にモデルへ提示するオンデマンドツールの最大数 (1–30)。埋め込み未設定時は BM25 のみ、設定時は RRF で BM25 と埋め込みコサイン類似度を融合します。常時ツールはこの上限に含まれません。',
+	'settings.subAgentFilterTopK': 'サブエージェント検索:上位 K',
+	'settings.subAgentFilterTopKDesc': '各ターンの DELEGATION ブロックおよび delegate_task ツールの agent 列挙に含めるサブエージェントの最大数 (1–8)。ツールフィルターと同じ BM25 + 埋め込みのハイブリッド検索器を使用します。値を小さくすると、サブエージェントが不要なターンでトークンを節約できます。会話内で既に使用したサブエージェントは履歴スティッキーにより残ります。0 を指定すると組み込みのデフォルト値を使用します。',
 	'settings.skillFilterTopK': 'スキル検索:上位 K',
 	'settings.skillFilterTopKDesc': '検索器のランキング後に毎ターンのカタログへ提示するスキルの最大数 (1–30)。',
 	'settings.skillHintThreshold': 'スキル:強ヒントしきい値',

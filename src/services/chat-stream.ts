@@ -1510,7 +1510,7 @@ export class ChatStream implements IChatAgent {
                         //      behaviour) left the tool_call message stuck in
                         //      `streaming: true` forever because the throw at
                         //      the bottom of this branch bypassed finalization,
-                        //      producing the "exchange bubble shows `…`
+                        //      producing the "handoff bubble shows `…`
                         //      forever, never gets a ✓/✕" bug — see
                         //      `_finalizeStuckToolCallMessages` for the
                         //      defensive safety net that catches the symptom.
@@ -1617,7 +1617,7 @@ export class ChatStream implements IChatAgent {
                             } else {
                                 // Known-bug surface: this is the "unhandled
                                 // tool" mid-turn throw that historically left
-                                // exchange / sub-agent bubbles stuck at `…`.
+                                // handoff / sub-agent bubbles stuck at `…`.
                                 // The throw is preserved (the bubble safety
                                 // net needs it), but we add a tracer record
                                 // so mobile users see something more concrete
@@ -1980,7 +1980,8 @@ export class ChatStream implements IChatAgent {
      * the second emit — leaving a bubble visually stuck at `…` even
      * though the LLM-facing tool_result was delivered correctly.
      * That class of bug is exactly what the user reported for the
-     * `exchange` tool.
+     * (legacy) `exchange` tool — the same hazard now applies to the
+     * `write_handoff` / `read_handoff` / `list_handoff` tools.
      *
      * Re-emitting one final time at the end of the turn turns "stuck
      * forever" into "stuck for at most the turn's duration", which

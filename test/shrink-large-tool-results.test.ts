@@ -215,7 +215,7 @@ describe('ContextReducer.shrinkLargeToolResults', () => {
         // toolCall, and shrinking it here would force the model to
         // "re-derive" the same payload on a later iteration (typically
         // by re-running the same expensive tool — the loop reported in
-        // the wild as `read_file → exchange.put → read_file → ...`,
+        // the wild as `read_file → write_handoff → read_file → ...`,
         // i.e. the agent "走两步就完全忘了自己干过什么了").
         //
         // The contract is therefore: only a **content-bearing**
@@ -245,21 +245,21 @@ describe('ContextReducer.shrinkLargeToolResults', () => {
     });
 
     /**
-     * REGRESSION — vault_inspector "read_file → exchange.put → read_file
-     * → exchange.put" loop.
+     * REGRESSION — vault_inspector "read_file → write_handoff →
+     * read_file → write_handoff" loop.
      *
      * The reported wild symptom: a sub-agent reads a file in full,
-     * stores its content into the exchange via `exchange.put`, and
-     * then on the very next iteration of the same `prompt()` loop
-     * re-runs `read_file` on the same path and `exchange.put`s the
-     * result a second time — all within one user-visible turn.
+     * hands its content off via `write_handoff`, and then on the very
+     * next iteration of the same `prompt()` loop re-runs `read_file`
+     * on the same path and writes the result a second time — all
+     * within one user-visible turn.
      *
      * Mechanism (pre-fix): `shrinkLargeToolResults` is invoked inside
      * `reduce()` at the start of every LLM round-trip even on the
      * "no compression needed" path. Its consumed-tail heuristic took
      * "the LAST assistant message" as the boundary between consumed
      * and unconsumed tool_results. After iter 2 emitted its
-     * `exchange.put` toolCall (a pure tool-call assistant — empty
+     * `write_handoff` toolCall (a pure tool-call assistant — empty
      * content), the read_file's tool_result was now BEFORE the latest
      * assistant and therefore "consumed" → shrunk to a
      * `[Tool result truncated: …]` placeholder on the next iter's
@@ -270,22 +270,22 @@ describe('ContextReducer.shrinkLargeToolResults', () => {
      * boundary. The active reasoning chain (pure-tool-call iterations
      * threading data forward through toolCall arguments) stays exempt.
      */
-    it('preserves the tool_result inside an active read_file → exchange.put chain', () => {
+    it('preserves the tool_result inside an active read_file → write_handoff chain', () => {
         const fileBody = bigText(); // simulates a full file read
         const msgs: HistroyMessage[] = [
             // Sub-agent task description.
-            user('Read file X and store its content into the result key of the exchange.'),
+            user('Read file X and store its content into the result key of the handoff.'),
             // iter 1 — pure tool-call: read_file
             assistantWithToolCalls('', [
                 { id: 'read1', name: 'read_file', arguments: JSON.stringify({ path: 'X' }) },
             ]),
             toolResult('read1', fileBody),
-            // iter 2 — pure tool-call: exchange.put forwards the file
+            // iter 2 — pure tool-call: write_handoff forwards the file
             // content via its toolCall arguments. Crucially this
             // assistant has NO prose content, so it is NOT a
             // consumption boundary.
             assistantWithToolCalls('', [
-                { id: 'put1', name: 'exchange_put', arguments: JSON.stringify({ key: 'result', value: '<<file body>>' }) },
+                { id: 'put1', name: 'write_handoff', arguments: JSON.stringify({ key: 'result', value: '<<file body>>' }) },
             ]),
             toolResult('put1', 'OK: stored 1 entry'),
             // iter 3 is about to start: reduce() is called with all
@@ -323,7 +323,7 @@ describe('ContextReducer.shrinkLargeToolResults', () => {
             ]),
             toolResult('read1', fileBody),
             assistantWithToolCalls('', [
-                { id: 'put1', name: 'exchange_put', arguments: '{}' },
+                { id: 'put1', name: 'write_handoff', arguments: '{}' },
             ]),
             toolResult('put1', 'OK'),
             // Chain-closing prose. Now everything before it is fair game.
@@ -814,7 +814,7 @@ describe('ContextReducer.emergencyShrink', () => {
      * blindly truncated every oversized tool_result regardless of
      * position. For an active chain that legitimately needed several
      * large reads in one turn (the user-reported `read_file →
-     * exchange.put → read_file → ...` shape), that meant every read
+     * write_handoff → read_file → ...` shape), that meant every read
      * became a `[Tool result truncated: …]` placeholder on the very
      * next reduce — exactly the symptom that brought us here.
      *

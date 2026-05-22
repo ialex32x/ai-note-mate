@@ -1169,7 +1169,7 @@ export class ContextReducer {
      * here would force-truncate every active-chain tool_result the
      * moment the cumulative chain crossed the emergency line. For a
      * sub-agent that legitimately needs to read several large files in
-     * one turn (`read_file → exchange.put → read_file → exchange.put
+     * one turn (`read_file → write_handoff → read_file → write_handoff
      * → ...`), that's exactly the "走两步就忘 → re-fetch the same
      * file → loop" pathology this entire shrink stage was meant to
      * prevent. Walking oldest-first and stopping at the budget line
@@ -1572,10 +1572,10 @@ export class ContextReducer {
         // iterations.
         //
         // Why this matters — vault_inspector "走两步就忘" loop:
-        //   read_file (big body) → exchange.put(value=<body>) →
-        //   read_file (same path again) → exchange.put again → ...
+        //   read_file (big body) → write_handoff(value=<body>) →
+        //   read_file (same path again) → write_handoff again → ...
         // Pre-fix the heuristic took **any** assistant as the
-        // boundary, so once iter 2 emitted its `exchange.put`
+        // boundary, so once iter 2 emitted its `write_handoff`
         // toolCall, iter 3's reduce() shrank read_file's result to a
         // `[Tool result truncated: …]` placeholder. The model could
         // no longer see its own file content and retried the read

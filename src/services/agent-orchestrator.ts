@@ -33,10 +33,16 @@ import type {
     MinimalModelConfig,
 } from "./llm-provider";
 import { SubAgent, SubAgentConfig, SubAgentResult, SubAgentExecutionLog } from "./sub-agent";
-import { type ExchangeStore, estimateValueSize, validateSerializable } from "./tools/exchange-toolcall";
+import { type HandoffStore, estimateValueSize, validateSerializable } from "./tools/handoff-toolcall";
 import { getResultValidator } from "./result-validators";
 import type { ArtifactStore } from "./artifact-store";
 import type { ArtifactRef } from "./delegate-envelope-shape";
+import {
+    selectMatchingSubAgents,
+    refineMatchingSubAgentsSync,
+    buildSubAgentCandidateTexts,
+} from "./sub-agent-router";
+import { buildDelegationSystemPrompt, type SubAgentDescriptor } from "./prompts/session-prompts";
 
 // Re-export sub-agent types for external consumers
 export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
@@ -64,7 +70,7 @@ export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
 // ─────────────────────────────────────────────
 
 /**
- * Per-key serialized-size cap for values returned via the exchange channel.
+ * Per-key serialized-size cap for values returned via the handoff channel.
  * Values whose `JSON.stringify(value).length` exceeds this cap are dropped
  * from the envelope and replaced with a `{<key>_omitted: true, <key>_size: N}`
  * marker, so the main agent learns the value existed and how big it was
@@ -75,7 +81,7 @@ export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
  * accidentally pull a whole document into main-agent context". If real
  * workloads need more, raise it deliberately rather than chasing the cap.
  */
-export const EXCHANGE_VALUE_MAX_BYTES = 32 * 1024;
+export const HANDOFF_VALUE_MAX_BYTES = 32 * 1024;
 
 /**
  * Discriminator marker, schema version, and shape interface for the
@@ -120,8 +126,8 @@ const ARTIFACT_PREVIEW_MAX_CHARS = 200;
  * {@link ArtifactRef}. JSON-stringifies the value and truncates with a
  * clear ellipsis marker so the LLM can tell at a glance that the
  * preview is incomplete. Returns `undefined` when the value cannot be
- * serialized (defence in depth — the exchange tool should already have
- * rejected such values at put-time, but a missing preview is strictly
+ * serialized (defence in depth — write_handoff should already have
+ * rejected such values at write-time, but a missing preview is strictly
  * better than throwing here mid-envelope-build).
  */
 function buildArtifactPreview(value: unknown): string | undefined {
@@ -178,10 +184,10 @@ export interface BuildDelegatePayloadOptions {
  *
  * Three size buckets, applied per (key, value) pair:
  *
- *   1. `size ≤ EXCHANGE_VALUE_MAX_BYTES` (32 KB) — value is inlined as
+ *   1. `size ≤ HANDOFF_VALUE_MAX_BYTES` (32 KB) — value is inlined as
  *      `payload.result` (for key `"result"`) or `payload.extras[key]`
  *      (otherwise). Identical to legacy behaviour.
- *   2. `EXCHANGE_VALUE_MAX_BYTES < size ≤ singleArtifactCap` (32–128 KB,
+ *   2. `HANDOFF_VALUE_MAX_BYTES < size ≤ singleArtifactCap` (32–128 KB,
  *      iff `options.artifactStore` AND `options.delegateCallId` are
  *      both provided) — value is spilled to the artifact store under
  *      `auto:<delegateCallId>:<key>` and an {@link ArtifactRef} is
@@ -210,7 +216,7 @@ export interface BuildDelegatePayloadOptions {
  */
 export function buildDelegatePayload(
     text: string,
-    store: ExchangeStore,
+    store: HandoffStore,
     agentName?: string,
     options: BuildDelegatePayloadOptions = {},
 ): DelegatePayload {
@@ -228,8 +234,8 @@ export function buildDelegatePayload(
      * validator can run against the structured shape regardless of which
      * bucket the value ended up in (inline or artifact). `undefined`
      * means "no result key was written" (different from "result was
-     * literally `undefined`" — the exchange tool rejects `undefined`
-     * at put-time, so the ambiguity cannot arise).
+     * literally `undefined`" — write_handoff rejects `undefined`
+     * at write-time, so the ambiguity cannot arise).
      */
     let originalResult: unknown;
 
@@ -252,7 +258,7 @@ export function buildDelegatePayload(
             originalResult = value;
         }
 
-        if (size <= EXCHANGE_VALUE_MAX_BYTES) {
+        if (size <= HANDOFF_VALUE_MAX_BYTES) {
             // Bucket 1: inline.
             if (key === "result") {
                 payload.result = value;
@@ -332,13 +338,13 @@ export function buildDelegatePayload(
 }
 
 // ─────────────────────────────────────────────
-// delegate_task exchange seed (main → sub direction)
+// delegate_task handoff seed (main → sub direction)
 // ─────────────────────────────────────────────
 
 /**
- * Error thrown when the main agent supplies an `exchange` object on
+ * Error thrown when the main agent supplies a `handoff` object on
  * `delegate_task` that cannot be safely seeded into the sub-agent's
- * exchange store (non-serializable value, or a single value that exceeds
+ * handoff store (non-serializable value, or a single value that exceeds
  * the per-key size cap).
  *
  * We surface this as a hard failure (caught by `_dispatchSubAgent` and
@@ -358,7 +364,7 @@ export function buildDelegatePayload(
  *
  * (The class name retains "Input" for historical reasons — renaming would
  * be a breaking error-class identity change for any consumer catching on
- * `err.name`. The user-facing message strings use the new "exchange"
+ * `err.name`. The user-facing message strings use the current "handoff"
  * terminology.)
  */
 export class InvalidDelegateInputError extends Error {
@@ -369,35 +375,36 @@ export class InvalidDelegateInputError extends Error {
 }
 
 /**
- * Build the initial exchange store for a `delegate_task` dispatch from
- * the main agent's `exchange` argument. Each (key, value) pair becomes a
- * pre-populated entry the sub-agent can read via `exchange.get` (single
- * key OR `keys: string[]` for a batched lookup) / `exchange.list()`
- * before deciding how to act.
+ * Build the initial handoff store for a `delegate_task` dispatch from
+ * the main agent's `handoff` argument. Each (key, value) pair becomes a
+ * pre-populated entry the sub-agent can read via `read_handoff` (single
+ * key OR `keys: string[]` for a batched lookup) / `list_handoff` before
+ * deciding how to act.
  *
  * The parameter name `seed` reflects the role: this is the main-side
  * seed of the SAME store the sub-agent will later read and write via
- * its `exchange` tool. Historically it was called "inputs", but having
- * two names for one channel proved to be a frequent source of model
- * confusion (LLMs would treat `inputs.X` prose as a separate concept
- * from the exchange store and either skip the get or mis-spell the key).
+ * its `read_handoff` / `write_handoff` tools. Historically the
+ * delegate_task argument was called "inputs", but having two names for
+ * one channel proved to be a frequent source of model confusion (LLMs
+ * would treat `inputs.X` prose as a separate concept from the handoff
+ * store and either skip the read or mis-spell the key).
  *
- * Validation rules (mirrored from the exchange tool's `put` path so the
- * main → sub direction has the same safety guarantees as the sub → sub
+ * Validation rules (mirrored from write_handoff so the main → sub
+ * direction has the same safety guarantees as the sub → main
  * direction):
  *  - `seed` may be `undefined` / `null` / an empty object → returns an
  *    empty store; this is the common case (no structured input).
  *  - `seed` MUST be a plain object (not an array, not a class instance);
  *    keys are strings, values are JSON-serializable per
  *    `validateSerializable`.
- *  - Each value's serialized size MUST be ≤ `EXCHANGE_VALUE_MAX_BYTES`.
+ *  - Each value's serialized size MUST be ≤ `HANDOFF_VALUE_MAX_BYTES`.
  *    Oversized entries are REJECTED (not truncated) — see
  *    `InvalidDelegateInputError` doc for rationale.
  *
  * Exported for tests.
  */
-export function buildInitialStore(seed?: Record<string, unknown> | null): ExchangeStore {
-    const store: ExchangeStore = new Map();
+export function buildInitialStore(seed?: Record<string, unknown> | null): HandoffStore {
+    const store: HandoffStore = new Map();
     if (seed === undefined || seed === null) {
         return store;
     }
@@ -406,35 +413,35 @@ export function buildInitialStore(seed?: Record<string, unknown> | null): Exchan
     // instances would silently lose structure when treated as a kv bag.
     if (typeof seed !== "object" || Array.isArray(seed)) {
         throw new InvalidDelegateInputError(
-            `\`exchange\` must be a plain object mapping string keys to JSON-serializable values; got ${Array.isArray(seed) ? "array" : typeof seed}.`
+            `\`handoff\` must be a plain object mapping string keys to JSON-serializable values; got ${Array.isArray(seed) ? "array" : typeof seed}.`
         );
     }
     const proto: object | null = Object.getPrototypeOf(seed) as object | null;
     if (proto !== null && proto !== Object.prototype) {
         throw new InvalidDelegateInputError(
-            `\`exchange\` must be a plain object (Object.prototype or null prototype); got an instance of ${proto?.constructor?.name ?? "<unknown>"}.`
+            `\`handoff\` must be a plain object (Object.prototype or null prototype); got an instance of ${proto?.constructor?.name ?? "<unknown>"}.`
         );
     }
 
     for (const [key, value] of Object.entries(seed)) {
-        // Same key constraints the exchange tool enforces internally — keep
+        // Same key constraints write_handoff enforces internally — keep
         // them aligned so a key accepted at seed time is also a legal key
-        // for the sub-agent's later `exchange.put` overwrites.
+        // for the sub-agent's later `write_handoff` overwrites.
         if (key.length === 0) {
-            throw new InvalidDelegateInputError(`\`exchange\` contains an empty key.`);
+            throw new InvalidDelegateInputError(`\`handoff\` contains an empty key.`);
         }
 
         const reason = validateSerializable(value);
         if (reason !== null) {
             throw new InvalidDelegateInputError(
-                `\`exchange[${JSON.stringify(key)}]\` is not JSON-serializable: ${reason}`
+                `\`handoff[${JSON.stringify(key)}]\` is not JSON-serializable: ${reason}`
             );
         }
 
         const size = estimateValueSize(value);
-        if (size > EXCHANGE_VALUE_MAX_BYTES) {
+        if (size > HANDOFF_VALUE_MAX_BYTES) {
             throw new InvalidDelegateInputError(
-                `\`exchange[${JSON.stringify(key)}]\` is too large (${size} bytes > ${EXCHANGE_VALUE_MAX_BYTES} cap); ` +
+                `\`handoff[${JSON.stringify(key)}]\` is too large (${size} bytes > ${HANDOFF_VALUE_MAX_BYTES} cap); ` +
                 `narrow the value or pass a reference (e.g. a vault path) and let the sub-agent fetch it.`
             );
         }
@@ -457,6 +464,19 @@ export interface AgentOrchestratorConfig extends ChatStreamConfig {
     /** Sub-agent configurations */
     subAgents: SubAgentConfig[];
 
+    /**
+     * Maximum number of sub-agents kept in the per-turn DELEGATION
+     * block (and in the `delegate_task` tool's `agent` enum) after
+     * the hybrid BM25 + embedding retriever ranks them against the
+     * user query. Defaults to a small number (see
+     * `DEFAULT_SUB_AGENT_FILTER_TOP_K`) when omitted.
+     *
+     * Sticky-on-history is applied UNION-style on top of this cap
+     * (see {@link selectMatchingSubAgents}) so a once-used sub-agent
+     * never silently disappears mid-conversation.
+     */
+    subAgentFilterTopK?: number;
+
     /** Called when a sub-agent starts executing a task */
     onSubAgentStart?: (agentName: string, task: string) => void;
     /** Called when a sub-agent finishes executing a task */
@@ -466,6 +486,15 @@ export interface AgentOrchestratorConfig extends ChatStreamConfig {
     /** Called when a sub-agent completes a tool call (for real-time progress display) */
     onSubAgentToolCallEnd?: (agentName: string, toolName: string, args: Record<string, unknown>, result: string, isError: boolean) => void;
 }
+
+/**
+ * Fallback cap used by {@link AgentOrchestrator} when the caller does
+ * not supply {@link AgentOrchestratorConfig.subAgentFilterTopK}.
+ * Mirrors {@link DEFAULT_SUB_AGENT_FILTER_TOP_K} from `settings/defaults`
+ * but kept local to avoid pulling the settings module into this
+ * service-layer file.
+ */
+const FALLBACK_SUB_AGENT_FILTER_TOP_K = 2;
 
 // ─────────────────────────────────────────────
 // AgentOrchestrator
@@ -500,6 +529,80 @@ export class AgentOrchestrator implements IChatAgent {
     private _subAgentTokenUsagePerAgent: Map<string, TokenUsage> = new Map();
 
     /**
+     * Per-turn shortlist of sub-agents picked by
+     * {@link selectMatchingSubAgents}. Populated at the very start of
+     * {@link _runSubAgentRouter} (called from `systemPromptSuffix`)
+     * and read by {@link _createDelegateTaskTool} via the
+     * `dynamicTools` callback. Cleared in `prompt()`'s `finally` so
+     * the next turn always recomputes against the fresh user query.
+     *
+     * `null` means "no filter has run yet for this turn" — callers
+     * default to the full sub-agent set as a safety fallback (see
+     * `dynamicTools`); this only matters for exotic call orders
+     * (e.g. tests that invoke the tool getter directly).
+     */
+    private _currentTurnFilteredSubAgents: SubAgentConfig[] | null = null;
+
+    /**
+     * The previous turn's shortlist, used as the fallback target for
+     * short / signal-poor queries (typically follow-ups like "yes" /
+     * "继续"). Without this a `"yes"` reply mid-conversation would
+     * collapse the DELEGATION block to the full set every time —
+     * losing the per-turn token savings we set out to win — while a
+     * `"yes"` on the very first turn (no last shortlist) safely falls
+     * back to the full configured set inside the router.
+     */
+    private _lastMatchedSubAgents: SubAgentConfig[] | null = null;
+
+    /**
+     * Original user input of the current turn, captured at the start
+     * of {@link _runSubAgentRouter}. Used by the per-iteration sync
+     * re-rank ({@link refineMatchingSubAgentsSync}) to build the
+     * enriched query `userInput + lastAssistantText` on every
+     * tool-call iteration. Mirrors the existing
+     * `_getBestMatchedTools` filter-query pattern in ChatStream.
+     */
+    private _turnLevelUserInput: string = '';
+
+    /**
+     * BM25 candidate texts for ALL configured sub-agents, parallel-
+     * indexed with `_config.subAgents`. Computed once at the start of
+     * every turn (in {@link _runSubAgentRouter}) and reused by every
+     * `dynamicTools` invocation for the rest of the turn. Avoids
+     * rebuilding the `name + description + Triggers: ...` strings
+     * on each iteration.
+     */
+    private _turnLevelCandidateTexts: string[] = [];
+
+    /**
+     * Latest finalised main-agent assistant text seen in the current
+     * turn. Populated by an `onMessageUpdate` interceptor below
+     * (assistant role + non-empty content + `streaming: false`). Read
+     * by {@link refineMatchingSubAgentsSync} to expand the per-
+     * iteration shortlist when the model's intent drifts mid-turn
+     * (e.g. iteration 1 used vault_inspector; assistant narrates "I
+     * should also check the web" before iteration 2 → BM25 picks up
+     * `web` triggers and adds it for iteration 2).
+     *
+     * Cleared in `prompt()`'s `finally` and in `clearHistory`.
+     */
+    private _lastAssistantTextForRouting: string = '';
+
+    /**
+     * Names of sub-agents that have been dispatched at least once in
+     * this conversation. Drives the sticky-on-history union in the
+     * router so a sub-agent that produced messages / tool_calls
+     * visible to the main LLM can never silently drop out of the
+     * DELEGATION block later (which would leave the model with
+     * envelope references it can no longer interpret).
+     *
+     * Rebuilt from history on `restoreState` /
+     * `restoreSubAgentMessages` so a session reload preserves the
+     * sticky behaviour across persistence boundaries.
+     */
+    private _usedSubAgentNames: Set<string> = new Set();
+
+    /**
      * Opaque contextTag forwarded to the main agent ChatStream and
      * propagated into each sub-agent's ChatStream at `delegate_task`
      * dispatch time. See `ChatStream.contextTag` for usage.
@@ -520,6 +623,17 @@ export class AgentOrchestrator implements IChatAgent {
             this._subAgents.set(subConfig.name, new SubAgent(subConfig));
         }
 
+        // Capture the caller-supplied suffix (if any) so the wrapped
+        // version below can still chain to it. Pulled out into a
+        // local so the closure doesn't accidentally recurse on
+        // itself via `config.systemPromptSuffix`.
+        const userSystemPromptSuffix = config.systemPromptSuffix;
+        // Same trick for `onMessageUpdate`: we intercept it to
+        // track the latest finalised main-agent assistant text for
+        // per-iteration sub-agent re-routing, then chain to the
+        // user's callback so the view-side rendering still works.
+        const userOnMessageUpdate = config.onMessageUpdate;
+
         // Create the main agent with the delegate_task tool injected
         // We intercept the original config callbacks to add orchestration logic
         this._mainAgent = new ChatStream({
@@ -529,10 +643,54 @@ export class AgentOrchestrator implements IChatAgent {
             // from each sub-agent's. Overrides any value the caller may
             // have set in `config` since this orchestrator owns the label.
             agentLabel: 'main',
-            // Dynamic tools: include delegate_task + any user-provided dynamic tools
+            // Tap into `onMessageUpdate` to keep
+            // `_lastAssistantTextForRouting` fresh between iterations.
+            // We deliberately only capture FINALISED assistant text
+            // (streaming === false AND non-empty content) so a half-
+            // streamed chunk doesn't churn the routing query.
+            onMessageUpdate: (msg) => {
+                if (msg.role === 'assistant' && msg.streaming === false && msg.content) {
+                    this._lastAssistantTextForRouting = msg.content;
+                }
+                userOnMessageUpdate?.(msg);
+            },
+            // Per-turn DELEGATION block: the orchestrator owns the
+            // sub-agent selection logic, so it injects its own suffix
+            // here rather than have the caller bake DELEGATION text
+            // into the static `systemPrompt`. We chain to any
+            // user-provided suffix so callers can still add custom
+            // tail prompts (the user-provided one lands BEFORE the
+            // DELEGATION block — DELEGATION is closest to the user
+            // message for instructional recency).
+            //
+            // The retriever call inside `_runSubAgentRouter` is the
+            // single source of truth for `_currentTurnFilteredSubAgents`;
+            // `dynamicTools` below reads the cache populated here.
+            // ChatStream guarantees `systemPromptSuffix` runs BEFORE
+            // the first `dynamicTools` invocation of the turn (suffix
+            // happens during prompt setup, dynamicTools inside the
+            // tool-call loop), so the cache is always warm by then.
+            systemPromptSuffix: async (query, signal) => {
+                const userSuffix = userSystemPromptSuffix
+                    ? (await userSystemPromptSuffix(query, signal)) ?? ''
+                    : '';
+                const delegation = await this._runSubAgentRouter(query, signal);
+                if (!userSuffix && !delegation) return '';
+                if (!userSuffix) return delegation;
+                if (!delegation) return userSuffix;
+                return `${userSuffix}\n\n${delegation}`;
+            },
+            // Dynamic tools: include delegate_task (scoped to this
+            // turn's shortlist) + any user-provided dynamic tools.
+            // When the shortlist is empty, `delegate_task` is omitted
+            // entirely — the model gets a single-agent-shaped tool
+            // surface for that turn so it doesn't try to call a tool
+            // whose enum has zero valid values.
             dynamicTools: () => {
                 const userDynamic = config.dynamicTools?.() ?? [];
-                return [...userDynamic, this._createDelegateTaskTool()];
+                const shortlist = this._currentTurnShortlistForDelegateTool();
+                if (shortlist.length === 0) return userDynamic;
+                return [...userDynamic, this._createDelegateTaskTool(shortlist)];
             },
             // Defensive fallback for unregistered tool calls.
             // Some weaker / OpenAI-compat models occasionally hallucinate tool
@@ -562,17 +720,17 @@ export class AgentOrchestrator implements IChatAgent {
                     const taskContext = typeof toolArgs["context"] === "string"
                         ? toolArgs["context"]
                         : undefined;
-                    // Accept the exchange seed here too so the same fail-soft
+                    // Accept the handoff seed here too so the same fail-soft
                     // routing works when a weaker model calls e.g.
-                    // `vault_inspector({ task, exchange })` directly instead of
+                    // `vault_inspector({ task, handoff })` directly instead of
                     // the proper `delegate_task({ agent: "vault_inspector",
-                    // exchange })` shape. Also accept the legacy `inputs` key
+                    // handoff })` shape. Also accept the legacy `inputs` key
                     // (some models may have memorised it) as a transitional
                     // fallback so a stale name doesn't silently drop data.
-                    const rawExchange = toolArgs["exchange"] ?? toolArgs["inputs"];
-                    const exchange = rawExchange === undefined
+                    const rawHandoff = toolArgs["handoff"] ?? toolArgs["inputs"];
+                    const handoff = rawHandoff === undefined
                         ? undefined
-                        : (rawExchange as Record<string, unknown>);
+                        : (rawHandoff as Record<string, unknown>);
 
                     console.warn(
                         `[AgentOrchestrator] Model called tool "${toolName}" directly; ` +
@@ -585,7 +743,7 @@ export class AgentOrchestrator implements IChatAgent {
                         task,
                         taskContext,
                         parentToolCallId: toolCallId,
-                        exchange,
+                        handoff,
                     });
                     return result.content;
                 }
@@ -737,6 +895,17 @@ export class AgentOrchestrator implements IChatAgent {
         this._subAgentMessages.clear();
         this._totalSubAgentTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
         this._subAgentTokenUsagePerAgent.clear();
+        // Reset the per-turn router caches and the sticky-on-history
+        // set so a cleared conversation starts with a clean routing
+        // slate — otherwise the first turn after a clear would still
+        // sticky-include every sub-agent used in the abandoned
+        // conversation.
+        this._currentTurnFilteredSubAgents = null;
+        this._lastMatchedSubAgents = null;
+        this._usedSubAgentNames.clear();
+        this._turnLevelUserInput = '';
+        this._turnLevelCandidateTexts = [];
+        this._lastAssistantTextForRouting = '';
         // Reset all sub-agent contexts when clearing history
         for (const agent of this._subAgents.values()) {
             agent.resetContext();
@@ -746,6 +915,13 @@ export class AgentOrchestrator implements IChatAgent {
     /** Restore state from a previous session */
     restoreState(messages: ReadonlyArray<ChatMessage>, tokenUsage: TokenUsage, summaries?: ConversationSummary[]): void {
         this._mainAgent.restoreState(messages, tokenUsage, summaries);
+        // Rebuild the sticky-on-history set from the restored main
+        // agent messages so a session reload preserves the sticky
+        // behaviour across persistence boundaries. Without this, the
+        // first turn after a restore would lose the union and could
+        // drop a sub-agent the model is still actively reasoning about
+        // (via tool_result envelopes already in history).
+        this._rebuildUsedSubAgentNamesFromHistory();
     }
 
     /** Restore summaries from a previous session */
@@ -770,6 +946,42 @@ export class AgentOrchestrator implements IChatAgent {
         this._subAgentMessages.clear();
         for (const [parentToolCallId, messages] of Object.entries(map)) {
             this._subAgentMessages.set(parentToolCallId, messages.map(m => ({ ...m })));
+        }
+        // Persisted sub-agent messages carry `subAgent.agentName` —
+        // another reliable source of "which sub-agents has this
+        // conversation actually used". Fold it into the sticky set so
+        // the sticky-on-history union survives restore even on call
+        // paths where `restoreState` was skipped (e.g. tests that
+        // exercise sub-agent message restoration in isolation).
+        for (const messages of this._subAgentMessages.values()) {
+            for (const msg of messages) {
+                const name = msg.subAgent?.agentName;
+                if (name) this._usedSubAgentNames.add(name);
+            }
+        }
+    }
+
+    /**
+     * Walk the main agent's message history and rebuild
+     * {@link _usedSubAgentNames} from any `delegate_task` tool_call
+     * entries we find. Used after {@link restoreState} so a restored
+     * conversation correctly re-applies sticky-on-history on its
+     * first turn.
+     *
+     * Conservative on parsing — anything we can't unambiguously
+     * resolve to a configured sub-agent name is skipped silently
+     * rather than risk poisoning the set with garbage.
+     */
+    private _rebuildUsedSubAgentNamesFromHistory(): void {
+        this._usedSubAgentNames.clear();
+        for (const msg of this._mainAgent.messages) {
+            if (msg.role !== 'tool_call') continue;
+            const meta = msg.toolCallMeta;
+            if (!meta || meta.toolName !== 'delegate_task') continue;
+            const agent = (meta.toolArgs as Record<string, unknown> | undefined)?.['agent'];
+            if (typeof agent === 'string' && this._subAgents.has(agent)) {
+                this._usedSubAgentNames.add(agent);
+            }
         }
     }
 
@@ -846,6 +1058,20 @@ export class AgentOrchestrator implements IChatAgent {
             await this._mainAgent.prompt(userInput, options);
         } finally {
             this._currentPromptOptions = null;
+            // Clear the per-turn shortlist cache so the next prompt()
+            // recomputes against the new user query. `_lastMatchedSubAgents`
+            // is intentionally NOT cleared here — it survives the turn
+            // boundary so the next short-query fallback (e.g. "yes")
+            // can reuse this turn's shortlist.
+            this._currentTurnFilteredSubAgents = null;
+            // Per-iteration sync-rerank inputs are turn-scoped: the
+            // userInput and lastAssistantText only make sense within
+            // the current prompt() call. Drop them so a subsequent
+            // out-of-band `dynamicTools` call (no active prompt())
+            // doesn't reuse stale routing signal.
+            this._turnLevelUserInput = '';
+            this._turnLevelCandidateTexts = [];
+            this._lastAssistantTextForRouting = '';
         }
     }
 
@@ -873,15 +1099,15 @@ export class AgentOrchestrator implements IChatAgent {
         taskContext?: string;
         parentToolCallId?: string;
         /**
-         * Initial seed of the sub-agent's exchange store, as supplied by
-         * the main agent via the `exchange` argument of `delegate_task`.
+         * Initial seed of the sub-agent's handoff store, as supplied by
+         * the main agent via the `handoff` argument of `delegate_task`.
          * Pre-populated into the store before the sub-agent runs; the
-         * sub-agent reads it via its own `exchange` tool. See
+         * sub-agent reads it via its `read_handoff` tool. See
          * `buildInitialStore` for the validation rules.
          */
-        exchange?: Record<string, unknown>;
+        handoff?: Record<string, unknown>;
     }): Promise<{ success: boolean; content: string }> {
-        const { agentName, task, taskContext, parentToolCallId, exchange } = params;
+        const { agentName, task, taskContext, parentToolCallId, handoff } = params;
         const agentNames = Array.from(this._subAgents.keys());
 
         const subAgent = this._subAgents.get(agentName);
@@ -899,21 +1125,31 @@ export class AgentOrchestrator implements IChatAgent {
             };
         }
 
-        // Validate the exchange seed BEFORE notifying the UI / mutating any
+        // Validate the handoff seed BEFORE notifying the UI / mutating any
         // state, so a bad value doesn't leave the UI in a "sub-agent
         // started but never finished" zombie state. `buildInitialStore` is
         // a pure synchronous validator — fail-fast here means no sub-agent
         // tokens are spent and no UI lifecycle callbacks fire.
-        let exchangeStore: ExchangeStore;
+        let handoffStore: HandoffStore;
         try {
-            exchangeStore = buildInitialStore(exchange);
+            handoffStore = buildInitialStore(handoff);
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             return {
                 success: false,
-                content: `Error: invalid \`exchange\` for delegate_task(agent="${agentName}"): ${msg}`,
+                content: `Error: invalid \`handoff\` for delegate_task(agent="${agentName}"): ${msg}`,
             };
         }
+
+        // Sticky-on-history bookkeeping: once a sub-agent has been
+        // dispatched at this conversation, the router unions its name
+        // back into every future turn's shortlist so the model never
+        // loses sight of an agent whose envelope it may still be
+        // reasoning about. Recorded BEFORE the actual sub-agent
+        // execute() so even an aborted / failed dispatch counts —
+        // failure leaves the same kind of dangling references in
+        // history as success does.
+        this._usedSubAgentNames.add(agentName);
 
         // Notify UI that sub-agent is starting
         this._config.onSubAgentStart?.(agentName, task);
@@ -925,11 +1161,11 @@ export class AgentOrchestrator implements IChatAgent {
             this._subAgentMessages.set(parentToolCallId, []);
         }
 
-        // Per-dispatch exchange store ownership reminder:
-        //   - main → sub: pre-populated above by `buildInitialStore(exchange)`,
-        //     readable by the sub-agent via `exchange.get` / `exchange.list`.
+        // Per-dispatch handoff store ownership reminder:
+        //   - main → sub: pre-populated above by `buildInitialStore(handoff)`,
+        //     readable by the sub-agent via `read_handoff` / `list_handoff`.
         //   - sub → main: the sub-agent further writes into the same store
-        //     via `exchange.put`; on success we read it back via
+        //     via `write_handoff`; on success we read it back via
         //     `buildDelegatePayload`.
         // The store lives ONLY for this call. No global state, no
         // cross-dispatch leakage.
@@ -944,7 +1180,7 @@ export class AgentOrchestrator implements IChatAgent {
                 embeddingFilter: this._currentPromptOptions.embeddingFilter,
                 context: taskContext,
                 parentToolCallId,
-                exchangeStore,
+                handoffStore,
                 // Forward the main agent's contextTag so vault-mutation side
                 // effects performed by this sub-agent are attributed back to
                 // the same session as the main conversation.
@@ -1002,10 +1238,10 @@ export class AgentOrchestrator implements IChatAgent {
             }
 
             // Build the structured envelope that carries both the sub-agent's
-            // text summary AND any values it stored via the exchange tool.
+            // text summary AND any values it handed off via write_handoff.
             // This is the main agent's only view into the sub-agent's
-            // structured output — `text` alone matches the pre-exchange
-            // behaviour (and is what the LLM gets when no exchange.put
+            // structured output — `text` alone matches the pre-handoff
+            // behaviour (and is what the LLM gets when no write_handoff
             // happened), `result` / `extras` carry typed payload when present.
             //
             // We JSON-stringify here because `tool_result.type === "text"`
@@ -1024,7 +1260,7 @@ export class AgentOrchestrator implements IChatAgent {
             // promotion is silently skipped and the legacy `omitted`
             // path absorbs the value. See `BuildDelegatePayloadOptions`
             // for the exact mutual-presence requirement.
-            const payload = buildDelegatePayload(result.summary, exchangeStore, agentName, {
+            const payload = buildDelegatePayload(result.summary, handoffStore, agentName, {
                 artifactStore: this._config.getArtifactStore?.() ?? null,
                 delegateCallId: parentToolCallId,
             });
@@ -1050,12 +1286,148 @@ export class AgentOrchestrator implements IChatAgent {
     }
 
     /**
-     * Create the delegate_task tool that the main agent uses to invoke sub-agents.
+     * Run the per-turn sub-agent router and build the dynamic
+     * DELEGATION block for {@link systemPromptSuffix} consumption.
+     *
+     * Populates {@link _currentTurnFilteredSubAgents} and
+     * {@link _lastMatchedSubAgents} as side effects so the
+     * `dynamicTools` callback (which fires later in the same turn)
+     * reads a consistent shortlist. Returns the empty string when no
+     * sub-agents are configured at all — caller skips the entire
+     * delegation suffix on that path.
      */
-    private _createDelegateTaskTool(): RegisteredTool {
-        const agentNames = Array.from(this._subAgents.keys());
-        const agentDescriptions = Array.from(this._subAgents.entries())
-            .map(([name, agent]) => `- "${name}": ${agent.description}`)
+    private async _runSubAgentRouter(query: string, signal?: AbortSignal): Promise<string> {
+        if (this._subAgents.size === 0) {
+            this._currentTurnFilteredSubAgents = [];
+            this._turnLevelUserInput = '';
+            this._turnLevelCandidateTexts = [];
+            this._lastAssistantTextForRouting = '';
+            return '';
+        }
+
+        const allConfigs = this._config.subAgents;
+        const topK = this._config.subAgentFilterTopK ?? FALLBACK_SUB_AGENT_FILTER_TOP_K;
+
+        // Cache the inputs the per-iteration sync re-rank depends on.
+        // Done BEFORE the async retrieve call so an in-flight abort
+        // still leaves consistent state (the sync re-rank only ever
+        // runs on the success path anyway, but better to keep these
+        // assignments paired with the lifecycle clear in `prompt()`).
+        this._turnLevelUserInput = query;
+        this._turnLevelCandidateTexts = buildSubAgentCandidateTexts(allConfigs);
+        // Fresh turn → no prior assistant signal yet. Iteration 1's
+        // sync re-rank effectively reuses the embedding shortlist
+        // verbatim because the enriched query collapses to just
+        // `userInput`.
+        this._lastAssistantTextForRouting = '';
+
+        let shortlist: SubAgentConfig[];
+        try {
+            shortlist = await selectMatchingSubAgents(query, allConfigs, {
+                topK,
+                embeddingConfig: this._currentPromptOptions?.embedding ?? null,
+                signal,
+                stickyAgentNames: this._usedSubAgentNames,
+                fallbackOnShortQuery: this._lastMatchedSubAgents ?? undefined,
+            });
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') throw err;
+            // selectMatchingSubAgents already handles non-abort
+            // failures internally (returns full set). This catch is
+            // a belt-and-braces guard against any future regression
+            // where a thrown error bypasses its own fallback.
+            console.warn('[AgentOrchestrator] sub-agent router threw, defaulting to full set:', err);
+            shortlist = [...allConfigs];
+        }
+
+        this._currentTurnFilteredSubAgents = shortlist;
+        // Cache as last-matched ONLY when the shortlist is non-empty.
+        // An empty result is the legitimate "no sub-agent applies"
+        // signal for THIS turn; reusing it as the short-query
+        // fallback for the NEXT turn would amplify a single empty
+        // turn into a permanent collapse.
+        if (shortlist.length > 0) {
+            this._lastMatchedSubAgents = shortlist;
+        }
+
+        const descriptors: SubAgentDescriptor[] = shortlist.map(c => ({
+            name: c.name,
+            description: c.description,
+        }));
+        return buildDelegationSystemPrompt(descriptors);
+    }
+
+    /**
+     * Resolve the shortlist the `dynamicTools` callback should use to
+     * build the `delegate_task` schema this iteration.
+     *
+     * Strategy (per the plan-B mid-turn-shift design):
+     *   1. Baseline = the async router's turn-level shortlist
+     *      (populated in {@link _runSubAgentRouter}; falls back to
+     *      the FULL configured set when invoked out-of-band, e.g. a
+     *      test that drives `dynamicTools` without going through
+     *      `prompt()`).
+     *   2. Per-iteration sync re-rank: BM25 against
+     *      `userInput + lastAssistantText`, take top-K NEW hits,
+     *      append them on top of the baseline. Sticky-on-history
+     *      union'd in as well.
+     *   3. Returned list keeps baseline order first (mirrors the
+     *      DELEGATION text's listing); BM25 / sticky additions land
+     *      after.
+     *
+     * The DELEGATION text was built ONCE at turn start from the
+     * baseline alone, so sub-agents added here by the sync re-rank
+     * appear in the `delegate_task.agent` enum without their per-
+     * agent tip block — relying on the schema's per-entry
+     * description for guidance. That's the deliberate cost of
+     * mid-turn flexibility (see chat transcript on plan B).
+     */
+    private _currentTurnShortlistForDelegateTool(): SubAgentDescriptor[] {
+        if (this._subAgents.size === 0) return [];
+
+        const allConfigs = this._config.subAgents;
+        const baseline = this._currentTurnFilteredSubAgents ?? allConfigs;
+        const topK = this._config.subAgentFilterTopK ?? FALLBACK_SUB_AGENT_FILTER_TOP_K;
+
+        // The sync re-rank needs candidate texts. They are populated
+        // by `_runSubAgentRouter` on every turn, but out-of-band call
+        // paths (tests that invoke `dynamicTools` directly) won't
+        // have populated them — build on the fly in that case.
+        const candidateTexts = this._turnLevelCandidateTexts.length === allConfigs.length
+            ? this._turnLevelCandidateTexts
+            : buildSubAgentCandidateTexts(allConfigs);
+
+        const enrichedQuery = this._lastAssistantTextForRouting
+            ? `${this._turnLevelUserInput}\n${this._lastAssistantTextForRouting.slice(0, 300)}`
+            : this._turnLevelUserInput;
+
+        const refined = refineMatchingSubAgentsSync(
+            enrichedQuery,
+            allConfigs,
+            candidateTexts,
+            {
+                topK,
+                baselineShortlist: baseline,
+                stickyAgentNames: this._usedSubAgentNames,
+            },
+        );
+
+        return refined.map(c => ({ name: c.name, description: c.description }));
+    }
+
+    /**
+     * Create the delegate_task tool that the main agent uses to invoke sub-agents.
+     *
+     * The `shortlist` argument restricts the tool's `agent` enum AND
+     * the inline description listing to only the sub-agents picked by
+     * the per-turn router. This keeps the tool schema's token cost
+     * proportional to "what's actually offered to the model this
+     * turn" rather than "every sub-agent ever configured".
+     */
+    private _createDelegateTaskTool(shortlist: ReadonlyArray<SubAgentDescriptor>): RegisteredTool {
+        const agentNames = shortlist.map(a => a.name);
+        const agentDescriptions = shortlist
+            .map(a => `- "${a.name}": ${a.description}`)
             .join('\n');
 
         return {
@@ -1090,10 +1462,10 @@ export class AgentOrchestrator implements IChatAgent {
                                 type: "string",
                                 description: "Optional additional context from the conversation that the sub-agent needs.",
                             },
-                            exchange: {
+                            handoff: {
                                 type: "object",
                                 description:
-                                    `Initial seed of the sub-agent's exchange store. Each (key, value) pair is pre-loaded so the sub-agent can read it via \`exchange.get(key)\` / \`exchange({op:"get", keys:[...]})\` / \`exchange.list()\` at the start of its turn. The SAME store is then written back to by the sub-agent via its own \`exchange.put\` calls; you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope. There is ONE channel ("exchange"), two directions — not two separate concepts. ` +
+                                    `Initial seed of the sub-agent's handoff store. Each (key, value) pair is pre-loaded so the sub-agent can read it via \`read_handoff({key:"..."})\` or \`read_handoff({keys:[...]})\` / \`list_handoff()\` at the start of its turn. The SAME store is then written back to by the sub-agent via its own \`write_handoff\` calls; you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope. There is ONE channel ("handoff"), two directions — not two separate concepts. ` +
                                     `Use this for data the sub-agent will consume programmatically — file paths, lists of paths, prior results, focus strings, constraints, configuration. Do NOT duplicate the same data in the \`task\` prose. ` +
                                     `Values MUST be JSON-serializable (string / number / boolean / null / plain array / plain object); each value's serialized size MUST be ≤ 32 KB. ` +
                                     `By convention, the key \`source\` is a good default for "the thing the sub-agent should operate on" (e.g. a path or a list of paths).`,
@@ -1108,7 +1480,7 @@ export class AgentOrchestrator implements IChatAgent {
                 const agentName = args["agent"] as string;
                 const task = args["task"] as string;
                 const taskContext = args["context"] as string | undefined;
-                // `exchange` is `additionalProperties: true` so the JSON
+                // `handoff` is `additionalProperties: true` so the JSON
                 // schema doesn't constrain the value shape — we accept
                 // any plain object and let `buildInitialStore` validate.
                 // Anything that's not a plain object (e.g. string, array)
@@ -1119,12 +1491,12 @@ export class AgentOrchestrator implements IChatAgent {
                 // legacy `inputs` key from older training data / cached
                 // tool schemas. Accept it as a secondary alias so the
                 // payload doesn't silently disappear; the prompts and
-                // schema description above point exclusively at `exchange`,
+                // schema description above point exclusively at `handoff`,
                 // so over time this fallback will go cold.
-                const rawExchange = args["exchange"] ?? args["inputs"];
-                const exchange = rawExchange === undefined
+                const rawHandoff = args["handoff"] ?? args["inputs"];
+                const handoff = rawHandoff === undefined
                     ? undefined
-                    : (rawExchange as Record<string, unknown>);
+                    : (rawHandoff as Record<string, unknown>);
                 const parentToolCallId = context?.toolCallId;
 
                 const result = await this._dispatchSubAgent({
@@ -1132,7 +1504,7 @@ export class AgentOrchestrator implements IChatAgent {
                     task,
                     taskContext,
                     parentToolCallId,
-                    exchange,
+                    handoff,
                 });
                 return {
                     success: result.success,

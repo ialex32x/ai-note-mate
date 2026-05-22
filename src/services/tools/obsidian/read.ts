@@ -608,9 +608,11 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "get_metadata",
                 description:
-                    "Get parsed frontmatter, structural info (headings / tags / links), and basic file " +
+                    "Get parsed frontmatter, structural info (headings / tags), and basic file " +
                     "state (mtime / ctime / size) of one or more markdown files — without reading the " +
-                    "full content. Primary inspector for notes: use this (not `get_file_state`) when you need " +
+                    "full content. For outgoing links use `get_outgoing_links` (resolved target paths " +
+                    "with occurrence counts); for incoming links use `get_backlinks`. " +
+                    "Primary inspector for notes: use this (not `get_file_state`) when you need " +
                     "structure or batch inspection. For a single non-markdown file where you only need " +
                     "timestamps/size with no structure, use `get_file_state` instead. REQUIRED argument shape: " +
                     "`paths` as a JSON array of strings — even for a single file use {\"paths\": [\"note.md\"]}, " +
@@ -663,8 +665,9 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                         path,
                         frontmatter: null,
                         headings: [],
+                        total_headings: 0,
                         tags: [],
-                        links: [],
+                        total_tags: 0,
                         mtime: stat.mtime,
                         ctime: stat.ctime,
                         size: stat.size,
@@ -680,11 +683,6 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
 
                 const tags = (cache.tags ?? []).map((t) => t.tag);
 
-                const links = (cache.links ?? []).map((l) => ({
-                    link: l.link,
-                    displayText: l.displayText,
-                }));
-
                 const frontmatterPosition = cache.frontmatterPosition
                     ? {
                           start_line: cache.frontmatterPosition.start.line + 1, // Convert 0-based to 1-based
@@ -697,8 +695,9 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                     frontmatter: cache.frontmatter ?? null,
                     frontmatter_position: frontmatterPosition,
                     headings,
+                    total_headings: headings.length,
                     tags,
-                    links,
+                    total_tags: tags.length,
                     mtime: stat.mtime,
                     ctime: stat.ctime,
                     size: stat.size,
@@ -730,9 +729,10 @@ export function vaultGetFileState(plugin: NoteAssistantPlugin): RegisteredTool {
                     "Get timestamps and size for one file (ctime, mtime, size) without reading content or " +
                     "parsing note structure. Use for non-markdown files (images, PDFs, etc.) or when you " +
                     "only need stat fields for a single path. Do NOT use for markdown structure (headings, " +
-                    "tags, links, frontmatter) or batch inspection — use `get_metadata` instead. If you " +
-                    "already called `read_file`, `read_section`, or `get_metadata`, reuse their `mtime` " +
-                    "rather than calling this tool again. Times are Unix timestamps in milliseconds.",
+                    "tags, frontmatter) or batch inspection — use `get_metadata` instead. For outgoing or " +
+                    "incoming links use `get_outgoing_links` / `get_backlinks`. If you already called " +
+                    "`read_file`, `read_section`, or `get_metadata`, reuse their `mtime` rather than calling " +
+                    "this tool again. Times are Unix timestamps in milliseconds.",
                 parameters: {
                     type: "object",
                     properties: {

@@ -42,6 +42,23 @@ export const DEFAULT_WEB_FETCH_HARD_LIMIT = 12;
 export const DEFAULT_TOOL_FILTER_TOP_K = 8;
 
 /**
+ * Default cap on sub-agents surfaced per turn. A typical project ships
+ * 3–4 sub-agents (vault_inspector, vault_editor, web, code) and most
+ * user queries map cleanly to ONE of them, so a top-K of 2 keeps the
+ * DELEGATION block tight while still allowing a "search the web, then
+ * write the result back into the vault" turn to keep both routes
+ * available simultaneously. Sticky-on-history union'ing means a
+ * once-used sub-agent never silently disappears from later turns of
+ * the same conversation even if the per-turn ranker no longer picks
+ * it up.
+ *
+ * Range cap of 8 in the settings type matches the realistic upper
+ * bound — a project with > 8 sub-agents has bigger problems than this
+ * knob.
+ */
+export const DEFAULT_SUB_AGENT_FILTER_TOP_K = 2;
+
+/**
  * Default cap on skills surfaced per turn. Picked to roughly match the
  * tool-filter cap so the two retrievers behave consistently:
  *
@@ -148,6 +165,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	activeEmbeddingId: '',
 	toolFilterTopK: DEFAULT_TOOL_FILTER_TOP_K,
 	skillFilterTopK: DEFAULT_SKILL_FILTER_TOP_K,
+	subAgentFilterTopK: DEFAULT_SUB_AGENT_FILTER_TOP_K,
 	skillHintThreshold: DEFAULT_SKILL_HINT_THRESHOLD,
 	skillAutoInjectThreshold: DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
 	memoryEnabled: true,

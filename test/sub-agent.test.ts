@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { SubAgent } from '../src/services/sub-agent';
 import type { SubAgentConfig } from '../src/services/sub-agent';
 import type { ChatMessage, RegisteredTool, ToolCallResult } from '../src/services/chat-stream';
-import type { ExchangeStore } from '../src/services/tools/exchange-toolcall';
+import type { HandoffStore } from '../src/services/tools/handoff-toolcall';
 
 // ─── Helpers ───────────────────────────────────────────────
 
@@ -144,7 +144,7 @@ describe('SubAgent', () => {
 // ─── Aborted tool_call finalization ─────────────────────────
 //
 // Regression guard for a UX bug observed in the field: when the user
-// hit "stop" while a sub-agent had an `exchange` (or any tool) call
+// hit "stop" while a sub-agent had a `write_handoff` (or any tool) call
 // in flight, the tool-call bubble stayed stuck in `streaming: true`
 // with `toolCallResult === undefined` forever. The renderer's
 // `if (msg.toolCallResult)` gate then silently omitted the RESULT
@@ -222,7 +222,7 @@ describe('SubAgent — aborted tool_call finalization', () => {
         // Scenario: user clicks "stop" while the sub-agent has just
         // finished executing a tool call but the result hasn't been
         // recorded onto the bubble yet. This is the path the user
-        // actually hit in production with `exchange.get`.
+        // actually hit in production with `read_handoff`.
         const updates: ChatMessage[] = [];
         const deferredExec = createDeferred<ToolCallResult>();
 
@@ -367,7 +367,7 @@ describe('SubAgent — aborted tool_call finalization', () => {
 
 // ─── Normal (non-abort) tool_call lifecycle ─────────────────
 //
-// Sanity guard against UX reports of the form "the exchange bubble
+// Sanity guard against UX reports of the form "the handoff bubble
 // shows ARGUMENTS but no RESULT in normal flow". The chat-stream
 // dispatch contract is: emit onMessageUpdate twice for every tool
 // call — once on creation (streaming, no result), once on
@@ -381,11 +381,11 @@ describe('SubAgent — normal tool_call lifecycle', () => {
     it('emits a streaming-then-finalized pair for a successful tool call (with a populated toolCallResult)', async () => {
         const updates: ChatMessage[] = [];
 
-        // Use a tool that mirrors the shape `exchange` returns
+        // Use a tool that mirrors the shape the handoff tools return
         // (type='object'), since the user-reported missing-RESULT
-        // case happens specifically on `exchange` bubbles. This
-        // way the test catches any regression in object-result
-        // serialisation that might silently drop the second emit.
+        // case happens specifically on handoff bubbles. This way the
+        // test catches any regression in object-result serialisation
+        // that might silently drop the second emit.
         const objectResultTool: RegisteredTool = {
             ondemand: true,
             schema: {
@@ -516,13 +516,13 @@ describe('SubAgent — normal tool_call lifecycle', () => {
                             innerStream._messages.push({
                                 id: stuckId,
                                 role: 'tool_call',
-                                content: 'exchange',
+                                content: 'read_handoff',
                                 streaming: true,
                                 timestamp: Date.now(),
                                 toolCallMeta: {
                                     toolCallId: 'tc-stuck',
-                                    toolName: 'exchange',
-                                    toolArgs: { op: 'get', keys: ['path'] },
+                                    toolName: 'read_handoff',
+                                    toolArgs: { keys: ['path'] },
                                 },
                             });
                         }
@@ -560,10 +560,11 @@ describe('SubAgent — normal tool_call lifecycle', () => {
     });
 
     it('embedding-filtered ondemand tool is still dispatched (filter-miss fallback), not left stuck at streaming=true', async () => {
-        // Regression for the field bug "exchange bubble shows
+        // Regression for the field bug "handoff bubble shows
         // ARGUMENTS but no RESULT and spins forever":
         //
-        //   1. `exchange` was registered with `ondemand: true`.
+        //   1. The legacy `exchange` tool was registered with
+        //      `ondemand: true`.
         //   2. Its description ("read/write a key-value store") had
         //      low embedding similarity to most sub-agent queries.
         //   3. The embedding filter dropped it from `filteredTools`.
@@ -703,45 +704,44 @@ describe('SubAgent — normal tool_call lifecycle', () => {
         expect(last.toolCallResult!.status).toBe('success');
     });
 
-    it('exchange bubble (real built-in tool) gets streaming=false and a populated toolCallResult after a successful put', async () => {
+    it('write_handoff bubble (real built-in tool) gets streaming=false and a populated toolCallResult after a successful write', async () => {
         // Replicates the user-reported scenario: a sub-agent calls
-        // `exchange({op:'put', key:'result', value:...})` and the
+        // `write_handoff({key:'result', value:...})` and the
         // bubble was visually stuck at `...`. The chat-stream's
         // dispatch contract must hand a finalized message to the
-        // UI here too — there is nothing exchange-specific in the
+        // UI here too — there is nothing handoff-specific in the
         // bubble pipeline, but registering the REAL tool (rather
         // than a fake stub) catches any regression in
         // `serialiseToolResult` for object-typed payloads or in
-        // the per-execute exchange-store wiring on the sub-agent.
+        // the per-execute handoff-store wiring on the sub-agent.
         const updates: ChatMessage[] = [];
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
 
         const config: SubAgentConfig = {
-            name: 'real-exchange-agent',
-            description: 'Tests the real exchange tool',
+            name: 'real-handoff-agent',
+            description: 'Tests the real handoff tools',
             systemPrompt: 'system',
             tools: [],
         };
 
         const agent = new SubAgent(config);
         await agent.execute('do it', {
-            provider: createToolCallProvider('exchange', {
-                op: 'put',
+            provider: createToolCallProvider('write_handoff', {
                 key: 'result',
                 value: { found: true, path: 'Inbox/Foo.md' },
             }) as never,
-            exchangeStore: store,
+            handoffStore: store,
             onMessageUpdate: (_name, msg) => {
                 updates.push({ ...msg, toolCallResult: msg.toolCallResult ? { ...msg.toolCallResult } : undefined });
             },
         });
 
-        // The store must actually have received the put — sanity
+        // The store must actually have received the write — sanity
         // check that we exercised the real tool, not a stub.
         expect(store.get('result')).toEqual({ found: true, path: 'Inbox/Foo.md' });
 
         const toolCallStates = updates.filter(
-            m => m.role === 'tool_call' && m.toolCallMeta?.toolName === 'exchange',
+            m => m.role === 'tool_call' && m.toolCallMeta?.toolName === 'write_handoff',
         );
         expect(toolCallStates.length).toBeGreaterThanOrEqual(2);
 
@@ -749,7 +749,7 @@ describe('SubAgent — normal tool_call lifecycle', () => {
         expect(last.streaming).toBe(false);
         expect(last.toolCallResult).toBeDefined();
         expect(last.toolCallResult!.status).toBe('success');
-        // exchange.put returns `{ok:true, key:'result'}` serialised.
+        // write_handoff returns `{ok:true, key:'result'}` serialised.
         expect(last.toolCallResult!.result).toMatch(/"ok":\s*true/);
         expect(last.toolCallResult!.result).toContain('"key"');
     });

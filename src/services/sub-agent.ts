@@ -12,7 +12,7 @@ import { ChatStream, ChatMessage, RegisteredTool, type ToolFilterOptions } from 
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
 import { estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
-import { createExchangeTool, type ExchangeStore } from "./tools/exchange-toolcall";
+import { createHandoffTools, type HandoffStore } from "./tools/handoff-toolcall";
 
 // ─────────────────────────────────────────────
 // Types
@@ -143,21 +143,21 @@ export class SubAgent {
     private _currentExecToolCallEndHandler: ((agentName: string, toolName: string, args: Record<string, unknown>, result: string, isError: boolean) => void) | undefined;
 
     /**
-     * Per-dispatch exchange store (key/value scratchpad shared with the
+     * Per-dispatch handoff store (key/value scratchpad shared with the
      * orchestrator). Set at the start of `execute()` from
-     * `options.exchangeStore`, cleared in the cleanup block — including
+     * `options.handoffStore`, cleared in the cleanup block — including
      * on abort / error paths.
      *
-     * The exchange tool registered on the (reused) ChatStream resolves
+     * The handoff tools registered on the (reused) ChatStream resolve
      * this field via a getter closure at call-time, so a single
      * registration suffices across all dispatches and there is no risk
      * of leaking one dispatch's store into the next.
      *
-     * `null` means "no exchange store wired for the current call"; the
-     * tool reports a clear error to the model in that case (rather than
+     * `null` means "no handoff store wired for the current call"; the
+     * tools report a clear error to the model in that case (rather than
      * crashing or silently no-op'ing).
      */
-    private _currentExchangeStore: ExchangeStore | null = null;
+    private _currentHandoffStore: HandoffStore | null = null;
 
     constructor(config: SubAgentConfig) {
         this.name = config.name;
@@ -220,14 +220,15 @@ export class SubAgent {
                 signal?: AbortSignal;
             }) => Promise<boolean>;
             /**
-             * Per-dispatch exchange store. When provided, the sub-agent's
-             * built-in `exchange` tool will read/write into this map for
-             * the duration of this `execute()` call. The orchestrator
-             * owns the store: it creates it before calling `execute`,
-             * snapshots it after, and discards it. If omitted, `exchange`
-             * tool calls will report "no store available" to the model.
+             * Per-dispatch handoff store. When provided, the sub-agent's
+             * built-in `write_handoff` / `read_handoff` / `list_handoff`
+             * tools will read/write into this map for the duration of
+             * this `execute()` call. The orchestrator owns the store:
+             * it creates it before calling `execute`, snapshots it
+             * after, and discards it. If omitted, the handoff tools
+             * will report "no store available" to the model.
              */
-            exchangeStore?: ExchangeStore;
+            handoffStore?: HandoffStore;
             /**
              * Optional opaque tag forwarded to the sub-agent's ChatStream
              * as {@link ChatStream.contextTag} for the duration of this
@@ -251,16 +252,16 @@ export class SubAgent {
         this._currentExecMessageHandler = options.onMessageUpdate;
         this._currentExecConfirmToolCall = options.onConfirmToolCall;
         this._currentExecToolCallEndHandler = options.onToolCallEnd;
-        this._currentExchangeStore = options.exchangeStore ?? null;
+        this._currentHandoffStore = options.handoffStore ?? null;
 
-        // Snapshot the exchange store's initial keys so we can later tell
+        // Snapshot the handoff store's initial keys so we can later tell
         // "keys the main agent pre-loaded as inputs" from "keys the sub-agent
         // wrote back as outputs". The auto-fill safety net below only
         // synthesizes a stand-in reply when the sub-agent ACTUALLY produced
         // something new — purely-consuming runs that emit no text reply stay
         // as genuinely empty replies.
-        const initialExchangeKeys: ReadonlySet<string> = options.exchangeStore
-            ? new Set(options.exchangeStore.keys())
+        const initialHandoffKeys: ReadonlySet<string> = options.handoffStore
+            ? new Set(options.handoffStore.keys())
             : new Set<string>();
 
         // Build the user message: task + optional context
@@ -283,7 +284,7 @@ export class SubAgent {
         const tokenBefore: TokenUsage = { ...chatStream.sessionTokenUsage };
 
         // All post-prompt work (token accounting, optional LLM
-        // summarization of the result, exchange-store auto-fill) lives
+        // summarization of the result, handoff-store auto-fill) lives
         // inside the `try` below so the `finally` can guarantee per-
         // execution state is cleared on every exit path — including
         // when `_summarizeResult` propagates an AbortError or
@@ -370,9 +371,9 @@ export class SubAgent {
             // truncation, etc.).
             summary = stripLoneSurrogates(summary);
 
-            // Auto-fill safety net for the "silent put" case.
+            // Auto-fill safety net for the "silent write" case.
             //
-            // Some models treat `exchange.put` as the final action of the turn and
+            // Some models treat `write_handoff` as the final action of the turn and
             // end without producing a text reply. That leaves `summary === ""` here
             // and `payload.text === ""` in the envelope the orchestrator builds.
             // Empirically the main agent's LLM then mis-reads the empty `text` as
@@ -390,10 +391,10 @@ export class SubAgent {
             //  - leave `fullContent` and the ChatStream message history untouched,
             //    so the UI's empty-bubble hide path (bubble-renderer.ts) keeps
             //    working — only the main-agent-facing summary changes.
-            if (!aborted && !summary.trim() && options.exchangeStore) {
-                const synthesized = this._synthesizeExchangeSummary(
-                    options.exchangeStore,
-                    initialExchangeKeys,
+            if (!aborted && !summary.trim() && options.handoffStore) {
+                const synthesized = this._synthesizeHandoffSummary(
+                    options.handoffStore,
+                    initialHandoffKeys,
                 );
                 if (synthesized) summary = synthesized;
             }
@@ -419,7 +420,7 @@ export class SubAgent {
             this._currentExecMessageHandler = undefined;
             this._currentExecConfirmToolCall = undefined;
             this._currentExecToolCallEndHandler = undefined;
-            this._currentExchangeStore = null;
+            this._currentHandoffStore = null;
         }
     }
 
@@ -459,9 +460,9 @@ export class SubAgent {
     }
 
     /**
-     * Build a brief stand-in `summary` for the "silent put" case — the
-     * sub-agent stored structured data via `exchange` but ended the turn
-     * without producing a text reply.
+     * Build a brief stand-in `summary` for the "silent write" case —
+     * the sub-agent handed off structured data via `write_handoff` but
+     * ended the turn without producing a text reply.
      *
      * Compares the store's current keys against the snapshot taken at
      * the start of `execute()` (which records the keys the main agent
@@ -480,8 +481,8 @@ export class SubAgent {
      * abort path so downstream prompts treating "[Sub-agent ...]" as a
      * machine-emitted marker keep working uniformly.
      */
-    private _synthesizeExchangeSummary(
-        store: ExchangeStore,
+    private _synthesizeHandoffSummary(
+        store: HandoffStore,
         initialKeys: ReadonlySet<string>,
     ): string | null {
         const addedKeys: string[] = [];
@@ -695,16 +696,22 @@ export class SubAgent {
             chatStream.registerTool(tool);
         }
 
-        // Register the built-in `exchange` tool. This is registered
-        // unconditionally on every sub-agent: when no exchange store is
-        // wired for the current execute() call, the tool reports a clear
+        // Register the built-in handoff tools (`write_handoff` /
+        // `read_handoff` / `list_handoff`). They are registered
+        // unconditionally on every sub-agent: when no handoff store is
+        // wired for the current execute() call, the tools report a clear
         // "no store available" error to the model rather than crashing.
         //
-        // The handler resolves the *current* store at call-time via the
-        // getter closure below. This way a single registration on the
-        // reused ChatStream shell correctly tracks per-dispatch stores
-        // without re-registering tools on every execute() call.
-        chatStream.registerTool(createExchangeTool(() => this._currentExchangeStore));
+        // The handlers resolve the *current* store at call-time via the
+        // shared getter closure below. This way a single registration
+        // pass on the reused ChatStream shell correctly tracks per-
+        // dispatch stores without re-registering tools on every
+        // execute() call.
+        const [writeHandoffTool, readHandoffTool, listHandoffTool] =
+            createHandoffTools(() => this._currentHandoffStore);
+        chatStream.registerTool(writeHandoffTool);
+        chatStream.registerTool(readHandoffTool);
+        chatStream.registerTool(listHandoffTool);
 
         this._reusableChatStream = chatStream;
         return chatStream;

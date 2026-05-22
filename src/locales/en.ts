@@ -271,6 +271,8 @@ export const en: Record<string, string> = {
 	'settings.embeddingEmpty': 'No embedding configured. Add one to enable embedding functionality.',
 	'settings.toolFilterTopK': 'Tool retriever: top-K',
 	'settings.toolFilterTopKDesc': 'Maximum number of on-demand tools surfaced to the model after retriever ranking (1–30). The retriever uses BM25 alone when no embedding is configured, and fuses BM25 with embedding cosine via RRF when embedding is active. Always-on tools are not counted toward this cap.',
+	'settings.subAgentFilterTopK': 'Sub-agent retriever: top-K',
+	'settings.subAgentFilterTopKDesc': 'Maximum number of sub-agents that appear in the per-turn DELEGATION block and the delegate_task tool\'s agent list (1–8). Same hybrid BM25 + embedding retriever as the tool filter. Lower values save tokens on chat turns where no sub-agent applies; sub-agents already used earlier in the conversation are kept in the list regardless (sticky-on-history). Set 0 to use the built-in default.',
 	'settings.skillFilterTopK': 'Skill retriever: top-K',
 	'settings.skillFilterTopKDesc': 'Maximum number of skills surfaced in the per-turn catalogue after retriever ranking (1–30).',
 	'settings.skillHintThreshold': 'Skill: strong-hint threshold',

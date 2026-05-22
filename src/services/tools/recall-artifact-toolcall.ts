@@ -8,10 +8,10 @@
  * layer to keep the prompt within budget.
  *
  * Registered ONLY on the main agent. Sub-agents do not see this tool;
- * they communicate upward exclusively via their own `exchange` store
- * (see exchange-toolcall.ts). If a sub-agent later needs an artifact,
+ * they communicate upward exclusively via their own handoff store
+ * (see handoff-toolcall.ts). If a sub-agent later needs an artifact,
  * the main agent must thread it back into the next `delegate_task`'s
- * `inputs` — see plan §1.4.
+ * `handoff` — see plan §1.4.
  *
  * Storage model: the tool is bound to an `ArtifactStoreSource` —
  * usually a getter `() => ArtifactStore | null` so the long-lived
@@ -52,7 +52,7 @@ import type { RegisteredTool, ToolCallResult } from "../chat-stream";
  *
  * A `null` return from the getter is reported as a clear runtime error
  * to the model rather than a thrown exception — same convention as
- * {@link createExchangeTool}.
+ * {@link createHandoffTools}.
  */
 export type ArtifactStoreSource = ArtifactStore | (() => ArtifactStore | null);
 

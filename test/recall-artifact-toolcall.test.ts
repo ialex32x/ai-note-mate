@@ -12,7 +12,7 @@ import type { ChatStream, ToolCallResult } from "../src/services/chat-stream";
 
 /**
  * Run the tool's `exec` with the given store source. The tool never
- * touches the ChatStream argument — same convention as the exchange
+ * touches the ChatStream argument — same convention as the handoff
  * tool tests.
  */
 async function run(

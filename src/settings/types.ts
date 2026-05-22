@@ -227,6 +227,27 @@ export interface NoteAssistantPluginSettings {
 	skillFilterTopK: number;
 
 	/**
+	 * Maximum number of sub-agents surfaced to the main agent's
+	 * system prompt (and to the `delegate_task` tool's `agent` enum)
+	 * after the per-turn sub-agent retriever ranks the configured
+	 * sub-agents against the current user query. Range [1, 8].
+	 *
+	 * The retriever is the same hybrid BM25 + embedding RRF that
+	 * powers {@link toolFilterTopK} and {@link skillFilterTopK}, so
+	 * "no embedding configured" gracefully degrades to BM25-only
+	 * over each sub-agent's `name + description + routingKeywords`.
+	 *
+	 * Lower values (1–2) maximize token savings: a casual chat turn
+	 * with no sub-agent match emits NO DELEGATION block at all. Higher
+	 * values are safer for power users who want every sub-agent kept
+	 * in the prompt budget at all times. The orchestrator also union's
+	 * this shortlist with sub-agents that have been used earlier in
+	 * the conversation history (sticky-on-history), so a recurring
+	 * delegation never silently disappears from the prompt mid-session.
+	 */
+	subAgentFilterTopK: number;
+
+	/**
 	 * Cosine-similarity floor above which the top-1 matched skill gets
 	 * a "strong skill match" hint line at the top of the catalogue. The
 	 * model is nudged toward calling `load_skill` for it without the

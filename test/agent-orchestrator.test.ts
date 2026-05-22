@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { AgentOrchestrator, buildDelegatePayload, buildInitialStore, DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, EXCHANGE_VALUE_MAX_BYTES, InvalidDelegateInputError } from '../src/services/agent-orchestrator';
+import { AgentOrchestrator, buildDelegatePayload, buildInitialStore, DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, HANDOFF_VALUE_MAX_BYTES, InvalidDelegateInputError } from '../src/services/agent-orchestrator';
 import type { SubAgentConfig } from '../src/services/sub-agent';
-import type { ExchangeStore } from '../src/services/tools/exchange-toolcall';
+import type { HandoffStore } from '../src/services/tools/handoff-toolcall';
 import type { RegisteredTool, ToolCallResult, ChatMessage } from '../src/services/chat-stream';
 import { ArtifactStore, ARTIFACT_STORE_DEFAULTS } from '../src/services/artifact-store';
 
@@ -164,13 +164,114 @@ describe('AgentOrchestrator', () => {
     });
 });
 
+// ─── Sub-agent router (sticky-on-history) ──────────────────
+//
+// The router itself is unit-tested in `sub-agent-router.test.ts`.
+// Here we cover the orchestrator-side wiring that the router depends
+// on: rebuilding the sticky-name set from persisted history so a
+// session reload doesn't lose track of sub-agents the conversation
+// has already used (a regression there would silently drop the
+// DELEGATION block on first turn after restore, leaving the model
+// with envelope refs it can no longer interpret).
+
+describe('AgentOrchestrator sticky-on-history', () => {
+    const subAgentConfigs: SubAgentConfig[] = [
+        { name: 'vault_inspector', description: 'Read-only', systemPrompt: 'X', tools: [] },
+        { name: 'web', description: 'Web search', systemPrompt: 'X', tools: [] },
+    ];
+
+    it('seeds the sticky set empty before any dispatch', () => {
+        const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
+        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
+        expect(sticky.size).toBe(0);
+    });
+
+    it('rebuilds the sticky set from delegate_task tool_calls in restored history', () => {
+        const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
+
+        const messages: ChatMessage[] = [
+            {
+                id: 'm1', role: 'user', content: 'find notes about cats',
+                streaming: false, timestamp: 1, turn: 1,
+            },
+            {
+                id: 'm2', role: 'assistant', content: 'searching',
+                streaming: false, timestamp: 2, turn: 1,
+            },
+            {
+                id: 'm3', role: 'tool_call', content: '', streaming: false, timestamp: 3, turn: 1,
+                toolCallMeta: {
+                    toolCallId: 'tc-1',
+                    toolName: 'delegate_task',
+                    toolArgs: { agent: 'vault_inspector', task: 'find cats' },
+                },
+                toolCallResult: { status: 'success', result: '{}' },
+            },
+        ];
+
+        orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+
+        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
+        expect(sticky.has('vault_inspector')).toBe(true);
+        expect(sticky.has('web')).toBe(false);
+    });
+
+    it('ignores delegate_task calls whose `agent` does not resolve to a configured sub-agent', () => {
+        const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
+
+        const messages: ChatMessage[] = [
+            {
+                id: 'm3', role: 'tool_call', content: '', streaming: false, timestamp: 3, turn: 1,
+                toolCallMeta: {
+                    toolCallId: 'tc-1',
+                    toolName: 'delegate_task',
+                    toolArgs: { agent: 'imaginary_agent', task: '...' },
+                },
+                toolCallResult: { status: 'success', result: '{}' },
+            },
+        ];
+
+        orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
+        expect(sticky.size).toBe(0);
+    });
+
+    it('also seeds the sticky set from restored sub-agent messages', () => {
+        const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
+
+        orch.restoreSubAgentMessages({
+            'parent-tc-1': [
+                {
+                    id: 's1', role: 'assistant', content: 'searching',
+                    streaming: false, timestamp: 1, turn: 1,
+                    subAgent: { agentName: 'web', parentToolCallId: 'parent-tc-1' },
+                },
+            ],
+        });
+
+        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
+        expect(sticky.has('web')).toBe(true);
+    });
+
+    it('clears the sticky set on clearHistory', () => {
+        const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
+        (orch as any)._usedSubAgentNames.add('vault_inspector');
+        (orch as any)._usedSubAgentNames.add('web');
+
+        orch.clearHistory();
+
+        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
+        expect(sticky.size).toBe(0);
+    });
+});
+
 // ─── buildDelegatePayload ──────────────────────────────────
 //
 // Pure function — covers the structural logic that decides what the main
 // agent sees as the `delegate_task` tool_result. End-to-end wiring (store
 // is actually handed to sub-agent.execute, JSON.stringify happens, etc.)
 // is covered by:
-//   - the SubAgent exchange tests in `sub-agent-exchange.test.ts` (store
+//   - the SubAgent handoff tests in `sub-agent-handoff.test.ts` (store
 //     plumbing on the sub-agent side)
 //   - TS type-checking of the orchestrator wiring (3 lines of glue)
 //   - manual smoke test in a real Obsidian vault (per the design plan)
@@ -181,12 +282,12 @@ describe('AgentOrchestrator', () => {
 
 describe('buildDelegatePayload', () => {
     it('returns just `text` when the store is empty (5-fallback)', () => {
-        // The vast majority of legacy sub-agents never call exchange.put.
+        // The vast majority of legacy sub-agents never call write_handoff.
         // For them the envelope must collapse to `{ text }` only — no
         // empty `result: null`, no empty `extras: {}` — so the JSON the
         // main LLM sees stays compact and indistinguishable in spirit
-        // from the pre-exchange plain-text behaviour.
-        const store: ExchangeStore = new Map();
+        // from the pre-handoff plain-text behaviour.
+        const store: HandoffStore = new Map();
         const payload = buildDelegatePayload('plain summary', store);
 
         // The envelope always carries the marker fields (so the reducer
@@ -208,7 +309,7 @@ describe('buildDelegatePayload', () => {
     it('lifts the `result` key to a top-level field (5-happy-path)', () => {
         // The end-to-end success case: sub-agent put structured data under
         // the canonical key, main agent should see it as `result`.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { paths: ['a/b.md', 'c.md'], count: 2 });
 
         const payload = buildDelegatePayload('found 2 notes', store);
@@ -220,7 +321,7 @@ describe('buildDelegatePayload', () => {
     });
 
     it('routes non-`result` keys to `extras`', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', 'main');
         store.set('candidates', ['x', 'y']);
         store.set('warnings', [{ msg: 'partial' }]);
@@ -241,7 +342,7 @@ describe('buildDelegatePayload', () => {
         // envelope must still be valid: `result` absent, `extras` present.
         // The main-agent prompt explicitly tells the LLM to fall back to
         // `text` in this case, so we don't synthesize a fake `result`.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('debug', { trace: [1, 2, 3] });
 
         const payload = buildDelegatePayload('side-effect done', store);
@@ -256,8 +357,8 @@ describe('buildDelegatePayload', () => {
         // size & flag preserved so the main agent can react (e.g.
         // re-delegate with a tighter scope) instead of silently losing
         // the value.
-        const huge = 'x'.repeat(EXCHANGE_VALUE_MAX_BYTES + 1024);
-        const store: ExchangeStore = new Map();
+        const huge = 'x'.repeat(HANDOFF_VALUE_MAX_BYTES + 1024);
+        const store: HandoffStore = new Map();
         store.set('result', huge);
 
         const payload = buildDelegatePayload('too big to inline', store);
@@ -268,16 +369,16 @@ describe('buildDelegatePayload', () => {
         expect(payload.omitted).toBeDefined();
         expect(payload.omitted!['result_omitted']).toBe(true);
         expect(typeof payload.omitted!['result_size']).toBe('number');
-        expect(payload.omitted!['result_size'] as number).toBeGreaterThan(EXCHANGE_VALUE_MAX_BYTES);
+        expect(payload.omitted!['result_size'] as number).toBeGreaterThan(HANDOFF_VALUE_MAX_BYTES);
         // Sanity: stringified envelope is reasonably small now.
-        expect(JSON.stringify(payload).length).toBeLessThan(EXCHANGE_VALUE_MAX_BYTES);
+        expect(JSON.stringify(payload).length).toBeLessThan(HANDOFF_VALUE_MAX_BYTES);
     });
 
     it('preserves small values alongside oversized ones', () => {
         // Mixed case: one oversized, one fine. The fine one must survive
         // intact (oversized handling is per-key, not global).
-        const huge = 'y'.repeat(EXCHANGE_VALUE_MAX_BYTES + 100);
-        const store: ExchangeStore = new Map();
+        const huge = 'y'.repeat(HANDOFF_VALUE_MAX_BYTES + 100);
+        const store: HandoffStore = new Map();
         store.set('result', { ok: true, items: [1, 2, 3] });
         store.set('debug', huge);
 
@@ -294,10 +395,10 @@ describe('buildDelegatePayload', () => {
     it('produces a JSON-serializable envelope', () => {
         // Belt-and-suspenders: the orchestrator JSON.stringify's whatever
         // we return. If buildDelegatePayload ever lets through a non-
-        // serializable value (it shouldn't — the exchange tool already
-        // rejects them at put time, but defence in depth) we want this
+        // serializable value (it shouldn't — write_handoff already
+        // rejects them at write time, but defence in depth) we want this
         // test to flag it.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { nested: { a: 1, b: [true, null, 'x'] } });
         store.set('extra1', 42);
 
@@ -337,7 +438,7 @@ describe('buildDelegatePayload', () => {
         expect(p2.__v).toBe(DELEGATE_ENVELOPE_VERSION);
 
         const withOmitted = new Map();
-        withOmitted.set('result', 'x'.repeat(EXCHANGE_VALUE_MAX_BYTES + 100));
+        withOmitted.set('result', 'x'.repeat(HANDOFF_VALUE_MAX_BYTES + 100));
         const p3 = buildDelegatePayload('t3', withOmitted);
         expect(p3.__kind).toBe(DELEGATE_ENVELOPE_KIND);
         expect(p3.__v).toBe(DELEGATE_ENVELOPE_VERSION);
@@ -365,7 +466,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
     /** Build an in-band-but-too-big-to-inline value: ~50 KB serialized. */
     function midSizeString(): string {
         // JSON-stringified length of a string s is s.length + 2 ("...").
-        // Aim well above EXCHANGE_VALUE_MAX_BYTES (32 KB) and well under
+        // Aim well above HANDOFF_VALUE_MAX_BYTES (32 KB) and well under
         // singleArtifactCap (128 KB) so the artifact band is unambiguous.
         return 'm'.repeat(50_000);
     }
@@ -376,7 +477,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
     }
 
     it('promotes a 32K < size ≤ 128K result into the artifact store and emits an ArtifactRef', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         const value = midSizeString();
         store.set('result', value);
 
@@ -395,7 +496,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         const ref = payload.artifacts!['result'];
         expect(ref).toBeDefined();
         expect(ref.key).toBe('auto:tc-abc:result'); // plan §1.3 key format
-        expect(ref.size).toBeGreaterThan(EXCHANGE_VALUE_MAX_BYTES);
+        expect(ref.size).toBeGreaterThan(HANDOFF_VALUE_MAX_BYTES);
         expect(ref.size).toBeLessThanOrEqual(ARTIFACT_STORE_DEFAULTS.singleArtifactCap);
         expect(ref.reason).toBe('oversize');
         // Preview is bounded — we don't want it leaking the whole value.
@@ -417,7 +518,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
     });
 
     it('promotes a mid-sized extras key under its own field name', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { ok: true });           // small, inlines
         store.set('details', midSizeString());       // mid, promotes
 
@@ -446,7 +547,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         // The store refuses the put and the orchestrator falls back to
         // the legacy `omitted` shape, plus an extra flag so the LLM
         // distinguishes "could-have-recalled-but-evicted" from "never-stored".
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', oversizeString());
 
         const artifactStore = new ArtifactStore();
@@ -480,7 +581,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         // Oversized values land in `omitted` exactly as before, with
         // NO `_too_large_for_store` flag (the value didn't exceed the
         // store's cap — there is no store).
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', midSizeString()); // 50K → would promote if store wired
 
         const payload = buildDelegatePayload('legacy call', store, undefined);
@@ -489,7 +590,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         expect(payload.artifacts).toBeUndefined();
         expect(payload.omitted).toBeDefined();
         expect(payload.omitted!['result_omitted']).toBe(true);
-        expect(payload.omitted!['result_size']).toBeGreaterThan(EXCHANGE_VALUE_MAX_BYTES);
+        expect(payload.omitted!['result_size']).toBeGreaterThan(HANDOFF_VALUE_MAX_BYTES);
         // The flag MUST be absent — it is reserved for the
         // store-rejected-this case, which is not what happened here.
         expect(payload.omitted!['result_too_large_for_store']).toBeUndefined();
@@ -499,7 +600,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         // The orchestrator namespaces artifact keys with the parent
         // toolCallId. Without one, two concurrent delegations could
         // mint the same key — refusing to promote is the safe default.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', midSizeString());
 
         const artifactStore = new ArtifactStore();
@@ -519,7 +620,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         // routes to exactly ONE of the three slots; no field appears
         // twice. This is the crucial invariant the prompt relies on
         // when it tells the LLM "look in artifacts before re-delegating".
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { ok: true });           // bucket 1: inline
         store.set('details', midSizeString());        // bucket 2: artifact
         store.set('mega', oversizeString());          // bucket 3: omitted
@@ -556,7 +657,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         // Defence-in-depth: the orchestrator JSON.stringify's the
         // envelope; all artifact-side fields (key, size, preview, reason)
         // must be plain JSON values.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', midSizeString());
 
         const artifactStore = new ArtifactStore();
@@ -580,7 +681,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         // The preview is meant as a quick orientation hint for the LLM,
         // not a usable fragment. Confirm: ≤200 chars for short values
         // (no ellipsis), or 200 chars + "…" for long ones.
-        const shortStore: ExchangeStore = new Map();
+        const shortStore: HandoffStore = new Map();
         // Pick a small structured value that, when JSON-stringified,
         // is ≤200 chars but big enough overall to land in the artifact
         // band — so we get a SHORT preview but still hit the promote path.
@@ -618,7 +719,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         const tightStore = new ArtifactStore({ totalBytesCap: 60_000 });
 
         // First call: writes "auto:tc-1:result".
-        const s1: ExchangeStore = new Map();
+        const s1: HandoffStore = new Map();
         s1.set('result', midSizeString());
         const p1 = buildDelegatePayload('first', s1, undefined, {
             artifactStore: tightStore,
@@ -628,7 +729,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
         expect(tightStore.get('auto:tc-1:result').found).toBe(true);
 
         // Second call: writes "auto:tc-2:result" → first is LRU-evicted.
-        const s2: ExchangeStore = new Map();
+        const s2: HandoffStore = new Map();
         s2.set('result', midSizeString());
         const p2 = buildDelegatePayload('second', s2, undefined, {
             artifactStore: tightStore,
@@ -658,7 +759,7 @@ describe('buildDelegatePayload (artifact promotion)', () => {
 
 describe('buildDelegatePayload (with vault_inspector validator)', () => {
     it('passes a well-formed digest result through with no validation issues', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             digests: [
                 {
@@ -680,7 +781,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
     });
 
     it('surfaces issues for a digest entry missing required fields', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             digests: [
                 // Missing summary, anchors, key_points
@@ -700,7 +801,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
     });
 
     it('flags oversized summary and excessive key_points/anchors counts', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         const tooLongSummary = 'x'.repeat(1000);
         store.set('result', {
             digests: [
@@ -721,7 +822,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
     });
 
     it('rejects an empty digests array (every path must have an entry)', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { digests: [] });
 
         const payload = buildDelegatePayload('done', store, 'vault_inspector');
@@ -734,7 +835,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         // the natural `result` shape is a string / array / object without
         // `digests`. Those pass through unchanged — the validator only
         // engages when `digests` is present.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { matches: ['a/b.md', 'c.md'] });
 
         const payload = buildDelegatePayload('done', store, 'vault_inspector');
@@ -746,8 +847,8 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         // If result is too large to inline, it never reaches the validator;
         // surfacing schema issues about a value the main agent can't see
         // would just be noise.
-        const store: ExchangeStore = new Map();
-        const huge = { digests: [{ path: 'x', summary: 'x'.repeat(EXCHANGE_VALUE_MAX_BYTES + 100) }] };
+        const store: HandoffStore = new Map();
+        const huge = { digests: [{ path: 'x', summary: 'x'.repeat(HANDOFF_VALUE_MAX_BYTES + 100) }] };
         store.set('result', huge);
 
         const payload = buildDelegatePayload('done', store, 'vault_inspector');
@@ -768,7 +869,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         // missing required fields (summary / key_points / anchors) on a
         // digest entry. Pad with a long string so the JSON crosses the
         // 32 KB inline cap and lands in the artifact band.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         const padding = 'p'.repeat(50_000); // pushes serialized size past 32 KB
         store.set('result', {
             digests: [
@@ -803,7 +904,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         // artifact store also rejects it, surfacing schema issues about
         // a value the LLM cannot recover would just be noise — same
         // rationale as the original "omitted for size" skip.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         // Build a value that WOULD fail vault_inspector validation
         // (missing required digest fields) AND is large enough to
         // exceed singleArtifactCap (128 KB).
@@ -829,7 +930,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         // Existing callers and tests pass only (text, store) — the third
         // arg is optional and absence means "skip validation". This
         // ensures the new behaviour is fully opt-in.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { digests: [{ path: 'x' }] }); // would fail schema
 
         const payload = buildDelegatePayload('done', store);
@@ -841,7 +942,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
         // Sub-agents without a registered validator pass through
         // unchanged — adding a new sub-agent should never accidentally
         // trigger schema enforcement intended for a different one.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', { digests: [{ path: 'x' }] });
 
         const payload = buildDelegatePayload('done', store, 'web_researcher');
@@ -858,7 +959,7 @@ describe('buildDelegatePayload (with vault_inspector validator)', () => {
 
 describe('buildDelegatePayload (with vault_editor validator)', () => {
     it('passes a well-formed wholesale result with no issues', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             path: 'Notes/Foo.md',
             strategy: 'wholesale',
@@ -877,7 +978,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
     });
 
     it('passes a surgical result with multiple samples', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             path: 'Notes/Foo.md',
             strategy: 'surgical',
@@ -895,7 +996,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
     });
 
     it('flags an invalid strategy value', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             path: 'Notes/Foo.md',
             strategy: 'wat',
@@ -910,7 +1011,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
     });
 
     it('flags a sample_diff with more than 5 entries', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             path: 'Notes/Foo.md',
             strategy: 'surgical',
@@ -927,7 +1028,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
     });
 
     it('flags a sample_diff entry whose excerpt exceeds the 240-char cap', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         const huge = 'x'.repeat(300);
         store.set('result', {
             path: 'Notes/Foo.md',
@@ -942,7 +1043,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
     });
 
     it('flags a non-empty path that is missing entirely', () => {
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             path: '',
             strategy: 'wholesale',
@@ -958,7 +1059,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
         // An LLM slip: put "Done rewriting." as the result instead of
         // an object. We want this to fail schema loudly but still pass
         // through (soft degradation).
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', 'Done rewriting Foo.md.');
 
         const payload = buildDelegatePayload('done', store, 'vault_editor');
@@ -971,7 +1072,7 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
         // The editor refuses multi-file tasks via this shape. It must
         // pass cleanly — otherwise every refusal produces false-positive
         // validation noise on the main agent side.
-        const store: ExchangeStore = new Map();
+        const store: HandoffStore = new Map();
         store.set('result', {
             path: 'Notes/Foo.md',
             strategy: 'noop',
@@ -988,15 +1089,15 @@ describe('buildDelegatePayload (with vault_editor validator)', () => {
 // ─── buildInitialStore ─────────────────────────────────────
 //
 // Pure function — covers the validation rules for the main → sub
-// direction (the `exchange` argument of delegate_task — historically
-// called `inputs`). End-to-end wiring (the orchestrator actually calls
+// direction (the `handoff` argument of delegate_task — historically
+// called `inputs`, then `exchange`). End-to-end wiring (the orchestrator actually calls
 // this and refuses to start the sub-agent on InvalidDelegateInputError)
 // is covered by TS type-checking + manual smoke; the behaviour that
 // CAN drift — what counts as a valid seed entry — is tested directly here.
 
 describe('buildInitialStore', () => {
     it('returns an empty store when the seed is undefined or null', () => {
-        // The common case: main agent didn't pass `exchange` at all.
+        // The common case: main agent didn't pass `handoff` at all.
         // Must NOT throw, must NOT pre-populate anything — the sub-agent
         // sees a clean store, identical to pre-seed behaviour.
         expect(buildInitialStore(undefined).size).toBe(0);
@@ -1036,8 +1137,8 @@ describe('buildInitialStore', () => {
     it('rejects class instances at the top level', () => {
         // Class instances (Date, Map, custom classes) would either lose
         // information when JSON.stringify'd or crash mid-flight; the
-        // exchange tool already rejects them at put-time, so the input
-        // path mirrors that for consistency.
+        // write_handoff tool already rejects them at write-time, so the
+        // input path mirrors that for consistency.
         class MyShape { constructor(public n = 1) {} }
         const inst = new MyShape();
         expect(() => buildInitialStore(inst as unknown as Record<string, unknown>))
@@ -1047,9 +1148,9 @@ describe('buildInitialStore', () => {
     });
 
     it('rejects empty string keys', () => {
-        // The exchange tool's `put` path also rejects "" as a key (would
-        // produce ambiguous list output); the input path enforces the
-        // same constraint up front.
+        // write_handoff also rejects "" as a key (would produce
+        // ambiguous list output); the input path enforces the same
+        // constraint up front.
         expect(() => buildInitialStore({ '': 1 })).toThrow(InvalidDelegateInputError);
         expect(() => buildInitialStore({ '': 1 })).toThrow(/empty key/);
     });
@@ -1074,19 +1175,19 @@ describe('buildInitialStore', () => {
         // yet, so a hard error is the right move — it lets the main LLM
         // re-delegate with a leaner input or a reference instead of the
         // raw payload.
-        const huge = 'x'.repeat(EXCHANGE_VALUE_MAX_BYTES + 1024);
+        const huge = 'x'.repeat(HANDOFF_VALUE_MAX_BYTES + 1024);
         expect(() => buildInitialStore({ source: huge }))
             .toThrow(InvalidDelegateInputError);
         // Error must mention the cap so the main LLM sees a concrete
         // budget number, not a vague "too big".
         expect(() => buildInitialStore({ source: huge }))
-            .toThrow(new RegExp(String(EXCHANGE_VALUE_MAX_BYTES)));
+            .toThrow(new RegExp(String(HANDOFF_VALUE_MAX_BYTES)));
     });
 
     it('rejects non-finite numbers (delegated to validateSerializable)', () => {
-        // Sanity: rules forbidden by the exchange tool's put path are
-        // also forbidden here. Don't enumerate every rule — just confirm
-        // the validator is wired in.
+        // Sanity: rules forbidden by write_handoff are also forbidden
+        // here. Don't enumerate every rule — just confirm the validator
+        // is wired in.
         expect(() => buildInitialStore({ x: NaN })).toThrow(InvalidDelegateInputError);
         expect(() => buildInitialStore({ x: Infinity })).toThrow(InvalidDelegateInputError);
     });
@@ -1107,9 +1208,9 @@ describe('buildInitialStore', () => {
 //
 // The `delegate_task` tool's `exec` handler is ~3 lines of glue, but it
 // owns a non-obvious responsibility: pulling the seed out of the
-// model-emitted args under EITHER the canonical key (`exchange`) or the
+// model-emitted args under EITHER the canonical key (`handoff`) or the
 // transitional legacy key (`inputs`), then forwarding it to
-// `_dispatchSubAgent` under the unified field name `exchange`.
+// `_dispatchSubAgent` under the unified field name `handoff`.
 //
 // Historically we relied on TS type-checking + manual smoke for this
 // "wiring" layer (see the long comment above `buildDelegatePayload`),
@@ -1144,9 +1245,9 @@ describe('delegate_task.exec — seed extraction', () => {
         return { orchestrator, tool };
     }
 
-    it('forwards `exchange` arg as the seed', async () => {
+    it('forwards `handoff` arg as the seed', async () => {
         // Happy path under the canonical name: model emits the new
-        // `exchange` key, orchestrator must forward it unchanged.
+        // `handoff` key, orchestrator must forward it unchanged.
         const { orchestrator, tool } = makeOrch();
         const spy = vi
             .spyOn(orchestrator as unknown as { _dispatchSubAgent: (...a: unknown[]) => Promise<unknown> }, '_dispatchSubAgent')
@@ -1157,22 +1258,22 @@ describe('delegate_task.exec — seed extraction', () => {
             {
                 agent: 'vault',
                 task: 'go',
-                exchange: { path: 'Inbox/Foo.base' },
+                handoff: { path: 'Inbox/Foo.base' },
             },
             undefined,
             { toolCallId: 'tc-1', toolCallMessage: {} as ChatMessage },
         );
 
         expect(spy).toHaveBeenCalledOnce();
-        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
-        expect(payload.exchange).toEqual({ path: 'Inbox/Foo.base' });
+        const payload = spy.mock.calls[0]![0] as { handoff?: Record<string, unknown> };
+        expect(payload.handoff).toEqual({ path: 'Inbox/Foo.base' });
     });
 
-    it('falls back to legacy `inputs` arg when `exchange` is absent', async () => {
+    it('falls back to legacy `inputs` arg when `handoff` is absent', async () => {
         // The regression guard: some models still emit the old
         // parameter name (`inputs`) from training-data muscle memory
         // or a cached tool schema. The exec MUST treat `inputs` as a
-        // transparent alias of `exchange` — anything else means the
+        // transparent alias of `handoff` — anything else means the
         // seed silently disappears and the sub-agent runs against an
         // empty store, which is exactly the bug a user hit in the
         // field.
@@ -1193,11 +1294,11 @@ describe('delegate_task.exec — seed extraction', () => {
         );
 
         expect(spy).toHaveBeenCalledOnce();
-        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
-        expect(payload.exchange).toEqual({ path: 'Inbox/Foo.base' });
+        const payload = spy.mock.calls[0]![0] as { handoff?: Record<string, unknown> };
+        expect(payload.handoff).toEqual({ path: 'Inbox/Foo.base' });
     });
 
-    it('prefers `exchange` over `inputs` when both are present', async () => {
+    it('prefers `handoff` over `inputs` when both are present', async () => {
         // Defensive: a confused model could emit both keys. The
         // canonical name wins — same as the `?? `-style resolution
         // order in the source. Documenting this prevents a future
@@ -1213,7 +1314,7 @@ describe('delegate_task.exec — seed extraction', () => {
             {
                 agent: 'vault',
                 task: 'go',
-                exchange: { path: 'A.md' },
+                handoff: { path: 'A.md' },
                 inputs: { path: 'B.md' },
             },
             undefined,
@@ -1221,8 +1322,8 @@ describe('delegate_task.exec — seed extraction', () => {
         );
 
         expect(spy).toHaveBeenCalledOnce();
-        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
-        expect(payload.exchange).toEqual({ path: 'A.md' });
+        const payload = spy.mock.calls[0]![0] as { handoff?: Record<string, unknown> };
+        expect(payload.handoff).toEqual({ path: 'A.md' });
     });
 
     it('forwards undefined when neither key is present', async () => {
@@ -1244,7 +1345,7 @@ describe('delegate_task.exec — seed extraction', () => {
         );
 
         expect(spy).toHaveBeenCalledOnce();
-        const payload = spy.mock.calls[0]![0] as { exchange?: Record<string, unknown> };
-        expect(payload.exchange).toBeUndefined();
+        const payload = spy.mock.calls[0]![0] as { handoff?: Record<string, unknown> };
+        expect(payload.handoff).toBeUndefined();
     });
 });
