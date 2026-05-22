@@ -1,5 +1,16 @@
-import { App, DropdownComponent, SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
+import {
+	App,
+	DropdownComponent,
+	Notice,
+	SecretComponent,
+	Setting,
+	setIcon,
+	setTooltip,
+	TextComponent,
+} from "obsidian";
 import { t } from "../i18n";
+import { ModelSelectorModal } from "../modals/model-selector-modal";
+import { resolveSecret } from "../utils/secret-helper";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Types
@@ -122,6 +133,53 @@ export interface ToggleFieldOptions {
 	value: boolean;
 	/** Callback when value changes */
 	onChange: (value: boolean) => void | Promise<void>;
+	/** Whether this setting requires a session restart to take effect */
+	sessionRestartRequired?: boolean;
+	/** Whether this setting controls an experimental feature */
+	experimental?: boolean;
+	/** Whether this setting is an advanced parameter */
+	advanced?: boolean;
+}
+
+/**
+ * Options for creating a model input field that pairs a free-form text
+ * input with a refresh button. The refresh button fetches the list of
+ * available models (via {@link listModels}) and opens a searchable
+ * picker; the chosen value is written back into the text input and
+ * forwarded through {@link onChange}.
+ *
+ * Shared by both the Profile section (chat/embedding LLM providers) and
+ * the Image Generation section so the two surfaces stay in sync.
+ */
+export interface ModelFieldOptions {
+	/** Container element to append the setting to */
+	container: HTMLElement;
+	/** App instance — required because the picker is a Modal */
+	app: App;
+	/** Setting name. Defaults to the localized "Model" label. */
+	name?: string;
+	/** Setting description */
+	desc?: string;
+	/** Placeholder text */
+	placeholder?: string;
+	/** Current model value */
+	value: string;
+	/**
+	 * Returns the current SecretComponent reference for the API key.
+	 * Used as a getter (not a captured value) so re-evaluating it
+	 * after the user edits the key in the same section picks up the
+	 * fresh reference instead of a stale one.
+	 *
+	 * When this returns a reference that does not resolve to a non-empty
+	 * secret, the picker is short-circuited with an "API key required"
+	 * notice — the same pre-flight check the provider-side listing path
+	 * relies on to avoid forwarding empty keys to upstream SDKs.
+	 */
+	getApiKey: () => string;
+	/** Async function that returns the list of available models. */
+	listModels: () => Promise<string[]>;
+	/** Called when the model value changes (via typing or selecting from picker). */
+	onChange: (value: string) => void | Promise<void>;
 	/** Whether this setting requires a session restart to take effect */
 	sessionRestartRequired?: boolean;
 	/** Whether this setting controls an experimental feature */
@@ -581,6 +639,114 @@ export function createDropdownField(options: DropdownFieldOptions): Setting {
 			await onChange(newValue);
 		});
 	});
+
+	applySettingIndicators(setting, { sessionRestartRequired, experimental, advanced });
+
+	return setting;
+}
+
+/**
+ * Creates a model input field with a "refresh + pick from list" button.
+ *
+ * Layout:
+ *   [ text input ............ ] [ ⟳ refresh ]
+ *
+ * Behaviour:
+ *  1. Typing in the input fires {@link ModelFieldOptions.onChange} on every
+ *     change (mirrors {@link createTextField}).
+ *  2. Clicking the refresh button:
+ *     - Validates the API key via {@link ModelFieldOptions.getApiKey} +
+ *       {@link resolveSecret}. Empty → "API key required" notice, no fetch.
+ *     - Calls {@link ModelFieldOptions.listModels}. Empty list → notice.
+ *     - Opens {@link ModelSelectorModal} for a searchable picker. The chosen
+ *       value is written into the input AND forwarded through `onChange`
+ *       (so the caller's persist / refresh-label logic runs identically to
+ *       the typing path).
+ *
+ * Errors raised by `listModels` are logged and surfaced as a generic
+ * "fetch failed" notice — provider-specific error reporting is the
+ * caller's responsibility (typically the underlying SDK already returns
+ * a descriptive message).
+ */
+export function createModelFieldWithSelector(options: ModelFieldOptions): Setting {
+	const {
+		container,
+		app,
+		name,
+		desc,
+		placeholder,
+		value,
+		getApiKey,
+		listModels,
+		onChange,
+		sessionRestartRequired,
+		experimental,
+		advanced,
+	} = options;
+
+	const setting = new Setting(container)
+		.setName(name ?? t('common.model'));
+
+	if (desc) {
+		setting.setDesc(desc);
+	}
+
+	// Capture the TextComponent via closure so the modal-selection branch
+	// can update the input value reactively without re-querying the DOM.
+	let textComponent: TextComponent | null = null;
+
+	setting.addText(text => {
+		textComponent = text;
+		if (placeholder) {
+			text.setPlaceholder(placeholder);
+		}
+		text.setValue(value);
+		text.onChange(async (newValue) => {
+			await onChange(newValue);
+		});
+	});
+
+	setting.addButton(btn => btn
+		.setIcon('refresh-cw')
+		.setTooltip(t('settings.refreshModels'))
+		.onClick(async () => {
+			const apiKey = resolveSecret(app, getApiKey());
+			if (!apiKey) {
+				new Notice(t('settings.apiKeyRequired'));
+				return;
+			}
+
+			const btnEl = btn.buttonEl;
+			setIcon(btnEl, 'loader-2');
+			btnEl.classList.add('oap-spin');
+			btn.setDisabled(true);
+
+			try {
+				const models = await listModels();
+				if (models.length === 0) {
+					new Notice(t('settings.noModelsAvailable'));
+					return;
+				}
+
+				const current = textComponent?.getValue() ?? value;
+				const selected = await new ModelSelectorModal(app, models, current).waitForResult();
+				if (selected) {
+					textComponent?.setValue(selected);
+					// Reuse the same onChange handler so the caller's persist /
+					// refresh-label / refresh-dropdown logic runs identically
+					// to the typing path. Otherwise the displayed tab labels
+					// and active-config dropdowns would lag behind the change.
+					await onChange(selected);
+				}
+			} catch (e) {
+				console.error('Failed to list models:', e);
+				new Notice(t('settings.refreshModelsFailed'));
+			} finally {
+				btnEl.classList.remove('oap-spin');
+				setIcon(btnEl, 'refresh-cw');
+				btn.setDisabled(false);
+			}
+		}));
 
 	applySettingIndicators(setting, { sessionRestartRequired, experimental, advanced });
 

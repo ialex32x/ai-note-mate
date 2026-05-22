@@ -1,6 +1,5 @@
-import { DropdownComponent, Notice, Setting, setIcon } from "obsidian";
+import { DropdownComponent, Setting } from "obsidian";
 import { t } from "../../i18n";
-import { ModelSelectorModal } from "../../modals/model-selector-modal";
 import type { LLMProviderType } from "../../services/providers";
 import { createLLMProvider } from "../../services/providers";
 import {
@@ -15,6 +14,7 @@ import {
 	applyAdvancedOnlyGroupHeading,
 	createApiKeyField,
 	createDropdownField,
+	createModelFieldWithSelector,
 	createTabBar,
 	createTextField,
 	createToggleField,
@@ -22,7 +22,7 @@ import {
 	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
-import { resolveSecret } from "utils/secret-helper";
+import { resolveSecret } from "../../utils/secret-helper";
 
 export class ProfileSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.profileSection';
@@ -520,9 +520,9 @@ export class ProfileSettingsSection implements SettingsSection {
 	}
 
 	/**
-	 * Render the model field with a refresh button that directly shows model selection.
-	 * - Refresh: calls the provider's listModels API and shows a popup for selection
-	 * - Selected model is directly written to profile.model field
+	 * Render the model field with a refresh-and-pick button. Delegates to
+	 * the shared {@link createModelFieldWithSelector} so the Profile and
+	 * Image Generation sections stay in sync.
 	 */
 	private renderModelField(
 		container: HTMLElement,
@@ -531,101 +531,27 @@ export class ProfileSettingsSection implements SettingsSection {
 		refreshDropdown: () => void,
 		modelPlaceholder?: string,
 	): void {
-		const { plugin } = this.ctx;
-
-		const setting = new Setting(container)
-			.setName(t('common.model'))
-			.setDesc(t('settings.modelDesc'))
-			.addText(text => {
-				if (modelPlaceholder) {
-					text.setPlaceholder(modelPlaceholder);
-				}
-				text.setValue(profile.model);
-				text.onChange(async (value) => {
-					profile.model = value;
-					await plugin.saveSettings();
-					refreshTabLabel(profile.id, profile.name, getProfileLabel(profile));
-					refreshDropdown();
-				});
-			})
-			.addButton(btn => btn
-				.setIcon('refresh-cw')
-				.setTooltip(t('settings.refreshModels'))
-				.onClick(async () => {
-					await this.refreshAndSelectModel(btn.buttonEl, profile, setting);
-				}));
-	}
-
-	/** Create a temporary LLMProvider instance from a profile for listing models */
-	private createProviderFromProfile(profile: ProviderProfile) {
-		const { app } = this.ctx;
-		return createLLMProvider(profile.provider, {
-			apiKey: resolveSecret(app, profile.apiKey),
-			baseURL: profile.provider === 'openai' ? profile.baseUrl : undefined,
-			model: profile.model,
-		});
-	}
-
-	/** Refresh the list of available models and show selection popup */
-	private async refreshAndSelectModel(
-		btnEl: HTMLButtonElement,
-		profile: ProviderProfile,
-		setting: Setting,
-	): Promise<void> {
-		if (!profile.apiKey) {
-			new Notice(t('settings.apiKeyRequired'));
-			return;
-		}
-
-		setIcon(btnEl, 'loader-2');
-		btnEl.classList.add('oap-spin');
-		btnEl.disabled = true;
-
-		try {
-			const provider = this.createProviderFromProfile(profile);
-			const models = await provider.listModels();
-
-			if (models.length === 0) {
-				new Notice(t('settings.noModelsAvailable'));
-				return;
-			}
-
-			// Show model selection modal
-			await this.showModelSuggester(btnEl, profile, setting, models);
-		} catch (e) {
-			console.error('Failed to list models:', e);
-			new Notice(t('settings.refreshModelsFailed'));
-		} finally {
-			btnEl.classList.remove('oap-spin');
-			setIcon(btnEl, 'refresh-cw');
-			btnEl.disabled = false;
-		}
-	}
-
-	/** Show a modal to select a model from the provided list */
-	private async showModelSuggester(
-		_btnEl: HTMLButtonElement,
-		profile: ProviderProfile,
-		setting: Setting,
-		models: string[],
-	): Promise<void> {
 		const { app, plugin } = this.ctx;
 
-		if (models.length === 0) {
-			console.warn('no suggested model for', profile.name);
-			return;
-		}
-
-		const selected = await new ModelSelectorModal(app, models, profile.model).waitForResult();
-		if (selected) {
-			profile.model = selected;
-			await plugin.saveSettings();
-			// Update the text input value
-			const textInput = setting.controlEl.querySelector('input[type="text"]') as HTMLInputElement;
-			if (textInput) {
-				textInput.value = selected;
-			}
-		}
+		createModelFieldWithSelector({
+			container,
+			app,
+			desc: t('settings.modelDesc'),
+			placeholder: modelPlaceholder,
+			value: profile.model,
+			getApiKey: () => profile.apiKey,
+			listModels: () => createLLMProvider(profile.provider, {
+				apiKey: resolveSecret(app, profile.apiKey),
+				baseURL: profile.provider === 'openai' ? profile.baseUrl : undefined,
+				model: profile.model,
+			}).listModels(),
+			onChange: async (value) => {
+				profile.model = value;
+				await plugin.saveSettings();
+				refreshTabLabel(profile.id, profile.name, getProfileLabel(profile));
+				refreshDropdown();
+			},
+		});
 	}
 }
 

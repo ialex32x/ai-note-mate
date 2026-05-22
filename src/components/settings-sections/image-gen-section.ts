@@ -1,11 +1,13 @@
 import { DropdownComponent, Setting } from "obsidian";
 import { t } from "../../i18n";
+import { listImageGenModels } from "../../services/image-gen";
 import { createDefaultImageGenConfig } from "../../settings/defaults";
 import { DefaultGeminiImageModel } from "../../settings/types";
 import type { ImageGenApiScheme, ImageGenConfig } from "../../settings/types";
 import {
 	createApiKeyField,
 	createDropdownField,
+	createModelFieldWithSelector,
 	createTabBar,
 	createTextField,
 	refreshDropdownOptions,
@@ -187,14 +189,18 @@ export class ImageGenSettingsSection implements SettingsSection {
 			},
 		});
 
-		// Model
+		// Model — text input + refresh-and-pick button. Reuses the shared
+		// helper used by the Profile section so the two surfaces behave
+		// identically (loading state, error notice, picker modal).
 		const modelPlaceholder = getImageGenModelPlaceholder(config.apiScheme);
-		createTextField({
+		createModelFieldWithSelector({
 			container,
-			name: t('common.model'),
+			app,
 			desc: t('settings.imageGenModelDesc'),
 			placeholder: modelPlaceholder,
 			value: config.model,
+			getApiKey: () => config.apiKey,
+			listModels: () => listImageGenModels(app, config),
 			onChange: async (value) => {
 				config.model = value || modelPlaceholder;
 				await plugin.saveSettings();
