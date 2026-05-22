@@ -66,6 +66,12 @@ export class ImageWebSearcher {
                 return vqdMatch[1]!;
             }
         } catch (e) {
+            // Never swallow user-initiated aborts. Letting AbortError fall
+            // through to the `return null` path would force the engine
+            // loop in `search()` to spend another full iteration (next
+            // engine + its own request) before its top-of-loop
+            // `checkAbort` notices the cancellation.
+            if (e instanceof DOMException && e.name === 'AbortError') throw e;
             console.error(`Error getting VQD: ${String(e)}`);
         }
         return null;

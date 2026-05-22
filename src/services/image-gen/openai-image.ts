@@ -9,7 +9,12 @@ import { downloadAsBase64 } from "../../utils/abortable-request";
  */
 export interface OpenAIImageGenParams {
     prompt: string;
-    size: string;
+    /**
+     * Image size string (e.g. "1024x1024", "1792x1024", "auto").
+     * Optional — when omitted, the API picks the model-specific default
+     * (DALL-E 3 → 1024x1024, gpt-image-1 → auto, etc.).
+     */
+    size?: string;
     quality?: string;
     style?: string;
     refImages: ReferenceImage[];
@@ -66,8 +71,16 @@ export async function generateImageWithOpenAI(
                 // Pass single file directly when possible; SDK accepts both forms.
                 image: uploadables.length === 1 ? uploadables[0]! : uploadables,
                 n: 1,
-                size: size as "256x256" | "512x512" | "1024x1024" | "1536x1024" | "1024x1536" | "auto",
             };
+            if (size) {
+                // The SDK's edit type only accepts gpt-image-1 / DALL-E 2 sizes.
+                // If the LLM picks a DALL-E 3-only size (1792x1024 / 1024x1792)
+                // with refImages, the value is forwarded at runtime and the API
+                // rejects it — consistent with the hard-switch policy of not
+                // branching by model.
+                editParams.size = size as
+                    | "auto" | "256x256" | "512x512" | "1024x1024" | "1536x1024" | "1024x1536";
+            }
             // images.edit return type is a union with Stream<> when stream:true.
             // We never opt into streaming, so coerce to the non-stream branch.
             response = (await client.images.edit(editParams, { signal })) as OpenAI.Images.ImagesResponse;
@@ -77,8 +90,20 @@ export async function generateImageWithOpenAI(
                 model,
                 prompt,
                 n: 1,
-                size: size as "256x256" | "512x512" | "1024x1024" | "1792x1024" | "1024x1792",
             };
+            if (size) {
+                // Union covers both DALL-E (..x..) and gpt-image-1 (1024x1024 / 1024x1536 / 1536x1024 / auto).
+                // Unsupported combinations are rejected by the API with a clear error.
+                requestParams.size = size as
+                    | "auto"
+                    | "256x256"
+                    | "512x512"
+                    | "1024x1024"
+                    | "1536x1024"
+                    | "1024x1536"
+                    | "1792x1024"
+                    | "1024x1792";
+            }
             if (quality) {
                 requestParams.quality = quality as "standard" | "hd";
             }

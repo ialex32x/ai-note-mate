@@ -5,13 +5,101 @@ import { downloadAsBase64, requestUrlWithAbort } from "../../utils/abortable-req
 
 /**
  * Parameters for Qwen image generation.
+ *
+ * Note: callers pass a semantic `aspectRatio` (e.g. "1:1", "16:9"). The
+ * generator translates that into the concrete pixel size expected by the
+ * configured model, which is necessary because DashScope splits Qwen image
+ * models into two incompatible families:
+ *   - Fixed-size family (qwen-image / qwen-image-plus / qwen-image-max):
+ *     only 5 specific pixel sizes are accepted.
+ *   - Free-form family (qwen-image-2.x / qwen-image-edit): arbitrary W*H
+ *     within a pixel budget.
+ * Exposing a raw `size` to the LLM would invariably surface that split as
+ * confusing API errors.
  */
 export interface QwenImageGenParams {
     prompt: string;
-    size: string;
+    /** Aspect ratio string, e.g. "1:1", "16:9". Omit to use model default. */
+    aspectRatio?: string;
     negativePrompt: string;
     refImages: ReferenceImage[];
     signal?: AbortSignal;
+}
+
+/**
+ * Map of aspect ratio → pixel size for the fixed-size family.
+ * Only 5 pixel sizes are actually accepted by the API; ratios that don't
+ * have an exact match are folded to the closest available bucket.
+ */
+const FIXED_FAMILY_SIZE: Record<string, string> = {
+    '1:1':  '1328*1328',
+    '4:3':  '1472*1104',
+    '3:2':  '1472*1104', // closest available landscape near-square
+    '16:9': '1664*928',
+    '21:9': '1664*928',  // closest available landscape
+    '3:4':  '1104*1472',
+    '2:3':  '1104*1472', // closest available portrait near-square
+    '9:16': '928*1664',
+};
+
+/**
+ * Map of aspect ratio → pixel size for the free-form family.
+ *
+ * Constraints we satisfy across all free-form variants:
+ *   - qwen-image-2.x: total pixels ≤ 2048*2048 (~4.19 MP)
+ *   - qwen-image-edit / qwen-image-edit-max / qwen-image-edit-plus:
+ *     each axis must be in [512, 2048]
+ * Every entry below keeps both width and height ≤ 2048 to be safe across
+ * the whole family. Dimensions that aren't multiples of 16 (e.g. 1080) are
+ * silently rounded by the API to the nearest /16; the rounding is harmless
+ * and the docs themselves recommend such values (e.g. 1920*1080 for 16:9).
+ */
+const FREE_FAMILY_SIZE: Record<string, string> = {
+    '1:1':  '1408*1408',
+    '4:3':  '1664*1248',
+    '3:2':  '1728*1152',
+    '16:9': '1920*1080',
+    '21:9': '2048*880',   // capped at 2048 to satisfy edit-max/plus per-axis limit
+    '3:4':  '1248*1664',
+    '2:3':  '1152*1728',
+    '9:16': '1080*1920',
+};
+
+type QwenSizeFamily = 'fixed' | 'free' | 'unknown';
+
+/**
+ * Detect which size-handling family a Qwen image model belongs to.
+ *   - fixed: only 5 specific pixel sizes accepted
+ *           (qwen-image / qwen-image-plus / qwen-image-max)
+ *   - free:  free-form W*H within a pixel budget
+ *           (qwen-image-2.x, qwen-image-edit*)
+ *   - unknown: anything we don't recognize — caller should omit `size` and
+ *           let the API pick its own default. Safer than guessing wrong.
+ */
+function detectQwenSizeFamily(model: string): QwenSizeFamily {
+    const m = model.toLowerCase();
+    if (m === 'qwen-image' || m === 'qwen-image-plus' || m === 'qwen-image-max') {
+        return 'fixed';
+    }
+    if (m.includes('qwen-image-2') || m.includes('qwen-image-edit')) {
+        return 'free';
+    }
+    return 'unknown';
+}
+
+/**
+ * Resolve a semantic aspect ratio into a DashScope pixel-size string
+ * appropriate for the given model. Returns undefined when either the
+ * aspect ratio is not specified, the model family is unknown, or the
+ * ratio has no entry in the family's table — in all cases the caller
+ * should omit `size` and let the API fall back to its own default.
+ */
+function resolveQwenSize(model: string, aspectRatio: string | undefined): string | undefined {
+    if (!aspectRatio) return undefined;
+    const family = detectQwenSizeFamily(model);
+    if (family === 'unknown') return undefined;
+    const table = family === 'free' ? FREE_FAMILY_SIZE : FIXED_FAMILY_SIZE;
+    return table[aspectRatio];
 }
 
 /**
@@ -55,7 +143,7 @@ export async function generateImageWithQwen(
     config: Pick<ImageGenConfig, 'apiKey' | 'model'>,
     params: QwenImageGenParams,
 ): Promise<ImageGenResult> {
-    const { prompt, size, negativePrompt, refImages, signal } = params;
+    const { prompt, aspectRatio, negativePrompt, refImages, signal } = params;
 
     if (!config.apiKey) {
         return {
@@ -78,6 +166,19 @@ export async function generateImageWithQwen(
     }
     content.push({ text: prompt });
 
+    const parameters: Record<string, unknown> = {
+        negative_prompt: negativePrompt,
+        prompt_extend: true,
+        watermark: false,
+    };
+    // Only attach `size` when we successfully mapped aspectRatio → pixels for
+    // this model family. Otherwise let DashScope fall back to its per-model
+    // default (1664*928 for fixed-size, 2048*2048 for free-form 2.x).
+    const resolvedSize = resolveQwenSize(model, aspectRatio);
+    if (resolvedSize) {
+        parameters.size = resolvedSize;
+    }
+
     const requestBody = {
         model,
         input: {
@@ -88,12 +189,7 @@ export async function generateImageWithQwen(
                 },
             ],
         },
-        parameters: {
-            negative_prompt: negativePrompt,
-            prompt_extend: true,
-            watermark: false,
-            size,
-        },
+        parameters,
     };
 
     try {

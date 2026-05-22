@@ -1,22 +1,52 @@
 import { arrayBufferToBase64, requestUrl, type RequestUrlParam, type RequestUrlResponse } from "obsidian";
 
 /**
- * Wrap an uncancellable async operation (e.g. Obsidian's requestUrl) with abort support.
- * The underlying operation runs to completion, but its result is discarded if the
- * signal was aborted during execution.
+ * Wrap an async operation with cooperative abort support.
+ *
+ * Semantics:
+ *  - If `signal` is already aborted, `fn()` is NOT invoked and we throw
+ *    `AbortError` immediately.
+ *  - Otherwise we kick off `fn()` and race it against the signal. The
+ *    instant the signal fires we reject with `AbortError`, regardless of
+ *    whether `fn()` has resolved. The caller stops waiting immediately.
+ *  - The underlying `fn()` promise keeps running in the background when
+ *    abort wins the race (uncancellable operations like Obsidian's
+ *    `requestUrl` have no native cancellation mechanism). Its eventual
+ *    result is silently discarded so it cannot pollute downstream state.
+ *
+ * Why race instead of "wait then check": for uncancellable operations
+ * the wait-then-check pattern delays the user-perceived abort by the
+ * full duration of the in-flight request / sleep. Racing collapses that
+ * to one event-loop tick.
  */
 export async function withAbort<T>(
     signal: AbortSignal | undefined,
     fn: () => Promise<T>,
 ): Promise<T> {
-    if (signal?.aborted) {
+    if (!signal) return fn();
+    if (signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
     }
-    const result = await fn();
-    if (signal?.aborted) {
-        throw new DOMException("Aborted", "AbortError");
+
+    const fnPromise = fn();
+    // If abort wins the race below, `fn()` keeps running and may settle
+    // later. Attach an early no-op handler so V8 doesn't classify a late
+    // rejection as unhandled. `Promise.race` also attaches a handler, but
+    // this is cheap insurance against engine differences and against
+    // callers replacing the race with `.then` later.
+    fnPromise.catch(() => { /* swallowed: see race below */ });
+
+    let onAbort: (() => void) | undefined;
+    const abortPromise = new Promise<never>((_, reject) => {
+        onAbort = () => reject(new DOMException("Aborted", "AbortError"));
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+
+    try {
+        return await Promise.race([fnPromise, abortPromise]);
+    } finally {
+        if (onAbort) signal.removeEventListener('abort', onAbort);
     }
-    return result;
 }
 
 /**
@@ -32,10 +62,12 @@ export function checkAbort(signal: AbortSignal | undefined): void {
 /**
  * Issue an Obsidian `requestUrl` with cooperative abort support.
  *
- * NOTE: Obsidian's `requestUrl` has no native cancellation mechanism. The
- * underlying network call will always run to completion; aborting only causes
- * the resolved response to be discarded (AbortError is thrown to the caller).
- * For most callers this is acceptable because the wasted work is bounded.
+ * NOTE: Obsidian's `requestUrl` has no native cancellation mechanism.
+ * When the signal aborts, the caller unwinds immediately with
+ * `AbortError`, but the underlying HTTP request still runs to completion
+ * in the background — its response is silently discarded by `withAbort`
+ * so it can't leak back into the caller's state. For most callers this
+ * is acceptable because the wasted work is bounded.
  */
 export async function requestUrlWithAbort(
     params: RequestUrlParam,

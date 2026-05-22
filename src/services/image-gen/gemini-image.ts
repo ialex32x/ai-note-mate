@@ -8,7 +8,10 @@ import type { ImageGenResult, ReferenceImage } from "./types";
  */
 export interface GeminiImageGenParams {
     prompt: string;
-    aspectRatio: string;
+    /** Aspect ratio string, e.g. "1:1", "16:9". Optional — model picks default when omitted. */
+    aspectRatio?: string;
+    /** Discrete size bucket. Gemini supports "1K" (default), "2K", "4K". */
+    imageSize?: string;
     refImages: ReferenceImage[];
     signal?: AbortSignal;
 }
@@ -21,7 +24,7 @@ export async function generateImageWithGemini(
     config: Pick<ImageGenConfig, 'apiKey' | 'model'>,
     params: GeminiImageGenParams,
 ): Promise<ImageGenResult> {
-    const { prompt, refImages, signal } = params;
+    const { prompt, aspectRatio, imageSize, refImages, signal } = params;
 
     if (!config.apiKey) {
         return {
@@ -39,12 +42,20 @@ export async function generateImageWithGemini(
     // Build contents: text prompt + optional reference images (already loaded & validated).
     const contents = buildContents(prompt, refImages);
 
+    // Only attach imageConfig when the caller actually specified a dimension
+    // hint; otherwise let the model fall back to its own defaults. Sending an
+    // empty/undefined imageConfig is harmless but noisy.
+    const imageConfig: { aspectRatio?: string; imageSize?: string } = {};
+    if (aspectRatio) imageConfig.aspectRatio = aspectRatio;
+    if (imageSize) imageConfig.imageSize = imageSize;
+
     try {
         const response = await client.models.generateContent({
             model,
             contents,
             config: {
                 responseModalities: ["IMAGE"],
+                ...(Object.keys(imageConfig).length > 0 ? { imageConfig } : {}),
             },
         });
 

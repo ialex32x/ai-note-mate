@@ -121,8 +121,26 @@ function createGeminiImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
                             type: "string",
                             description:
                                 "The aspect ratio of the generated image. " +
-                                "Supported values: '1:1' (square), '16:9' (landscape), '9:16' (portrait), '4:3', '3:4'.",
-                            enum: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+                                "Common: '1:1' (square), '16:9' / '21:9' (landscape), '9:16' (portrait), " +
+                                "'4:3' / '3:4', '3:2' / '2:3', '5:4' / '4:5'. " +
+                                "Omit to let the model pick a default.",
+                            enum: [
+                                "1:1",
+                                "2:3", "3:2",
+                                "3:4", "4:3",
+                                "4:5", "5:4",
+                                "9:16", "16:9",
+                                "21:9",
+                            ],
+                        },
+                        image_size: {
+                            type: "string",
+                            description:
+                                "The resolution bucket for the generated image. " +
+                                "'1K' (default, ~1024px on the long side), '2K' (~2048px), '4K' (~4096px). " +
+                                "Use a larger value only when the user asks for high resolution; " +
+                                "larger sizes are slower and more expensive.",
+                            enum: ["1K", "2K", "4K"],
                         },
                         reference_image_paths: REFERENCE_IMAGE_PATHS_SCHEMA,
                     },
@@ -134,7 +152,8 @@ function createGeminiImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
         requiresConfirmation: true,
         exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
-            const aspectRatio = (args["aspect_ratio"] as string) || "1:1";
+            const aspectRatio = args["aspect_ratio"] as string | undefined;
+            const imageSize = args["image_size"] as string | undefined;
             const refImagePaths = (args["reference_image_paths"] as string[] | undefined) || [];
 
             try {
@@ -144,6 +163,7 @@ function createGeminiImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
                 const result = await generateImageWithGemini(plugin, imageConfig, {
                     prompt,
                     aspectRatio,
+                    imageSize,
                     refImages,
                     signal,
                 });
@@ -181,13 +201,21 @@ function createQwenImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Imag
                                 "A detailed text description of the image to generate. " +
                                 "Be as specific as possible about the subject, style, composition, colors, and mood.",
                         },
-                        size: {
+                        aspect_ratio: {
                             type: "string",
                             description:
-                                "The size of the generated image in pixels (width*height). " +
-                                "Supported values: '1024*1024' (square), '1920*1080' (landscape 16:9), " +
-                                "'1080*1920' (portrait 9:16), '1440*1080' (4:3), '1080*1440' (3:4).",
-                            enum: ["1024*1024", "1920*1080", "1080*1920", "1440*1080", "1080*1440"],
+                                "The aspect ratio of the generated image. " +
+                                "Common: '1:1' (square), '16:9' / '21:9' (landscape), '9:16' (portrait), " +
+                                "'4:3' / '3:4', '3:2' / '2:3'. " +
+                                "The actual pixel resolution is chosen automatically based on the configured model. " +
+                                "Omit to let the model pick a default.",
+                            enum: [
+                                "1:1",
+                                "2:3", "3:2",
+                                "3:4", "4:3",
+                                "9:16", "16:9",
+                                "21:9",
+                            ],
                         },
                         negative_prompt: {
                             type: "string",
@@ -206,7 +234,7 @@ function createQwenImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Imag
         requiresConfirmation: true,
         exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
-            const size = (args["size"] as string) || "1024*1024";
+            const aspectRatio = args["aspect_ratio"] as string | undefined;
             const negativePrompt = (args["negative_prompt"] as string) || "";
             const refImagePaths = (args["reference_image_paths"] as string[] | undefined) || [];
 
@@ -216,7 +244,7 @@ function createQwenImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Imag
                     : [];
                 const result = await generateImageWithQwen(plugin, imageConfig, {
                     prompt,
-                    size,
+                    aspectRatio,
                     negativePrompt,
                     refImages,
                     signal,
@@ -259,8 +287,16 @@ function createOpenAIImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
                             type: "string",
                             description:
                                 "The size of the generated image. " +
-                                "Supported values: '1024x1024' (square), '1792x1024' (landscape), '1024x1792' (portrait).",
-                            enum: ["1024x1024", "1792x1024", "1024x1792"],
+                                "DALL-E 3: '1024x1024' (square), '1792x1024' (landscape), '1024x1792' (portrait). " +
+                                "gpt-image-1: '1024x1024', '1536x1024' (landscape), '1024x1536' (portrait), or 'auto'. " +
+                                "Omit to let the API pick the model's default (DALL-E 3 → 1024x1024, gpt-image-1 → auto). " +
+                                "Pick a value supported by the configured model; unsupported values will be rejected by the API.",
+                            enum: [
+                                "auto",
+                                "1024x1024",
+                                "1536x1024", "1024x1536",
+                                "1792x1024", "1024x1792",
+                            ],
                         },
                         quality: {
                             type: "string",
@@ -286,7 +322,7 @@ function createOpenAIImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
         requiresConfirmation: true,
         exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
-            const size = (args["size"] as string) || "1024x1024";
+            const size = args["size"] as string | undefined;
             const quality = args["quality"] as string | undefined;
             const style = args["style"] as string | undefined;
             const refImagePaths = (args["reference_image_paths"] as string[] | undefined) || [];
