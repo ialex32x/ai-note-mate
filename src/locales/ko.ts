@@ -106,6 +106,7 @@ export const ko: Record<string, string> = {
 	'view.toolConfirmRejected': '거부됨',
 	'view.profiles': '텍스트 생성',
 	'view.imageGen': '이미지 생성',
+	'view.openSettingsSection': '설정 열기',
 	'view.sessionTitlePlaceholder': '세션 이름 입력',
 	'view.sendToSession': 'AI 세션으로 전송',
 	'view.sendToNewSession': '새 AI 세션으로 전송',

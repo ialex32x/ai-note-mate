@@ -106,6 +106,7 @@ export const zhCN: Record<string, string> = {
 	'view.toolConfirmRejected': '已拒绝',
 	'view.profiles': '文本生成',
 	'view.imageGen': '图片生成',
+	'view.openSettingsSection': '打开设置',
 	'view.sessionTitlePlaceholder': '输入会话名称',
 	'view.sendToSession': '发送到 AI 会话',
 	'view.sendToNewSession': '发送到新 AI 会话',

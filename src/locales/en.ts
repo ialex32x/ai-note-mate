@@ -106,6 +106,7 @@ export const en: Record<string, string> = {
 	'view.toolConfirmRejected': 'Rejected',
 	'view.profiles': 'Text Generation',
 	'view.imageGen': 'Image Generation',
+	'view.openSettingsSection': 'Open settings',
 	'view.sessionTitlePlaceholder': 'Enter session name',
 	'view.sendToSession': 'Send to AI Session',
 	'view.sendToNewSession': 'Send to New AI Session',

@@ -106,6 +106,7 @@ export const ja: Record<string, string> = {
 	'view.toolConfirmRejected': '拒否済み',
 	'view.profiles': 'テキスト生成',
 	'view.imageGen': '画像生成',
+	'view.openSettingsSection': '設定を開く',
 	'view.sessionTitlePlaceholder': 'セッション名を入力',
 	'view.sendToSession': 'AIセッションに送信',
 	'view.sendToNewSession': '新しいAIセッションに送信',

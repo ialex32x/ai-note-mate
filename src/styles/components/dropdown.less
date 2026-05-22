@@ -206,6 +206,9 @@
 
 // Section header within dropdown
 .session-dropdown-section-header {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
     padding: @spacing-sm @spacing-md @spacing-xs;
     margin-top: @spacing-sm;
 
@@ -215,11 +218,43 @@
 }
 
 .session-dropdown-section-header__text {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: 0.7em;
     font-weight: 600;
     color: @text-faint;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+// Small gear/settings button shown at the right edge of a section header.
+// Sized to match the header text rather than the bulkier `.button-small`
+// (20×20) so it sits flush with the uppercase label instead of bloating
+// the header row.
+.session-dropdown-section-header__action {
+    .flex-center();
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin-left: auto;
+    border: none;
+    border-radius: @radius-sm;
+    background: transparent;
+    color: @text-faint;
+    cursor: pointer;
+    opacity: 0.7;
+    transition: background @duration-fast, color @duration-fast, opacity @duration-fast;
+
+    svg {
+        .icon-size(12px);
+    }
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+        opacity: 1;
+    }
 }
 
 // Base selector wrapper

@@ -1,21 +1,11 @@
 import { Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { hasMcpServersConfigured } from '../../../settings';
-import type { TipContext, TipDefinition } from '../types';
+import { openPluginSettings } from '../../../utils/open-plugin-settings';
+import type { TipDefinition } from '../types';
 
 /** Anchor id of the MCP section in the plugin settings tab. */
 const MCP_SECTION_ID = 'settings.mcpServers';
-
-interface ObsidianSettingShim {
-    open(): void;
-    openTabById(id: string): void;
-    activeTab: { scrollToSection?: (id: string) => void } | null | undefined;
-}
-
-function getSettingShim(ctx: TipContext): ObsidianSettingShim | null {
-    const app = ctx.plugin.app as unknown as { setting?: ObsidianSettingShim };
-    return app.setting ?? null;
-}
 
 /**
  * Onboarding tip: guide the user to add MCP servers so external tools
@@ -29,15 +19,13 @@ export const configureMcpServersTip: TipDefinition = {
     available: (ctx) => !hasMcpServersConfigured(ctx.plugin.settings),
     disqualified: (ctx) => hasMcpServersConfigured(ctx.plugin.settings),
     execute: async (ctx) => {
-        const setting = getSettingShim(ctx);
-        if (!setting) {
+        const ok = openPluginSettings(
+            ctx.plugin.app,
+            ctx.plugin.manifest.id,
+            MCP_SECTION_ID,
+        );
+        if (!ok) {
             new Notice(t('tips.configureMcp.openFailed'));
-            return;
         }
-        setting.open();
-        setting.openTabById(ctx.plugin.manifest.id);
-        window.requestAnimationFrame(() => {
-            setting.activeTab?.scrollToSection?.(MCP_SECTION_ID);
-        });
     },
 };

@@ -2,11 +2,42 @@ import { setIcon, setTooltip } from 'obsidian';
 import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
 import { getActiveProfile } from '../../../settings';
+import { openPluginSettings } from '../../../utils/open-plugin-settings';
 import type NoteAssistantPlugin from 'main';
 
 export interface ProfileSelectorHandle {
     /** Remove settings-change subscription. Called from SessionView.onClose. */
     dispose(): void;
+}
+
+/** Anchor ids of the settings sections the section-header gear icons jump to. */
+const PROFILE_SECTION_ID = 'settings.profileSection';
+const IMAGE_GEN_SECTION_ID = 'settings.imageGenSection';
+
+/**
+ * Append a small gear button to a section header inside the profile
+ * dropdown. Clicking it opens the plugin settings panel and scrolls to
+ * the requested section, mirroring the deep-link entry points used by
+ * onboarding tips. Closes the dropdown first so it doesn't dangle on
+ * top of the (now focused) settings modal.
+ */
+function appendSectionSettingsAction(
+    header: HTMLElement,
+    plugin: NoteAssistantPlugin,
+    dropdownManager: DropdownManager,
+    sectionId: string,
+) {
+    const btn = header.createEl('button', {
+        cls: 'session-dropdown-section-header__action',
+        attr: { type: 'button', 'aria-label': t('view.openSettingsSection') },
+    });
+    setIcon(btn, 'settings');
+    setTooltip(btn, t('view.openSettingsSection'));
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdownManager.closeActive();
+        openPluginSettings(plugin.app, plugin.manifest.id, sectionId);
+    });
 }
 
 /**
@@ -48,6 +79,7 @@ export function createProfileSelector(
             cls: 'session-dropdown-section-header',
         });
         profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.profiles') });
+        appendSectionSettingsAction(profilesHeader, plugin, dropdownManager, PROFILE_SECTION_ID);
 
         // Effective insights extractor id: explicit dedicated profile when set
         // and valid, otherwise the summarizer (matches createInsightsConfig
@@ -99,6 +131,7 @@ export function createProfileSelector(
             cls: 'session-dropdown-section-header',
         });
         imageGenHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.imageGen') });
+        appendSectionSettingsAction(imageGenHeader, plugin, dropdownManager, IMAGE_GEN_SECTION_ID);
 
         const imageGenConfigs = current.imageGenConfigs;
         if (imageGenConfigs.length === 0) {
