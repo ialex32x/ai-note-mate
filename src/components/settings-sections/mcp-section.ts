@@ -8,6 +8,8 @@ import {
 	createTabBar,
 	createTextField,
 	createToggleField,
+	isAdvancedSettingsVisible,
+	markSettingAdvanced,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -364,6 +366,18 @@ export class MCPSettingsSection implements SettingsSection {
 
 		slugValueEl.setText(server.slug ?? '');
 		this.refreshSlugInfo(slugInfoEl, server);
+
+		// Slug is an advanced concept (only relevant when authoring Skill
+		// files that reference a specific tool id). Mirror the
+		// advanced-handling baked into `applySettingIndicators`: when
+		// advanced is on, decorate the row with the badge + hint;
+		// otherwise hide it via the shared collapse class so toggling
+		// "Show advanced" makes the row appear/disappear without rebuild.
+		if (isAdvancedSettingsVisible()) {
+			markSettingAdvanced(slugSetting);
+		} else {
+			slugSetting.settingEl.addClass('oap-setting--advanced-collapsed');
+		}
 
 		// URL field
 		createTextField({
