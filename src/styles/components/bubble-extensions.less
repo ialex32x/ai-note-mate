@@ -150,6 +150,60 @@
     margin-bottom: @spacing-xs;
 }
 
+.session-bubble__tool-code-wrap {
+    position: relative;
+
+    &:hover .session-bubble__tool-section-copy-btn,
+    .session-bubble__tool-section-copy-btn:focus-visible {
+        opacity: 1;
+    }
+}
+
+.session-bubble__tool-section-copy-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    padding: 0;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-sm;
+    background: @bg-primary;
+    color: @text-secondary;
+    cursor: pointer;
+    box-shadow: none;
+    opacity: 0;
+    transition: opacity @duration-normal, background @duration-normal, color @duration-normal;
+    z-index: 1;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px color-mix(in srgb, @text-accent 20%, transparent);
+    }
+
+    svg {
+        .icon-size(13px);
+    }
+}
+
+// Touch / coarse-pointer devices have no reliable hover state, so keep
+// the button visible (just dimmed) to remain reachable on mobile.
+@media (hover: none) {
+    .session-bubble__tool-section-copy-btn {
+        opacity: 0.75;
+    }
+}
+
 .session-bubble__tool-code {
     margin: 0;
     padding: @spacing-sm 6px;

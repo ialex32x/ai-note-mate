@@ -1,4 +1,4 @@
-import { Menu, setIcon } from 'obsidian';
+import { setIcon, setTooltip } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { prettifyIfJson } from '../../utils/json-format';
@@ -19,7 +19,7 @@ import type { BubbleContext } from './bubble-context';
  *
  * The module intentionally keeps all tool-call specific DOM logic together
  * so the main `BubbleRenderer` doesn't need to know about arguments,
- * results, or the copy-to-clipboard context menu.
+ * results, or the inline copy buttons that sit next to each section label.
  *
  * @param ctx     Shared bubble context (floating layer, app, cleanup hooks).
  * @param contentEl            The bubble content element to populate.
@@ -76,9 +76,6 @@ export function renderToolCallContent(
     if (msg.toolCallMeta || msg.toolCallResult) {
         renderToolDetail(contentEl, msg, wasToolDetailExpanded, arrowSpan, headerRow);
     }
-
-    // Context menu: copy arguments / copy result
-    attachToolCallContextMenu(contentEl, msg);
 }
 
 /**
@@ -106,8 +103,13 @@ function renderToolDetail(
             cls: 'session-bubble__tool-section-label',
             text: 'Arguments',
         });
-        const argsPre = argsWrapper.createEl('pre', { cls: 'session-bubble__tool-code' });
+        const argsCode = argsWrapper.createEl('div', { cls: 'session-bubble__tool-code-wrap' });
+        const argsPre = argsCode.createEl('pre', { cls: 'session-bubble__tool-code' });
         argsPre.setText(JSON.stringify(msg.toolCallMeta.toolArgs, null, 2));
+        renderCopyOverlay(argsCode, t('view.copyToolArgs'), () => {
+            const args = msg.toolCallMeta?.toolArgs;
+            return args === undefined ? '' : JSON.stringify(args, null, 2);
+        });
     }
 
     // Result
@@ -117,9 +119,14 @@ function renderToolDetail(
             cls: 'session-bubble__tool-section-label',
             text: 'Result',
         });
-        const resultPre = resultWrapper.createEl('pre', { cls: 'session-bubble__tool-code' });
+        const resultCode = resultWrapper.createEl('div', { cls: 'session-bubble__tool-code-wrap' });
+        const resultPre = resultCode.createEl('pre', { cls: 'session-bubble__tool-code' });
         const resultText = msg.toolCallResult.result;
         resultPre.setText(resultText.length > 2000 ? resultText.slice(0, 2000) + '\n... (truncated)' : resultText);
+        renderCopyOverlay(resultCode, t('view.copyToolResult'), () => {
+            const raw = msg.toolCallResult?.result ?? '';
+            return prettifyIfJson(raw);
+        });
     }
 
     // Toggle handler
@@ -138,48 +145,41 @@ function renderToolDetail(
 }
 
 /**
- * Attach a right-click menu to a tool-call bubble that allows the user
- * to copy the tool's arguments or result to the clipboard.
+ * Render the floating copy button that hovers over the top-right corner
+ * of an `Arguments` / `Result` code block. The button stays hidden until
+ * the user hovers (or focuses) the surrounding wrapper, mirroring the
+ * pattern used by code-block copy buttons in most editors.
  *
- * Both entries are conditional: arguments only appear when toolCallMeta
- * is available, and result only when toolCallResult is available. The
- * menu is suppressed when neither is present (e.g. early streaming).
+ * On touch devices `:hover` is unreliable, so the LESS styles fall back
+ * to keeping the button permanently visible whenever `(hover: none)`
+ * applies — that branch only kicks in for primary-touch inputs (Android,
+ * iOS, Obsidian mobile).
+ *
+ * The payload is resolved inside the click handler so the freshest
+ * values are read at the moment of copy — matters for streaming results
+ * that grow after the bubble first renders.
  */
-function attachToolCallContextMenu(rootEl: HTMLElement, msg: ChatMessage): void {
-    rootEl.addEventListener('contextmenu', (e: MouseEvent) => {
-        const hasArgs = !!msg.toolCallMeta;
-        const hasResult = !!msg.toolCallResult;
-        if (!hasArgs && !hasResult) return;
-
-        e.preventDefault();
+function renderCopyOverlay(
+    parent: HTMLElement,
+    copyAriaLabel: string,
+    getCopyText: () => string,
+): void {
+    const copyBtn = parent.createEl('button', {
+        cls: 'session-bubble__tool-section-copy-btn',
+        attr: { type: 'button', 'aria-label': copyAriaLabel },
+    });
+    setIcon(copyBtn, 'copy');
+    setTooltip(copyBtn, copyAriaLabel);
+    const handleCopy = async (): Promise<void> => {
+        const ok = await copyToClipboard(getCopyText(), { showNotice: false });
+        if (!ok) return;
+        setIcon(copyBtn, 'check');
+        window.setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
+    };
+    copyBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-
-        const menu = new Menu();
-
-        if (hasArgs) {
-            menu.addItem((item) => {
-                item.setTitle(t('view.copyToolArgs'));
-                item.setIcon('braces');
-                item.onClick(async () => {
-                    const args = msg.toolCallMeta?.toolArgs;
-                    const text = args === undefined ? '' : JSON.stringify(args, null, 2);
-                    await copyToClipboard(text);
-                });
-            });
-        }
-
-        if (hasResult) {
-            menu.addItem((item) => {
-                item.setTitle(t('view.copyToolResult'));
-                item.setIcon('clipboard-copy');
-                item.onClick(async () => {
-                    const raw = msg.toolCallResult?.result ?? '';
-                    await copyToClipboard(prettifyIfJson(raw));
-                });
-            });
-        }
-
-        menu.showAtPosition({ x: e.clientX, y: e.clientY });
+        e.preventDefault();
+        void handleCopy();
     });
 }
 
