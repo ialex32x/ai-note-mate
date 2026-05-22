@@ -1,5 +1,6 @@
-import { App, Modal } from 'obsidian';
+import { App } from 'obsidian';
 import { t } from '../i18n';
+import { PromiseModal } from './_promise-modal';
 
 /**
  * Confirmation modal for regenerating an MCP server's slug.
@@ -23,10 +24,7 @@ export interface RegenerateSlugConfirmResult {
 	confirmed: boolean;
 }
 
-export class RegenerateSlugConfirmModal extends Modal {
-	private resultResolver: ((result: RegenerateSlugConfirmResult) => void) | null = null;
-	private resolved = false;
-
+export class RegenerateSlugConfirmModal extends PromiseModal<RegenerateSlugConfirmResult> {
 	constructor(
 		app: App,
 		private readonly oldSlug: string,
@@ -37,11 +35,8 @@ export class RegenerateSlugConfirmModal extends Modal {
 		super(app);
 	}
 
-	waitForResult(): Promise<RegenerateSlugConfirmResult> {
-		return new Promise((resolve) => {
-			this.resultResolver = resolve;
-			this.open();
-		});
+	protected cancelValue(): RegenerateSlugConfirmResult {
+		return { confirmed: false };
 	}
 
 	onOpen() {
@@ -117,17 +112,10 @@ export class RegenerateSlugConfirmModal extends Modal {
 	}
 
 	onClose() {
-		// Esc / outside click → treat as cancel.
-		this.resolve({ confirmed: false });
+		// PromiseModal forwards the cancel value to any unresolved promise.
+		super.onClose();
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.removeClass('oap-regenerate-slug-modal');
-	}
-
-	private resolve(value: RegenerateSlugConfirmResult): void {
-		if (this.resolved) return;
-		this.resolved = true;
-		this.resultResolver?.(value);
-		this.resultResolver = null;
 	}
 }

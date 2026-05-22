@@ -1,7 +1,7 @@
 import type { App } from "obsidian";
 import { createDefaultProfile } from "./defaults";
 import { ARTIFACT_STORE_DEFAULTS, type ArtifactStoreOptions } from "../services/artifact-store";
-import { getAppSecret } from "../utils/secret-helper";
+import { resolveSecret } from "../utils/secret-helper";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
@@ -21,7 +21,7 @@ export function isActiveProfileConfigured(
 	const profile = getActiveProfile(settings);
 	if ((profile.baseUrl?.trim() ?? '').length === 0) return false;
 	if ((profile.model?.trim() ?? '').length === 0) return false;
-	return getAppSecret(app, profile.apiKey).trim().length > 0;
+	return resolveSecret(app, profile.apiKey).trim().length > 0;
 }
 
 /** True when at least one MCP server entry exists in settings. */
@@ -76,7 +76,7 @@ export function isActiveImageGenConfigured(
 	const config = getActiveImageGenConfig(settings);
 	if (!config) return false;
 	if ((config.model?.trim() ?? '').length === 0) return false;
-	if (getAppSecret(app, config.apiKey).trim().length === 0) return false;
+	if (resolveSecret(app, config.apiKey).trim().length === 0) return false;
 	if (config.apiScheme === 'openai' && (config.baseUrl?.trim() ?? '').length === 0) {
 		return false;
 	}

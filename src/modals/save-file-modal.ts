@@ -1,12 +1,13 @@
-import { App, Modal, TFile, TFolder, Notice, setTooltip, setIcon } from 'obsidian';
+import { App, TFile, TFolder, Notice, setTooltip, setIcon } from 'obsidian';
 import { t } from '../i18n';
+import { PromiseModal } from './_promise-modal';
 
 export interface SaveFileResult {
     folder: TFolder;
     filename: string;
 }
 
-export class SaveFileModal extends Modal {
+export class SaveFileModal extends PromiseModal<SaveFileResult | null> {
     private defaultFilename: string;
     private selectedFolder: TFolder;
     private filenameInput!: HTMLInputElement;
@@ -16,7 +17,6 @@ export class SaveFileModal extends Modal {
     private fileListContainer!: HTMLElement;
     private pathDisplay!: HTMLElement;
     private expandedFolders: Set<string> = new Set();
-    private resultResolver: ((result: SaveFileResult | null) => void) | null = null;
 
     constructor(
         app: App,
@@ -28,12 +28,8 @@ export class SaveFileModal extends Modal {
         this.selectedFolder = suggestedFolder ?? app.vault.getRoot();
     }
 
-    /** Opens the modal and returns the user's choice, or null if cancelled. */
-    waitForResult(): Promise<SaveFileResult | null> {
-        return new Promise(resolve => {
-            this.resultResolver = resolve;
-            this.open();
-        });
+    protected cancelValue(): SaveFileResult | null {
+        return null;
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────────────
@@ -145,10 +141,8 @@ export class SaveFileModal extends Modal {
     }
 
     onClose() {
-        if (this.resultResolver) {
-            this.resultResolver(null);
-            this.resultResolver = null;
-        }
+        // PromiseModal forwards the cancel value (null) to any unresolved promise.
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.removeClass('save-file-modal');
@@ -316,29 +310,22 @@ export class SaveFileModal extends Modal {
         }
 
         const result: SaveFileResult = { folder: this.selectedFolder, filename };
-        if (this.resultResolver) {
-            this.resultResolver(result);
-            this.resultResolver = null;
-        }
+        this.resolve(result);
         this.close();
     }
 }
 
 // ── New Folder Prompt Modal ──────────────────────────────────────────────
 
-class NewFolderPromptModal extends Modal {
+class NewFolderPromptModal extends PromiseModal<string | null> {
     private input!: HTMLInputElement;
-    private resolver: ((name: string | null) => void) | null = null;
 
     constructor(app: App, private parentPath: string) {
         super(app);
     }
 
-    waitForResult(): Promise<string | null> {
-        return new Promise(resolve => {
-            this.resolver = resolve;
-            this.open();
-        });
+    protected cancelValue(): string | null {
+        return null;
     }
 
     onOpen() {
@@ -381,19 +368,9 @@ class NewFolderPromptModal extends Modal {
         window.setTimeout(() => this.input.focus(), 50);
     }
 
-    onClose() {
-        if (this.resolver) {
-            this.resolver(null);
-            this.resolver = null;
-        }
-    }
-
     private confirm() {
         const name = this.input.value.trim();
-        if (this.resolver) {
-            this.resolver(name || null);
-            this.resolver = null;
-        }
+        this.resolve(name || null);
         this.close();
     }
 }

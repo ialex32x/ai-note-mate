@@ -23,6 +23,7 @@ import { MAX_EDIT_SELECTION_SIZE } from "./edit-history-types";
 import type { EditHistoryStore } from "./edit-history-store";
 import { runEditTask } from "./edit-history-runner";
 import { createProviderForActiveProfile } from "../utils/provider-factory";
+import { resolveSecret } from "../utils/secret-helper";
 import { EditHistoryView } from "./edit-history-view";
 
 const ACTIONS: readonly EditAction[] = ["expand", "shorten", "polish", "continue"];
@@ -171,13 +172,16 @@ function startRewriteFromEditor(
     try {
         const resolved = createProviderForActiveProfile(plugin);
         providerInfo = { profileName: resolved.profileName, modelName: resolved.modelName };
-        // Heuristic: the underlying provider validates apiKey lazily, but if
-        // the resolved active profile has no key at all we can short-circuit.
+        // The underlying provider validates apiKey lazily; short-circuit
+        // here so the user gets a clean "configure your profile" notice
+        // instead of a cryptic 401 from the SDK. `resolveSecret` returns
+        // "" both when the profile has no key reference at all AND when
+        // the reference exists but the stored secret was wiped — both
+        // cases are equivalently "not usable" from this code's point of
+        // view, so a single check is enough.
         const profile = plugin.settings.profiles.find(p => p.id === plugin.settings.activeProfileId)
             ?? plugin.settings.profiles[0];
-        const rawKey = profile?.apiKey ?? "";
-        const stored = profile ? plugin.app.secretStorage.getSecret(profile.apiKey) : "";
-        if (!rawKey && !stored) {
+        if (!resolveSecret(plugin.app, profile?.apiKey ?? "")) {
             new Notice(t("editHistory.notice.noProfile"));
             return;
         }

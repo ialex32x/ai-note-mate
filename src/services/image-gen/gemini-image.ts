@@ -1,6 +1,7 @@
 import { GoogleGenAI } from "@google/genai";
 import type NoteAssistantPlugin from "../../main";
 import type { ImageGenConfig } from "../../settings";
+import { resolveSecret } from "../../utils/secret-helper";
 import type { ImageGenResult, ReferenceImage } from "./types";
 
 /**
@@ -26,15 +27,14 @@ export async function generateImageWithGemini(
 ): Promise<ImageGenResult> {
     const { prompt, aspectRatio, imageSize, refImages, signal } = params;
 
-    if (!config.apiKey) {
+    // Resolve first, then validate: see openai-image.ts for the full rationale.
+    const apiKey = resolveSecret(plugin.app, config.apiKey);
+    if (!apiKey) {
         return {
             success: false,
             error: "Gemini API key is not configured.",
         };
     }
-
-    const storedKey = plugin.app.secretStorage.getSecret(config.apiKey);
-    const apiKey = storedKey ?? config.apiKey;
     const model = config.model || "gemini-3-pro-image-preview";
 
     const client = new GoogleGenAI({ apiKey });

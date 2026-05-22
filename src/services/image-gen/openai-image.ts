@@ -3,6 +3,7 @@ import type NoteAssistantPlugin from "../../main";
 import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
+import { resolveSecret } from "../../utils/secret-helper";
 
 /**
  * Parameters for OpenAI-compatible image generation.
@@ -34,15 +35,19 @@ export async function generateImageWithOpenAI(
 ): Promise<ImageGenResult> {
     const { prompt, size, quality, style, refImages, signal } = params;
 
-    if (!config.apiKey) {
+    // Resolve first, then validate: `config.apiKey` is the SecretComponent
+    // reference key, not the plaintext, so checking it directly only catches
+    // the "user never typed anything" case. The post-resolve check also
+    // catches the "reference exists but the underlying secret was wiped"
+    // case — without it, an empty string would be forwarded to the SDK and
+    // surface as a confusing 401.
+    const apiKey = resolveSecret(plugin.app, config.apiKey);
+    if (!apiKey) {
         return {
             success: false,
             error: "OpenAI API key is not configured.",
         };
     }
-
-    const storedKey = plugin.app.secretStorage.getSecret(config.apiKey);
-    const apiKey = storedKey ?? config.apiKey;
     const model = config.model || "dall-e-3";
     const baseURL = config.baseUrl || "https://api.openai.com/v1";
 

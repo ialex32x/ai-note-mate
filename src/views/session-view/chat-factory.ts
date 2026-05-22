@@ -29,13 +29,13 @@ import { createConversationTools } from '../../services/tools/conversation-toolc
 import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
 import { createTodoTool, type TodoStateSource } from '../../services/tools/todo-toolcall';
 import { inferModelContextWindow } from '../../services/model-context-window';
-import { getAppSecret } from 'utils/secret-helper';
+import { resolveSecret } from 'utils/secret-helper';
 
 function createModelConfigFromProfile(
     plugin: NoteAssistantPlugin,
     profile: ProviderProfile,
 ): MinimalModelConfig | undefined {
-    const apiKey = plugin.app.secretStorage.getSecret(profile.apiKey) ?? profile.apiKey;
+    const apiKey = resolveSecret(plugin.app, profile.apiKey);
     if (!apiKey) return undefined;
 
     return {
@@ -73,7 +73,7 @@ export function createEmbeddingConfig(plugin: NoteAssistantPlugin): MinimalModel
     const embeddingConfig = getActiveEmbeddingConfig(settings);
     if (!embeddingConfig) return undefined;
 
-    const apiKey = getAppSecret(plugin.app, embeddingConfig.apiKey);
+    const apiKey = resolveSecret(plugin.app, embeddingConfig.apiKey);
     if (!apiKey) return undefined;
 
     return {

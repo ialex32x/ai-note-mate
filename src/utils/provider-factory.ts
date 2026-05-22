@@ -2,7 +2,7 @@ import type NoteAssistantPlugin from "../main";
 import { createLLMProvider } from "../services/providers";
 import type { LLMProvider } from "../services/llm-provider";
 import { getActiveProfile } from "../settings";
-import { getAppSecret } from "./secret-helper";
+import { resolveSecret } from "./secret-helper";
 
 /**
  * Resolved provider bundle for the currently active profile.
@@ -26,8 +26,12 @@ export interface ActiveProfileProvider {
  *
  * - Falls back to the first profile (or a synthetic default) if the active
  *   profile id is stale, mirroring `getActiveProfile` semantics.
- * - Resolves the API key through `app.secretStorage` first, then falls back
- *   to the raw value stored on the profile (legacy plain-text storage).
+ * - Resolves the API key through `app.secretStorage` (the only place
+ *   `SecretComponent` ever writes plaintext). A missing secret comes
+ *   back as the empty string — callers should treat that exactly like
+ *   "no API key configured" rather than passing the empty string to the
+ *   provider SDK (every supported provider returns a confusing 401 in
+ *   that case).
  *
  * Throws nothing — callers should validate `provider`/`modelName` and surface
  * "no API key" errors at the feature level.
@@ -36,7 +40,7 @@ export function createProviderForActiveProfile(plugin: NoteAssistantPlugin): Act
     const settings = plugin.settings;
     const profile = getActiveProfile(settings);
 
-    const apiKey = getAppSecret(plugin.app, profile.apiKey);
+    const apiKey = resolveSecret(plugin.app, profile.apiKey);
 
     const provider = createLLMProvider(profile.provider, {
         apiKey,

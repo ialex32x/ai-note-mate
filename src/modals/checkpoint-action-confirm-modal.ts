@@ -1,14 +1,12 @@
-import { App, Modal } from 'obsidian';
+import { App } from 'obsidian';
 import { t } from '../i18n';
+import { PromiseModal } from './_promise-modal';
 
 /**
  * Simple confirm / cancel dialog for checkpoint accept or discard.
  * Resolves `true` when the user confirms, `false` on cancel or dismiss.
  */
-export class CheckpointActionConfirmModal extends Modal {
-    private resultResolver: ((ok: boolean) => void) | null = null;
-    private resolved = false;
-
+export class CheckpointActionConfirmModal extends PromiseModal<boolean> {
     constructor(
         app: App,
         private readonly titleText: string,
@@ -19,11 +17,8 @@ export class CheckpointActionConfirmModal extends Modal {
         super(app);
     }
 
-    waitForResult(): Promise<boolean> {
-        return new Promise<boolean>((resolve) => {
-            this.resultResolver = resolve;
-            this.open();
-        });
+    protected cancelValue(): boolean {
+        return false;
     }
 
     onOpen(): void {
@@ -52,14 +47,7 @@ export class CheckpointActionConfirmModal extends Modal {
     }
 
     onClose(): void {
-        this.resolve(false);
+        super.onClose();
         this.contentEl.empty();
-    }
-
-    private resolve(ok: boolean): void {
-        if (this.resolved) return;
-        this.resolved = true;
-        this.resultResolver?.(ok);
-        this.resultResolver = null;
     }
 }

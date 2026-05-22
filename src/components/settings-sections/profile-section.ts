@@ -22,7 +22,7 @@ import {
 	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
-import { getAppSecret } from "utils/secret-helper";
+import { resolveSecret } from "utils/secret-helper";
 
 export class ProfileSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.profileSection';
@@ -560,7 +560,7 @@ export class ProfileSettingsSection implements SettingsSection {
 	private createProviderFromProfile(profile: ProviderProfile) {
 		const { app } = this.ctx;
 		return createLLMProvider(profile.provider, {
-			apiKey: getAppSecret(app, profile.apiKey),
+			apiKey: resolveSecret(app, profile.apiKey),
 			baseURL: profile.provider === 'openai' ? profile.baseUrl : undefined,
 			model: profile.model,
 		});

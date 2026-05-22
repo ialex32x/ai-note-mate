@@ -9,6 +9,7 @@ import type {
     CompleteToolCall,
     ThinkingLevel,
 } from "../llm-provider";
+import { sanitizeChatMessages } from "./_shared";
 
 /**
  * Locally-narrowed view of a Gemini `Part`.
@@ -194,38 +195,10 @@ export class GeminiProvider implements LLMProvider {
     ): Array<{ role: "user" | "model"; parts: Array<Record<string, unknown>> }> {
         const contents: Array<{ role: "user" | "model"; parts: Array<Record<string, unknown>> }> = [];
 
-        // Defensive sanitization parallel to openai-provider. See
+        // Defensive sanitization parallel to openai-provider. Shared
+        // implementation in services/providers/_shared.ts; see
         // docs/context-compression-fix-plan.md \u00a74.3.
-        const pendingToolCallIds = new Set<string>();
-        const sanitized: ChatMessageParam[] = [];
-        for (const m of messages) {
-            if (m.role === "assistant") {
-                const hasToolCalls = !!(m.toolCalls && m.toolCalls.length > 0);
-                const hasContent = typeof m.content === "string" && m.content.length > 0;
-                const hasThinking = typeof m.thinkingContent === "string"
-                    && m.thinkingContent.length > 0;
-                if (!hasToolCalls && !hasContent && !hasThinking) {
-                    console.warn("[gemini-provider] dropping empty assistant message");
-                    continue;
-                }
-                if (hasToolCalls) {
-                    for (const tc of m.toolCalls!) pendingToolCallIds.add(tc.id);
-                }
-                sanitized.push(m);
-                continue;
-            }
-            if (m.role === "tool_result") {
-                const tcId = m.toolCallId;
-                if (!tcId || !pendingToolCallIds.has(tcId)) {
-                    console.warn("[gemini-provider] dropping orphan tool_result (toolCallId=", tcId, ")");
-                    continue;
-                }
-                pendingToolCallIds.delete(tcId);
-                sanitized.push(m);
-                continue;
-            }
-            sanitized.push(m);
-        }
+        const sanitized = sanitizeChatMessages(messages, "gemini-provider");
 
         for (const msg of sanitized) {
             if (msg.role === "system") continue; // handled separately

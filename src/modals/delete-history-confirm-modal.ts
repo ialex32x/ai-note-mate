@@ -1,5 +1,6 @@
-import { App, Modal } from 'obsidian';
+import { App } from 'obsidian';
 import { t } from '../i18n';
+import { PromiseModal } from './_promise-modal';
 
 /**
  * Result of the delete-history confirmation modal.
@@ -38,10 +39,7 @@ export interface DeleteHistoryConfirmResult {
  *       app, totalCount, busyCount,
  *   ).waitForResult();
  */
-export class DeleteHistoryConfirmModal extends Modal {
-    private resultResolver: ((result: DeleteHistoryConfirmResult) => void) | null = null;
-    private resolved = false;
-
+export class DeleteHistoryConfirmModal extends PromiseModal<DeleteHistoryConfirmResult> {
     private includeBusy = false;
     private confirmBtn: HTMLButtonElement | null = null;
     private includeBusyCheckbox: HTMLInputElement | null = null;
@@ -54,12 +52,8 @@ export class DeleteHistoryConfirmModal extends Modal {
         super(app);
     }
 
-    /** Opens the modal and resolves with the user's choice. */
-    waitForResult(): Promise<DeleteHistoryConfirmResult> {
-        return new Promise<DeleteHistoryConfirmResult>((resolve) => {
-            this.resultResolver = resolve;
-            this.open();
-        });
+    protected cancelValue(): DeleteHistoryConfirmResult {
+        return { confirmed: false, includeBusy: false };
     }
 
     onOpen() {
@@ -126,8 +120,8 @@ export class DeleteHistoryConfirmModal extends Modal {
     }
 
     onClose() {
-        // If the user dismissed via Esc / outside-click, treat as cancel.
-        this.resolve({ confirmed: false, includeBusy: false });
+        // PromiseModal forwards the cancel value to any unresolved promise.
+        super.onClose();
         const { contentEl } = this;
         contentEl.empty();
         contentEl.removeClass('delete-history-modal');
@@ -150,12 +144,5 @@ export class DeleteHistoryConfirmModal extends Modal {
         );
         this.confirmBtn.disabled = effectiveCount <= 0;
         this.confirmBtn.toggleClass('is-disabled', effectiveCount <= 0);
-    }
-
-    private resolve(value: DeleteHistoryConfirmResult) {
-        if (this.resolved) return;
-        this.resolved = true;
-        this.resultResolver?.(value);
-        this.resultResolver = null;
     }
 }

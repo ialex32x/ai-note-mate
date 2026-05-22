@@ -1,6 +1,7 @@
-import { App, Modal, setIcon, debounce } from 'obsidian';
+import { App, setIcon, debounce } from 'obsidian';
 import { t } from '../i18n';
 import { SessionManager, SessionSnapshot } from '../session-manager';
+import { PromiseModal } from './_promise-modal';
 
 export interface SessionSearchResult {
     sessionId: string;
@@ -13,13 +14,12 @@ export interface SessionSearchResult {
     loadedOnDemand?: boolean;
 }
 
-export class SessionSearchModal extends Modal {
+export class SessionSearchModal extends PromiseModal<SessionSearchResult | null> {
     private sessionManager: SessionManager;
     private inputEl!: HTMLInputElement;
     private resultsEl!: HTMLElement;
     private loadingEl!: HTMLElement;
     private statusEl!: HTMLElement;
-    private resultResolver: ((result: SessionSearchResult | null) => void) | null = null;
     private currentResults: SessionSearchResult[] = [];
     private searchAbortController: AbortController | null = null;
     private sessionsLoading: Set<string> = new Set();
@@ -29,12 +29,8 @@ export class SessionSearchModal extends Modal {
         this.sessionManager = sessionManager;
     }
 
-    /** Opens the modal and returns the user's choice, or null if cancelled. */
-    waitForResult(): Promise<SessionSearchResult | null> {
-        return new Promise(resolve => {
-            this.resultResolver = resolve;
-            this.open();
-        });
+    protected cancelValue(): SessionSearchResult | null {
+        return null;
     }
 
     onOpen() {
@@ -120,16 +116,16 @@ export class SessionSearchModal extends Modal {
     }
 
     onClose() {
-        // Abort any pending search
+        // Abort any pending search before forwarding the cancel value
+        // — the search promise is owned by this modal and has nowhere
+        // useful to land once the user has dismissed.
         if (this.searchAbortController) {
             this.searchAbortController.abort();
             this.searchAbortController = null;
         }
 
-        if (this.resultResolver) {
-            this.resultResolver(null);
-            this.resultResolver = null;
-        }
+        // PromiseModal forwards the cancel value (null) to any unresolved promise.
+        super.onClose();
 
         const { contentEl } = this;
         contentEl.empty();
@@ -379,10 +375,7 @@ export class SessionSearchModal extends Modal {
     }
 
     private selectResult(result: SessionSearchResult) {
-        if (this.resultResolver) {
-            this.resultResolver(result);
-            this.resultResolver = null;
-        }
+        this.resolve(result);
         this.close();
     }
 }

@@ -1,5 +1,6 @@
-import { App, Modal } from 'obsidian';
+import { App } from 'obsidian';
 import { t } from '../i18n';
+import { PromiseModal } from './_promise-modal';
 
 /**
  * Modal that displays a searchable list of available models.
@@ -8,10 +9,7 @@ import { t } from '../i18n';
  * Usage:
  *   const model = await new ModelSelectorModal(app, models, currentModel).waitForResult();
  */
-export class ModelSelectorModal extends Modal {
-	private resultResolver: ((model: string | null) => void) | null = null;
-	private resolved = false;
-
+export class ModelSelectorModal extends PromiseModal<string | null> {
 	constructor(
 		app: App,
 		private models: string[],
@@ -20,12 +18,8 @@ export class ModelSelectorModal extends Modal {
 		super(app);
 	}
 
-	/** Opens the modal and resolves with the selected model or null. */
-	waitForResult(): Promise<string | null> {
-		return new Promise<string | null>((resolve) => {
-			this.resultResolver = resolve;
-			this.open();
-		});
+	protected cancelValue(): string | null {
+		return null;
 	}
 
 	onOpen() {
@@ -88,14 +82,7 @@ export class ModelSelectorModal extends Modal {
 	}
 
 	onClose() {
-		this.resolve(null);
+		super.onClose();
 		this.contentEl.empty();
-	}
-
-	private resolve(value: string | null) {
-		if (this.resolved) return;
-		this.resolved = true;
-		this.resultResolver?.(value);
-		this.resultResolver = null;
 	}
 }

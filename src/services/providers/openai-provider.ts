@@ -9,6 +9,7 @@ import type {
     StreamChunk,
     ThinkingLevel,
 } from "../llm-provider";
+import { sanitizeChatMessages } from "./_shared";
 
 /**
  * Some OpenAI-compatible thinking models (DeepSeek R1, certain Qwen
@@ -71,38 +72,10 @@ export class OpenAIProvider implements LLMProvider {
 
         // Defensive sanitization (last line of defense against 400 errors
         // caused by orphan tool_result / empty assistant messages that may
-        // slip through the context reducer). See
+        // slip through the context reducer). Shared with gemini-provider —
+        // see services/providers/_shared.ts and
         // docs/context-compression-fix-plan.md \u00a74.3.
-        const sanitized: ChatMessageParam[] = [];
-        const pendingToolCallIds = new Set<string>();
-        for (const m of messages) {
-            if (m.role === "assistant") {
-                const hasToolCalls = !!(m.toolCalls && m.toolCalls.length > 0);
-                const hasContent = typeof m.content === "string" && m.content.length > 0;
-                const hasThinking = typeof m.thinkingContent === "string"
-                    && m.thinkingContent.length > 0;
-                if (!hasToolCalls && !hasContent && !hasThinking) {
-                    console.warn("[openai-provider] dropping empty assistant message");
-                    continue;
-                }
-                if (hasToolCalls) {
-                    for (const tc of m.toolCalls!) pendingToolCallIds.add(tc.id);
-                }
-                sanitized.push(m);
-                continue;
-            }
-            if (m.role === "tool_result") {
-                const tcId = m.toolCallId;
-                if (!tcId || !pendingToolCallIds.has(tcId)) {
-                    console.warn("[openai-provider] dropping orphan tool_result (toolCallId=", tcId, ")");
-                    continue;
-                }
-                pendingToolCallIds.delete(tcId);
-                sanitized.push(m);
-                continue;
-            }
-            sanitized.push(m);
-        }
+        const sanitized = sanitizeChatMessages(messages, "openai-provider");
 
         // Convert our messages to OpenAI format
         const openaiMessages = sanitized.map((m): OpenAI.Chat.ChatCompletionMessageParam => {

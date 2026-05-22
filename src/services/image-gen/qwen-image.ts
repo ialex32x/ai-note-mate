@@ -2,6 +2,7 @@ import type NoteAssistantPlugin from "../../main";
 import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64, requestUrlWithAbort } from "../../utils/abortable-request";
+import { resolveSecret } from "../../utils/secret-helper";
 
 /**
  * Parameters for Qwen image generation.
@@ -145,15 +146,14 @@ export async function generateImageWithQwen(
 ): Promise<ImageGenResult> {
     const { prompt, aspectRatio, negativePrompt, refImages, signal } = params;
 
-    if (!config.apiKey) {
+    // Resolve first, then validate: see openai-image.ts for the full rationale.
+    const apiKey = resolveSecret(plugin.app, config.apiKey);
+    if (!apiKey) {
         return {
             success: false,
             error: "Qwen API key is not configured.",
         };
     }
-
-    const storedKey = plugin.app.secretStorage.getSecret(config.apiKey);
-    const apiKey = storedKey ?? config.apiKey;
     const model = config.model || "qwen-image";
 
     const url = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
