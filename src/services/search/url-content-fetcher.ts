@@ -376,6 +376,15 @@ export class UrlContentFetcher {
                 totalTextLength,
             };
         } catch (error) {
+            // Preserve the original `DOMException` identity for aborts —
+            // wrapping it into a plain `Error` would strip the `name`
+            // discriminator that `crawlRecursive` (and every higher
+            // layer up to the tool-exec catch) uses to distinguish
+            // user-initiated cancellation from a real network failure.
+            // Without this re-throw, an abort during web_fetch_url would
+            // be logged as a normal "Request failed" and silently turned
+            // into an empty result set instead of unwinding the turn.
+            if (error instanceof DOMException && error.name === 'AbortError') throw error;
             throw new Error(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }

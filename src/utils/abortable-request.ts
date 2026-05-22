@@ -40,6 +40,12 @@ export async function withAbort<T>(
     const abortPromise = new Promise<never>((_, reject) => {
         onAbort = () => reject(new DOMException("Aborted", "AbortError"));
         signal.addEventListener('abort', onAbort, { once: true });
+        // Defensive: if the signal aborted between the pre-check above
+        // and this listener being attached (e.g. `fn()` synchronously
+        // triggered abort before returning its promise), the 'abort'
+        // event has already fired and `addEventListener` will NOT
+        // replay it. Fire the listener manually so we still reject.
+        if (signal.aborted) onAbort();
     });
 
     try {
