@@ -97,6 +97,20 @@
     gap: 2px;
 }
 
+// Insight title and summary are user-facing prose that users will often
+// want to copy out of the chat (e.g. to paste into a note). The
+// surrounding Obsidian view container defaults to `user-select: none`
+// to avoid accidental selection during leaf drag/resize, so we have to
+// re-enable selection explicitly here. The `!important` mirrors the
+// approach used by `.session-bubble` and is needed to win over the
+// view-level default.
+.session-insight-card__item-title,
+.session-insight-card__item-summary {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    cursor: text;
+}
+
 .session-insight-card__item-title {
     color: @text-primary;
     font-weight: 600;
