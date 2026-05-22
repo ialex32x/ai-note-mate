@@ -17,7 +17,7 @@ import {
     vaultCreateFile,
     vaultDeleteFiles,
     vaultDeleteFolder,
-    vaultEditFrontmatter,
+    vaultEditFilesFrontmatter,
     vaultPrependFile,
     vaultRenameFile,
     vaultEditLines,
@@ -25,7 +25,7 @@ import {
     vaultWriteFile,
 } from "./edit";
 import { vaultGetOverview, vaultListFilesSorted } from "./overview";
-import { vaultEditFileTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
+import { vaultEditFilesTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
 import {
     vaultFindOrphanFiles,
     vaultGetBacklinks,
@@ -58,7 +58,7 @@ import {
  *     the literal file body rides as a JSON `content` field, never as
  *     prose inside `delegate_task.task`.
  *  3. Keeps the related hard rules (e.g. "tag edits MUST use
- *     `edit_file_tags`, not `replace_text`"; "moves MUST
+ *     `edit_files_tags`, not `replace_text`"; "moves MUST
  *     use `rename_or_move_file`, not delete+create") on the
  *     same agent that owns the tools they constrain — the rules and
  *     the tools live together.
@@ -85,9 +85,9 @@ import {
  *    handles inserts/deletes via its `edits` array — there is no
  *    separate insert_lines tool)
  *  - Structural: delete_files / delete_folder / rename_or_move_file
- *  - Frontmatter: edit_frontmatter (set/unset arbitrary YAML keys; tag
+ *  - Frontmatter: edit_files_frontmatter (set/unset arbitrary YAML keys; tag
  *    keys are refused and routed to the tag-specific tools below)
- *  - Tag edits:   edit_file_tags / rename_tag (vault-wide)
+ *  - Tag edits:   edit_files_tags / rename_tag (vault-wide)
  */
 export function createObsidianMutationTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     return [
@@ -102,9 +102,9 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultDeleteFolder(plugin),
         vaultRenameFile(plugin),
         // Frontmatter property edits (non-tag YAML keys)
-        vaultEditFrontmatter(plugin),
+        vaultEditFilesFrontmatter(plugin),
         // Tag edits
-        vaultEditFileTags(plugin),
+        vaultEditFilesTags(plugin),
         vaultRenameTag(plugin),
     ];
 }
@@ -183,7 +183,7 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
  *    these tools just tempts it to "tidy up" on its own, which hides
  *    state changes from the main agent (violating the
  *    `§0.3 principle 1` of `docs/vault-editor-subagent-plan.md`).
- *  - `edit_file_tags` / `rename_tag` / `edit_frontmatter`: tag and
+ *  - `edit_files_tags` / `rename_tag` / `edit_files_frontmatter`: tag and
  *    frontmatter property edits are structural (vs content) when
  *    per-file, or vault-wide. Either way, they should stay explicit
  *    in the main agent's plan. The editor can still rewrite

@@ -6,7 +6,7 @@ import { isFailure, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: edit_frontmatter
+// Tool: edit_files_frontmatter
 //
 // Generic YAML frontmatter property editor for one or more notes. Operates
 // through `app.fileManager.processFrontMatter`, so YAML structure, quoting,
@@ -15,7 +15,7 @@ import { runVaultMutation } from "../../../vault";
 // strings, or quoted scalars.
 //
 // SCOPE BOUNDARY: deliberately refuses edits to `tags` / `tag` keys.
-// Tag operations belong on `edit_file_tags` (per-file add/remove/set with
+// Tag operations belong on `edit_files_tags` (per-file add/remove/set with
 // inline-tag awareness) and `rename_tag` (vault-wide). Routing tag edits
 // through this generic tool would either:
 //   - drop the inline `#tag` body channel (silent capability gap), or
@@ -113,14 +113,14 @@ function deepEqual(a: unknown, b: unknown): boolean {
     return true;
 }
 
-export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "edit_frontmatter",
+                name: "edit_files_frontmatter",
                 description:
                     "Set or remove YAML frontmatter properties on one or more markdown notes via the " +
                     "official `processFrontMatter` API (preserves YAML formatting and key order). " +
@@ -132,7 +132,7 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                     "an existing array (e.g. aliases), read the current value first and `set` the merged " +
                     "array. " +
                     "\n\n" +
-                    "Editing the `tags` / `tag` keys is REFUSED — use `edit_file_tags` (per-file, with " +
+                    "Editing the `tags` / `tag` keys is REFUSED — use `edit_files_tags` (per-file, with " +
                     "inline-tag awareness) or `rename_tag` (vault-wide) instead. " +
                     "\n\n" +
                     "Use this for any non-tag frontmatter change (e.g. 'set status to done', 'clear " +
@@ -160,7 +160,7 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                             description:
                                 "[op=set only] Object mapping frontmatter key → new value. " +
                                 "Values may be string, number, boolean, array, object, or null. " +
-                                "Keys `tags` / `tag` are refused — use edit_file_tags / rename_tag.",
+                                "Keys `tags` / `tag` are refused — use edit_files_tags / rename_tag.",
                             additionalProperties: true,
                         },
                         keys: {
@@ -168,7 +168,7 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                             items: { type: "string" },
                             description:
                                 "[op=unset only] Frontmatter keys to remove. " +
-                                "Keys `tags` / `tag` are refused — use edit_file_tags.",
+                                "Keys `tags` / `tag` are refused — use edit_files_tags.",
                         },
                         dry_run: {
                             type: "boolean",
@@ -243,8 +243,8 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                             success: false,
                             type: "text",
                             content:
-                                `edit_frontmatter cannot edit the '${key}' key. ` +
-                                `For tag operations use \`edit_file_tags\` (per-file add / remove / set, with ` +
+                                `edit_files_frontmatter cannot edit the '${key}' key. ` +
+                                `For tag operations use \`edit_files_tags\` (per-file add / remove / set, with ` +
                                 `inline-tag awareness) or \`rename_tag\` (vault-wide rename). ` +
                                 `These tools handle YAML + inline tags safely and support add/remove/descendant ` +
                                 `semantics that this generic tool intentionally does not.`,
@@ -293,8 +293,8 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                             success: false,
                             type: "text",
                             content:
-                                `edit_frontmatter cannot unset the '${k}' key. ` +
-                                `Use \`edit_file_tags\` (op='set', tags=[]) to clear tags safely — that path ` +
+                                `edit_files_frontmatter cannot unset the '${k}' key. ` +
+                                `Use \`edit_files_tags\` (op='set', tags=[]) to clear tags safely — that path ` +
                                 `also coalesces the alternate 'tag'/'tags' keys and respects inline tags.`,
                         };
                     }
@@ -392,7 +392,7 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                     const lockErr = await runVaultMutation(plugin, chatStream, {
                         kind: "modify",
                         path: file.path,
-                        toolName: "edit_frontmatter",
+                        toolName: "edit_files_frontmatter",
                         perform: async () => {
                             try {
                                 await plugin.app.fileManager.processFrontMatter(
@@ -445,7 +445,7 @@ export function vaultEditFrontmatter(plugin: NoteAssistantPlugin): RegisteredToo
                 success: true,
                 type: "object",
                 content: {
-                    action: dryRun ? `dry_run_edit_frontmatter_${opName}` : `edit_frontmatter_${opName}`,
+                    action: dryRun ? `dry_run_edit_files_frontmatter_${opName}` : `edit_files_frontmatter_${opName}`,
                     op: opName,
                     dry_run: dryRun,
                     files_processed: files.length,

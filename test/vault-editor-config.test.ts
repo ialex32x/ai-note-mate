@@ -66,7 +66,7 @@ describe('createObsidianEditorTools — tool surface', () => {
         expect(names.has('delete_files')).toBe(false);
         expect(names.has('delete_folder')).toBe(false);
         expect(names.has('rename_or_move_file')).toBe(false);
-        expect(names.has('edit_file_tags')).toBe(false);
+        expect(names.has('edit_files_tags')).toBe(false);
         expect(names.has('rename_tag')).toBe(false);
     });
 

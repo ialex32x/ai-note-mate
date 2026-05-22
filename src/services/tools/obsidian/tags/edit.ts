@@ -12,7 +12,7 @@ import {
 } from "./_tag-ops";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: edit_file_tags
+// Tool: edit_files_tags
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface EditTagsFileResult {
@@ -33,14 +33,14 @@ interface EditTagsFileResult {
  * inline edits use the metadata cache's precise offsets, so neither YAML structure nor in-body
  * prose can get corrupted by the kind of accidents `replace_text` is prone to.
  */
-export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "edit_file_tags",
+                name: "edit_files_tags",
                 description:
                     "Add / remove / set tags on one or more specific notes. Frontmatter is updated via " +
                     "`processFrontMatter` (preserves YAML structure, quoting, key order); inline `#tag` " +
@@ -354,7 +354,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
                 success: true,
                 type: "object",
                 content: {
-                    action: dryRun ? `dry_run_edit_file_tags_${opName}` : `edit_file_tags_${opName}`,
+                    action: dryRun ? `dry_run_edit_files_tags_${opName}` : `edit_files_tags_${opName}`,
                     op: opName,
                     location: rawLocation,
                     effective_location: effLocation,
@@ -375,7 +375,7 @@ export function vaultEditFileTags(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Frontmatter add / set helpers (used by edit_file_tags only)
+// Frontmatter add / set helpers (used by edit_files_tags only)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**

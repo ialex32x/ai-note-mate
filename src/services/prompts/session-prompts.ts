@@ -39,7 +39,7 @@ export const COMMON_RULES = `\
  * guarantees, and individual tool descriptions (which previously
  * repeated each routing fact 2–3 times) can rely on a single source of
  * truth here. Tool-specific safety guards (e.g. \`replace_text\`'s
- * tag-shape \`force\` flag, \`edit_frontmatter\`'s tag-key refusal)
+ * tag-shape \`force\` flag, \`edit_files_frontmatter\`'s tag-key refusal)
  * stay in their respective tool descriptions because they describe
  * runtime behaviour of one tool, not cross-tool routing.
  */
@@ -118,15 +118,15 @@ You have access to long-term Memory via the \`memory_store\` and \`memory_delete
 `;
 
 export const VAULT_HARD_RULES = `## Vault hard rules
-- Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`edit_file_tags\`. Never simulate this via \`replace_text\` / \`edit_lines\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`edit_file_tags\` preserves.
+- Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use \`edit_files_tags\`. Never simulate this via \`replace_text\` / \`edit_lines\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that \`edit_files_tags\` preserves.
 - Vault-wide tag rename → \`rename_tag\`.
-- Non-tag YAML frontmatter edits (status, due_date, aliases, custom keys, …) MUST use \`edit_frontmatter\`. Never simulate via \`replace_text\` / \`edit_lines\` against the YAML region — text-level rewrites corrupt structure, quoting, and multi-line values.
+- Non-tag YAML frontmatter edits (status, due_date, aliases, custom keys, …) MUST use \`edit_files_frontmatter\`. Never simulate via \`replace_text\` / \`edit_lines\` against the YAML region — text-level rewrites corrupt structure, quoting, and multi-line values.
 - Move / rename / relocate / archive a file or folder → \`rename_or_move_file\` is the ONLY correct tool. Never simulate via \`create_file\` at a new path + \`delete_files\` on the old path; that route silently breaks every incoming wikilink.
 - \`create_file\` is for NEW files only. It refuses if the path already exists — do NOT use it to overwrite. To change an existing file, pick by intent (see "Picking the right edit tool" below).
 - Multiple edits to the SAME file MUST be submitted in ONE call. \`replace_text\` takes a \`replacements\` array; \`edit_lines\` takes an \`edits\` array. Both match against the file's pre-edit snapshot and apply atomically. Splitting them across calls means later calls run on shifted content and either miss their target or hit unintended text.
 - Picking the right edit tool for a single file:
-    - Tags → \`edit_file_tags\` (per file) / \`rename_tag\` (vault-wide).
-    - Non-tag frontmatter → \`edit_frontmatter\`.
+    - Tags → \`edit_files_tags\` (per file) / \`rename_tag\` (vault-wide).
+    - Non-tag frontmatter → \`edit_files_frontmatter\`.
     - Known line range to rewrite / insert / delete → \`edit_lines\`.
     - Unstructured literal text edits (typos, term renames, deleting a phrase) → \`replace_text\`. Use \`expected_count\` on a replacement when you believe the term appears an exact number of times — the call fails fast if reality disagrees.
     - Whole-body rewrite (you have produced the FULL new body — reformat / translate / restructure): if \`write_file\` is in your tool list, call it directly; if not, delegate to the \`vault_editor\` sub-agent (the main agent in multi-agent mode does NOT have \`write_file\` by design).
@@ -273,7 +273,7 @@ Do NOT delegate to \`vault_editor\` when:
 - The change is trivial and you already know exactly what to write (e.g. fix one specific typo at a known line, add one word to a heading) — call \`replace_text\` or \`edit_lines\` directly. Delegating overhead would cost more than the edit itself.
 - The change spans multiple files. Delegate ONE task per file; \`vault_editor\` refuses multi-file tasks by design.
 - The task involves creating, renaming, moving, or deleting the file. Those are your tools — do them yourself, and only then (if needed) delegate the body rewrite of the surviving file.
-- The task requires tag edits (\`edit_file_tags\`, \`rename_tag\`). Do those yourself; the editor cannot.
+- The task requires tag edits (\`edit_files_tags\`, \`rename_tag\`). Do those yourself; the editor cannot.
 
 If \`result.warnings\` contains a structural follow-up (e.g. "file also needs to be renamed"), treat it as a handoff and act on it with your own tools.
 
