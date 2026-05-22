@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2.8
+
+### What's new
+
+- **Quick jump to settings** — The session profile dropdown adds gear buttons beside **Profiles** and **Image generation** that open **Settings → Note Mate** scrolled to the matching section.
+
+### Refinements
+
+- **Better tool matching in your language** — The on-demand tool retriever now includes trigger keywords in English plus your UI language (Chinese, Japanese, Korean), so everyday phrasing is more likely to surface the right vault tools.
+- **Locale follows Obsidian** — When language is set to Auto, the plugin prefers your **Settings → General → Language** choice instead of guessing from the browser.
+- **Selectable insight text** — Insight card titles and summaries can be highlighted and copied like normal text.
+
+### Fixes
+
+- **Stop during web fetch** — Pressing **Stop** while the assistant is fetching a URL cancels cleanly instead of letting the fetch finish quietly in the background.
+- **Stop cancels more background work** — Auto title generation, insight extraction, and memory extraction respect cancellation when you stop a turn or close a session.
+- **Image gen respects Stop** — Long image-generation API calls now honour cancellation.
+- **API key resolution** — Keys stored via Obsidian's secure storage are resolved consistently across image generation, web search, and other network features, with a clear "not configured" message when missing.
+
+---
+
 ## 1.2.7
 
 ### What's new
