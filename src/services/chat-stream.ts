@@ -21,6 +21,7 @@ import type {
 } from "./llm-provider";
 import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
+import { getLocale, tIn } from "../i18n";
 
 // ─────────────────────────────────────────────
 // Task 1: Core types & interfaces
@@ -199,6 +200,16 @@ export interface ToolFilterOptions {
  *   3. Top-level parameter names, when discoverable from
  *      `function.parameters.properties` — surfaces hints the description
  *      may not spell out (e.g. `tags`, `query`, `path`).
+ *   4. Multilingual trigger keywords from the locale bundle (see
+ *      {@link buildToolTriggerLine}) — gives BM25 lexical traction on
+ *      queries in the user's UI language even when the (English)
+ *      description shares zero tokens with them.
+ *
+ * Step 4 is ranker-only: the model still sees the original English
+ * `function.description` in the schema. Keeping the schema language-
+ * stable avoids any risk of locale-dependent tool-calling regressions
+ * in providers that were trained predominantly on English function
+ * specs.
  *
  * Changes to this composition invalidate the embedder's per-text cache
  * (entries are keyed by sha256(text)). That's acceptable: a one-shot
@@ -212,7 +223,48 @@ function buildToolEmbeddingText(tool: RegisteredTool): string {
         ? Object.keys(properties as Record<string, unknown>)
         : [];
     const paramLine = paramNames.length > 0 ? `Parameters: ${paramNames.join(', ')}` : '';
-    return [fn.name, description, paramLine].filter(Boolean).join('\n');
+    const triggerLine = buildToolTriggerLine(fn.name);
+    return [fn.name, description, paramLine, triggerLine].filter(Boolean).join('\n');
+}
+
+/**
+ * Build a comma-separated trigger line for `schemaName` by looking up
+ * `tool.triggers.<schemaName>` in the active locale bundle AND in the
+ * English bundle.
+ *
+ * Why concatenate both:
+ *   - The active locale's keywords cover queries written entirely in
+ *     the user's UI language (typical CJK chat-style prompts).
+ *   - The English keywords cover the very common mixed-language case
+ *     ("帮我 search markdown 文件", "RSSフィード を fetch して") that
+ *     non-English users naturally produce around tech terms.
+ *
+ * Tools without an entry (most MCP-supplied tools, long-tail built-in
+ * tools we haven't authored yet) yield an empty string and degrade
+ * silently — they still benefit from the description-based ranking
+ * just as before.
+ *
+ * The BM25 tokenizer treats commas as separators, so the exact
+ * delimiter doesn't carry semantic weight; the comma+space form is
+ * picked purely for readability when the composed text shows up in
+ * debug logs.
+ */
+function buildToolTriggerLine(schemaName: string): string {
+    const key = `tool.triggers.${schemaName}`;
+    const currentLocale = getLocale();
+    const cur = tIn(currentLocale, key);
+    const en = tIn('en', key);
+    // `tIn` returns the key verbatim when the entry is missing — that's the
+    // sentinel for "no triggers here, skip silently". The empty-string check
+    // is defensive against a future locale entry that's authored as `''`
+    // (which would otherwise yield `Triggers: , <en>` with a stray comma).
+    const parts: string[] = [];
+    if (cur && cur !== key) parts.push(cur);
+    // Skip the English bundle when the active locale entry is already the
+    // English string (active locale IS 'en', or a translator happened to
+    // copy the English value verbatim) — avoids duplicating the same tokens.
+    if (en && en !== key && en !== cur) parts.push(en);
+    return parts.length > 0 ? `Triggers: ${parts.join(', ')}` : '';
 }
 
 /**

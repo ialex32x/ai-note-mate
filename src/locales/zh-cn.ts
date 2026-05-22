@@ -568,4 +568,22 @@ export const zhCN: Record<string, string> = {
 	'tips.configureMcp.title': '配置 MCP 服务器',
 	'tips.configureMcp.body': 'MCP 服务器让助手可以调用外部工具——网页搜索、数据库、自定义 API 等。至少添加一个服务器并填写其 Streamable HTTP 地址（如需认证则填写 API Key），这些工具才会在对话中可用。点击「试一试」可直接跳转到 MCP 服务器分区。',
 	'tips.configureMcp.openFailed': '无法自动打开设置面板，请手动进入 设置 → Note Mate → MCP 服务器。',
+
+	// ── 工具触发关键词（仅用于 BM25 / 向量排序）─────────────
+	// 这些条目不会改变 LLM 看到的工具 schema；它们会拼接到工具
+	// 的 BM25 / 向量候选文本末尾，让排序器能用当前 UI 语言匹配
+	// 用户提问。请保持短小、逗号分隔、信号集中——分词器会把
+	// 逗号视为分隔符。顺序需要与其他语言文件保持一致。
+	'tool.triggers.search_files':   '搜索文件, 查找文件, 找文件, 按名称查找, 文件名, 路径, 文件路径, 定位文件',
+	'tool.triggers.search_content': '全文搜索, 内容搜索, 搜索笔记, 搜笔记, 搜索内容, 关键词搜索, 笔记内容, 跨笔记搜索',
+	'tool.triggers.grep_file':      '文件内搜索, 行内搜索, 正则搜索, 模式匹配, 在文件中查找, 文件中搜索, 文件内查找',
+	'tool.triggers.read_file':      '读取, 读文件, 打开文件, 查看文件, 文件内容, 阅读, 加载文件, 显示文件',
+	'tool.triggers.read_section':   '读取小节, 读取章节, 读取段落, 读取标题, 章节内容, 标题下内容, 部分读取',
+	'tool.triggers.write_file':     '写入, 写文件, 创建文件, 保存, 覆盖, 新建笔记, 新建文件, 新笔记, 保存文件',
+	'tool.triggers.edit_lines':     '编辑, 修改, 替换行, 插入行, 删除行, 改写, 修改文件, 更新文件, 编辑文件',
+	'tool.triggers.replace_text':   '替换, 替换文本, 查找替换, 替换文字, 文本替换, 批量替换',
+	'tool.triggers.web_search':     '联网搜索, 网络搜索, 上网搜, 搜索网页, 谷歌, 百度, 必应, 互联网, 在线搜索',
+	'tool.triggers.web_fetch_url':  '抓取网页, 获取链接, 打开链接, 获取链接内容, 访问网页, 读取链接, 网页内容, 下载网页',
+	'tool.triggers.image_search':   '图片搜索, 搜索图片, 找图, 找图片, 搜图, 图像搜索, 搜索照片',
+	'tool.triggers.generate_image': '生成图片, 画图, 画一张, AI画图, AI绘图, 图片生成, 制作图片, 创作图片, 出图, AI作画',
 };

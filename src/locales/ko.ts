@@ -569,4 +569,24 @@ export const ko: Record<string, string> = {
 	'tips.configureMcp.title': 'MCP 서버 연결',
 	'tips.configureMcp.body': 'MCP 서버를 통해 어시스턴트가 웹 검색, 데이터베이스, 사용자 정의 API 등 외부 도구를 호출할 수 있습니다. Streamable HTTP URL(필요 시 API 키)을 설정해 서버를 하나 이상 추가하면 채팅에서 해당 도구를 사용할 수 있습니다. 「시도해 보기」를 누르면 MCP 서버 섹션으로 이동합니다.',
 	'tips.configureMcp.openFailed': '설정 패널을 열 수 없습니다. 설정 → Note Mate → MCP 서버 를 수동으로 여세요.',
+
+	// ── 도구 트리거 키워드(BM25 / 임베딩 랭커 전용) ─────────
+	// 이 항목들은 LLM 이 보는 도구 스키마를 바꾸지 않습니다.
+	// 각 도구의 BM25 / 임베딩 후보 텍스트 끝에 덧붙여, 사용자의
+	// UI 언어로 작성된 질의를 어휘적으로 매칭할 수 있게 합니다.
+	// 짧고, 쉼표로 구분되며, 신호가 강한 단어들을 사용하세요.
+	// 토크나이저는 쉼표를 구분자로 처리합니다.
+	// 순서는 다른 로케일 파일과 동일하게 유지해야 합니다.
+	'tool.triggers.search_files':   '파일 검색, 파일 찾기, 파일 이름, 파일명, 파일 경로, 이름으로 찾기, 경로 검색',
+	'tool.triggers.search_content': '전문 검색, 노트 검색, 콘텐츠 검색, 키워드 검색, 노트 내용, 노트 찾기, 노트 전체 검색',
+	'tool.triggers.grep_file':      '파일 내 검색, 정규식, 패턴 검색, 줄 검색, 파일에서 찾기, 파일 안에서 검색',
+	'tool.triggers.read_file':      '읽기, 파일 열기, 파일 내용, 읽어오기, 파일 보기, 파일 표시',
+	'tool.triggers.read_section':   '섹션 읽기, 제목 읽기, 챕터 읽기, 부분 읽기, 섹션 내용, 제목 내용',
+	'tool.triggers.write_file':     '쓰기, 파일 생성, 저장, 덮어쓰기, 새 노트, 새 파일, 파일 저장',
+	'tool.triggers.edit_lines':     '편집, 수정, 줄 편집, 줄 삽입, 줄 교체, 줄 삭제, 파일 수정, 파일 업데이트',
+	'tool.triggers.replace_text':   '바꾸기, 텍스트 바꾸기, 찾아 바꾸기, 텍스트 교체, 일괄 바꾸기',
+	'tool.triggers.web_search':     '웹 검색, 인터넷 검색, 구글, 온라인 검색, 검색 엔진, 빙',
+	'tool.triggers.web_fetch_url':  '웹 가져오기, URL 가져오기, 페이지 가져오기, 링크 열기, 웹페이지, 페이지 로드, 웹 다운로드',
+	'tool.triggers.image_search':   '이미지 검색, 사진 검색, 그림 검색, 이미지 찾기, 사진 찾기',
+	'tool.triggers.generate_image': '이미지 생성, 이미지 만들기, AI 이미지, 그림 생성, 일러스트 생성, 그림 그리기, AI 그림',
 };

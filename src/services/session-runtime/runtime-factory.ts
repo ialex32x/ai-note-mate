@@ -141,6 +141,11 @@ export function createSessionRuntime(
                     createSummarizerConfig(plugin),
                     () => { runtime.emit({ type: 'title-updated' }); },
                     runtime.sessionId,
+                    // Tie the summarizer LLM call to the runtime
+                    // lifecycle so a session being closed / evicted /
+                    // unloaded mid-titling stops the call instead of
+                    // running to completion in the background.
+                    runtime.disposeSignal,
                 );
                 // Insight extraction: also runs here so a background
                 // turn that finishes while the view is on another

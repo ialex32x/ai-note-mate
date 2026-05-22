@@ -36,11 +36,19 @@ const MAX_TAGS_IN_PROMPT = 200;
  * This deliberately reuses {@link createChatCompletion} (the same
  * channel as other auxiliary one-shot calls) so no new provider plumbing
  * is introduced.
+ *
+ * `signal` is forwarded to the LLM call so the caller (auto-runner
+ * wired to `runtime.disposeSignal`, manual bubble action, …) can
+ * abort extraction mid-flight when the owning runtime is torn down.
+ * Aborts are RE-THROWN (not swallowed into an empty result) so the
+ * caller can distinguish "extraction produced nothing" from "runtime
+ * went away" and avoid clobbering UI state with a fake terminal.
  */
 export async function extractInsights(
     modelConfig: MinimalModelConfig,
     input: ExtractInsightsInput,
     options: ExtractInsightsOptions = {},
+    signal?: AbortSignal,
 ): Promise<ConversationInsight[]> {
     const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_LIMIT, 10));
     const maxChars = options.maxInputChars ?? DEFAULT_MAX_INPUT_CHARS;
@@ -73,8 +81,13 @@ export async function extractInsights(
         raw = await createChatCompletion(modelConfig, [
             { role: 'system', content: system },
             { role: 'user', content: userPrompt },
-        ]);
+        ], signal);
     } catch (err) {
+        // Aborts MUST propagate — see the function-level doc. The auto
+        // runner uses this distinction to skip the "extraction failed"
+        // UI state (which would mislabel a disposed-runtime cancellation
+        // as a real failure).
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
         console.warn('[Insights] extraction LLM call failed:', err);
         return [];
     }

@@ -569,4 +569,22 @@ export const zhTW: Record<string, string> = {
 	'tips.configureMcp.title': '設定 MCP 伺服器',
 	'tips.configureMcp.body': 'MCP 伺服器讓助理可以呼叫外部工具——網頁搜尋、資料庫、自訂 API 等。至少新增一個伺服器並填寫其 Streamable HTTP 位址（如需驗證則填寫 API Key），這些工具才會在對話中可用。點擊「試試看」可直接跳轉到 MCP 伺服器分區。',
 	'tips.configureMcp.openFailed': '無法自動開啟設定面板，請手動進入 設定 → Note Mate → MCP 伺服器。',
+
+	// ── 工具觸發關鍵詞（僅用於 BM25 / 向量排序）─────────────
+	// 這些條目不會改變 LLM 看到的工具 schema；它們會拼接到工具
+	// 的 BM25 / 向量候選文字末尾，讓排序器能用目前 UI 語言比對
+	// 使用者提問。請保持簡短、逗號分隔、訊號集中——分詞器會把
+	// 逗號視為分隔符。順序需要與其他語言檔案保持一致。
+	'tool.triggers.search_files':   '搜尋檔案, 查找檔案, 找檔案, 按名稱查找, 檔名, 路徑, 檔案路徑, 定位檔案',
+	'tool.triggers.search_content': '全文搜尋, 內容搜尋, 搜尋筆記, 搜筆記, 搜尋內容, 關鍵詞搜尋, 筆記內容, 跨筆記搜尋',
+	'tool.triggers.grep_file':      '檔案內搜尋, 行內搜尋, 正則搜尋, 模式比對, 在檔案中查找, 檔案中搜尋, 檔案內查找',
+	'tool.triggers.read_file':      '讀取, 讀檔案, 開啟檔案, 查看檔案, 檔案內容, 閱讀, 載入檔案, 顯示檔案',
+	'tool.triggers.read_section':   '讀取小節, 讀取章節, 讀取段落, 讀取標題, 章節內容, 標題下內容, 部分讀取',
+	'tool.triggers.write_file':     '寫入, 寫檔案, 建立檔案, 儲存, 覆寫, 新建筆記, 新建檔案, 新筆記, 儲存檔案',
+	'tool.triggers.edit_lines':     '編輯, 修改, 替換行, 插入行, 刪除行, 改寫, 修改檔案, 更新檔案, 編輯檔案',
+	'tool.triggers.replace_text':   '取代, 取代文字, 查找取代, 替換文字, 文字取代, 批次取代',
+	'tool.triggers.web_search':     '聯網搜尋, 網路搜尋, 上網搜, 搜尋網頁, 谷歌, 必應, 網際網路, 線上搜尋',
+	'tool.triggers.web_fetch_url':  '抓取網頁, 取得連結, 開啟連結, 取得連結內容, 存取網頁, 讀取連結, 網頁內容, 下載網頁',
+	'tool.triggers.image_search':   '圖片搜尋, 搜尋圖片, 找圖, 找圖片, 搜圖, 圖像搜尋, 搜尋照片',
+	'tool.triggers.generate_image': '生成圖片, 畫圖, 畫一張, AI畫圖, AI繪圖, 圖片生成, 製作圖片, 創作圖片, 出圖, AI作畫',
 };

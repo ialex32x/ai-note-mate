@@ -188,6 +188,25 @@ export class SessionRuntime {
 
     private readonly sessionManager: SessionManager;
 
+    /**
+     * Lifecycle-scoped abort controller. Fires when {@link dispose} runs,
+     * giving fire-and-forget background tasks (auto memory / insights
+     * extraction, future similar work) a way to bail out when the
+     * runtime they were spawned from has been evicted by the pool /
+     * unloaded with the plugin / discarded by session deletion.
+     *
+     * Deliberately distinct from any chat-turn `_abortController`: those
+     * are recycled per `prompt()` call, and our background tasks run
+     * AFTER `onFinish` (i.e. after a turn whose controller has already
+     * been retired). Tying them to the chat's controller would leave
+     * the signal in a settled or replaced state by the time we need it.
+     *
+     * Single-shot: there is no "reset" — once a runtime is disposed,
+     * any straggling extraction completes its current await on a
+     * pre-aborted signal and unwinds.
+     */
+    private readonly _disposeController = new AbortController();
+
     constructor(
         sessionId: string,
         sessionManager: SessionManager,
@@ -199,6 +218,21 @@ export class SessionRuntime {
         this.checkpointStore = checkpointStore;
         this.lastAttachedAt = Date.now();
         this.artifactStore = new ArtifactStore(artifactStoreOptions);
+    }
+
+    /**
+     * AbortSignal that fires when this runtime is disposed. Background
+     * tasks that outlive a single chat turn (auto memory/insights
+     * extraction, kicked off from `onFinish`) should forward this to
+     * any LLM call they make so closing / deleting the session / unloading
+     * the plugin promptly stops them — instead of letting them keep
+     * burning summarizer-class tokens for another 5–20 s in the background.
+     *
+     * Safe to subscribe to even before `dispose()` runs (returns the
+     * controller's signal, not a snapshot).
+     */
+    get disposeSignal(): AbortSignal {
+        return this._disposeController.signal;
     }
 
     /**
@@ -554,6 +588,18 @@ export class SessionRuntime {
      * reference.
      */
     dispose(): void {
+        // Fire the lifecycle signal FIRST so any background extraction
+        // (memory / insights) that's mid-flight observes the abort on
+        // its current await and stops burning tokens before we proceed
+        // with chat teardown. Order vs. `_chat.abort()` doesn't matter
+        // for correctness — both are sync no-side-effect calls — but
+        // putting dispose first reads as "everything tied to this
+        // runtime is being cancelled; now wind down the chat".
+        try {
+            this._disposeController.abort();
+        } catch (err) {
+            console.warn('[SessionRuntime] disposeController.abort threw:', err);
+        }
         try {
             this._chat?.abort();
         } catch (err) {

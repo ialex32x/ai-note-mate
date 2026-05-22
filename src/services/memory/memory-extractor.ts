@@ -43,10 +43,18 @@ export interface ExtractMemoryOptions {
     maxInputChars?: number;
 }
 
+/**
+ * `signal` is forwarded to the LLM call so the caller (the auto runner
+ * wired to `runtime.disposeSignal`) can abort extraction mid-flight
+ * when the owning runtime is torn down. AbortError is RE-THROWN so the
+ * runner can silently bail instead of treating a disposal-cancellation
+ * as a genuine extraction failure.
+ */
 export async function extractMemoryOps(
     modelConfig: MinimalModelConfig,
     input: ExtractMemoryInput,
     options: ExtractMemoryOptions,
+    signal?: AbortSignal,
 ): Promise<MemoryExtractOp[]> {
     const maxUpserts = Math.max(0, options.maxUpserts | 0);
     const maxDeletes = Math.max(0, options.maxDeletes | 0);
@@ -83,8 +91,10 @@ export async function extractMemoryOps(
         raw = await createChatCompletion(modelConfig, [
             { role: 'system', content: system },
             { role: 'user', content: userPrompt },
-        ]);
+        ], signal);
     } catch (err) {
+        // Aborts MUST propagate — see the function-level doc.
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
         console.warn('[Memory] extraction LLM call failed:', err);
         return [];
     }

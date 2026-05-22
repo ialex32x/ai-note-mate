@@ -569,4 +569,24 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tips.configureMcp.title': 'Connect MCP servers',
 	'tips.configureMcp.body': 'MCP servers let the assistant call external tools — web search, databases, custom APIs, and more. Add at least one server with its streamable HTTP URL (and API key if required) so those tools appear in chat. Click Try it to jump straight to the MCP Servers section.',
 	'tips.configureMcp.openFailed': 'Could not open the settings panel. Open Settings → Note Mate → MCP Servers manually.',
+
+	// ── Tool trigger keywords (BM25 / embedding ranker only) ───
+	// These do NOT change what the LLM sees in tool schemas; they are
+	// appended to each tool's BM25/embedding candidate text so the
+	// retriever can lexically match queries in the user's language.
+	// Keep short, comma-separated, high-signal terms — the tokenizer
+	// treats commas as separators. Order must mirror the other
+	// locale files.
+	'tool.triggers.search_files':   'search files, find file, locate file, file name, filename, file path, find by name',
+	'tool.triggers.search_content': 'full text search, vault search, search notes, content search, keyword search, search across notes',
+	'tool.triggers.grep_file':      'grep, regex search, in file search, line search, pattern match, search inside file',
+	'tool.triggers.read_file':      'read file, open file, view file, file contents, show file, load file',
+	'tool.triggers.read_section':   'read section, read heading, read chapter, partial read, section content, heading content',
+	'tool.triggers.write_file':     'write file, create note, save file, overwrite file, new note, new file',
+	'tool.triggers.edit_lines':     'edit lines, modify file, insert line, replace line, delete line, change file, update file',
+	'tool.triggers.replace_text':   'replace text, find and replace, substitute text, swap text, search and replace',
+	'tool.triggers.web_search':     'web search, google, bing, search online, search internet, browse web, look up online',
+	'tool.triggers.web_fetch_url':  'fetch url, open url, browse url, fetch page, get webpage, scrape url, download page',
+	'tool.triggers.image_search':   'image search, find images, search pictures, photo search, search photos, find pictures',
+	'tool.triggers.generate_image': 'generate image, create image, make image, ai image, dall-e, draw picture, image generation, ai art',
 };

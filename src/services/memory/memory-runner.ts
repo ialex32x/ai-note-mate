@@ -72,13 +72,28 @@ export async function maybeExtractMemoriesAfterFinish(
                 maxUpserts: settings.memoryExtractMaxUpserts,
                 maxDeletes: settings.memoryExtractMaxDeletes,
             },
+            // Tie the (expensive, multi-second) summarizer LLM call to
+            // the runtime lifecycle so closing / evicting / unloading
+            // a session mid-extraction stops the call instead of
+            // burning tokens to completion in the background.
+            runtime.disposeSignal,
         );
     } catch (err) {
+        // Disposal-cancellation isn't a real failure — the runtime is
+        // gone. Bail silently so the console isn't spammed with a
+        // misleading "extractor threw" on every closed session.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.warn('[Memory] extractor threw:', err);
         return;
     }
     if (ops.length === 0) return;
 
+    // No mid-loop `disposeSignal.aborted` gate here on purpose. The
+    // expensive part (LLM call) is already done; each remaining op is
+    // a cheap local file write into the GLOBAL memory note. Discarding
+    // those just to honour a disposal-after-extraction would throw
+    // away real, paid-for knowledge updates the user is expected to
+    // see across all sessions — for no meaningful resource saving.
     for (const op of ops) {
         try {
             if (op.op === 'upsert') {

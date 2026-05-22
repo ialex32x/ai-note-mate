@@ -112,8 +112,18 @@ async function runExtraction(
                 assistantMessage: assistant.content ?? '',
             },
             opts,
+            // Forward the runtime's lifecycle signal so a session
+            // being closed / evicted / unloaded mid-extraction stops
+            // burning summarizer tokens instead of running to
+            // completion in the background.
+            runtime.disposeSignal,
         );
     } catch (err) {
+        // Disposal-cancellation isn't a real failure — the runtime is
+        // gone, its UI state is being torn down, and committing a
+        // terminal here would either be a no-op or (worse) wake the
+        // pool to persist a misleading 'error' phase. Bail silently.
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         console.warn('[Insights] extraction failed:', err);
         failed = true;
     }
