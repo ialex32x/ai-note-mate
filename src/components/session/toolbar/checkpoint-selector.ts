@@ -234,7 +234,11 @@ export function createCheckpointSelector(
             cls: `checkpoint-section__action-btn checkpoint-section__action-btn--${modifierCls}`,
             attr: { type: 'button', 'aria-label': t(tooltipKey) },
         });
-        setIcon(btn, icon);
+        // Icon in a child span (not on the <button>) so Obsidian mobile
+        // touch-target inflation on native buttons does not squash Lucide
+        // glyphs — same pattern as session-tips-popover nav buttons.
+        const iconEl = btn.createEl('span', { cls: 'checkpoint-section__action-icon' });
+        setIcon(iconEl, icon);
         setTooltip(btn, t(tooltipKey));
         btn.disabled = !enabled;
         btn.addEventListener('click', (e) => {

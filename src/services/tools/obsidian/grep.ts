@@ -4,6 +4,7 @@ import type { ToolCapability } from "../../llm-provider";
 import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "./_shared";
 import {
     formatFindSectionError,
+    normalizeHeadingPathArg,
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "./heading-section";
@@ -122,7 +123,8 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                             minItems: 1,
                             description:
                                 "Optional heading path that restricts the search to a single section. " +
-                                "Heading titles ordered outermost → innermost (e.g. ['Chapter 2', 'Background']). " +
+                                "Parameter name is heading_path (not heading or section). Heading titles " +
+                                "ordered outermost → innermost (e.g. ['Chapter 2', 'Background']). " +
                                 "Matching is exact (case-sensitive, trimmed). A short tail (even a single leaf " +
                                 "title) is accepted IF it is unique in the file; otherwise the call fails as " +
                                 "ambiguous and you must prepend more ancestors. The section spans from the matched " +
@@ -160,22 +162,8 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const rawQueries = args["queries"];
             const useRegex = (args["use_regex"] as boolean) ?? false;
             const caseSensitive = (args["case_sensitive"] as boolean) ?? false;
-            const rawHeadingPath = args["heading_path"];
             const contextLines = Math.max(0, (args["context"] as number) ?? DEFAULT_CONTEXT_LINES);
             const maxMatches = Math.max(1, (args["max_matches"] as number) ?? DEFAULT_MAX_MATCHES);
-
-            // Defensive: callers occasionally still send the legacy `section` field.
-            // Refuse loudly so the model retries with `heading_path` instead of
-            // silently grepping the whole file.
-            if (args["section"] !== undefined) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        "`section` is no longer accepted; use `heading_path` (an array of heading titles, " +
-                        "outermost → innermost, e.g. ['Chapter 2', 'Background']) to scope the grep to a section.",
-                };
-            }
 
             // ── Validate queries ────────────────────────────────────────────
             if (!Array.isArray(rawQueries) || rawQueries.length === 0) {
@@ -206,29 +194,15 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             // ── Validate heading_path (when provided) ───────────────────────
-            let headingPath: string[] | null = null;
-            if (rawHeadingPath !== undefined) {
-                if (!Array.isArray(rawHeadingPath) || rawHeadingPath.length === 0) {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: "heading_path must be a non-empty array of heading titles (outermost → innermost).",
-                    };
-                }
-                const hp: string[] = [];
-                for (let i = 0; i < rawHeadingPath.length; i++) {
-                    const item: unknown = rawHeadingPath[i];
-                    if (typeof item !== "string") {
-                        return {
-                            success: false,
-                            type: "text",
-                            content: `heading_path[${i}] must be a string.`,
-                        };
-                    }
-                    hp.push(item);
-                }
-                headingPath = hp;
+            const headingPathResult = normalizeHeadingPathArg(args, { required: false });
+            if (!headingPathResult.ok) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: headingPathResult.message,
+                };
             }
+            const headingPath = headingPathResult.value;
 
             // ── Resolve file ────────────────────────────────────────────────
             const fileOrErr = requireFile(plugin.app, path);

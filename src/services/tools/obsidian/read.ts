@@ -9,6 +9,7 @@ import {
     isFailure,
     isMediaFile,
     isNonMediaBinaryFile,
+    buildLargeFilePreviewNotice,
     LARGE_FILE_LINE_THRESHOLD,
     MAX_PDF_INLINE_BYTES,
     mediaKindFromMime,
@@ -19,6 +20,7 @@ import {
 } from "./_shared";
 import {
     formatFindSectionError,
+    normalizeHeadingPathArg,
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "./heading-section";
@@ -135,9 +137,9 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "Read a file from the vault. " +
                     "For text/markdown files, optionally specify `start_line` / `end_line` (1-based, " +
                     "inclusive) for a range; omit both to read the whole file. When the file is large " +
-                    "(> ~200 lines) and no range is given, returns a structured outline (headings + line " +
-                    "numbers) plus a preview instead of the full body — pick a section and re-read with " +
-                    "`start_line` / `end_line`. " +
+                    "(> ~200 lines) and no range is given, returns line count plus a short preview " +
+                    "instead of the full body — use `get_metadata` for heading outline, `read_section` " +
+                    "for one section, or re-read with `start_line` / `end_line`. " +
                     "\n\n" +
                     "Media files (images: png/jpg/gif/webp/svg/…; audio: mp3/wav/ogg/flac/…; video: " +
                     "mp4/webm/mov/…; document: pdf) are returned as base64 via the multimodal channel; " +
@@ -259,14 +261,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     };
                 }
 
-                // ── Large file: return outline + preview instead of full content ──
-                const cache = plugin.app.metadataCache.getFileCache(file);
-                const headings = (cache?.headings ?? []).map((h) => ({
-                    level: h.level,
-                    heading: h.heading,
-                    line: h.position.start.line + 1, // Convert 0-based to 1-based
-                }));
-
+                // ── Large file: preview only (heading outline lives in get_metadata) ──
                 const previewEnd = Math.min(PREVIEW_LINE_COUNT, totalLines);
                 const preview = lines.slice(0, previewEnd).join("\n");
 
@@ -277,10 +272,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         path,
                         total_lines: totalLines,
                         mtime: file.stat.mtime,
-                        notice:
-                            `This file is large (${totalLines} lines). Showing outline and first ${previewEnd} lines as preview. ` +
-                            `Use start_line and end_line to read specific sections.`,
-                        outline: headings,
+                        notice: buildLargeFilePreviewNotice(totalLines, previewEnd),
                         preview: {
                             start_line: 1,
                             end_line: previewEnd,
@@ -360,7 +352,7 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "read_section",
                 description:
                     "Read a single section of a markdown file by heading path. " +
-                    "Use this AFTER get_metadata (or read_file's outline mode for large files) " +
+                    "Use this AFTER get_metadata has revealed the heading outline " +
                     "to drill into a specific heading instead of pulling the whole file. " +
                     "The section spans from the matched heading line up to (but not including) " +
                     "the next heading at the same OR shallower level — i.e. nested subsections " +
@@ -381,14 +373,13 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                             items: { type: "string" },
                             minItems: 1,
                             description:
-                                "Heading titles, ordered outermost → innermost, that the target " +
-                                "heading's ancestor chain must END WITH. The full chain " +
-                                "['Chapter 2', 'Background'] and the shorter tail ['Background'] " +
-                                "both resolve to the same heading IF that tail is unique in the " +
-                                "file; otherwise the call fails as ambiguous and you must prepend " +
-                                "more ancestors. Intermediate ancestors must NOT be skipped " +
-                                "(['Chapter 1', 'Background'] is rejected when 'Background' " +
-                                "actually sits under 'Chapter 1 > Body').",
+                                "Parameter name is heading_path (not heading or section). Heading titles, " +
+                                "ordered outermost → innermost, that the target heading's ancestor chain " +
+                                "must END WITH. The full chain ['Chapter 2', 'Background'] and the shorter " +
+                                "tail ['Background'] both resolve to the same heading IF that tail is unique " +
+                                "in the file; otherwise the call fails as ambiguous and you must prepend more " +
+                                "ancestors. Intermediate ancestors must NOT be skipped (['Chapter 1', 'Background'] " +
+                                "is rejected when 'Background' actually sits under 'Chapter 1 > Body').",
                         },
                         include_subsections: {
                             type: "boolean",
@@ -405,27 +396,17 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["read_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            const headingPathRaw = args["heading_path"];
             const includeSubsections = (args["include_subsections"] as boolean | undefined) ?? true;
 
-            if (!Array.isArray(headingPathRaw) || headingPathRaw.length === 0) {
+            const headingPathResult = normalizeHeadingPathArg(args, { required: true });
+            if (!headingPathResult.ok) {
                 return {
                     success: false,
                     type: "text",
-                    content: `heading_path must be a non-empty array of heading titles (outermost to innermost).`,
+                    content: headingPathResult.message,
                 };
             }
-            const headingPath: string[] = [];
-            for (const item of headingPathRaw) {
-                if (typeof item !== "string") {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: `heading_path must contain only strings; got ${typeof item}.`,
-                    };
-                }
-                headingPath.push(item);
-            }
+            const headingPath = headingPathResult.value!;
 
             const fileOrErr = requireFile(plugin.app, path);
             if (isFailure(fileOrErr)) return fileOrErr;
@@ -517,15 +498,16 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                     "Get info about the file currently focused in the editor. Use when the user refers " +
                     "to 'this file', 'current note', 'the note I'm viewing', etc. Optionally include " +
                     "its content. When `include_content` is true and the file is large (> ~200 lines), " +
-                    "an outline + preview is returned instead of the full body — use `read_file` with " +
-                    "`start_line` / `end_line` for specific sections.",
+                    "line count plus a short preview is returned instead of the full body — use " +
+                    "`get_metadata` for heading outline and `read_file` with `start_line` / `end_line` " +
+                    "for specific sections.",
                 parameters: {
                     type: "object",
                     properties: {
                         include_content: {
                             type: "boolean",
                             description:
-                                "If true, also return the text content of the file (or outline+preview for large files). Defaults to false.",
+                                "If true, also return the text content of the file (or preview-only for large files). Defaults to false.",
                         },
                     },
                     required: [],
@@ -566,20 +548,11 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                     if (totalLines <= LARGE_FILE_LINE_THRESHOLD) {
                         result["content"] = content;
                     } else {
-                        // Large file: return outline + preview
-                        const cache = plugin.app.metadataCache.getFileCache(activeFile);
-                        const headings = (cache?.headings ?? []).map((h) => ({
-                            level: h.level,
-                            heading: h.heading,
-                            line: h.position.start.line + 1,
-                        }));
+                        // Large file: preview only (heading outline lives in get_metadata)
                         const previewEnd = Math.min(PREVIEW_LINE_COUNT, totalLines);
                         result["content"] = {
                             total_lines: totalLines,
-                            notice:
-                                `This file is large (${totalLines} lines). Showing outline and first ${previewEnd} lines as preview. ` +
-                                `Use read_file with start_line/end_line to read specific sections.`,
-                            outline: headings,
+                            notice: buildLargeFilePreviewNotice(totalLines, previewEnd),
                             preview: {
                                 start_line: 1,
                                 end_line: previewEnd,

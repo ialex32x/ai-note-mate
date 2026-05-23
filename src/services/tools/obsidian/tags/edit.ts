@@ -59,11 +59,12 @@ export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool 
                         },
                         op: {
                             type: "string",
-                            enum: ["add", "remove", "set"],
+                            enum: ["add", "remove", "set", "unset"],
                             description:
                                 "The operation to perform: " +
                                 "'add' = add the given tags (skipping any already present); " +
                                 "'remove' = remove the given tags (skipping any not present); " +
+                                "'unset' = accepted alias for 'remove' (same as edit_files_frontmatter naming); " +
                                 "'set' = replace the file's frontmatter tags with exactly the given list (deduplicated). " +
                                 "'set' deliberately does NOT touch inline '#tag' occurrences in the body (use 'remove' explicitly for that).",
                         },
@@ -106,7 +107,8 @@ export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool 
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
             const rawPaths = args["paths"];
-            const opName = args["op"] as string;
+            const rawOp = args["op"] as string;
+            const opName = rawOp === "unset" ? "remove" : rawOp;
             const rawTags = args["tags"];
             const rawLocation = (args["location"] as string | undefined) ?? "auto";
             const includeDescendants = (args["include_descendants"] as boolean) ?? false;

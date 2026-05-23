@@ -118,10 +118,19 @@ export function mediaKindFromMime(mime: string): ModalityCapability {
 // Large file auto-downgrade thresholds
 // ─────────────────────────────────────────────
 
-/** Line-count threshold above which a full-file read is auto-downgraded to an outline + preview. */
+/** Line-count threshold above which a full-file read is auto-downgraded to preview only. */
 export const LARGE_FILE_LINE_THRESHOLD = 200;
-/** Number of preview lines to include in the outline response for large files. */
-export const PREVIEW_LINE_COUNT = 50;
+/** Number of preview lines to include when a large file is auto-downgraded. */
+export const PREVIEW_LINE_COUNT = 25;
+
+/** Notice attached when a whole-file read is downgraded for a large text file. */
+export function buildLargeFilePreviewNotice(totalLines: number, previewEnd: number): string {
+    return (
+        `This file is large (${totalLines} lines). Full body omitted — showing first ${previewEnd} lines as preview. ` +
+        `For heading outline use get_metadata; for a section use read_section; to locate text use grep_file; ` +
+        `for specific bytes use read_file with start_line/end_line.`
+    );
+}
 
 // ─────────────────────────────────────────────
 // Media inlining size limits

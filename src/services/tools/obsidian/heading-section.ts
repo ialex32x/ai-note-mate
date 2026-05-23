@@ -3,6 +3,7 @@
  *
  * Shared between:
  *   - `read_section`     (read.ts)            — resolve a section to read its body
+ *   - `grep_file`        (grep.ts)            — optional section scoping
  *   - `replace_text`     (edit/replace-text)  — anchor mode (P2)
  *
  * Why a dedicated module instead of inlining into each tool:
@@ -53,6 +54,88 @@ export type FindSectionError =
 export type FindSectionResult =
     | { ok: true; section: ResolvedSection }
     | { ok: false; error: FindSectionError };
+
+export type NormalizeHeadingPathResult =
+    | { ok: true; value: string[] | null }
+    | { ok: false; message: string };
+
+/**
+ * Normalize a tool-call `heading_path` argument from common model shapes.
+ *
+ * Canonical parameter name is `heading_path`. Models frequently emit the alias
+ * `heading` (or occasionally `headings`) instead — accept those silently so
+ * the first call succeeds without a wasted retry. Legacy `section` is
+ * rejected with a concrete migration hint (same wording as `grep_file`).
+ *
+ * A single string is coerced to a one-element array (common when the model
+ * targets one leaf heading).
+ */
+export function normalizeHeadingPathArg(
+    args: Record<string, unknown>,
+    options: { required?: boolean; label?: string } = {},
+): NormalizeHeadingPathResult {
+    const { required = false, label = "heading_path" } = options;
+
+    const canonical = args["heading_path"];
+    const aliasHeading = args["heading"];
+    const aliasHeadings = args["headings"];
+    const raw = canonical ?? aliasHeading ?? aliasHeadings;
+    const usedAlias = canonical === undefined && (aliasHeading !== undefined || aliasHeadings !== undefined);
+
+    if (args["section"] !== undefined && raw === undefined) {
+        return {
+            ok: false,
+            message:
+                "`section` is no longer accepted; use `heading_path` (an array of heading titles, " +
+                "outermost → innermost, e.g. ['Chapter 2', 'Background']).",
+        };
+    }
+
+    if (raw === undefined) {
+        if (required) {
+            return {
+                ok: false,
+                message: `${label} must be a non-empty array of heading titles (outermost → innermost).`,
+            };
+        }
+        return { ok: true, value: null };
+    }
+
+    let items: unknown[];
+    if (typeof raw === "string") {
+        items = [raw];
+    } else if (Array.isArray(raw)) {
+        items = raw;
+    } else {
+        const hint = usedAlias ? ` Parameter name is \`${label}\` (not \`heading\`).` : "";
+        return {
+            ok: false,
+            message: `${label} must be a non-empty array of heading titles (outermost → innermost).${hint}`,
+        };
+    }
+
+    if (items.length === 0) {
+        const hint = usedAlias ? ` Use parameter name \`${label}\`.` : "";
+        return {
+            ok: false,
+            message: `${label} must be a non-empty array of heading titles (outermost → innermost).${hint}`,
+        };
+    }
+
+    const value: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (typeof item !== "string") {
+            return {
+                ok: false,
+                message: `${label}[${i}] must be a string.`,
+            };
+        }
+        value.push(item);
+    }
+
+    return { ok: true, value };
+}
 
 /**
  * Locate a heading in `headings` whose ancestor chain (outermost → innermost)

@@ -284,6 +284,31 @@ export function createChatAgent(
             if (!skillPrefix) return memoryPrefix;
             return `${memoryPrefix}\n${skillPrefix}`;
         },
+        // Per-turn TODO reminder: when there are pending / in-progress
+        // items the model hasn't been reminded about since the last
+        // context compression or session reload, append a lightweight
+        // hint so the model remembers to call `manage_todos({ action: "list" })`.
+        // This closes the gap between out-of-band persisted TODO state and
+        // the model's in-band conversation history that can lose TODO
+        // awareness after summarisation. The hint intentionally does NOT
+        // list item details — the model should call `list` to retrieve
+        // the authoritative snapshot.
+        systemPromptSuffix: () => {
+            if (!callbacks.getTodoStateSource) return '';
+            const source = callbacks.getTodoStateSource();
+            if (!source) return '';
+            const state = source.get();
+            const pendingCount = state.items.filter(
+                i => i.status !== 'completed' && i.status !== 'cancelled',
+            ).length;
+            if (pendingCount === 0) return '';
+            const taskWord = pendingCount === 1 ? 'task' : 'tasks';
+            return (
+                '## Pending tasks\n\n' +
+                `You have ${pendingCount} ${taskWord} (pending or in_progress) from a previous plan. ` +
+                'Call `manage_todos({ action: "list" })` to review them before deciding your next steps.'
+            );
+        },
         compressionOptions,
         dynamicTools: () => callbacks.getDynamicTools(),
         // Forward the runtime's per-session artifact store. Two consumers

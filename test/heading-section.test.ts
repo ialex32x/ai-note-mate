@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
     findHeadingByPath,
     formatFindSectionError,
+    normalizeHeadingPathArg,
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "../src/services/tools/obsidian/heading-section";
@@ -296,5 +297,66 @@ describe("formatFindSectionError", () => {
     it("renders empty_path", () => {
         const msg = formatFindSectionError({ kind: "empty_path" }, []);
         expect(msg).toContain("must contain at least one element");
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// normalizeHeadingPathArg — tool-call argument normalization
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("normalizeHeadingPathArg", () => {
+    it("accepts canonical heading_path", () => {
+        const r = normalizeHeadingPathArg(
+            { heading_path: ["Chapter 2", "Background"] },
+            { required: true },
+        );
+        expect(r).toEqual({ ok: true, value: ["Chapter 2", "Background"] });
+    });
+
+    it("accepts heading alias", () => {
+        const r = normalizeHeadingPathArg(
+            { heading: ["三、化解矛盾的 5 个实用技巧"] },
+            { required: true },
+        );
+        expect(r).toEqual({ ok: true, value: ["三、化解矛盾的 5 个实用技巧"] });
+    });
+
+    it("prefers heading_path over heading alias", () => {
+        const r = normalizeHeadingPathArg(
+            { heading_path: ["A"], heading: ["B"] },
+            { required: true },
+        );
+        expect(r).toEqual({ ok: true, value: ["A"] });
+    });
+
+    it("coerces a single string to one-element array", () => {
+        const r = normalizeHeadingPathArg(
+            { heading: "Background" },
+            { required: true },
+        );
+        expect(r).toEqual({ ok: true, value: ["Background"] });
+    });
+
+    it("returns null when optional and absent", () => {
+        const r = normalizeHeadingPathArg({}, { required: false });
+        expect(r).toEqual({ ok: true, value: null });
+    });
+
+    it("rejects legacy section with migration hint", () => {
+        const r = normalizeHeadingPathArg({ section: "Background" }, { required: false });
+        expect(r.ok).toBe(false);
+        if (!r.ok) {
+            expect(r.message).toContain("section");
+            expect(r.message).toContain("heading_path");
+        }
+    });
+
+    it("errors on empty heading alias with hint", () => {
+        const r = normalizeHeadingPathArg({ heading: [] }, { required: true });
+        expect(r.ok).toBe(false);
+        if (!r.ok) {
+            expect(r.message).toContain("heading_path");
+            expect(r.message).toContain("Use parameter name");
+        }
     });
 });
