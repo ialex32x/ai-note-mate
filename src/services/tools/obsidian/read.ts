@@ -581,7 +581,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "get_metadata",
                 description:
-                    "Get parsed frontmatter, structural info (headings / tags), and basic file " +
+                    "Get parsed frontmatter, structural info (headings / tags / total_lines), and basic file " +
                     "state (mtime / ctime / size) of one or more markdown files — without reading the " +
                     "full content. For outgoing links use `get_outgoing_links` (resolved target paths " +
                     "with occurrence counts); for incoming links use `get_backlinks`. " +
@@ -633,6 +633,9 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                 // "what's in this note" and "when was it last modified".
                 const stat = file.stat;
 
+                const fileContent = await plugin.app.vault.cachedRead(file);
+                const totalLines = fileContent.split("\n").length;
+
                 if (!cache) {
                     results.push({
                         path,
@@ -641,6 +644,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                         total_headings: 0,
                         tags: [],
                         total_tags: 0,
+                        total_lines: totalLines,
                         mtime: stat.mtime,
                         ctime: stat.ctime,
                         size: stat.size,
@@ -671,6 +675,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                     total_headings: headings.length,
                     tags,
                     total_tags: tags.length,
+                    total_lines: totalLines,
                     mtime: stat.mtime,
                     ctime: stat.ctime,
                     size: stat.size,
