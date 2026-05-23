@@ -66,11 +66,18 @@ export function createSessionRuntime(
         snapshotManager: plugin.snapshotManager,
         app: plugin.app,
     });
+
+    // Derive artifact store options and inject persistence dependencies.
+    const artifactStoreOpts = deriveArtifactStoreOptions(plugin.settings);
+    // Vault-relative artifacts directory for this session.
+    artifactStoreOpts.artifactsDir = `${plugin.paths.sessions()}/${sessionId}/artifacts`;
+    artifactStoreOpts.adapter = plugin.app.vault.adapter;
+
     const runtime = new SessionRuntime(
         sessionId,
         plugin.sessionManager,
         checkpointStore,
-        deriveArtifactStoreOptions(plugin.settings),
+        artifactStoreOpts,
     );
 
     const chat = createChatAgent(plugin, {

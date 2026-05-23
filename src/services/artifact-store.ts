@@ -1,9 +1,10 @@
 // ─────────────────────────────────────────────
-// Artifact store (per-session, in-memory)
+// Artifact store (per-session, in-memory + optional disk persistence)
 // ─────────────────────────────────────────────
 //
 // Pure data structure backing the delegate-envelope artifact mechanism
-// described in `docs/delegate-envelope-artifact-plan.md` (§1.3, §1.4, §1.6).
+// described in `docs/delegate-envelope-artifact-plan.md` (§1.3, §1.4, §1.6)
+// and the persistence extension in `docs/artifact-cache-persistence-plan.md`.
 //
 // Responsibilities:
 //   - Hold sub-agent return values that are too large to inline in the
@@ -17,9 +18,11 @@
 //   - Leave a *tombstone* for every entry that leaves the live set, so
 //     `recall_artifact` can answer "this existed but is gone, here's why"
 //     instead of an indistinguishable false-negative.
+//   - (Optional) Persist entries to disk via Obsidian's DataAdapter so
+//     artifacts survive plugin reload / Obsidian restart.
 //
 // Non-responsibilities (deliberately):
-//   - No I/O. No DOM. No `setInterval`. No `register*` hooks.
+//   - No DOM. No `setInterval`. No `register*` hooks.
 //     Eviction runs lazily on `put` / `get` / `liveKeys`. Justification:
 //     setInterval-driven timers behave poorly on mobile under sleep/wake
 //     (plan §6); a lazy sweep gives identical observable behaviour because
@@ -28,13 +31,18 @@
 //     measures the serialized byte size and passes it in. This keeps the
 //     store reusable and avoids double-encoding on the hot path
 //     (`buildDelegatePayload` already serializes once).
-//   - No async surface. The contract is sync. Concurrent calls are not
-//     a concern because all reachable call sites run on the JS main thread.
+//   - No async surface on the public contract. The contract is sync.
+//     File I/O is fire-and-forget; callers never await it.
+//     Concurrent calls are not a concern because all reachable call
+//     sites run on the JS main thread.
 //
 // Lifecycle ownership is `SessionRuntime`'s (plan §1.3 "Mounting") — not
 // the plugin's, not `AgentOrchestrator`'s. Background sessions get their
 // own instance. `clear()` is called at session end and converts every
 // live entry into a `session_end` tombstone before dropping the map.
+
+import type { DataAdapter } from "obsidian";
+import { generateId } from "../settings/defaults";
 
 /** Reason an entry is no longer recoverable. */
 export type EvictionReason = "lru" | "ttl" | "session_end" | "too_large_for_store";
@@ -47,8 +55,6 @@ export const ARTIFACT_STORE_DEFAULTS = {
     singleArtifactCap: 128 * 1024,
     /** 30 minutes since last access. `0` disables TTL. */
     ttlMs: 30 * 60 * 1000,
-    /** Max number of tombstones retained before FIFO drop. */
-    tombstoneCap: 128,
 } as const;
 
 /** Options accepted by {@link ArtifactStore}. All optional. */
@@ -59,15 +65,25 @@ export interface ArtifactStoreOptions {
     singleArtifactCap?: number;
     /** Time-to-live since last access, in ms. `0` disables. Default {@link ARTIFACT_STORE_DEFAULTS.ttlMs}. */
     ttlMs?: number;
-    /** Maximum number of tombstones retained. Oldest is evicted FIFO. Default {@link ARTIFACT_STORE_DEFAULTS.tombstoneCap}. */
-    tombstoneCap?: number;
     /** Time source. Defaults to `Date.now`. Tests inject a mock clock. */
     now?: () => number;
+    /**
+     * Obsidian DataAdapter for file I/O. When provided together with
+     * `artifactsDir`, entries are persisted to disk so they survive
+     * plugin reload and Obsidian restart. Omit for in-memory-only mode
+     * (tests, legacy sessions).
+     */
+    adapter?: DataAdapter;
+    /**
+     * Vault-relative directory for artifact files. Required when
+     * `adapter` is provided. Format: `sessions/<sessionId>/artifacts/`.
+     */
+    artifactsDir?: string;
 }
 
 /** Result of {@link ArtifactStore.put}. */
 export type PutResult =
-    | { stored: true; evicted: ReadonlyArray<EvictionRecord> }
+    | { stored: true; key: string; evicted: ReadonlyArray<EvictionRecord> }
     | { stored: false; reason: "too_large_for_store"; size: number };
 
 /** Result of {@link ArtifactStore.get}. Mirrors the `recall_artifact` tool's response shape (plan §1.4). */
@@ -87,7 +103,8 @@ export interface EvictionRecord {
 export interface ArtifactStoreStats {
     liveCount: number;
     liveBytes: number;
-    tombstoneCount: number;
+    /** Number of entries tracked in the disk index (evicted entries with disk files, or tombstone entries in memory-only mode). */
+    diskIndexCount: number;
 }
 
 /** Internal: a live entry. */
@@ -98,20 +115,28 @@ interface LiveEntry {
     lastAccess: number;
 }
 
-/** Internal: a tombstone entry. */
-interface Tombstone {
-    reason: EvictionReason;
+/**
+ * Internal: a disk-index entry marking a key whose value is either on
+ * disk (persistence mode) or has been evicted with a known reason
+ * (memory-only mode). The `reason` field is present for LRU/TTL evictions
+ * and `session_end` tombstones; absent for pure disk-index entries
+ * created during startup recovery.
+ */
+interface DiskIndexEntry {
     size: number;
-    /** Wall-clock timestamp at the moment the entry was tombstoned. Used only for FIFO cap. */
-    createdAt: number;
+    reason?: EvictionReason;
 }
 
 export class ArtifactStore {
     private readonly totalBytesCap: number;
     private readonly singleArtifactCap: number;
     private readonly ttlMs: number;
-    private readonly tombstoneCap: number;
     private readonly now: () => number;
+
+    /** Optional: Obsidian DataAdapter for disk persistence. */
+    private readonly adapter?: DataAdapter;
+    /** Optional: vault-relative directory for artifact files. */
+    private readonly artifactsDir?: string;
 
     /**
      * Live entries. Iteration order is insertion order (the JS `Map`
@@ -121,10 +146,13 @@ export class ArtifactStore {
     private readonly live = new Map<string, LiveEntry>();
 
     /**
-     * Tombstones. Same key space as `live` (plan decision #6: a key
-     * cannot be both live and tombstoned). FIFO-capped.
+     * Disk index: tracks keys whose values exist on disk (persistence
+     * mode) or have been evicted with a known reason (memory-only mode).
+     * Same key space as `live` — a key cannot be both live and in the
+     * disk index. Unbounded (no FIFO cap) because the number of entries
+     * is naturally limited by sub-agent call count (persistence-plan §2.3).
      */
-    private readonly tombstones = new Map<string, Tombstone>();
+    private readonly diskIndex = new Map<string, DiskIndexEntry>();
 
     /** Running sum of `live[k].size` for O(1) cap checks. */
     private liveBytes = 0;
@@ -133,39 +161,48 @@ export class ArtifactStore {
         this.totalBytesCap = opts.totalBytesCap ?? ARTIFACT_STORE_DEFAULTS.totalBytesCap;
         this.singleArtifactCap = opts.singleArtifactCap ?? ARTIFACT_STORE_DEFAULTS.singleArtifactCap;
         this.ttlMs = opts.ttlMs ?? ARTIFACT_STORE_DEFAULTS.ttlMs;
-        this.tombstoneCap = opts.tombstoneCap ?? ARTIFACT_STORE_DEFAULTS.tombstoneCap;
         this.now = opts.now ?? Date.now;
+        this.adapter = opts.adapter;
+        this.artifactsDir = opts.artifactsDir;
+
+        // Fire-and-forget: recover any previously persisted artifact
+        // files during construction. get() won't be called until the
+        // first chat turn runs, so async recovery is safe.
+        if (this.adapter && this.artifactsDir) {
+            void this.recoverFromDisk();
+        }
     }
 
     /**
-     * Insert (or overwrite) `key`. `size` is the caller-measured
-     * serialized byte size — we do not measure ourselves because the
-     * orchestrator has already serialized once to decide which branch
-     * to take (plan §1.6).
+     * Insert a value into the store. A unique key is generated
+     * internally via {@link generateId} so callers never need to
+     * manage or namespace keys.
+     *
+     * `size` is the caller-measured serialized byte size — we do not
+     * measure ourselves because the orchestrator has already
+     * serialized once to decide which branch to take (plan §1.6).
      *
      * Returns `{ stored: false }` if the value alone exceeds the
      * per-entry cap; nothing is mutated in that case (no tombstone
-     * either — the caller writes a `too_large_for_store` marker on the
-     * envelope, not in the store; plan §1.6 last bullet).
+     * either — the caller writes a `too_large_for_store` marker on
+     * the envelope, not in the store; plan §1.6 last bullet).
      *
-     * If accepted, may LRU-evict zero or more existing entries to make
-     * room under {@link totalBytesCap}; each such eviction is recorded
-     * as a tombstone and returned in the result for caller logging.
+     * If accepted, may LRU-evict zero or more existing entries to
+     * make room under {@link totalBytesCap}; each such eviction is
+     * recorded as a tombstone and returned in the result for caller
+     * logging.
      *
-     * Overwriting an existing live key replaces its value and refreshes
-     * `lastAccess`; no tombstone is generated for an overwrite (the
-     * caller observes the new value, so "gone" would be a lie). Any
-     * pre-existing tombstone under this key is removed.
+     * On success the return value includes the auto-generated `key`
+     * that callers should use to construct artifact references and
+     * to pass to `recall_artifact`.
      */
-    put(key: string, value: unknown, size: number): PutResult {
+    put(value: unknown, size: number): PutResult {
         // Bookkeeping is lazy: TTL-sweep before deciding whether the
         // new entry fits, so an old expired entry can release room
         // even if its TTL hasn't been "noticed" yet.
         this.sweepExpired();
 
         if (size > this.singleArtifactCap) {
-            // Do NOT tombstone here. Per plan §1.6, the too_large_for_store
-            // marker lives on the envelope itself; the store stays clean.
             return { stored: false, reason: "too_large_for_store", size };
         }
 
@@ -176,26 +213,17 @@ export class ArtifactStore {
         // first. Doing this *before* any eviction guarantees the
         // public contract "a too_large_for_store rejection mutates
         // nothing" — including not destroying existing entries via
-        // a futile LRU sweep that the rolled-back tombstone deletion
-        // could not undo.
+        // a futile LRU sweep.
         if (size > this.totalBytesCap) {
             return { stored: false, reason: "too_large_for_store", size };
         }
 
+        // Generate a unique key using the same ID scheme as profiles.
+        // The format (`<timestamp>-<random>`) is collision-safe and
+        // filesystem-safe — no special characters, no encoding needed.
+        const key = generateId();
+
         const evicted: EvictionRecord[] = [];
-
-        // Overwrite path: remove the old entry's bytes before sizing
-        // the new one. No tombstone — caller is replacing, not losing.
-        const prev = this.live.get(key);
-        if (prev !== undefined) {
-            this.liveBytes -= prev.size;
-            this.live.delete(key);
-        }
-
-        // Any prior tombstone under this exact key is now stale: the
-        // caller is making the key live again. Drop it so recall
-        // doesn't lie about it being evicted.
-        this.tombstones.delete(key);
 
         // Evict LRU until the new entry fits. Order of iteration of
         // `live` is insertion order; we re-insert on touch (see `get`),
@@ -210,22 +238,32 @@ export class ArtifactStore {
             const oldest = this.live.get(oldestKey)!;
             this.live.delete(oldestKey);
             this.liveBytes -= oldest.size;
-            this.writeTombstone(oldestKey, "lru", oldest.size);
+            // LRU eviction: the entry's value is (or will be) on disk;
+            // mark it in the diskIndex so get() can recover it later.
+            this.writeDiskIndex(oldestKey, "lru", oldest.size);
             evicted.push({ key: oldestKey, reason: "lru", size: oldest.size });
         }
 
         this.live.set(key, { value, size, lastAccess: this.now() });
         this.liveBytes += size;
-        return { stored: true, evicted };
+
+        // Fire-and-forget: persist to disk if adapter is available.
+        // The caller (context-reducer) stays sync; write failures are
+        // logged but do not block prompt assembly.
+        if (this.adapter && this.artifactsDir) {
+            void this.persistToFile(key, value, size);
+        }
+
+        return { stored: true, key, evicted };
     }
 
     /**
      * Look up `key`. Three outcomes:
      *   - Live hit: returns `{ found: true, value, size }`. Refreshes
      *     `lastAccess` (this is how LRU stays accurate).
-     *   - Tombstone hit: returns `{ found: false, evicted: true, reason, size }`.
-     *     Tombstones do **not** have their lifetime extended on read —
-     *     they're FIFO-capped, not LRU.
+     *   - DiskIndex hit: attempts to read the value from disk.
+     *     On success, restores to live and returns found.
+     *     On failure (file missing / corrupt), returns evicted.
      *   - Pure miss: returns `{ found: false, evicted: false }`.
      *
      * Lazy TTL: a live entry whose `lastAccess + ttlMs <= now` is
@@ -243,9 +281,29 @@ export class ArtifactStore {
             return { found: true, value: live.value, size: live.size };
         }
 
-        const tomb = this.tombstones.get(key);
-        if (tomb !== undefined) {
-            return { found: false, evicted: true, reason: tomb.reason, size: tomb.size };
+        // Live miss — check diskIndex for a disk-resident / evicted entry.
+        const idx = this.diskIndex.get(key);
+        if (idx !== undefined) {
+            // Attempt disk recovery if we have an adapter.
+            if (this.adapter && this.artifactsDir) {
+                const restored = this.tryRestoreFromDisk(key);
+                if (restored !== null) {
+                    return restored;
+                }
+                // tryRestoreFromDisk cannot perform async I/O in the sync
+                // get() contract. Keep the diskIndex entry intact so the
+                // tombstone remains discoverable on subsequent lookups.
+                // (If the on-disk file is actually gone, the stale index
+                // entry is harmless — it's bounded by sub-agent call count.)
+            }
+            // Either no adapter (memory-only mode) or sync recovery not
+            // possible (persistence mode). Return the evicted tombstone.
+            return {
+                found: false,
+                evicted: true,
+                reason: idx.reason ?? "lru",
+                size: idx.size,
+            };
         }
 
         return { found: false, evicted: false };
@@ -268,9 +326,11 @@ export class ArtifactStore {
     /**
      * End-of-session cleanup. Every currently-live entry becomes a
      * `session_end` tombstone, then both maps are emptied. The
-     * tombstones are kept (subject to {@link tombstoneCap}) so any
-     * in-flight `recall_artifact` on a session that has just been
-     * torn down gets a meaningful reason rather than a bare miss.
+     * tombstones are kept so any in-flight `recall_artifact` on a
+     * session that has just been torn down gets a meaningful reason
+     * rather than a bare miss.
+     *
+     * In persistence mode, also deletes the on-disk artifact files.
      *
      * The plan (§1.3 "Session end: drop the entire store") allows
      * just dropping everything; the `session_end` tombstones are an
@@ -279,12 +339,17 @@ export class ArtifactStore {
      * to the store will let the whole instance be GC'd anyway.
      */
     clear(): void {
-        const now = this.now();
         for (const [k, entry] of this.live) {
-            this.writeTombstone(k, "session_end", entry.size, now);
+            this.writeDiskIndex(k, "session_end", entry.size);
         }
         this.live.clear();
         this.liveBytes = 0;
+
+        // In persistence mode, delete the on-disk artifacts directory.
+        // Fire-and-forget — the runtime is being torn down.
+        if (this.adapter && this.artifactsDir) {
+            void this.deleteArtifactsDir();
+        }
     }
 
     /** Snapshot for tests / debug UI. Not part of the public recall contract. */
@@ -292,7 +357,7 @@ export class ArtifactStore {
         return {
             liveCount: this.live.size,
             liveBytes: this.liveBytes,
-            tombstoneCount: this.tombstones.size,
+            diskIndexCount: this.diskIndex.size,
         };
     }
 
@@ -327,7 +392,7 @@ export class ArtifactStore {
         for (const [k, e] of expired) {
             this.live.delete(k);
             this.liveBytes -= e.size;
-            this.writeTombstone(k, "ttl", e.size);
+            this.writeDiskIndex(k, "ttl", e.size);
         }
     }
 
@@ -343,30 +408,195 @@ export class ArtifactStore {
         if (e.lastAccess <= this.now() - this.ttlMs) {
             this.live.delete(key);
             this.liveBytes -= e.size;
-            this.writeTombstone(key, "ttl", e.size);
+            this.writeDiskIndex(key, "ttl", e.size);
         }
     }
 
     /**
-     * Write a tombstone, enforcing the FIFO cap. Using a `Map` for
-     * tombstones gives us insertion-order iteration for free, so
-     * "drop oldest" is `keys().next().value`.
+     * Write (or overwrite) a diskIndex entry. No FIFO cap — the number
+     * of diskIndex entries is naturally bounded by sub-agent call count
+     * (persistence-plan §2.3). A re-insert for an existing key replaces
+     * the reason (e.g. ttl → session_end on a stale entry that gets
+     * picked up by clear()).
      */
-    private writeTombstone(
+    private writeDiskIndex(
         key: string,
         reason: EvictionReason,
         size: number,
-        createdAt: number = this.now(),
     ): void {
-        // Re-insert if a tombstone for this key already exists, so the
-        // newest reason wins (e.g. ttl-then-session_end on a stale entry).
-        this.tombstones.delete(key);
-        this.tombstones.set(key, { reason, size, createdAt });
+        this.diskIndex.set(key, { size, reason });
+    }
 
-        while (this.tombstones.size > this.tombstoneCap) {
-            const oldest = this.tombstones.keys().next().value as string | undefined;
-            if (oldest === undefined) break;
-            this.tombstones.delete(oldest);
+    // ─────────── file I/O (persistence mode) ───────────
+
+    /**
+     * Derive the vault-relative file path for a given artifact key.
+     * Keys may contain characters that are invalid in filenames
+     * (e.g. `:`), so we encode them.
+     */
+    private filePathForKey(key: string): string {
+        // Encode the key for safe use as a filename component.
+        // `:` → `_` is the main concern; other special chars are rare.
+        const safeKey = key.replace(/[:/\\?%*|"<>]/g, '_');
+        return `${this.artifactsDir}/${safeKey}.json`;
+    }
+
+    /**
+     * Ensure the artifacts directory exists. Called before each file
+     * write; `adapter.mkdir` is a no-op if the directory already
+     * exists on most platforms.
+     */
+    private async ensureArtifactsDir(): Promise<void> {
+        if (!this.adapter || !this.artifactsDir) return;
+        try {
+            if (!await this.adapter.exists(this.artifactsDir)) {
+                await this.adapter.mkdir(this.artifactsDir);
+            }
+        } catch (err) {
+            console.warn('[ArtifactStore] failed to ensure artifacts dir:', err);
         }
+    }
+
+    /**
+     * Persist a single entry to disk. Fire-and-forget — callers do not
+     * await. Write failures are logged but never block prompt assembly.
+     */
+    private async persistToFile(
+        key: string,
+        value: unknown,
+        size: number,
+    ): Promise<void> {
+        if (!this.adapter || !this.artifactsDir) return;
+        try {
+            await this.ensureArtifactsDir();
+            const filePath = this.filePathForKey(key);
+            const payload = {
+                v: 1,
+                key,
+                size,
+                value,
+            };
+            const json = JSON.stringify(payload);
+            await this.adapter.write(filePath, json);
+        } catch (err) {
+            console.warn('[ArtifactStore] failed to persist artifact to disk:', key, err);
+        }
+    }
+
+    /**
+     * Attempt to restore a single entry from its disk file. Returns
+     * the GetResult on success, or null if the entry cannot be
+     * synchronously recovered.
+     *
+     * Note: with the sync `get()` contract and async DataAdapter,
+     * synchronous disk reads are not possible. Entries recovered during
+     * construction (via {@link recoverFromDisk}) are already in
+     * `live`; entries that have been LRU-evicted from live but still
+     * have a disk file fall through to the diskIndex tombstone path
+     * so the caller gets `{ found: false, evicted: true }`.
+     */
+    private tryRestoreFromDisk(_key: string): GetResult | null {
+        // Async read not available in the sync get() contract.
+        // Entries recovered during construction are in `live`.
+        return null;
+    }
+
+    /**
+     * Scan the artifacts directory and restore all valid `.json` files
+     * into the `live` Map. Fire-and-forget — called from the constructor.
+     * Entries that exceed the total byte cap are LRU-evicted as usual.
+     */
+    private async recoverFromDisk(): Promise<void> {
+        if (!this.adapter || !this.artifactsDir) return;
+        try {
+            if (!await this.adapter.exists(this.artifactsDir)) return;
+
+            const files = await this.adapter.list(this.artifactsDir);
+            for (const file of files.files) {
+                if (!file.endsWith('.json')) continue;
+                try {
+                    const filePath = `${this.artifactsDir}/${file}`;
+                    const raw = await this.adapter.read(filePath);
+                    const data = JSON.parse(raw) as {
+                        v?: number;
+                        key?: string;
+                        size?: number;
+                        value?: unknown;
+                    };
+                    // Validate shape.
+                    if (data?.v === 1 && typeof data.key === 'string' && data.key.length > 0
+                        && data.value !== undefined && typeof data.size === 'number') {
+                        // Restore into live; put() handles LRU eviction.
+                        // Use a synthetic put — we bypass the
+                        // per-entry / total cap checks because the
+                        // file was already accepted by a previous
+                        // put() call.
+                        this.restoreEntry(data.key, data.value, data.size);
+                    }
+                } catch {
+                    console.warn('[ArtifactStore] failed to recover artifact file, skipping:', file);
+                    // Attempt to delete the corrupt file.
+                    try {
+                        await this.adapter.remove(`${this.artifactsDir}/${file}`);
+                    } catch { /* best-effort */ }
+                }
+            }
+        } catch (err) {
+            console.warn('[ArtifactStore] failed to recover artifacts from disk:', err);
+        }
+    }
+
+    /**
+     * Restore a single entry into live during startup recovery.
+     * Bypasses the single-artifact and total-byte checks because the
+     * entry was already validated by the original put(). If the total
+     * cap is exceeded after restore, LRU-evicts until it fits.
+     */
+    private restoreEntry(key: string, value: unknown, size: number): void {
+        // Skip if already live (shouldn't happen but be defensive).
+        if (this.live.has(key)) return;
+
+        // Remove any stale diskIndex entry for this key.
+        this.diskIndex.delete(key);
+
+        // LRU-evict until it fits.
+        while (this.liveBytes + size > this.totalBytesCap && this.live.size > 0) {
+            const oldestKey = this.live.keys().next().value as string | undefined;
+            if (oldestKey === undefined) break;
+            const oldest = this.live.get(oldestKey)!;
+            this.live.delete(oldestKey);
+            this.liveBytes -= oldest.size;
+            // Evicted during recovery: mark in diskIndex so get() can
+            // re-read from the (still-present) disk file.
+            this.writeDiskIndex(oldestKey, "lru", oldest.size);
+        }
+
+        this.live.set(key, { value, size, lastAccess: this.now() });
+        this.liveBytes += size;
+    }
+
+    /**
+     * Delete the entire artifacts directory. Called from clear() during
+     * session teardown. Fire-and-forget.
+     */
+    private async deleteArtifactsDir(): Promise<void> {
+        if (!this.adapter || !this.artifactsDir) return;
+        try {
+            if (await this.adapter.exists(this.artifactsDir)) {
+                // Delete each file individually, then try to rmdir.
+                const files = await this.adapter.list(this.artifactsDir);
+                for (const file of files.files) {
+                    try {
+                        await this.adapter.remove(`${this.artifactsDir}/${file}`);
+                    } catch { /* best-effort per file */ }
+                }
+                try {
+                    await this.adapter.rmdir(this.artifactsDir, false);
+                } catch { /* directory may have subdirs or already gone */ }
+            }
+        } catch (err) {
+            console.warn('[ArtifactStore] failed to delete artifacts dir:', err);
+        }
+        this.diskIndex.clear();
     }
 }

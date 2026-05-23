@@ -68,8 +68,10 @@ describe("recall_artifact – argument validation", () => {
 describe("recall_artifact – store source", () => {
     it("supports a direct ArtifactStore as source", async () => {
         const store = new ArtifactStore();
-        store.put("k", { hello: "world" }, 20);
-        const res = await run(store, { key: "k" });
+        const p = store.put({ hello: "world" }, 20);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
+        const res = await run(store, { key: p.key });
         expect(res.success).toBe(true);
         expect(res.type).toBe("object");
         expect(res.content).toEqual({
@@ -81,13 +83,15 @@ describe("recall_artifact – store source", () => {
 
     it("supports a getter as source (long-lived ChatStream pattern)", async () => {
         let activeStore: ArtifactStore | null = new ArtifactStore();
-        activeStore.put("k", "v", 1);
+        const p = activeStore.put("v", 1);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
 
         const tool = createRecallArtifactTool(() => activeStore);
 
         const res1 = await tool.exec(
             undefined as unknown as ChatStream,
-            { key: "k" },
+            { key: p.key },
         );
         expect(res1.success).toBe(true);
         expect((res1.content as { found: boolean }).found).toBe(true);
@@ -96,7 +100,7 @@ describe("recall_artifact – store source", () => {
         activeStore = new ArtifactStore();
         const res2 = await tool.exec(
             undefined as unknown as ChatStream,
-            { key: "k" },
+            { key: p.key },
         );
         expect(res2.success).toBe(true);
         // Different (empty) store → pure miss.
@@ -133,9 +137,11 @@ describe("recall_artifact – live hit", () => {
             ],
             warnings: [],
         };
-        store.put("auto:call-1:result", value, 500);
+        const p = store.put(value, 500);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
 
-        const res = await run(store, { key: "auto:call-1:result" });
+        const res = await run(store, { key: p.key });
         expect(res.success).toBe(true);
         expect(res.content).toEqual({
             found: true,
@@ -146,8 +152,10 @@ describe("recall_artifact – live hit", () => {
 
     it("trims whitespace around the key before lookup", async () => {
         const store = new ArtifactStore();
-        store.put("k", "v", 1);
-        const res = await run(store, { key: "  k  " });
+        const p = store.put("v", 1);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
+        const res = await run(store, { key: `  ${p.key}  ` });
         expect((res.content as { found: boolean }).found).toBe(true);
     });
 
@@ -157,14 +165,16 @@ describe("recall_artifact – live hit", () => {
         // for another full TTL window.
         const clock = makeClock();
         const store = new ArtifactStore({ ttlMs: 1000, now: clock.now });
-        store.put("k", "v", 1);
+        const p = store.put("v", 1);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
 
         clock.advance(800);
-        const r1 = await run(store, { key: "k" });
+        const r1 = await run(store, { key: p.key });
         expect((r1.content as { found: boolean }).found).toBe(true);
 
         clock.advance(800); // 1600 since put, but only 800 since recall
-        const r2 = await run(store, { key: "k" });
+        const r2 = await run(store, { key: p.key });
         expect((r2.content as { found: boolean }).found).toBe(true);
     });
 });
@@ -177,28 +187,32 @@ describe("recall_artifact – tombstone hit", () => {
     it("reports LRU eviction with size and available_keys", async () => {
         // Force an LRU eviction by overfilling the store.
         const store = new ArtifactStore({ totalBytesCap: 100 });
-        store.put("a", "x", 60);
-        store.put("b", "y", 50); // evicts a (60+50 > 100)
+        const rA = store.put("x", 60);
+        const rB = store.put("y", 50); // evicts a (60+50 > 100)
+        expect(rA.stored && rB.stored).toBe(true);
+        if (!rA.stored || !rB.stored) throw new Error("unexpected");
 
-        const res = await run(store, { key: "a" });
+        const res = await run(store, { key: rA.key });
         expect(res.success).toBe(true);
         expect(res.content).toMatchObject({
             found: false,
             evicted: true,
             reason: "lru",
             size: 60,
-            available_keys: ["b"],
+            available_keys: [rB.key],
         });
     });
 
     it("reports TTL eviction", async () => {
         const clock = makeClock();
         const store = new ArtifactStore({ ttlMs: 100, now: clock.now });
-        store.put("k", "v", 10);
+        const p = store.put("v", 10);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
 
         clock.advance(200); // way past TTL
 
-        const res = await run(store, { key: "k" });
+        const res = await run(store, { key: p.key });
         expect(res.content).toMatchObject({
             found: false,
             evicted: true,
@@ -210,10 +224,12 @@ describe("recall_artifact – tombstone hit", () => {
 
     it("reports session_end eviction after clear()", async () => {
         const store = new ArtifactStore();
-        store.put("k", "v", 5);
+        const p = store.put("v", 5);
+        expect(p.stored).toBe(true);
+        if (!p.stored) throw new Error("unexpected");
         store.clear();
 
-        const res = await run(store, { key: "k" });
+        const res = await run(store, { key: p.key });
         expect(res.content).toMatchObject({
             found: false,
             evicted: true,
@@ -230,15 +246,17 @@ describe("recall_artifact – tombstone hit", () => {
 describe("recall_artifact – pure miss", () => {
     it("returns found:false, evicted:false, and lists live keys", async () => {
         const store = new ArtifactStore();
-        store.put("alpha", 1, 1);
-        store.put("beta", 2, 1);
+        const rA = store.put(1, 1);
+        const rB = store.put(2, 1);
+        expect(rA.stored && rB.stored).toBe(true);
+        if (!rA.stored || !rB.stored) throw new Error("unexpected");
 
         const res = await run(store, { key: "never-existed" });
         expect(res.success).toBe(true);
         expect(res.content).toEqual({
             found: false,
             evicted: false,
-            available_keys: ["alpha", "beta"],
+            available_keys: [rA.key, rB.key],
         });
     });
 
@@ -249,14 +267,16 @@ describe("recall_artifact – pure miss", () => {
         // liveKeys() → sweepExpired). This test pins the contract.
         const clock = makeClock();
         const store = new ArtifactStore({ ttlMs: 100, now: clock.now });
-        store.put("old", "v", 1);
+        const rOld = store.put("v", 1);
         clock.advance(50);
-        store.put("fresh", "v", 1);
+        const rFresh = store.put("v", 1);
+        expect(rOld.stored && rFresh.stored).toBe(true);
+        if (!rOld.stored || !rFresh.stored) throw new Error("unexpected");
         clock.advance(80); // old: 130 since put → expired; fresh: 80 → alive
 
         const res = await run(store, { key: "nope" });
         expect((res.content as { available_keys: string[] }).available_keys)
-            .toEqual(["fresh"]);
+            .toEqual([rFresh.key]);
     });
 });
 

@@ -221,13 +221,13 @@ export class SessionStatusDisplay {
         // three fields exposed by `ArtifactStore.stats()`:
         //   - liveCount       (number of recoverable entries)
         //   - liveBytes       (their total serialized byte usage)
-        //   - tombstoneCount  (entries already evicted, kept for recall hints)
+        //   - diskIndexCount  (entries on disk or evicted, kept for recall hints)
         //
         // Hidden when the store is fully empty so the panel stays focused
         // for sessions that never spilled an artifact. We treat
-        // `liveCount === 0 && tombstoneCount === 0` as "nothing to show";
+        // `liveCount === 0 && diskIndexCount === 0` as "nothing to show";
         // a non-zero `liveBytes` without a live count is impossible.
-        if (artifactStats && (artifactStats.liveCount > 0 || artifactStats.tombstoneCount > 0)) {
+        if (artifactStats && (artifactStats.liveCount > 0 || artifactStats.diskIndexCount > 0)) {
             this.renderSection(el, t('status.artifactsSection'), (section) => {
                 this.renderRow(
                     section,
@@ -244,7 +244,7 @@ export class SessionStatusDisplay {
                 this.renderRow(
                     section,
                     t('statusLabel.artifactsTombstones'),
-                    artifactStats.tombstoneCount.toLocaleString(),
+                    artifactStats.diskIndexCount.toLocaleString(),
                     t('statusTooltip.artifactsTombstones'),
                 );
             });

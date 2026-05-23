@@ -161,12 +161,16 @@ export class SessionRuntime {
      * derives them from plugin settings via
      * {@link deriveArtifactStoreOptions}.
      *
+     * When persistence is enabled (adapter + artifactsDir provided),
+     * artifacts are written to disk so they survive plugin reload
+     * and Obsidian restart.
+     *
      * Lifetime: born with the runtime, cleared (→ `session_end`
-     * tombstones) on {@link dispose} so any in-flight recall during
-     * teardown gets a meaningful evicted-reason rather than a bare
-     * miss. The reference itself is `readonly` so the chat-factory
-     * getter can capture it once and stay correct for the runtime's
-     * whole life.
+     * tombstones + disk cleanup) on {@link dispose} so any in-flight
+     * recall during teardown gets a meaningful evicted-reason rather
+     * than a bare miss. The reference itself is `readonly` so the
+     * chat-factory getter can capture it once and stay correct for
+     * the runtime's whole life.
      *
      * Note: settings are read once at runtime construction. Live
      * tuning (changing the cap mid-session) intentionally does not
@@ -625,7 +629,8 @@ export class SessionRuntime {
         });
         // Convert remaining live artifacts to `session_end` tombstones so
         // any racing `recall_artifact` resolves to a clear evicted reason
-        // rather than a confusing pure miss. The whole runtime is about
+        // rather than a confusing pure miss. In persistence mode this also
+        // deletes the on-disk artifact files. The whole runtime is about
         // to be GC'd anyway, but the cost is constant in liveCount and
         // worth the diagnostic clarity (plan §1.3 last bullet).
         try {

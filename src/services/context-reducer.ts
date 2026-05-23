@@ -124,14 +124,14 @@ export interface ContextReduceOptions {
      * When provided, an envelope tool_result that is large enough to
      * trigger shrinking is rewritten in place: each inline `result` /
      * `extras[k]` field above {@link ENVELOPE_FIELD_SPILL_MIN_BYTES}
-     * is moved to the store under `auto:<toolCallId>:<field>` and
-     * replaced with an {@link ArtifactRef} in `payload.artifacts`. The
-     * envelope's `text`, discriminator markers, `omitted`, and any
-     * pre-existing `artifacts` entries (from E-3 build-time promotion)
-     * are kept verbatim. The `tool_result.toolCallId` is the source of
-     * the namespace prefix — without it, the envelope falls through to
-     * the generic truncation path because we cannot mint a collision-
-     * free key.
+     * is moved to the store and replaced with an {@link ArtifactRef}
+     * in `payload.artifacts`. The envelope's `text`, discriminator
+     * markers, `omitted`, and any pre-existing `artifacts` entries
+     * (from E-3 build-time promotion) are kept verbatim. The
+     * `tool_result.toolCallId` is still used as a gate for safety
+     * (without it we cannot confirm the result belongs to a known
+     * tool-call chain), but the artifact keys are now auto-generated
+     * by the store itself.
      *
      * When omitted (or null), the reducer's behaviour is unchanged:
      * envelopes that exceed the shrink threshold get the same opaque
@@ -503,15 +503,33 @@ function shrinkToolResultContent(
         }
     }
 
+    // Phase 0: For generic (non-envelope) oversized tool results, store
+    // the original content in the artifact store so the LLM can retrieve
+    // it later via `recall_artifact`. Only attempts storage when both a
+    // store and toolCallId are available; on failure (too large for the
+    // store) we fall through to the existing no-key truncation messages
+    // so the pipeline behaviour is unchanged.
+    let artifactKey: string | undefined;
+    if (store && typeof toolCallId === "string" && toolCallId.length > 0) {
+        const putResult = store.put(result, result.length);
+        if (putResult.stored) {
+            artifactKey = putResult.key;
+        }
+    }
+
+    const artifactHint = artifactKey
+        ? ` Full content stored as artifact. Use recall_artifact(key="${artifactKey}") to retrieve it.`
+        : "";
+
     // Try to parse as JSON for a structured meta summary.
     try {
         const parsed = JSON.parse(result) as unknown;
         if (Array.isArray(parsed)) {
-            return `[Tool result truncated: JSON array of ${parsed.length} items, ${result.length} chars total, original content omitted to save context budget.]`;
+            return `[Tool result truncated: JSON array of ${parsed.length} items, ${result.length} chars total, original content omitted to save context budget.${artifactHint}]`;
         } else if (typeof parsed === 'object' && parsed !== null) {
             const keys = Object.keys(parsed);
             const keyPreview = keys.slice(0, 5).join(', ') + (keys.length > 5 ? ', ...' : '');
-            return `[Tool result truncated: JSON object with keys {${keyPreview}}, ${result.length} chars total, original content omitted to save context budget.]`;
+            return `[Tool result truncated: JSON object with keys {${keyPreview}}, ${result.length} chars total, original content omitted to save context budget.${artifactHint}]`;
         }
     } catch {
         // Not JSON, fall through to plain text handling.
@@ -519,7 +537,7 @@ function shrinkToolResultContent(
 
     // Plain text: keep first 200 chars as a preview inside the meta wrapper.
     const preview = safeSliceHead(result, 200).replace(/\n/g, ' ');
-    return `[Tool result truncated: original ${result.length} chars, preview: ${preview}...]`;
+    return `[Tool result truncated: original ${result.length} chars, preview: ${preview}...${artifactHint}]`;
 }
 
 /**
@@ -616,12 +634,12 @@ function shrinkEnvelopeForPrompt(
     let didSpill = false;
 
     /**
-     * Per-field spill: try to move `value` into the store under
-     * `auto:<toolCallId>:<fieldName>`. On success, register an
-     * `ArtifactRef` (with `reason: "shrunk"`) and report `"spilled"`.
-     * On rejection, stamp the matching `omitted_*` markers and report
-     * `"too_large"`. Below the per-field min, report `"too_small"`
-     * so the caller can keep the value inline.
+     * Per-field spill: try to move `value` into the store. The store
+     * auto-generates a unique key. On success, register an
+     * {@link ArtifactRef} (with `reason: "shrunk"`) and report
+     * `"spilled"`. On rejection, stamp the matching `omitted_*`
+     * markers and report `"too_large"`. Below the per-field min,
+     * report `"too_small"` so the caller can keep the value inline.
      */
     const trySpill = (
         fieldName: string,
@@ -640,12 +658,11 @@ function shrinkEnvelopeForPrompt(
         const size = json.length;
         if (size < ENVELOPE_FIELD_SPILL_MIN_BYTES) return "too_small";
 
-        const artifactKey = `auto:${toolCallId}:${fieldName}`;
-        const putResult = store.put(artifactKey, value, size);
+        const putResult = store.put(value, size);
         if (putResult.stored) {
             nextArtifacts ??= {};
             nextArtifacts[fieldName] = {
-                key: artifactKey,
+                key: putResult.key,
                 size,
                 preview: buildShrunkArtifactPreview(value),
                 reason: "shrunk",
@@ -1538,9 +1555,8 @@ export class ContextReducer {
      * `result` / `extras[k]` are moved into the store and replaced with
      * `ArtifactRef`s. The envelope structure (`__kind` / `__v` / `text`
      * / `omitted` / pre-existing `artifacts`) is preserved, and the
-     * `tool_result.toolCallId` is used as the namespace prefix
-     * (`auto:<toolCallId>:<field>`). Without a store, the legacy generic
-     * truncation path runs.
+     * store auto-generates unique keys for each spilled field. Without
+     * a store, the legacy generic truncation path runs.
      *
      * **`forceShrinkAll`** disables the unconsumed-tail exemption. Used
      * exclusively by {@link emergencyShrink} as a last-resort budget

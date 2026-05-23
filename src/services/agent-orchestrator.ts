@@ -154,8 +154,8 @@ function buildArtifactPreview(value: unknown): string | undefined {
  * recorded under `omitted` with `<key>_omitted: true` / `<key>_size: N`
  * markers and the value content is lost. Both being present is the
  * trigger for the "promote to artifact" path; this is intentional —
- * promotion without a stable per-call ID would risk key collisions
- * across concurrent delegations sharing the same store.
+ * promotion without a parent tool-call context would produce an
+ * orphan artifact the LLM cannot discover and recall.
  */
 export interface BuildDelegatePayloadOptions {
     /**
@@ -189,11 +189,11 @@ export interface BuildDelegatePayloadOptions {
  *      (otherwise). Identical to legacy behaviour.
  *   2. `HANDOFF_VALUE_MAX_BYTES < size ≤ singleArtifactCap` (32–128 KB,
  *      iff `options.artifactStore` AND `options.delegateCallId` are
- *      both provided) — value is spilled to the artifact store under
- *      `auto:<delegateCallId>:<key>` and an {@link ArtifactRef} is
- *      emitted in `payload.artifacts[key]`. The main LLM then calls
- *      `recall_artifact({ key })` on demand. The value is NOT inlined
- *      and NOT recorded under `omitted`.
+ *      both provided) — value is spilled to the artifact store and an
+ *      {@link ArtifactRef} is emitted in `payload.artifacts[key]`. The
+ *      store auto-generates a unique key (using the same ID scheme as
+ *      profiles); the main LLM then calls `recall_artifact({ key })` on
+ *      demand. The value is NOT inlined and NOT recorded under `omitted`.
  *   3. `size > singleArtifactCap` OR (no store / no callId AND size
  *      exceeds 32 KB) OR store rejects with `too_large_for_store` —
  *      value is dropped. `omitted[<key>_omitted] = true` /
@@ -272,12 +272,11 @@ export function buildDelegatePayload(
 
         // Bucket 2 candidate: try to promote to an artifact.
         if (promotionEnabled && storeRef && callId) {
-            const artifactKey = `auto:${callId}:${key}`;
-            const putResult = storeRef.put(artifactKey, value, size);
+            const putResult = storeRef.put(value, size);
             if (putResult.stored) {
                 artifacts ??= {};
                 artifacts[key] = {
-                    key: artifactKey,
+                    key: putResult.key,
                     size,
                     preview: buildArtifactPreview(value),
                     reason: "oversize",

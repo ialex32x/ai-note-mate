@@ -424,11 +424,14 @@ describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
         expect(parsed!.artifacts).toBeDefined();
         expect(parsed!.artifacts!.result).toBeDefined();
         expect(parsed!.artifacts!.result.reason).toBe('shrunk');
-        expect(parsed!.artifacts!.result.key).toBe('auto:tc1:result');
+        // Key is auto-generated — should be a non-empty string.
+        const artifactKey = parsed!.artifacts!.result.key;
+        expect(typeof artifactKey).toBe('string');
+        expect(artifactKey.length).toBeGreaterThan(0);
         expect(parsed!.artifacts!.result.size).toBeGreaterThan(0);
 
         // Store has the original value byte-for-byte (recall contract).
-        const got = store.get('auto:tc1:result');
+        const got = store.get(artifactKey);
         expect(got.found).toBe(true);
         if (got.found) expect(got.value).toEqual(result);
 
@@ -467,8 +470,11 @@ describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
         // Tiny extras field stays inline.
         expect(parsed.extras?.tiny_note).toBe('short string');
 
-        // Store contains the spilled big_log.
-        const got = store.get('auto:tc1:big_log');
+        // Store contains the spilled big_log via its auto-generated key.
+        const bigLogKey = parsed.artifacts!.big_log.key;
+        expect(typeof bigLogKey).toBe('string');
+        expect(bigLogKey.length).toBeGreaterThan(0);
+        const got = store.get(bigLogKey);
         expect(got.found).toBe(true);
         if (got.found) expect(got.value).toEqual(big);
     });
@@ -478,11 +484,10 @@ describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
         // Simulate an envelope where E-3 already promoted `result` at
         // build time. The shrink stage MUST NOT re-spill or rename it,
         // because the stored value already lives under the build-time
-        // key (which the orchestrator may have minted with a different
-        // toolCallId scheme).
+        // key.
         const preExisting: NonNullable<DelegatePayload['artifacts']> = {
             result: {
-                key: 'auto:tc-original:result',
+                key: '1738000000000-abc1234',
                 size: 99_000,
                 preview: '{"payload":[…',
                 reason: 'oversize',
@@ -509,9 +514,10 @@ describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
         // Pre-existing artifact entry is kept verbatim (same key, same reason).
         expect(parsed.artifacts!.result).toEqual(preExisting.result);
 
-        // The newly-shrunk extras field gets the shrink reason.
+        // The newly-shrunk extras field gets the shrink reason and an auto-generated key.
         expect(parsed.artifacts!.big_log.reason).toBe('shrunk');
-        expect(parsed.artifacts!.big_log.key).toBe('auto:tc1:big_log');
+        expect(typeof parsed.artifacts!.big_log.key).toBe('string');
+        expect(parsed.artifacts!.big_log.key.length).toBeGreaterThan(0);
     });
 
     it('keeps pre-existing `omitted` markers and stays out of their way', () => {
@@ -722,11 +728,11 @@ describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
         expect(store.stats().liveCount).toBe(0);
     });
 
-    it('still falls through to legacy truncation for non-envelope JSON tool_results', () => {
-        // A non-envelope JSON tool_result (e.g. a vault search returning
-        // a plain JSON object) must NOT be confused for an envelope and
-        // must follow the legacy generic truncation path. This is the
-        // backward-compat guarantee for every non-delegate_task tool.
+    it('stores generic (non-envelope) JSON tool_results in the artifact store with a recall key', () => {
+        // Phase 0: a non-envelope JSON tool_result (e.g. a vault search)
+        // that exceeds the shrink threshold is now stored as an artifact
+        // so the LLM can retrieve it via `recall_artifact`. The truncated
+        // message includes the artifact key for the LLM to reference.
         const store = new ArtifactStore();
         const plainJson = JSON.stringify({
             results: Array.from({ length: 50 }, (_, i) => ({ id: i, body: 'x'.repeat(100) })),
@@ -742,10 +748,21 @@ describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
         ];
 
         const out = shrink(msgs, store);
+        // Still truncated with JSON object summary.
         expect(out[2]!.content).toContain('truncated');
         expect(out[2]!.content).toContain('JSON object');
-        // Store untouched — non-envelope content never touches the artifact path.
-        expect(store.stats().liveCount).toBe(0);
+        // Phase 0: the truncated message now includes an artifact recall hint
+        // with the auto-generated key.
+        expect(out[2]!.content).toContain('recall_artifact(key="');
+        // Store now has the original content, recoverable via recall_artifact.
+        expect(store.stats().liveCount).toBe(1);
+        // Extract the key from the hint and verify the store has the value.
+        const hintMatch = (out[2]!.content as string).match(/recall_artifact\(key="([^"]+)"\)/);
+        expect(hintMatch).not.toBeNull();
+        const artifactKey = hintMatch![1]!;
+        const got = store.get(artifactKey);
+        expect(got.found).toBe(true);
+        if (got.found) expect(got.value).toBe(plainJson);
     });
 });
 

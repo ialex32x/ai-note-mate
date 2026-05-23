@@ -579,6 +579,22 @@ export class SessionManager {
             if (await adapter.exists(msgPath)) {
                 await adapter.remove(msgPath);
             }
+            // Also clean up the session's artifacts subdirectory (if any).
+            const artifactsDir = `${this.sessionsDir}/${id}`;
+            if (await adapter.exists(artifactsDir)) {
+                // Delete individual files first, then rmdir.
+                try {
+                    const listing = await adapter.list(artifactsDir);
+                    for (const file of listing.files) {
+                        await adapter.remove(`${artifactsDir}/${file}`);
+                    }
+                    for (const folder of listing.folders) {
+                        // Recursively clean up nested dirs (paranoid; shouldn't exist).
+                        try { await adapter.rmdir(`${artifactsDir}/${folder}`, true); } catch { /* ignore */ }
+                    }
+                } catch { /* best-effort listing; continue to rmdir anyway */ }
+                try { await adapter.rmdir(artifactsDir, false); } catch { /* may have been removed already */ }
+            }
         } catch (error) {
             console.warn('[SessionManager] Failed to delete messages file:', error);
         }
