@@ -61,6 +61,11 @@ import {
     createProviderForActiveProfileOf,
     SessionNavigator,
 } from './session-view/index';
+import { buildDisplayUnits } from './session-view/display-units';
+import { replayUnitsInFrames } from './session-view/history-replay-controller';
+import { SessionLoadingOverlay } from './session-view/session-loading-overlay';
+import { MessageWindowController } from './session-view/message-window-controller';
+import { HISTORY_LOADING } from './session-view/history-loading-config';
 import {
     SessionRuntime,
     extractInsightsForMessage,
@@ -89,6 +94,12 @@ export class SessionView extends ItemView {
     private streamingLoader!: StreamingLoader;
     /** Scroll container controller (user-scrolled-up tracking + scroll-to-bottom button). */
     private scroller!: ScrollController;
+    /** Overlay + progress while a large history slice is replayed. */
+    private historyLoadingOverlay!: SessionLoadingOverlay;
+    /** Tracks which history units are rendered (tail-first windowing). */
+    private messageWindow!: MessageWindowController;
+    /** Cancels an in-flight history replay when switching sessions. */
+    private historyReplayAbort: AbortController | null = null;
     /** Flag to prevent concurrent session switches */
     private isSwitchingSession = false;
     private scrollToBottomBtn!: HTMLButtonElement;
@@ -611,6 +622,10 @@ export class SessionView extends ItemView {
             const messagesWrapper = root.createEl('div', { cls: 'session-messages-wrapper' });
             this.messagesEl = messagesWrapper.createEl('div', { cls: 'session-messages' });
 
+            this.historyLoadingOverlay = new SessionLoadingOverlay(messagesWrapper);
+            this.historyLoadingOverlay.mount();
+            this.messageWindow = new MessageWindowController(this.messagesEl);
+
             // Create the singleton trailing loader as the last child of
             // messagesEl. It stays in the DOM for the view's lifetime; we
             // toggle its visibility via `session-streaming-loader--hidden`
@@ -657,6 +672,11 @@ export class SessionView extends ItemView {
                 () => this.isStreaming,
             );
             this.scroller.attach();
+            this.scroller.setNearTopCallback(() => {
+                if (this.messageWindow.shouldAutoLoadOlder(this.messagesEl.scrollTop)) {
+                    void this.loadOlderMessages();
+                }
+            });
 
             // ── TODO panel (docked just above the input container) ──────────────
             //
@@ -678,7 +698,7 @@ export class SessionView extends ItemView {
             const checkpointRow = inputContainer.createEl('div', { cls: 'session-checkpoint-row' });
             this.checkpointSelector = createCheckpointSelector(checkpointRow, this.dropdownManager, {
                 app: this.app,
-                onGotoMessage: (messageId) => { this.scrollToMessage(messageId); },
+                onGotoMessage: (messageId) => { void this.scrollToMessage(messageId); },
             });
 
             // Input area with CodeMirror 6 editor
@@ -887,6 +907,8 @@ export class SessionView extends ItemView {
         // ResizeObserver / visualViewport listener so they do not keep
         // the (detached) messagesEl alive after the view closes.
         this.scroller?.detach();
+        this.scroller?.setNearTopCallback(null);
+        this.historyLoadingOverlay?.dispose();
     }
 
     /**
@@ -1074,6 +1096,10 @@ export class SessionView extends ItemView {
         // so the result would just be discarded by the draft-change
         // guard while still costing LLM tokens.
         this.abortInFlightOptimize();
+        this.historyReplayAbort?.abort();
+        this.historyReplayAbort = null;
+        this.messageWindow?.reset();
+        this.historyLoadingOverlay?.hide();
         this.scroller.resetScrollIntent();
         this.hideStreamingLoader();
         this.setInputLocked(false);
@@ -1200,11 +1226,7 @@ export class SessionView extends ItemView {
         const messages = chat.messages;
 
         if (messages.length === 0) {
-            // Empty session (typical "new chat" case). The runtime
-            // may still carry a non-empty TODO snapshot if a previous
-            // background turn populated one without producing
-            // assistant messages yet, so project it defensively —
-            // the panel hides itself when the snapshot is empty.
+            this.messageWindow.reset();
             this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
             this.draftController.restore();
             this.updateSessionStatusDisplay();
@@ -1212,39 +1234,48 @@ export class SessionView extends ItemView {
             return;
         }
 
-        for (const msg of messages) {
-            this.appendBubble({ ...msg, streaming: false });
+        const allUnits = buildDisplayUnits(messages, {
+            getSubAgentMessages: typeof chat.getSubAgentMessages === 'function'
+                ? (id) => chat.getSubAgentMessages!(id)
+                : undefined,
+        });
 
-            // After a delegate_task bubble, append any inline sub-agent
-            // bubbles belonging to this invocation so history reads naturally.
-            if (
-                msg.role === 'tool_call' &&
-                msg.toolCallMeta?.toolName === 'delegate_task' &&
-                typeof chat.getSubAgentMessages === 'function'
-            ) {
-                // Sub-agent messages are keyed by the LLM provider's
-                // toolCallId (e.g. "call_00_il13g7TFdUxBhpkgJllh9112"),
-                // not by ChatStream's own message id. See
-                // AgentOrchestrator._dispatchSubAgent where
-                // `context.toolCallId` (the provider id) is used as
-                // the parentToolCallId for the sub-agent message bucket.
-                const tcId = msg.toolCallMeta.toolCallId;
-                const children = chat.getSubAgentMessages(tcId);
-                const delegateAgent = msg.toolCallMeta?.toolArgs?.['agent'] as string | undefined;
-                for (const child of children) {
-                    const tagged = child.subAgent
-                        ? child
-                        : delegateAgent
-                            ? {
-                                ...child,
-                                subAgent: {
-                                    agentName: delegateAgent,
-                                    parentToolCallId: tcId,
-                                },
-                            }
-                            : child;
-                    this.appendBubble({ ...tagged, streaming: false });
-                }
+        const { initialStart, initialEnd } = this.messageWindow.init(allUnits);
+        const unitsToRender = allUnits.slice(initialStart, initialEnd);
+        const showOverlay = unitsToRender.length >= HISTORY_LOADING.showOverlayMinUnits;
+
+        const ac = new AbortController();
+        this.historyReplayAbort = ac;
+
+        if (showOverlay) {
+            this.historyLoadingOverlay.show(unitsToRender.length);
+            this.setInputLocked(true);
+        }
+
+        try {
+            await replayUnitsInFrames(unitsToRender, {
+                appendUnit: (unit) => {
+                    this.appendBubble({ ...unit.msg, streaming: false }, { trackInWindow: false });
+                },
+                onProgress: (done, total) => {
+                    this.historyLoadingOverlay.setProgress(done, total);
+                },
+                signal: ac.signal,
+            });
+
+            if (ac.signal.aborted) return;
+
+            this.messageWindow.mountSentinel(() => { void this.loadOlderMessages(); });
+        } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') {
+                return;
+            }
+            throw err;
+        } finally {
+            this.historyLoadingOverlay.hide();
+            this.historyReplayAbort = null;
+            if (!runtime.isBusy) {
+                this.setInputLocked(false);
             }
         }
 
@@ -1253,26 +1284,102 @@ export class SessionView extends ItemView {
         this.updateSessionStatusDisplay();
         this.updateNewChatBtnState();
 
-        // Recompute the (deterministic, free) follow-up suggestion bar
-        // from the tail assistant reply, and project the runtime's
-        // current insight state onto the DOM. Both must happen AFTER
-        // the bubble loop so they end up at the tail of messagesEl
-        // (each `appendBubble` defensively hides them).
         this.maybeShowFollowUpSuggestions();
         this.renderInsightFromRuntimeState(this.runtime?.getInsightState() ?? null);
-        // Project the runtime's TODO snapshot onto the pinned panel.
-        // The host sits outside `messagesEl` so this is independent
-        // of the bubble loop — but the data still lives on the
-        // runtime, so use it as the source of truth.
         this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
 
-        // If we just bound a busy runtime (background turn still in
-        // flight), bring the streaming loader + locked input back so
-        // the UI reflects the real state. Subsequent message-update
-        // events will continue updating the bubbles in place.
         if (opts.fromCache && runtime.isBusy) {
             this.setInputLocked(true);
             this.showStreamingLoader();
+        }
+    }
+
+    /**
+     * Prepend older history bubbles above the current window, preserving
+     * scroll position via a scrollHeight delta anchor.
+     */
+    private async loadOlderMessages(): Promise<void> {
+        if (this.messageWindow.loadingOlder || !this.messageWindow.hasOlderUnrendered()) {
+            return;
+        }
+
+        this.messageWindow.setLoadingOlder(true);
+        const newStart = Math.max(0, this.messageWindow.start - HISTORY_LOADING.olderBatchUnits);
+        const units = this.messageWindow.slice(newStart, this.messageWindow.start);
+        const anchor = this.messageWindow.getPrependAnchor();
+        const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
+
+        this.scroller.beginHistoryPrepend();
+        try {
+            const reversed = [...units].reverse();
+            await replayUnitsInFrames(reversed, {
+                appendUnit: (unit) => {
+                    this.prependBubble({ ...unit.msg, streaming: false }, anchor);
+                },
+                onProgress: () => { /* sentinel shows loading state */ },
+                signal: this.historyReplayAbort?.signal,
+            });
+            this.messageWindow.applyOlderBatch(newStart);
+            if (anchor && anchorOffset !== null) {
+                this.scroller.restoreAnchorScroll(anchor, anchorOffset);
+            }
+        } catch (err) {
+            if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                throw err;
+            }
+        } finally {
+            this.messageWindow.setLoadingOlder(false);
+            this.scroller.endHistoryPrepend();
+        }
+    }
+
+    /**
+     * Expand the rendered window until `messageId` is in the DOM, then
+     * let the caller scroll to it.
+     */
+    private async ensureMessageVisible(messageId: string): Promise<void> {
+        const idx = this.messageWindow.findUnitIndex(messageId);
+        if (idx < 0 || idx >= this.messageWindow.start) {
+            return;
+        }
+
+        const units = this.messageWindow.slice(idx, this.messageWindow.start);
+        const anchor = this.messageWindow.getPrependAnchor();
+        const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
+        const showOverlay = units.length >= HISTORY_LOADING.showOverlayMinUnits;
+
+        if (showOverlay) {
+            this.historyLoadingOverlay.show(units.length);
+        }
+
+        this.scroller.beginHistoryPrepend();
+        try {
+            const reversed = [...units].reverse();
+            await replayUnitsInFrames(reversed, {
+                appendUnit: (unit) => {
+                    this.prependBubble({ ...unit.msg, streaming: false }, anchor);
+                },
+                onProgress: (done, total) => {
+                    if (showOverlay) {
+                        this.historyLoadingOverlay.setProgress(done, total);
+                    }
+                },
+                signal: this.historyReplayAbort?.signal,
+            });
+            this.messageWindow.expandRenderedStart(idx);
+            if (anchor && anchorOffset !== null) {
+                this.scroller.restoreAnchorScroll(anchor, anchorOffset);
+            }
+            this.messageWindow.updateSentinel();
+        } catch (err) {
+            if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                throw err;
+            }
+        } finally {
+            if (showOverlay) {
+                this.historyLoadingOverlay.hide();
+            }
+            this.scroller.endHistoryPrepend();
         }
     }
 
@@ -1309,15 +1416,17 @@ export class SessionView extends ItemView {
             await this.bindActiveSessionRuntime();
 
             // Scroll to the specific message
+            await this.ensureMessageVisible(result.messageId);
             window.requestAnimationFrame(() => {
-                this.scrollToMessage(result.messageId);
+                void this.scrollToMessage(result.messageId);
             });
         } finally {
             this.isSwitchingSession = false;
         }
     }
 
-    private scrollToMessage(messageId: string) {
+    private async scrollToMessage(messageId: string) {
+        await this.ensureMessageVisible(messageId);
         const bubble = this.messageBubbles.get(messageId);
         if (bubble) {
             // Scroll the message into view with some padding
@@ -1489,7 +1598,40 @@ export class SessionView extends ItemView {
         this.scroller.forceScrollToBottom();
     }
 
-    private appendBubble(msg: ChatMessage): HTMLElement {
+    private appendBubble(
+        msg: ChatMessage,
+        opts: { trackInWindow?: boolean; scrollMode?: 'follow' | 'none' } = {},
+    ): HTMLElement {
+        const trackInWindow = opts.trackInWindow ?? true;
+        const scrollMode = opts.scrollMode ?? 'follow';
+
+        const build = () => this.createAndRenderBubble(msg);
+
+        const bubble = scrollMode === 'follow'
+            ? this.scroller.runWithAutoFollow(build)
+            : build();
+
+        if (trackInWindow) {
+            this.messageWindow.registerAppendedUnit({ msg });
+        }
+        return bubble;
+    }
+
+    /**
+     * Insert a bubble before an existing anchor node (older-history
+     * prepend). Does not auto-scroll to the tail.
+     */
+    private prependBubble(msg: ChatMessage, beforeEl: HTMLElement | null): HTMLElement {
+        const bubble = this.createAndRenderBubble(msg);
+        if (beforeEl) {
+            this.messagesEl.insertBefore(bubble, beforeEl);
+            this.streamingLoader.pinToEnd();
+        }
+        return bubble;
+    }
+
+    /** Shared DOM construction for append and prepend paths. */
+    private createAndRenderBubble(msg: ChatMessage): HTMLElement {
         // Any new bubble invalidates the previous follow-up suggestions bar
         // and insight card AT THE DOM LEVEL. Must dismiss BEFORE creating
         // the new bubble so neither tail element ends up sandwiched
@@ -1515,31 +1657,19 @@ export class SessionView extends ItemView {
             subAgentCls = ` session-bubble--subagent session-bubble--subagent-${msg.subAgent.agentName}`;
         }
 
-        // Wrap the entire append-and-render path in an auto-follow snapshot
-        // so a single tall mutation (e.g. a tool-call bubble that ships with
-        // its detail / confirmation UI in one shot, or a sub-agent bubble
-        // with badge + collapsible wrapper) doesn't push `isNearBottom()`
-        // past the 100px threshold and silently break auto-scroll. See
-        // ScrollController.runWithAutoFollow for rationale.
-        return this.scroller.runWithAutoFollow(() => {
-            // Create bubble element directly on messagesEl
-            const bubble = this.messagesEl.createEl('div', {
-                cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
-            });
-
-            // Render content into the bubble
-            this.bubbleRenderer.renderInto(bubble, msg, {
-                abortedMessageIds: this.abortedMessageIds,
-                pendingConfirmations: this.pendingConfirmations,
-            });
-
-            this.messageBubbles.set(msg.id, bubble);
-            // Keep the singleton streaming loader pinned to the tail of messagesEl
-            // so it never ends up visually stranded between bubbles.
-            this.streamingLoader.pinToEnd();
-            this.updateNewChatBtnState();
-            return bubble;
+        const bubble = this.messagesEl.createEl('div', {
+            cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
         });
+
+        this.bubbleRenderer.renderInto(bubble, msg, {
+            abortedMessageIds: this.abortedMessageIds,
+            pendingConfirmations: this.pendingConfirmations,
+        });
+
+        this.messageBubbles.set(msg.id, bubble);
+        this.streamingLoader.pinToEnd();
+        this.updateNewChatBtnState();
+        return bubble;
     }
 
     private updateBubbleContent(bubble: HTMLElement, msg: ChatMessage) {

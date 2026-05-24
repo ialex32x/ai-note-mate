@@ -104,6 +104,17 @@ export class ScrollController {
     /** Pending RAF handle for {@link scheduleAsyncCheck}; `0` when none. */
     private pendingFollowFrame = 0;
 
+    /**
+     * When non-zero, async follow checks are suppressed so bulk DOM
+     * mutations (e.g. prepending older history) do not yank scroll to
+     * the tail between inserts.
+     */
+    private suspendDepth = 0;
+
+    /** Fired on user scroll when `scrollTop` is near the top (load-older hook). */
+    private nearTopCallback: (() => void) | null = null;
+    private static readonly NEAR_TOP_THRESHOLD_PX = 200;
+
     constructor(
         private readonly messagesEl: HTMLElement,
         private readonly scrollToBottomBtn: HTMLButtonElement,
@@ -264,6 +275,54 @@ export class ScrollController {
         this.scrollToBottomBtn.hide();
     }
 
+    /** Suppress auto-follow safety-net checks during bulk prepend passes. */
+    suspend(): void {
+        this.suspendDepth++;
+    }
+
+    resume(): void {
+        this.suspendDepth = Math.max(0, this.suspendDepth - 1);
+    }
+
+    /**
+     * Enter history-prepend mode: suppress observer follow checks AND
+     * latch `autoFollow` off so async bubble renders cannot yank the
+     * view back to the tail when older messages are inserted above.
+     */
+    beginHistoryPrepend(): void {
+        this.suspendDepth++;
+        this.autoFollow = false;
+        this.cancelPendingFollowFrame();
+    }
+
+    endHistoryPrepend(): void {
+        this.suspendDepth = Math.max(0, this.suspendDepth - 1);
+        this.autoFollow = false;
+        this.cancelPendingFollowFrame();
+    }
+
+    /**
+     * Distance from the top of `anchor` to the current scroll position.
+     * Pass the return value to {@link restoreAnchorScroll} after prepends.
+     */
+    captureAnchorScroll(anchor: HTMLElement): number {
+        return anchor.offsetTop - this.messagesEl.scrollTop;
+    }
+
+    /** Restore the viewport so `anchor` stays at the same visual offset. */
+    restoreAnchorScroll(anchor: HTMLElement, anchorScrollOffset: number): void {
+        this.programmaticScrollGuard++;
+        this.messagesEl.scrollTop = anchor.offsetTop - anchorScrollOffset;
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            this.programmaticScrollGuard = Math.max(0, this.programmaticScrollGuard - 1);
+        }));
+    }
+
+    /** Register a callback invoked when the user scrolls near the top. */
+    setNearTopCallback(cb: (() => void) | null): void {
+        this.nearTopCallback = cb;
+    }
+
     // ── Internals ──────────────────────────────────────────────────────────
 
     /**
@@ -278,6 +337,7 @@ export class ScrollController {
     }
 
     private onAsyncContentChanged(): void {
+        if (this.suspendDepth > 0) return;
         if (this.autoFollow) {
             this.programmaticScrollToBottom();
             this.scrollToBottomBtn.hide();
@@ -294,11 +354,18 @@ export class ScrollController {
      * defers the geometry read to after layout has settled.
      */
     private scheduleAsyncCheck(): void {
+        if (this.suspendDepth > 0) return;
         if (this.pendingFollowFrame !== 0) return;
         this.pendingFollowFrame = window.requestAnimationFrame(() => {
             this.pendingFollowFrame = 0;
             this.onAsyncContentChanged();
         });
+    }
+
+    private cancelPendingFollowFrame(): void {
+        if (this.pendingFollowFrame === 0) return;
+        window.cancelAnimationFrame(this.pendingFollowFrame);
+        this.pendingFollowFrame = 0;
     }
 
     private handleButtonClick(): void {
@@ -333,6 +400,21 @@ export class ScrollController {
         // `scrollTop = scrollHeight` does not toggle the button to a
         // stale state either.
         if (this.programmaticScrollGuard > 0) return;
+
+        // Scrollbar / trackpad momentum can move the view without a wheel
+        // event — treat any non-programmatic scroll away from the tail as
+        // the user browsing history so auto-follow does not fight prepend.
+        if (!this.isNearBottom()) {
+            this.autoFollow = false;
+        }
+
+        if (
+            this.nearTopCallback
+            && this.messagesEl.scrollTop < ScrollController.NEAR_TOP_THRESHOLD_PX
+        ) {
+            this.nearTopCallback();
+        }
+
         if (this.autoFollow || this.isNearBottom()) {
             this.scrollToBottomBtn.hide();
         } else if (this.isStreamingProvider()) {

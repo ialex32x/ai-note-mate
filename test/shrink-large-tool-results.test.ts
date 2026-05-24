@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ContextReducer, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-reducer';
+import { ContextReducer, estimateTokens, isValidBudgetHint, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-reducer';
 import { ArtifactStore } from '../src/services/artifact-store';
 import { DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, type DelegatePayload } from '../src/services/delegate-envelope-shape';
 
@@ -96,6 +96,54 @@ function bigPayload(label: string): { items: Array<{ id: number; body: string }>
 }
 
 // ─── Tests ─────────────────────────────────────────────────
+
+describe('ContextReducer budget hints', () => {
+    it('records contentBudgetHint on shrink without dropping the full body from the source buffer', () => {
+        const full = bigText();
+        const raw: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [{ id: 'r1', name: 'read_file', arguments: '{}' }]),
+            toolResult('r1', full),
+            assistant('done'),
+        ];
+        const sent = shrink(raw);
+        const sentResult = sent.find(m => m.role === 'tool_result')!;
+        expect(sentResult.contentBudgetHint).toBeDefined();
+        expect(sentResult.contentBudgetHintForLength).toBe(full.length);
+        expect(sentResult.content).not.toBe(full);
+        expect(estimateTokens(sentResult.contentBudgetHint!)).toBeLessThan(estimateTokens(full));
+
+        ContextReducer.backfillBudgetHints(sent, raw);
+        const rawResult = raw.find(m => m.role === 'tool_result')!;
+        expect(rawResult.content).toBe(full);
+        expect(rawResult.contentBudgetHint).toBe(sentResult.contentBudgetHint);
+        expect(rawResult.contentBudgetHintForLength).toBe(full.length);
+        expect(isValidBudgetHint(rawResult)).toBe(true);
+
+        const secondPass = shrink(raw);
+        const secondResult = secondPass.find(m => m.role === 'tool_result')!;
+        expect(secondResult.content).toBe(sentResult.contentBudgetHint);
+    });
+
+    it('does not apply a stale budget hint when tool_result content changed', () => {
+        const full = bigText();
+        const raw: HistroyMessage[] = [
+            user('q'),
+            assistantWithToolCalls('', [{ id: 'r1', name: 'read_file', arguments: '{}' }]),
+            toolResult('r1', full),
+            assistant('done'),
+        ];
+        const sent = shrink(raw);
+        ContextReducer.backfillBudgetHints(sent, raw);
+        const rawResult = raw.find(m => m.role === 'tool_result')!;
+        rawResult.content = full + '-edited';
+        expect(isValidBudgetHint(rawResult)).toBe(false);
+        expect(rawResult.contentBudgetHintForLength).toBe(full.length);
+        // Stale hint must not match → a fresh shrink pass still sees the new body.
+        const reshunk = shrink(raw);
+        expect(reshunk.find(m => m.role === 'tool_result')!.content).not.toBe(rawResult.contentBudgetHint);
+    });
+});
 
 describe('ContextReducer.shrinkLargeToolResults', () => {
     it('returns the input unchanged when there are no messages', () => {
@@ -894,9 +942,9 @@ describe('ContextReducer.emergencyShrink', () => {
             assistantWithToolCalls('', [{ id: 'r3', name: 'read_file', arguments: '{}' }]),
             toolResult('r3', big),
         ];
-        // 3 * 2700 ≈ 8100. Emergency line = 7500 (threshold 5000 * 1.5).
-        // Shrinking r1 alone drops total by ~2700 → ~5400, well under 7500.
-        const result = emergencyShrink(msgs, { threshold: 5000 });
+        // 3 * 2700 ≈ 8100. Emergency line = 6000 (threshold 4000 * 1.5).
+        // Shrinking r1 alone drops total by ~2700 → ~5400, well under 6000.
+        const result = emergencyShrink(msgs, { threshold: 4000 });
         expect(result.shrunk).toBe(true);
 
         const r1 = result.messages.find(m => (m as any).toolCallId === 'r1')!;

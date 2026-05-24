@@ -60,29 +60,21 @@ export function renderToolCallContent(
         headerRow.createEl('span', { cls: statusCls, text: statusIcon });
     }
 
-    // Confirmation UI (per-bubble streaming cursors removed: the single
-    // trailing `…` loader at the tail of the message list is the global
-    // "AI is working" indicator now). Long-running tool calls — e.g.
-    // image generation that has already been approved — still register
-    // visually because the runtime stays busy and the trailing loader
-    // remains visible until the whole turn finishes.
     if (msg.confirmationState === 'pending' && msg.streaming) {
         renderToolConfirmPending(ctx, contentEl, msg.id, pendingConfirmations);
     } else if (msg.confirmationState === 'allowed' || msg.confirmationState === 'rejected') {
         renderToolConfirmBadge(contentEl, msg.confirmationState);
     }
 
-    // Collapsible detail section
     if (msg.toolCallMeta || msg.toolCallResult) {
-        renderToolDetail(contentEl, msg, wasToolDetailExpanded, arrowSpan, headerRow);
+        if (wasToolDetailExpanded) {
+            renderToolDetail(contentEl, msg, true, arrowSpan, headerRow);
+        } else {
+            renderToolDetailLazy(contentEl, msg, arrowSpan, headerRow);
+        }
     }
 }
 
-/**
- * Render the collapsible detail section containing the tool's arguments
- * (formatted JSON) and result text. Truncates very long results to avoid
- * blowing up the chat viewport when a tool returns megabytes of output.
- */
 function renderToolDetail(
     contentEl: HTMLElement,
     msg: ChatMessage,
@@ -96,7 +88,55 @@ function renderToolDetail(
             : 'session-bubble__tool-detail-body',
     });
 
-    // Args
+    populateToolDetailBody(detailBody, msg);
+
+    let toolDetailExpanded = wasToolDetailExpanded;
+    const toggleToolDetail = () => {
+        toolDetailExpanded = !toolDetailExpanded;
+        detailBody.toggleClass('session-bubble__tool-detail-body--expanded', toolDetailExpanded);
+        arrowSpan.setText(toolDetailExpanded ? '▾' : '▸');
+        headerRow.toggleClass('session-bubble__tool-header--expanded', toolDetailExpanded);
+    };
+    headerRow.addEventListener('click', toggleToolDetail);
+    headerRow.addClass('session-bubble__tool-header--clickable');
+    if (wasToolDetailExpanded) {
+        headerRow.addClass('session-bubble__tool-header--expanded');
+    }
+}
+
+/** Lazy detail: args/result DOM is created on first expand. */
+function renderToolDetailLazy(
+    contentEl: HTMLElement,
+    msg: ChatMessage,
+    arrowSpan: HTMLElement,
+    headerRow: HTMLElement,
+): void {
+    let detailBody: HTMLElement | null = null;
+    let toolDetailExpanded = false;
+
+    const ensureDetail = (): HTMLElement => {
+        if (!detailBody) {
+            detailBody = contentEl.createEl('div', {
+                cls: 'session-bubble__tool-detail-body',
+            });
+            populateToolDetailBody(detailBody, msg);
+        }
+        return detailBody;
+    };
+
+    const toggleToolDetail = () => {
+        toolDetailExpanded = !toolDetailExpanded;
+        const body = ensureDetail();
+        body.toggleClass('session-bubble__tool-detail-body--expanded', toolDetailExpanded);
+        arrowSpan.setText(toolDetailExpanded ? '▾' : '▸');
+        headerRow.toggleClass('session-bubble__tool-header--expanded', toolDetailExpanded);
+    };
+
+    headerRow.addEventListener('click', toggleToolDetail);
+    headerRow.addClass('session-bubble__tool-header--clickable');
+}
+
+function populateToolDetailBody(detailBody: HTMLElement, msg: ChatMessage): void {
     if (msg.toolCallMeta) {
         const argsWrapper = detailBody.createEl('div', { cls: 'session-bubble__tool-section' });
         argsWrapper.createEl('span', {
@@ -112,7 +152,6 @@ function renderToolDetail(
         });
     }
 
-    // Result
     if (msg.toolCallResult) {
         const resultWrapper = detailBody.createEl('div', { cls: 'session-bubble__tool-section' });
         resultWrapper.createEl('span', {
@@ -128,37 +167,8 @@ function renderToolDetail(
             return prettifyIfJson(raw);
         });
     }
-
-    // Toggle handler
-    let toolDetailExpanded = wasToolDetailExpanded;
-    const toggleToolDetail = () => {
-        toolDetailExpanded = !toolDetailExpanded;
-        detailBody.toggleClass('session-bubble__tool-detail-body--expanded', toolDetailExpanded);
-        arrowSpan.setText(toolDetailExpanded ? '▾' : '▸');
-        headerRow.toggleClass('session-bubble__tool-header--expanded', toolDetailExpanded);
-    };
-    headerRow.addEventListener('click', toggleToolDetail);
-    headerRow.addClass('session-bubble__tool-header--clickable');
-    if (wasToolDetailExpanded) {
-        headerRow.addClass('session-bubble__tool-header--expanded');
-    }
 }
 
-/**
- * Render the floating copy button that hovers over the top-right corner
- * of an `Arguments` / `Result` code block. The button stays hidden until
- * the user hovers (or focuses) the surrounding wrapper, mirroring the
- * pattern used by code-block copy buttons in most editors.
- *
- * On touch devices `:hover` is unreliable, so the LESS styles fall back
- * to keeping the button permanently visible whenever `(hover: none)`
- * applies — that branch only kicks in for primary-touch inputs (Android,
- * iOS, Obsidian mobile).
- *
- * The payload is resolved inside the click handler so the freshest
- * values are read at the moment of copy — matters for streaming results
- * that grow after the bubble first renders.
- */
 function renderCopyOverlay(
     parent: HTMLElement,
     copyAriaLabel: string,
@@ -183,24 +193,12 @@ function renderCopyOverlay(
     });
 }
 
-/**
- * Render the pending tool-confirmation UI (Approve button + reject dropdown).
- *
- * The reject action is tucked into a dropdown attached to an arrow button
- * rather than a second inline button: rejections should be deliberate, and
- * the primary affordance is "allow and continue". We anchor the dropdown
- * inside the shared floating layer (see {@link BubbleContext.getFloatingLayer})
- * to avoid clipping by bubble ancestors with `overflow: hidden` or
- * transform-based containing-block hijacking.
- */
 function renderToolConfirmPending(
     ctx: BubbleContext,
     container: HTMLElement,
     messageId: string,
     pendingConfirmations: Map<string, (approved: boolean) => void>,
 ): void {
-    // Remove orphaned dropdown (re-render of the same message recreates the
-    // confirm UI; any leftover popup from a previous render must go).
     const layer = ctx.getFloatingLayer();
     layer.querySelector(`[data-confirm-msg-id="${messageId}"]`)?.remove();
 
@@ -245,7 +243,6 @@ function renderToolConfirmPending(
             pendingConfirmations.delete(messageId);
             resolve(approved);
         }
-        // Update UI
         arrowWrap.remove();
         confirmRow.empty();
         if (approved) {
@@ -273,10 +270,6 @@ function renderToolConfirmPending(
         if (dropdownOpen) {
             closeDropdown();
         } else {
-            // Translate the trigger's viewport rect into floating-layer
-            // coordinates so the absolute popup is anchored to a known
-            // containing block (immune to ancestor transform/contain
-            // hijacking `position: fixed`).
             const rect = arrowBtn.getBoundingClientRect();
             const layerRect = layer.getBoundingClientRect();
             dropdown.style.top = `${rect.bottom - layerRect.top + 4}px`;
@@ -303,12 +296,6 @@ function renderToolConfirmPending(
     });
 }
 
-/**
- * Render the static confirmation result badge shown after the user has
- * approved or rejected a tool call (or after restoration from persisted
- * history). Complementary to {@link renderToolConfirmPending} — they
- * render into the same slot but for different message states.
- */
 function renderToolConfirmBadge(container: HTMLElement, state: 'allowed' | 'rejected'): void {
     const confirmRow = container.createEl('div', { cls: 'session-bubble__tool-confirm' });
     if (state === 'allowed') {

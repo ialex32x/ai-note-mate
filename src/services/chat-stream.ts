@@ -138,6 +138,16 @@ export interface ChatMessage {
         /** toolCallId of the parent delegate_task call in the main agent's messages */
         parentToolCallId: string;
     };
+    /**
+     * Internal: shrink-stage view of this message's tool result for LLM budget /
+     * context reduction. Full text stays in {@link ToolCallResultInfo.result}
+     * (UI, export, summarizer). When {@link contentBudgetHintForLength} matches
+     * the reconstructed API tool_result body, reducers reuse the hint instead of
+     * re-running shrink (and re-hitting the artifact store).
+     */
+    contentBudgetHint?: string;
+    /** Length of the API tool_result `content` when {@link contentBudgetHint} was set. */
+    contentBudgetHintForLength?: number;
 }
 
 /** Session state of the ChatStream instance */
@@ -580,6 +590,42 @@ export interface ChatStreamConfig {
 const STREAM_EMIT_THROTTLE_MS = 30;
 
 /** Generate a simple unique ID */
+/** Tool_result `content` as sent to the LLM (matches `prompt()` reconstruction). */
+function toolResultApiContent(res: ToolCallResultInfo): string {
+    return res.status === "error" && !res.result.startsWith("Error:")
+        ? `Error: ${res.result}`
+        : res.result;
+}
+
+/**
+ * Copy shrink cache from assembled API tool_results onto UI `tool_call`
+ * messages ({@link ChatMessage.contentBudgetHint}).
+ */
+function backfillChatMessageBudgetHints(
+    chatMessages: ChatMessage[],
+    apiToolResults: ChatMessageParam[],
+): void {
+    const hints = new Map<string, { hint: string; hintLen: number }>();
+    for (const src of apiToolResults) {
+        if (src.role !== "tool_result" || !src.toolCallId) continue;
+        const hint = src.contentBudgetHint;
+        const hintLen = src.contentBudgetHintForLength;
+        if (hint == null || hintLen == null) continue;
+        hints.set(src.toolCallId, { hint, hintLen });
+    }
+    if (hints.size === 0) return;
+
+    for (const msg of chatMessages) {
+        if (msg.role !== "tool_call" || !msg.toolCallMeta || !msg.toolCallResult) continue;
+        const entry = hints.get(msg.toolCallMeta.toolCallId);
+        if (!entry) continue;
+        const apiContent = toolResultApiContent(msg.toolCallResult);
+        if (apiContent.length !== entry.hintLen) continue;
+        msg.contentBudgetHint = entry.hint;
+        msg.contentBudgetHintForLength = entry.hintLen;
+    }
+}
+
 function generateId(): string {
     return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -1186,14 +1232,20 @@ export class ChatStream implements IChatAgent {
                         // in `res.result` without the "Error:" prefix; restore
                         // it so downstream consumers keep the same semantics
                         // they had during the original turn.
-                        const content = res.status === "error" && !res.result.startsWith("Error:")
-                            ? `Error: ${res.result}`
-                            : res.result;
-                        toolResultParams.push({
+                        const content = toolResultApiContent(res);
+                        const tr: ChatMessageParam = {
                             role: "tool_result",
                             toolCallId: meta.toolCallId,
                             content,
-                        });
+                        };
+                        if (
+                            tcMsg.contentBudgetHint != null
+                            && tcMsg.contentBudgetHintForLength === content.length
+                        ) {
+                            tr.contentBudgetHint = tcMsg.contentBudgetHint;
+                            tr.contentBudgetHintForLength = tcMsg.contentBudgetHintForLength;
+                        }
+                        toolResultParams.push(tr);
                     }
                     j++;
                 }
@@ -1383,6 +1435,9 @@ export class ChatStream implements IChatAgent {
                         this._config.onSummarizing,
                     );
                     messagesToSend = reduceResult.messagesToSend;
+                    // Cache shrink results on live buffers (full bodies stay in UI storage).
+                    ContextReducer.backfillBudgetHints(messagesToSend, rawMessages);
+                    backfillChatMessageBudgetHints(this._messages, messagesToSend);
                     // console.log("Context reduced", reduceResult.compressed);
                     // Persist new summary if compression occurred
                     if (reduceResult.newSummary) {

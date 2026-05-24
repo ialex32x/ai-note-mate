@@ -187,6 +187,18 @@ export interface HistoryMessage {
      * Used to pair tool_result with its owning assistant(toolCalls).
      */
     toolCallId?: string;
+    /**
+     * Token-budget view of {@link content} after {@link ContextReducer.shrinkLargeToolResults}.
+     * The full payload stays in `content` (UI / summarizer / persistence); this field
+     * records what was (or will be) sent to the main chat LLM so threshold checks do not
+     * re-count megabyte tool bodies on every agent loop iteration.
+     *
+     * Valid only together with {@link contentBudgetHintForLength}: when the live
+     * `content.length` differs, the hint is treated as stale and ignored.
+     */
+    contentBudgetHint?: string;
+    /** `content.length` at the time {@link contentBudgetHint} was recorded. */
+    contentBudgetHintForLength?: number;
 }
 
 /**
@@ -255,11 +267,31 @@ export function estimateTokens(text: string): number {
     return Math.ceil(cjkCount / 1.5 + alphaCount / 4 + punctCount);
 }
 
+/**
+ * Text to use when estimating how many tokens a message contributes to the
+ * outgoing prompt budget. Prefers a validated {@link HistoryMessage.contentBudgetHint}.
+ */
+/** Whether a cached shrink result is still valid for the current `content`. */
+export function isValidBudgetHint(msg: HistoryMessage): boolean {
+    return (
+        msg.contentBudgetHint != null
+        && msg.contentBudgetHintForLength != null
+        && msg.contentBudgetHintForLength === msg.content.length
+    );
+}
+
+function messageBudgetText(msg: HistoryMessage): string {
+    if (isValidBudgetHint(msg)) {
+        return msg.contentBudgetHint!;
+    }
+    return msg.content;
+}
+
 /** Estimate total tokens for an array of messages. */
 function estimateMessagesTokens(messages: HistoryMessage[]): number {
     let total = 0;
     for (const msg of messages) {
-        total += estimateTokens(msg.content);
+        total += estimateTokens(messageBudgetText(msg));
         if (msg.media?.length) {
             // Rough flat estimate per attachment. Image budget per OpenAI's
             // tile model averages ~170; audio/video/pdf vary widely so we use
@@ -880,17 +912,24 @@ export class ContextReducer {
         // Get only the non-system messages that are AFTER the cutoff
         const unsummarizedMessages = nonSystemMessages.slice(cutoffIndex);
 
+        // Snap + shrink the tail the same way we will when building messagesToSend,
+        // so the threshold check matches the real provider payload (not the full
+        // tool_result bodies kept in raw history for UI / summarizer fidelity).
+        const snappedForBudget = existingSummaries.length > 0
+            ? this.sliceFromNextTurnBoundary(unsummarizedMessages)
+            : unsummarizedMessages;
+        const shrunkTailForBudget = this.shrinkLargeToolResults(snappedForBudget, artifactStore);
+
         // ── 3. Estimate tokens ─────────────────────────────────────────────
         const systemTokens = estimateMessagesTokens(systemMessages);
-        const unsummarizedTokens = estimateMessagesTokens(unsummarizedMessages);
+        const unsummarizedTokens = estimateMessagesTokens(shrunkTailForBudget);
         const summaryTokens = existingSummaries.reduce((sum, s) => sum + estimateTokens(s.content), 0);
 
         // ── 4. Decide whether compression is needed ───────────────────────
         // The threshold is checked against an **approximation of the real
         // payload** sent to the LLM:
         //   - system messages (prompt + skills, persistent overhead)
-        //   - the unsummarized tail (the actual conversation tail we will
-        //     forward verbatim)
+        //   - the unsummarized tail after shrink (see shrunkTailForBudget above)
         //   - existing summaries (assistant messages we will replay)
         //   - accessoryTokens supplied by the caller, typically the JSON
         //     size of tool schemas which never enter `rawMessages`.
@@ -930,24 +969,13 @@ export class ContextReducer {
                 content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
             }] : [];
 
-            // When we have existing summaries, the "unsummarized" slice may
-            // start mid-turn (e.g. on a tool_result) because the cutoff was
-            // anchored on an arbitrary message. Snap it forward to the next
-            // turn boundary so the LLM always sees complete turns.
-            const snapped = existingSummaries.length > 0
-                ? this.sliceFromNextTurnBoundary(unsummarizedMessages)
-                : unsummarizedMessages;
-
             // No compression needed - but if there are existing summaries, context IS compressed
-            // Shrink oversized tool_result payloads while keeping the
-            // assistant(toolCalls) ↔ tool_result structure intact.
-            const shrunkUnsummarized = this.shrinkLargeToolResults(snapped, artifactStore);
-            // Ensure tool message sequence integrity in the final messagesToSend
+            // Reuse the shrink pass already computed for the threshold check.
             const finalMessagesToSend = [
                 ...systemMessages,
                 ...summaryMessages,
                 ...archiveNoteMessages,
-                ...this.ensureToolSequenceIntegrity(shrunkUnsummarized),
+                ...this.ensureToolSequenceIntegrity(shrunkTailForBudget),
             ] as T[];
 
             const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend);
@@ -1148,7 +1176,9 @@ export class ContextReducer {
             ...summaryMessages,
             latestSummaryMessage as T,
             archiveNoteMessage,
-            ...this.ensureToolSequenceIntegrity(keptRecentMessages),
+            ...this.ensureToolSequenceIntegrity(
+                this.shrinkLargeToolResults(keptRecentMessages, artifactStore),
+            ),
         ] as T[];
 
         const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend);
@@ -1162,6 +1192,47 @@ export class ContextReducer {
             emergencyShrunk: emergencyShrunkCompressed,
         };
         }
+
+    /**
+     * Copy shrink-stage budget hints from the assembled prompt onto live
+     * message buffers (matched by `toolCallId`).
+     *
+     * Full tool results stay in `content` / `toolCallResult.result` for UI
+     * and summarizer fidelity; hints let later passes reuse the shrunk view
+     * without re-walking multi-megabyte bodies or re-spilling artifacts.
+     */
+    static backfillBudgetHints(
+        source: HistoryMessage[],
+        ...targets: HistoryMessage[][]
+    ): void {
+        const hints = new Map<string, { hint: string; hintLen: number }>();
+        for (const src of source) {
+            if (src.role !== 'tool_result' || !src.toolCallId) continue;
+            const hint = src.contentBudgetHint;
+            const hintLen = src.contentBudgetHintForLength;
+            if (hint == null || hintLen == null) continue;
+            hints.set(src.toolCallId, { hint, hintLen });
+        }
+        if (hints.size === 0) return;
+
+        for (const target of targets) {
+            for (const tgt of target) {
+                if (tgt.role !== 'tool_result' || !tgt.toolCallId) continue;
+                const entry = hints.get(tgt.toolCallId);
+                if (!entry || tgt.content.length !== entry.hintLen) continue;
+                tgt.contentBudgetHint = entry.hint;
+                tgt.contentBudgetHintForLength = entry.hintLen;
+            }
+        }
+    }
+
+    /** @deprecated Use {@link backfillBudgetHints}. */
+    static syncBudgetHintsFromSent<T extends HistoryMessage>(
+        target: T[],
+        source: T[],
+    ): void {
+        ContextReducer.backfillBudgetHints(source, target);
+    }
 
     /**
      * Last-resort budget recovery — applied to the fully-assembled
@@ -1283,7 +1354,15 @@ export class ContextReducer {
             if (typeof before !== "string" || before.length === 0) continue;
             const after = shrinkToolResultContent(before, msg.toolCallId, store);
             if (after === before) continue; // already small / non-shrinkable
-            working[i] = { ...msg, content: after } as T;
+            const fullLen = isValidBudgetHint(msg)
+                ? msg.contentBudgetHintForLength!
+                : before.length;
+            working[i] = {
+                ...msg,
+                content: after,
+                contentBudgetHint: after,
+                contentBudgetHintForLength: fullLen,
+            } as T;
             // Token delta: `estimateTokens` is cheap (linear in length
             // with a couple of branches) and counting only the changed
             // message keeps the worst case O(total content size)
@@ -1674,9 +1753,23 @@ export class ContextReducer {
                     result.push(msg);
                     continue;
                 }
+                if (!forceShrinkAll && isValidBudgetHint(msg)) {
+                    result.push({
+                        ...msg,
+                        content: msg.contentBudgetHint!,
+                        contentBudgetHint: msg.contentBudgetHint,
+                        contentBudgetHintForLength: msg.contentBudgetHintForLength,
+                    } as T);
+                    continue;
+                }
                 const shrunk = shrinkToolResultContent(msg.content, msg.toolCallId, store ?? null);
                 if (shrunk !== msg.content) {
-                    result.push({ ...msg, content: shrunk } as T);
+                    result.push({
+                        ...msg,
+                        content: shrunk,
+                        contentBudgetHint: shrunk,
+                        contentBudgetHintForLength: msg.content.length,
+                    } as T);
                     continue;
                 }
             }

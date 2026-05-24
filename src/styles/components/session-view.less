@@ -317,3 +317,106 @@
         }
     }
 });
+
+// History replay overlay (P1)
+.session-history-loading {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+    backdrop-filter: blur(2px);
+
+    &--hidden {
+        display: none;
+    }
+}
+
+.session-history-loading__panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: @spacing-md;
+    min-width: 220px;
+    max-width: 90%;
+    padding: @spacing-lg @spacing-xl;
+    border-radius: @radius-lg;
+    border: 1px solid @bg-modifier-border;
+    background: @bg-primary;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+}
+
+.session-history-loading__spinner svg {
+    .icon-size(24px);
+    animation: spin 1s linear infinite;
+}
+
+.session-history-loading__title {
+    font-size: 0.9em;
+    color: @text-primary;
+    text-align: center;
+}
+
+.session-history-loading__track {
+    width: 100%;
+    height: 4px;
+    border-radius: 2px;
+    background: @bg-modifier-border;
+    overflow: hidden;
+}
+
+.session-history-loading__bar {
+    height: 100%;
+    width: 0;
+    border-radius: 2px;
+    background: @text-accent;
+    transition: width 120ms ease-out;
+}
+
+.session-history-loading__text {
+    font-size: 0.78em;
+    color: @text-secondary;
+    font-variant-numeric: tabular-nums;
+}
+
+// Older-history sentinel (P2)
+.session-history-sentinel {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding: @spacing-sm 0 @spacing-md;
+
+    &--loading .session-history-sentinel__btn {
+        cursor: wait;
+    }
+}
+
+.session-history-sentinel__btn {
+    .button-medium();
+    font-size: 0.82em;
+    color: @text-secondary;
+    background: @bg-modifier-hover;
+    border: 1px dashed @bg-modifier-border;
+
+    &:hover:not(:disabled) {
+        color: @text-primary;
+        border-color: @text-accent;
+    }
+
+    &:disabled {
+        opacity: 0.85;
+    }
+}
+
+.session-history-sentinel__spinner {
+    display: inline-flex;
+    margin-right: @spacing-xs;
+    vertical-align: middle;
+
+    svg {
+        .icon-size(14px);
+        animation: spin 1s linear infinite;
+    }
+}
