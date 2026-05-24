@@ -226,16 +226,32 @@ const TOOL_RESULT_COLLAPSE_THRESHOLD = 500;
 
 /**
  * Rough token count estimation.
- * Uses a simple heuristic: ~4 characters per token for Latin text,
- * ~1.5 characters per token for CJK (Chinese/Japanese/Korean).
- * This is intentionally conservative — actual token counts may vary
- * by tokenizer, but the estimate is good enough for threshold comparison.
+ * Classifies characters into four buckets for a zero-dependency heuristic:
+ *   - CJK (Hanzi/Kana/Hangul):    ~1.5 chars / token
+ *   - Alphanumeric (a-zA-Z0-9):   ~4.0 chars / token
+ *   - Punctuation/symbols:         ~1.0 token each
+ *   - Whitespace:                  ignored (essentially free in most tokenizers)
+ *
+ * Compared to the previous uniform "non-CJK ÷ 4" approach this fixes two
+ * systematic errors that mostly cancel out in prose but diverge badly in
+ * structured text / code:
+ *   1. Punctuation was underestimated (~4× too cheap).
+ *   2. Whitespace was overestimated (~5× too expensive).
+ *
+ * The estimate is still intentionally conservative — actual token counts
+ * vary by tokenizer — but the improved per-class ratios are good enough
+ * for threshold comparison across a wider variety of content.
  */
 export function estimateTokens(text: string): number {
-    const cjkMatches = text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g);
-    const cjkCount = cjkMatches ? cjkMatches.length : 0;
-    const nonCjkCount = Math.max(0, text.length - cjkCount);
-    return Math.ceil(cjkCount / 1.5 + nonCjkCount / 4);
+    const cjkRe = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g;
+    const alphaRe = /[a-zA-Z0-9]/g;
+    const punctRe = /[^\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7afa-zA-Z0-9\s]/g;
+
+    const cjkCount = (text.match(cjkRe) || []).length;
+    const alphaCount = (text.match(alphaRe) || []).length;
+    const punctCount = (text.match(punctRe) || []).length;
+
+    return Math.ceil(cjkCount / 1.5 + alphaCount / 4 + punctCount);
 }
 
 /** Estimate total tokens for an array of messages. */
