@@ -88,6 +88,9 @@ export class SessionStatusDisplay {
             ? Math.round((lastCallTotal / maxTokens) * 100)
             : 0;
 
+        // Don't show the ring when usage is negligible (≤3%).
+        if (pct <= 3) { return; }
+
         // Colour tiers: ≤50 green, ≤80 amber, >80 red
         let colourVar: string;
         if (pct <= 50) {
@@ -152,7 +155,9 @@ export class SessionStatusDisplay {
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('dominant-baseline', 'central');
         text.setAttribute('fill', colourVar);
-        text.setAttribute('font-size', `${pct >= 100 ? 10 : 11}`);
+        // SVG renders at 16×16 px but viewBox is 36×36 units;
+        // scale factor ≈ 0.444, so use ~16–18 units to get ~7–8 px on screen.
+        text.setAttribute('font-size', `${pct >= 100 ? 14 : 18}`);
         text.classList.add('session-context-ring__text');
         text.textContent = `${pct}`;
         svg.appendChild(text);
