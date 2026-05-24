@@ -145,7 +145,17 @@ export class SessionStatusDisplay {
             svg.appendChild(arc);
         }
 
-        // No centre text — the ring itself conveys the percentage.
+        // Centre percentage text
+        const text = doc.createElementNS(NS, 'text');
+        text.setAttribute('x', '18');
+        text.setAttribute('y', '18');
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'central');
+        text.setAttribute('fill', colourVar);
+        text.setAttribute('font-size', `${pct >= 100 ? 10 : 11}`);
+        text.classList.add('session-context-ring__text');
+        text.textContent = `${pct}`;
+        svg.appendChild(text);
     }
 
     /**

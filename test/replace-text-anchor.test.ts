@@ -61,17 +61,17 @@ function fixtureContext() {
     return { original, lineStarts, totalLines };
 }
 
-function makeEntry(headingPath: string[], where: AnchorWhere, replace: string): AnchorEntry {
-    return { kind: "anchor", headingPath, where, replace, force: false };
+function makeEntry(headingPath: string[], where: AnchorWhere, replacement: string): AnchorEntry {
+    return { kind: "anchor", headingPath, where, replacement, force: false };
 }
 
-// Apply a resolved (from, to, replace) to the original. This is what the
+// Apply a resolved (from, to, replacement) to the original. This is what the
 // tool would do at write time.
 function applySpan(
     original: string,
-    span: { from: number; to: number; replace: string },
+    span: { from: number; to: number; replacement: string },
 ): string {
-    return original.substring(0, span.from) + span.replace + original.substring(span.to);
+    return original.substring(0, span.from) + span.replacement + original.substring(span.to);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

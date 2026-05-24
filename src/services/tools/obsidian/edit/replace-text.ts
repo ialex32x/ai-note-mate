@@ -37,7 +37,7 @@ interface Span {
     /** Exclusive end offset in the pre-edit content. */
     to: number;
     /** Replacement string for this span (already includes any normalised padding). */
-    replace: string;
+    replacement: string;
 }
 
 /** Per-replacement summary returned to the caller. */
@@ -45,10 +45,10 @@ interface ReplacementSummary {
     index: number;
     mode: "search" | "anchor";
     /** Populated for search mode. */
-    search?: string;
+    pattern?: string;
     /** Populated for anchor mode. */
     anchor?: { heading_path: string[]; where: AnchorWhere };
-    replace: string;
+    replacement: string;
     occurrences_found: number;
     occurrences_replaced: number;
     replace_all: boolean;
@@ -151,8 +151,8 @@ type AnchorWhere = typeof ANCHOR_WHERE_VALUES[number];
 
 interface SearchEntry {
     kind: "search";
-    search: string;
-    replace: string;
+    pattern: string;
+    replacement: string;
     replaceAll: boolean;
     expectedCount: number | null;
     force: boolean;
@@ -162,7 +162,7 @@ interface AnchorEntry {
     kind: "anchor";
     headingPath: string[];
     where: AnchorWhere;
-    replace: string;
+    replacement: string;
     /** Anchor mode is unaffected by the tag guard; force is still honored for symmetry. */
     force: boolean;
 }
@@ -189,23 +189,23 @@ function normaliseReplacement(
     }
     const r = raw as Record<string, unknown>;
 
-    const replace = r["replace"];
-    if (typeof replace !== "string") {
-        return `replacements[${index}].replace must be a string.`;
+    const replacement = r["replacement"];
+    if (typeof replacement !== "string") {
+        return `replacements[${index}].replacement must be a string.`;
     }
 
-    const hasSearch = r["search"] !== undefined;
+    const hasSearch = r["pattern"] !== undefined;
     const hasAnchor = r["anchor"] !== undefined;
     if (hasSearch && hasAnchor) {
         return (
-            `replacements[${index}] must use either \`search\` or \`anchor\`, not both. ` +
-            `\`search\` matches literal text; \`anchor\` positions the edit by heading path. ` +
+            `replacements[${index}] must use either \`pattern\` or \`anchor\`, not both. ` +
+            `\`pattern\` matches literal text; \`anchor\` positions the edit by heading path. ` +
             `Pick the one that matches how you located the edit, drop the other field.`
         );
     }
     if (!hasSearch && !hasAnchor) {
         return (
-            `replacements[${index}] must include either \`search\` (literal text mode) or ` +
+            `replacements[${index}] must include either \`pattern\` (literal text mode) or ` +
             `\`anchor\` (heading-path mode). See the tool description for the difference.`
         );
     }
@@ -217,12 +217,12 @@ function normaliseReplacement(
     const force = forceRaw ?? false;
 
     if (hasSearch) {
-        const search = r["search"];
-        if (typeof search !== "string") {
-            return `replacements[${index}].search must be a string.`;
+        const pattern = r["pattern"];
+        if (typeof pattern !== "string") {
+            return `replacements[${index}].pattern must be a string.`;
         }
-        if (search === "") {
-            return `replacements[${index}].search must not be empty.`;
+        if (pattern === "") {
+            return `replacements[${index}].pattern must not be empty.`;
         }
 
         const replaceAllRaw = r["replace_all"];
@@ -240,7 +240,7 @@ function normaliseReplacement(
             expectedCount = expectedRaw as number;
         }
 
-        return { kind: "search", search, replace, replaceAll, expectedCount, force };
+        return { kind: "search", pattern, replacement, replaceAll, expectedCount, force };
     }
 
     // anchor mode
@@ -294,7 +294,7 @@ function normaliseReplacement(
         kind: "anchor",
         headingPath,
         where: where as AnchorWhere,
-        replace,
+        replacement,
         force,
     };
 }
@@ -412,7 +412,7 @@ function resolveAnchorEntry(
     headings: readonly HeadingNode[],
     lineStarts: number[],
     totalLines: number,
-): { from: number; to: number; replace: string } | string {
+): { from: number; to: number; replacement: string } | string {
     // include_subsections=true matches the prompt-level definition of
     // "the section" the LLM thinks about. The non-inclusive variant has
     // no use case in anchor mode (the where modes already model the
@@ -442,7 +442,7 @@ function resolveAnchorEntry(
             return {
                 from: bodyStart,
                 to: bodyEnd,
-                replace: padForGap(original, bodyStart, bodyEnd, entry.replace),
+                replacement: padForGap(original, bodyStart, bodyEnd, entry.replacement),
             };
         }
 
@@ -453,7 +453,7 @@ function resolveAnchorEntry(
             return {
                 from: sectionRange.from,
                 to: sectionRange.to,
-                replace: padForGap(original, sectionRange.from, sectionRange.to, entry.replace),
+                replacement: padForGap(original, sectionRange.from, sectionRange.to, entry.replacement),
             };
         }
 
@@ -464,7 +464,7 @@ function resolveAnchorEntry(
             return {
                 from: bodyStart,
                 to: bodyStart,
-                replace: padForInsertion(original, bodyStart, entry.replace),
+                replacement: padForInsertion(original, bodyStart, entry.replacement),
             };
 
         case "append_to_section": {
@@ -475,7 +475,7 @@ function resolveAnchorEntry(
             return {
                 from: at,
                 to: at,
-                replace: padForInsertion(original, at, entry.replace),
+                replacement: padForInsertion(original, at, entry.replacement),
             };
         }
 
@@ -486,7 +486,7 @@ function resolveAnchorEntry(
             return {
                 from: at,
                 to: at,
-                replace: padForInsertion(original, at, entry.replace),
+                replacement: padForInsertion(original, at, entry.replacement),
             };
         }
     }
@@ -541,7 +541,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "replace_text",
                 description:
                     "Apply one or more atomic edits to a single file via `replacements[]`. Each entry uses " +
-                    "exactly one locator mode: `search` (literal find-and-replace) OR `anchor` (heading_path " +
+                    "exactly one locator mode: `pattern` (literal find-and-replace) OR `anchor` (heading_path " +
                     "+ `where`: replace_section / replace_body / append_to_section / prepend_to_body / " +
                     "insert_before_section). " +
                     "All entries match the SAME pre-edit snapshot; matched ranges across entries must be " +
@@ -549,11 +549,11 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                     "\n\n" +
                     "Mode picking: use `anchor` when the edit aligns with a section boundary or you already " +
                     "have a heading_path from a digest — cheapest because it doesn't require knowing the " +
-                    "section's exact text. Use `search` for unstructured edits inside a section (typos, term " +
+                    "section's exact text. Use `pattern` for unstructured edits inside a section (typos, term " +
                     "renames, deleting a phrase). " +
                     "\n\n" +
-                    "Tag-shape guard: a `search` value that looks like a single tag token (e.g. `#foo`) is " +
-                    "refused by default — raw text replace cannot tell `#foo` from `#foobar` and risks " +
+                    "Tag-shape guard: a `pattern` value that looks like a single tag token (e.g. `#foo`) is " +
+                    "refused by default — raw text replacement cannot tell `#foo` from `#foobar` and risks " +
                     "frontmatter corruption. Set that entry's `force=true` only if a literal text replace is " +
                     "genuinely intended (run with `dry_run=true` first). " +
                     "\n\n" +
@@ -572,22 +572,22 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                             minItems: 1,
                             description:
                                 "List of edits to apply atomically. Each entry must provide exactly one of " +
-                                "`search` (literal text mode) or `anchor` (heading-path mode). All entries match " +
+                                "`pattern` (literal text mode) or `anchor` (heading-path mode). All entries match " +
                                 "the file's pre-edit content; matched ranges across entries must be disjoint.",
                             items: {
                                 type: "object",
                                 properties: {
-                                    search: {
+                                    pattern: {
                                         type: "string",
                                         description:
-                                            "[search mode] Exact text to search for. Must not be empty. No regex. " +
-                                            "Mutually exclusive with `anchor`.",
+                                            "[pattern mode] Exact literal text to find — NOT a regex. " +
+                                            "Must not be empty. Mutually exclusive with `anchor`.",
                                     },
                                     anchor: {
                                         type: "object",
                                         description:
                                             "[anchor mode] Position the edit by heading path. Mutually exclusive " +
-                                            "with `search`. The heading path resolves uniquely against the file's " +
+                                            "with `pattern`. The heading path resolves uniquely against the file's " +
                                             "outline; ambiguous or missing paths cause the whole call to fail with a " +
                                             "diagnostic listing the available paths.",
                                         properties: {
@@ -616,16 +616,16 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                         },
                                         required: ["heading_path", "where"],
                                     },
-                                    replace: {
+                                    replacement: {
                                         type: "string",
                                         description:
-                                            "Replacement text. For search mode, '' deletes the match. For anchor " +
+                                            "Text to substitute in. For pattern mode, '' deletes the match. For anchor " +
                                             "mode insert/append/prepend variants, '' is allowed but unusual.",
                                     },
                                     replace_all: {
                                         type: "boolean",
                                         description:
-                                            "[search mode only] If true, replace every occurrence of `search`. " +
+                                            "[pattern mode only] If true, replace every occurrence of `pattern`. " +
                                             "Defaults to false. Not allowed in anchor mode (an anchor resolves to a " +
                                             "unique location).",
                                     },
@@ -633,19 +633,19 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                         type: "integer",
                                         minimum: 0,
                                         description:
-                                            "[search mode only] Optional assertion: number of occurrences of " +
-                                            "`search` you expect in the pre-edit file. If actual count differs, the " +
+                                            "[pattern mode only] Optional assertion: number of occurrences of " +
+                                            "`pattern` you expect in the pre-edit file. If actual count differs, the " +
                                             "whole call fails before any write. Not allowed in anchor mode.",
                                     },
                                     force: {
                                         type: "boolean",
                                         description:
                                             "If true, bypass the tag-shape safety guard for this entry only " +
-                                            "(search mode). Defaults to false. In anchor mode the guard does not " +
+                                            "(pattern mode). Defaults to false. In anchor mode the guard does not " +
                                             "apply; force is accepted for symmetry but has no effect.",
                                     },
                                 },
-                                required: ["replace"],
+                                required: ["replacement"],
                             },
                         },
                         dry_run: {
@@ -721,9 +721,9 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const tagRefusals: string[] = [];
             for (let i = 0; i < normalised.length; i++) {
                 const n = normalised[i]!;
-                if (n.kind === "search" && !n.force && isTagShaped(n.search)) {
+                if (n.kind === "search" && !n.force && isTagShaped(n.pattern)) {
                     tagRefusals.push(
-                        `replacements[${i}].search='${n.search.trim()}' looks like a tag token`,
+                        `replacements[${i}].pattern='${n.pattern.trim()}' looks like a tag token`,
                     );
                 }
             }
@@ -779,7 +779,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                 const n = normalised[i]!;
 
                 if (n.kind === "search") {
-                    const positions = findAllOccurrences(original, n.search);
+                    const positions = findAllOccurrences(original, n.pattern);
 
                     if (n.expectedCount !== null && positions.length !== n.expectedCount) {
                         return {
@@ -787,7 +787,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "text",
                             content:
                                 `replacements[${i}]: expected ${n.expectedCount} occurrence(s) of ` +
-                                `${JSON.stringify(n.search)} but found ${positions.length}. ` +
+                                `${JSON.stringify(n.pattern)} but found ${positions.length}. ` +
                                 `No changes were written. Re-read the file or relax expected_count and retry.`,
                         };
                     }
@@ -797,7 +797,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                             success: false,
                             type: "text",
                             content:
-                                `replacements[${i}]: search text not found in file. ` +
+                                `replacements[${i}]: pattern text not found in file. ` +
                                 `No changes were written. Verify the exact text (whitespace, newlines, casing) ` +
                                 `with read_file or grep, then retry.`,
                         };
@@ -809,16 +809,16 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                         spans.push({
                             repIndex: i,
                             from: start,
-                            to: start + n.search.length,
-                            replace: n.replace,
+                            to: start + n.pattern.length,
+                            replacement: n.replacement,
                         });
                     }
 
                     summaries.push({
                         index: i,
                         mode: "search",
-                        search: n.search,
-                        replace: n.replace,
+                        pattern: n.pattern,
+                        replacement: n.replacement,
                         occurrences_found: positions.length,
                         occurrences_replaced: targetPositions.length,
                         replace_all: n.replaceAll,
@@ -840,13 +840,13 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                         repIndex: i,
                         from: resolved.from,
                         to: resolved.to,
-                        replace: resolved.replace,
+                        replacement: resolved.replacement,
                     });
                     summaries.push({
                         index: i,
                         mode: "anchor",
                         anchor: { heading_path: n.headingPath, where: n.where },
-                        replace: n.replace,
+                        replacement: n.replacement,
                         // For anchor mode we always operate on a single, uniquely-resolved location.
                         occurrences_found: 1,
                         occurrences_replaced: 1,
@@ -868,7 +868,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const sortedDesc = [...spans].sort((a, b) => b.from - a.from || b.to - a.to);
             let working = original;
             for (const span of sortedDesc) {
-                working = working.substring(0, span.from) + span.replace + working.substring(span.to);
+                working = working.substring(0, span.from) + span.replacement + working.substring(span.to);
             }
 
             // Compute each span's (newFrom, newTo) in the post-edit buffer.
@@ -886,9 +886,9 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             let cumulativeDelta = 0;
             for (const { s, idx } of sortedAsc) {
                 const newFrom = s.from + cumulativeDelta;
-                const newTo = newFrom + s.replace.length;
+                const newTo = newFrom + s.replacement.length;
                 spanPostEdit[idx] = { newFrom, newTo };
-                cumulativeDelta += s.replace.length - (s.to - s.from);
+                cumulativeDelta += s.replacement.length - (s.to - s.from);
             }
 
             // Fill before/after excerpts for summaries with a unique span.
