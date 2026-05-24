@@ -1222,7 +1222,14 @@ export class SessionView extends ItemView {
                 msg.toolCallMeta?.toolName === 'delegate_task' &&
                 typeof chat.getSubAgentMessages === 'function'
             ) {
-                const children = chat.getSubAgentMessages(msg.id);
+                // Sub-agent messages are keyed by the LLM provider's
+                // toolCallId (e.g. "call_00_il13g7TFdUxBhpkgJllh9112"),
+                // not by ChatStream's own message id. See
+                // AgentOrchestrator._dispatchSubAgent where
+                // `context.toolCallId` (the provider id) is used as
+                // the parentToolCallId for the sub-agent message bucket.
+                const tcId = msg.toolCallMeta.toolCallId;
+                const children = chat.getSubAgentMessages(tcId);
                 const delegateAgent = msg.toolCallMeta?.toolArgs?.['agent'] as string | undefined;
                 for (const child of children) {
                     const tagged = child.subAgent
@@ -1232,7 +1239,7 @@ export class SessionView extends ItemView {
                                 ...child,
                                 subAgent: {
                                     agentName: delegateAgent,
-                                    parentToolCallId: msg.id,
+                                    parentToolCallId: tcId,
                                 },
                             }
                             : child;
