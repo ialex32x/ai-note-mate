@@ -126,6 +126,7 @@ export const zhTW: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '沒有歷史對話可刪除。',
 	'view.noHistorySessionsDeleted': '沒有刪除任何歷史對話。',
 	'view.deleteHistorySessionsFailed': '刪除歷史對話失敗。',
+	'view.contextSummarizing': '正在壓縮上下文…',
 	'view.contextEmergencyShrink': '上下文預算超限：本輪部分新返回的工具結果被截斷。請在配置方案中提高壓縮閾值, 或切換至上下文更大的模型。',
 
 	// ── Sub-agent ────────────────────────────────────────
@@ -384,6 +385,7 @@ export const zhTW: Record<string, string> = {
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '完成',
 	'statusLabel.total': '總計',
+	'statusLabel.contextUsage': '上下文用量',
 	'statusLabel.messages': '訊息',
 	'statusLabel.summaries': '摘要',
 	'statusLabel.embedding': '嵌入',

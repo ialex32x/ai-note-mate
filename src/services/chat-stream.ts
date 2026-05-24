@@ -478,6 +478,15 @@ export interface ChatStreamConfig {
     }) => Promise<boolean>;
 
     /**
+     * Called when the context reducer is about to invoke the summarizer
+     * LLM — i.e. all threshold checks have passed and compression will
+     * actually run (zero false-positive risk). Fires right before the
+     * (potentially slow, 15–40 s) LLM call so the UI can surface a
+     * transient status update.
+     */
+    onSummarizing?: () => void;
+
+    /**
      * Called when context compression occurs during a prompt call.
      * This happens when the conversation history exceeds the token threshold
      * and older messages are summarized.
@@ -1370,6 +1379,8 @@ export class ChatStream implements IChatAgent {
                         // before the next provider call observes the
                         // already-aborted signal and unwinds.
                         this._abortController?.signal,
+                        // Notify that summarization is about to begin
+                        this._config.onSummarizing,
                     );
                     messagesToSend = reduceResult.messagesToSend;
                     // console.log("Context reduced", reduceResult.compressed);
@@ -1418,6 +1429,9 @@ export class ChatStream implements IChatAgent {
                     this._sessionTokenUsage.promptTokens += result.usage.promptTokens;
                     this._sessionTokenUsage.completionTokens += result.usage.completionTokens;
                     this._sessionTokenUsage.totalTokens += result.usage.totalTokens;
+                    // Capture per-call total (NOT cumulative) for context-window
+                    // usage percentage calculation in the UI.
+                    this._sessionTokenUsage.lastCallTotalTokens = result.usage.totalTokens;
                 }
                 this._config.onUsageUpdate?.(this.sessionTokenUsage);
 

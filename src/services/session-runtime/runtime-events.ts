@@ -54,6 +54,15 @@ export type RuntimeEvent =
     | { type: 'context-compressed' }
 
     /**
+     * The context reducer is about to call the summarizer LLM.
+     * All threshold checks have passed so compression is guaranteed
+     * to run (zero false-positive). Fires BEFORE the (potentially
+     * slow, 15–40 s) LLM call so the UI can surface a transient
+     * status update (e.g. "Compressing context…").
+     */
+    | { type: 'context-summarizing' }
+
+    /**
      * Emergency shrink fired this turn — the assembled prompt was still
      * above 1.5× the configured compression threshold even after primary
      * compression, so one or more freshly-returned `tool_result` payloads

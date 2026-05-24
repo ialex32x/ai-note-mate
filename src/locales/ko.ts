@@ -126,6 +126,7 @@ export const ko: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '삭제할 히스토리 세션이 없습니다.',
 	'view.noHistorySessionsDeleted': '히스토리 세션이 삭제되지 않았습니다.',
 	'view.deleteHistorySessionsFailed': '히스토리 세션 삭제에 실패했습니다.',
+	'view.contextSummarizing': '컨텍스트 압축 중…',
 	'view.contextEmergencyShrink': '컨텍스트 예산 초과: 이번 턴의 새 도구 결과 일부가 잘렸습니다. 프로필에서 압축 임곗값을 높이거나 컨텍스트가 더 큰 모델로 전환하세요.',
 
 	// ── Sub-agent ────────────────────────────────────────
@@ -384,6 +385,7 @@ export const ko: Record<string, string> = {
 	'statusLabel.prompt': '프롬프트',
 	'statusLabel.completion': '완성',
 	'statusLabel.total': '합계',
+	'statusLabel.contextUsage': '컨텍스트 사용량',
 	'statusLabel.messages': '메시지',
 	'statusLabel.summaries': '요약',
 	'statusLabel.embedding': '임베딩',

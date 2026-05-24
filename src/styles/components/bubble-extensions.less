@@ -431,6 +431,30 @@
     display: none;
 }
 
+// Dots wrapper — hidden when status text is shown
+.session-streaming-loader__dots {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+}
+
+.session-streaming-loader__dots--hidden {
+    display: none;
+}
+
+// Status text (e.g. "Compressing context…") — shown in place of dots
+.session-streaming-loader__status {
+    display: block;
+    font-size: 0.65em;
+    line-height: 1.5;
+    color: @text-faint;
+    white-space: nowrap;
+}
+
+.session-streaming-loader__status--hidden {
+    display: none;
+}
+
 // Each dot rides the same keyframe with a staggered start offset so the
 // trio reads as a left-to-right wave rather than a synchronous blink.
 .session-streaming-loader__dot {

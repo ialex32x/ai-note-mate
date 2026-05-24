@@ -19,6 +19,11 @@
  */
 export class StreamingLoader {
     private el: HTMLElement | null = null;
+    /** Dots container — hidden when a status text is shown. */
+    private dotsEl: HTMLElement | null = null;
+    /** Status text element — created lazily and hidden by default. */
+    private statusEl: HTMLElement | null = null;
+    private threeDots: HTMLSpanElement[] = [];
 
     constructor(private readonly messagesEl: HTMLElement) {}
 
@@ -27,22 +32,27 @@ export class StreamingLoader {
         this.el = this.messagesEl.createEl('div', {
             cls: 'session-streaming-loader session-streaming-loader--hidden',
         });
+        this.dotsEl = this.el.createEl('div', {
+            cls: 'session-streaming-loader__dots',
+        });
         // Three independent dot spans so each can ride its own
         // staggered up/down keyframe — yielding the wave effect.
         for (let i = 0; i < 3; i++) {
-            this.el.createEl('span', {
+            const dot = this.dotsEl.createEl('span', {
                 cls: 'session-streaming-loader__dot',
                 text: '.',
             });
+            this.threeDots.push(dot);
         }
     }
 
-    /**
-     * Drop the loader reference; its DOM node lives inside contentEl
-     * which the parent ItemView tears down.
-     */
+    /** Drop the loader reference; its DOM node lives inside contentEl
+     * which the parent ItemView tears down. */
     dispose(): void {
         this.el = null;
+        this.dotsEl = null;
+        this.statusEl = null;
+        this.threeDots = [];
     }
 
     /**
@@ -73,7 +83,39 @@ export class StreamingLoader {
     }
 
     hide(): void {
+        this.hideStatus();
         this.el?.addClass('session-streaming-loader--hidden');
+    }
+
+    /**
+     * Show a status message in place of the animated dots.
+     * Used to surface transient states like "Compressing context…"
+     * while the summarizer LLM is running.
+     */
+    showStatus(text: string): void {
+        if (!this.el) return;
+        // Hide the dots
+        if (this.dotsEl) this.dotsEl.addClass('session-streaming-loader__dots--hidden');
+        // Create or update the status element
+        if (!this.statusEl) {
+            this.statusEl = this.el.createEl('div', {
+                cls: 'session-streaming-loader__status',
+            });
+        }
+        this.statusEl.setText(text);
+        this.statusEl.removeClass('session-streaming-loader__status--hidden');
+    }
+
+    /**
+     * Hide the status text and restore the animated dots.
+     */
+    hideStatus(): void {
+        if (this.statusEl) {
+            this.statusEl.addClass('session-streaming-loader__status--hidden');
+        }
+        if (this.dotsEl) {
+            this.dotsEl.removeClass('session-streaming-loader__dots--hidden');
+        }
     }
 
     /**

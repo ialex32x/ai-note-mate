@@ -825,6 +825,7 @@ export class AgentOrchestrator implements IChatAgent {
             promptTokens: main.promptTokens + this._totalSubAgentTokenUsage.promptTokens,
             completionTokens: main.completionTokens + this._totalSubAgentTokenUsage.completionTokens,
             totalTokens: main.totalTokens + this._totalSubAgentTokenUsage.totalTokens,
+            lastCallTotalTokens: main.lastCallTotalTokens,
         };
     }
 

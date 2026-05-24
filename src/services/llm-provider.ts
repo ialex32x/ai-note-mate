@@ -147,6 +147,12 @@ export interface TokenUsage {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    /**
+     * Per-call totalTokens from the most recent LLM API response
+     * (NOT cumulative). Used by the UI to compute context-window
+     * usage percentage. `undefined` before the first API call.
+     */
+    lastCallTotalTokens?: number;
 }
 
 /** The final result of processing a full stream */

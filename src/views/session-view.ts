@@ -15,6 +15,7 @@ import { optimizePrompt, PromptOptimizationError } from '../services/prompt-opti
 import { getActiveEmbeddingConfig, getActiveProfile } from '../settings';
 import { exportSessionToVault } from '../services/session-exporter';
 import { ALL_TOOL_CAPABILITIES } from '../services/llm-provider';
+import { inferModelContextWindow } from '../services/model-context-window';
 import NoteAssistantPlugin from 'main';
 import { t } from '../i18n';
 import { SessionManager } from '../session-manager';
@@ -74,6 +75,7 @@ export class SessionView extends ItemView {
     cmInput!: CMInput;
     private sendBtn!: HTMLButtonElement;
     private optimizeBtn!: HTMLButtonElement;
+    private contextRingEl!: HTMLElement;
     /**
      * AbortController for an in-flight prompt-refinement call. Held on
      * the view so a follow-up edit / send action can pre-empt a stale
@@ -328,11 +330,16 @@ export class SessionView extends ItemView {
                 this.setInputLocked(false);
                 this.appendErrorBubble(ev.err.message);
                 break;
+            case 'context-summarizing':
+                // The summarizer LLM is about to be called — surface
+                // a transient status update so the user understands
+                // the pause before the assistant reply appears.
+                this.streamingLoader.showStatus(t('view.contextSummarizing'));
+                break;
             case 'context-compressed':
-                // The runtime already flipped its own flag; the view has
-                // nothing extra to render here, but keep the case
-                // explicit so an exhaustiveness check would catch a
-                // missing branch.
+                // The summarizer LLM returned — restore the normal
+                // streaming loader dots (hide the summarizing text).
+                this.streamingLoader.hideStatus();
                 break;
             case 'emergency-shrink-applied':
                 // Only surface the toast the first time it happens in a
@@ -522,7 +529,8 @@ export class SessionView extends ItemView {
                 dropdown: this.sessionStatusPanelEl,
                 onOpen: () => {
                     if (this.chat) {
-                        const max = getActiveProfile(this.plugin.settings).maxTokens;
+                        const profile = getActiveProfile(this.plugin.settings);
+                        const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
                         SessionStatusDisplay.renderPanel(
                             this.sessionStatusPanelEl,
                             this.chat,
@@ -773,11 +781,17 @@ export class SessionView extends ItemView {
             // Holds buttons that should sit on the right edge of the toolbar.
             // Pushed right via `margin-left: auto` on the group itself, so the
             // left-aligned controls above keep their natural packing order.
-            // Order inside the group: secondary actions first (refine prompt),
-            // primary action (send) last so it sits flush against the edge —
-            // future right-aligned affordances should follow the same rule.
+            // Order inside the group: context ring → refine prompt → send.
             const thinkingRowRight = thinkingRow.createEl('div', {
                 cls: 'session-thinking-row__right',
+            });
+
+            // ── Context-window usage ring ──────────────────────────────────────
+            // Percentage ring showing how much of the context window the most
+            // recent API call consumed. Lives left of the refine-prompt button
+            // so the eye-flow is "check usage → optimize prompt → send".
+            this.contextRingEl = thinkingRowRight.createEl('span', {
+                cls: 'session-context-ring-host',
             });
 
             // ── Refine-prompt button ──────────────────────────────────────────
@@ -810,7 +824,8 @@ export class SessionView extends ItemView {
             this.onMcpStateChangedForStatusPanel = () => {
                 if (!this.chat) return;
                 if (!this.dropdownManager.isActive(this.sessionStatusEl)) return;
-                const max = getActiveProfile(this.plugin.settings).maxTokens;
+                const profile = getActiveProfile(this.plugin.settings);
+                const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
                 SessionStatusDisplay.renderPanel(
                     this.sessionStatusPanelEl,
                     this.chat,
@@ -2018,14 +2033,27 @@ export class SessionView extends ItemView {
     private updateSessionStatusDisplay() {
         if (!this.chat) {
             this.sessionStatusMainEl.empty();
+            this.contextRingEl?.empty();
             // If the panel happens to be open, clear its contents too.
             if (this.dropdownManager.isActive(this.sessionStatusEl)) {
                 this.sessionStatusPanelEl.empty();
             }
             return;
         }
-        const max = getActiveProfile(this.plugin.settings).maxTokens;
+        const profile = getActiveProfile(this.plugin.settings);
+        const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
         SessionStatusDisplay.render(this.sessionStatusMainEl, this.chat, max);
+
+        // Context-window usage ring in the input toolbar.
+        // May not exist yet if onOpen() hasn't finished building the UI.
+        if (this.contextRingEl) {
+            const lastCallTotal = this.chat.sessionTokenUsage.lastCallTotalTokens ?? 0;
+            const ringTooltip = max > 0 && lastCallTotal > 0
+                ? `${lastCallTotal} / ${max} (${Math.round((lastCallTotal / max) * 100)}%)`
+                : '';
+            SessionStatusDisplay.renderContextRing(this.contextRingEl, this.chat, max, ringTooltip);
+        }
+
         // Keep the panel in sync when it is currently open.
         if (this.dropdownManager.isActive(this.sessionStatusEl)) {
             SessionStatusDisplay.renderPanel(

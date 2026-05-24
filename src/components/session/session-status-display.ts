@@ -63,8 +63,94 @@ export class SessionStatusDisplay {
     }
 
     /**
+     * Render or update a percentage-ring indicator inside `el`.
+     *
+     * The ring is an inline SVG circle whose stroke fills proportionally
+     * to `lastCallTotal / maxTokens`. The centre shows the percentage;
+     * the tooltip shows the exact `total / max` breakdown. When the
+     * per-call total is unavailable (`lastCallTotalTokens` is `undefined`
+     * or 0) the ring renders at 0 % and is visually muted.
+     *
+     * Callers should pass the same `el` on every update — this method
+     * replaces its contents but preserves the element identity so the
+     * parent layout is not disrupted.
+     */
+    static renderContextRing(
+        el: HTMLElement,
+        chat: IChatAgent,
+        maxTokens: number,
+        tooltipText: string,
+    ): void {
+        el.empty();
+
+        const lastCallTotal = chat.sessionTokenUsage.lastCallTotalTokens ?? 0;
+        const pct = maxTokens > 0 && lastCallTotal > 0
+            ? Math.round((lastCallTotal / maxTokens) * 100)
+            : 0;
+
+        // Colour tiers: ≤50 green, ≤80 amber, >80 red
+        let colourVar: string;
+        if (pct <= 50) {
+            colourVar = 'var(--text-success)';
+        } else if (pct <= 80) {
+            colourVar = 'var(--text-warning)';
+        } else {
+            colourVar = 'var(--text-error)';
+        }
+
+        // The outer ring circumference ≈ 2π × 15.9 ≈ 99.9
+        const circumference = 99.9;
+        const dashOffset = circumference - (circumference * pct) / 100;
+
+        const wrapper = el.createEl('span', { cls: 'session-context-ring' });
+        if (tooltipText) {
+            setTooltip(wrapper, tooltipText);
+        }
+
+        const NS = 'http://www.w3.org/2000/svg';
+        const doc = activeDocument;
+
+        const svg = doc.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 36 36');
+        svg.setAttribute('width', '16');
+        svg.setAttribute('height', '16');
+        svg.classList.add('session-context-ring__svg');
+        wrapper.appendChild(svg);
+
+        // Background track
+        const track = doc.createElementNS(NS, 'circle');
+        track.setAttribute('cx', '18');
+        track.setAttribute('cy', '18');
+        track.setAttribute('r', '15.9');
+        track.setAttribute('fill', 'none');
+        track.setAttribute('stroke', 'var(--text-faint)');
+        track.setAttribute('stroke-width', '2.5');
+        track.classList.add('session-context-ring__track');
+        svg.appendChild(track);
+
+        // Foreground arc (only when there's meaningful data)
+        if (pct > 0) {
+            const arc = doc.createElementNS(NS, 'circle');
+            arc.setAttribute('cx', '18');
+            arc.setAttribute('cy', '18');
+            arc.setAttribute('r', '15.9');
+            arc.setAttribute('fill', 'none');
+            arc.setAttribute('stroke', colourVar);
+            arc.setAttribute('stroke-width', '2.5');
+            arc.setAttribute('stroke-linecap', 'round');
+            arc.setAttribute('stroke-dasharray', `${circumference}`);
+            arc.setAttribute('stroke-dashoffset', `${dashOffset}`);
+            arc.setAttribute('transform', 'rotate(-90 18 18)');
+            arc.classList.add('session-context-ring__arc');
+            svg.appendChild(arc);
+        }
+
+        // No centre text — the ring itself conveys the percentage.
+    }
+
+    /**
      * Render the compact top-toolbar indicator into `el`.
-     * Primary metric: token usage (with optional max / percentage).
+     * Primary metric: token usage (with optional max).
      */
     static render(el: HTMLElement, chat: IChatAgent, maxTokens: number): void {
         const { totalTokens } = chat.sessionTokenUsage;
@@ -79,12 +165,7 @@ export class SessionStatusDisplay {
 
         // Value: primary indicator (token usage)
         const valueRow = container.createEl('span', { cls: 'session-status-display__value' });
-        if (maxTokens > 0) {
-            const pct = Math.round((totalTokens / maxTokens) * 100);
-            valueRow.setText(`${this.formatCompact(totalTokens)} / ${this.formatCompact(maxTokens)} (${pct}%)`);
-        } else {
-            valueRow.setText(this.formatCompact(totalTokens));
-        }
+        valueRow.setText(this.formatCompact(totalTokens));
     }
 
     /**
@@ -135,14 +216,12 @@ export class SessionStatusDisplay {
                 usage.completionTokens.toLocaleString(),
             );
 
-            let totalText = this.formatCompact(usage.totalTokens);
-            let totalTooltip = usage.totalTokens.toLocaleString();
-            if (maxTokens > 0) {
-                const pct = Math.round((usage.totalTokens / maxTokens) * 100);
-                totalText = `${this.formatCompact(usage.totalTokens)} / ${this.formatCompact(maxTokens)} (${pct}%)`;
-                totalTooltip = `${usage.totalTokens.toLocaleString()} / ${maxTokens.toLocaleString()} (${pct}%)`;
-            }
-            this.renderRow(section, t('statusLabel.total'), totalText, totalTooltip);
+            this.renderRow(
+                section,
+                t('statusLabel.total'),
+                this.formatCompact(usage.totalTokens),
+                usage.totalTokens.toLocaleString(),
+            );
         });
 
         // ── Agents section ───────────────────────────────────────────────

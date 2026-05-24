@@ -790,6 +790,7 @@ export class ContextReducer {
         existingSummaries: ConversationSummary[] = [],
         options?: ContextReduceOptions,
         signal?: AbortSignal,
+        onSummarizing?: () => void,
     ): Promise<ContextReduceResult<T>> {
         // ── 0. Resolve effective tunables ─────────────────────────────────
         // Each option follows the "<=0 = use built-in default" convention so
@@ -1056,6 +1057,10 @@ export class ContextReducer {
         const summaryPrefix = newSummaryLevel === 1
             ? "[Conversation Summary]\n"
             : `[Summary of Previous Summaries (Level ${newSummaryLevel})]\n`;
+
+        // Notify the caller that summarization is about to begin (0% false-positive
+        // — all threshold checks are complete and we know summarization will run).
+        onSummarizing?.();
 
         const summaryContent = await summarizeConversation(modelConfig, prompt, oldMessages, newSummaryLevel, signal);
 

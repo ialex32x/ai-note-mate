@@ -126,6 +126,7 @@ export const ja: Record<string, string> = {
 	'view.noHistorySessionsToDelete': '削除する履歴セッションがありません。',
 	'view.noHistorySessionsDeleted': '履歴セッションは削除されませんでした。',
 	'view.deleteHistorySessionsFailed': '履歴セッションの削除に失敗しました。',
+	'view.contextSummarizing': 'コンテキストを圧縮中…',
 	'view.contextEmergencyShrink': 'コンテキスト予算超過：今ターンの新規ツール結果の一部が切り詰められました。プロファイルで圧縮しきい値を上げるか、より大きなコンテキストのモデルに切り替えてください。',
 
 	// ── Sub-agent ────────────────────────────────────────
@@ -384,6 +385,7 @@ export const ja: Record<string, string> = {
 	'statusLabel.prompt': 'プロンプト',
 	'statusLabel.completion': '補完',
 	'statusLabel.total': '合計',
+	'statusLabel.contextUsage': 'コンテキスト使用量',
 	'statusLabel.messages': 'メッセージ',
 	'statusLabel.summaries': '要約',
 	'statusLabel.embedding': '埋め込み',

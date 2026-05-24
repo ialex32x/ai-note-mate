@@ -137,6 +137,7 @@ export interface ChatAgentCallbacks {
     onUsageUpdate(): void;
     onError(err: Error): void;
     onContextCompressed(): void;
+    onSummarizing(): void;
     onEmergencyShrink(): void;
     onSubAgentMessageUpdate(agentName: string, msg: ChatMessage): void;
     /**
@@ -386,6 +387,10 @@ export function createChatAgent(
             plugin.skillManager.clearActiveSkills();
             if (!callbacks.generationMatches()) return;
             callbacks.onContextCompressed();
+        },
+        onSummarizing: () => {
+            if (!callbacks.generationMatches()) return;
+            callbacks.onSummarizing();
         },
         onEmergencyShrink: () => {
             if (!callbacks.generationMatches()) return;

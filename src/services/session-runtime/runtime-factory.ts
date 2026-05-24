@@ -197,6 +197,12 @@ export function createSessionRuntime(
             runtime.hasContextCompressed = true;
             runtime.emit({ type: 'context-compressed' });
         },
+        onSummarizing: () => {
+            // Summarization is about to begin — surface a transient
+            // status update so the user knows why there is a pause
+            // before the assistant reply starts streaming.
+            runtime.emit({ type: 'context-summarizing' });
+        },
         onEmergencyShrink: () => {
             // Always forward the event so listeners that care (e.g. a
             // future telemetry sink) can observe every occurrence. The

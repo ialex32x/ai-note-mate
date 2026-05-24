@@ -126,6 +126,7 @@ export const en: Record<string, string> = {
 	'view.noHistorySessionsToDelete': 'No history sessions to delete.',
 	'view.noHistorySessionsDeleted': 'No history sessions were deleted.',
 	'view.deleteHistorySessionsFailed': 'Failed to delete history sessions.',
+	'view.contextSummarizing': 'Compressing context…',
 	'view.contextEmergencyShrink': 'Context budget exceeded: some recent tool results were truncated this turn. Raise the compression threshold in your profile, or switch to a larger-context model.',
 
 	// ── Sub-agent ────────────────────────────────────────
@@ -384,6 +385,7 @@ export const en: Record<string, string> = {
 	'statusLabel.prompt': 'Prompt',
 	'statusLabel.completion': 'Completion',
 	'statusLabel.total': 'Total',
+	'statusLabel.contextUsage': 'Context used',
 	'statusLabel.messages': 'Messages',
 	'statusLabel.summaries': 'Summaries',
 	'statusLabel.embedding': 'Embedding',
