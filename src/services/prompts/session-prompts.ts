@@ -127,6 +127,7 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - Picking the right edit tool for a single file:
     - Tags → \`edit_files_tags\` (per file) / \`rename_tag\` (vault-wide).
     - Non-tag frontmatter → \`edit_files_frontmatter\`.
+    - \`create_file\` is STRICTLY for files that do NOT yet exist. For ANY modification to an existing file (adding, rewriting, removing, restructuring, etc.), pick the right edit tool below — never use \`create_file\`.
     - Known line range to rewrite / insert / delete → \`edit_lines\`.
     - Unstructured literal text edits (typos, term renames, deleting a phrase) → \`replace_text\`. Use \`expected_count\` on a replacement when you believe the term appears an exact number of times — the call fails fast if reality disagrees.
     - Whole-body rewrite (you have produced the FULL new body — reformat / translate / restructure): if \`write_file\` is in your tool list, call it directly; if not, delegate to the \`vault_editor\` sub-agent (the main agent in multi-agent mode does NOT have \`write_file\` by design).
