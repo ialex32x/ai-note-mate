@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.2.9
+
+### What's new
+
+- **Context usage at a glance** — A ring indicator in the session header shows how much of your model's context window is in use, with live percentage and token estimates as the conversation grows. A "Compressing context…" label appears while the reducer is working so you know why the assistant pauses briefly.
+
+- **Smarter sub-agent routing** — Sub-agents are now ranked per-turn by the same hybrid BM25 + embedding retriever that powers tools and skills, so only the most relevant ones appear in the delegation block and the `delegate_task` tool's agent list. A new **Sub-agent retriever: top-K** setting (under **Settings → Note Mate → Embedding**) controls how many surface. Sub-agents already used earlier in the conversation stay listed regardless ("sticky on history"), so context for multi-step delegated tasks isn't lost between turns.
+
+- **Artifacts survive reload** — Large sub-agent results (artifacts) are now persisted to disk via Obsidian's DataAdapter, so they survive plugin reload and Obsidian restart. Previously artifacts were in-memory only and disappeared when a session was reloaded.
+
+### Refinements
+
+- **Adaptive compression threshold** — The default context compression threshold now scales with your model's reported context window (~45%) instead of a fixed 48k. For a 1M-token model the no-compression headroom expands to ~375k estimated tokens, meaning far fewer unnecessary compressions on large-context models. Custom profile overrides still take precedence.
+
+- **Better token estimation** — The token estimator is more accurate across content types (system prompts, tool schemas, messages) so the context reducer makes more reliable compression decisions.
+
+- **`grep_file` gains section scoping** — `grep_file` now accepts an optional `heading_path` to restrict the search to a single section, matching the scoping behaviour of `read_section` and `replace_text`. Gracefully accepts common model aliases (`heading`, `headings`).
+
+- **Metadata now includes line count** — `get_metadata` returns `totalLines` for each file, giving the model a quick sense of file size before reading.
+
+- **Clearer handoff naming** — The sub-agent data-passing mechanism is renamed from "exchange" to "handoff" throughout (tool names, internal APIs, prompts). The `delegate_task` parameter is now `handoff` instead of `exchange` — existing sessions are backward-compatible.
+
+- **Editing tools renamed for clarity** — `edit_frontmatter` → `edit_files_frontmatter`, `edit_file_tags` → `edit_files_tags`, and the `replace_text` parameter `replace` → `replacement` for more self-documenting names.
+
+### Fixes
+
+- **Insight button placement** — The insight button no longer overlaps with adjacent content on narrow cards.
+
+---
+
 ## 1.2.8
 
 ### What's new
