@@ -1415,6 +1415,8 @@ export class ChatStream implements IChatAgent {
                         : ''),
                 );
 
+                this._logFinalContext(messagesToSend, agentLabel, options.summarizer != null);
+
                 const stream = activeProvider.createStream(
                     messagesToSend,
                     toolSchemas.length > 0 ? toolSchemas : undefined,
@@ -2343,5 +2345,44 @@ export class ChatStream implements IChatAgent {
             usage: usageData,
             thoughtSignatures: thoughtSignatures.length > 0 ? thoughtSignatures : undefined,
         };
+    }
+
+    /**
+     * Dump the final assembled context being sent to the LLM so the
+     * per-call token usage shown in the UI can be correlated with the
+     * exact message layout produced by the reducer + sanitizer +
+     * emergency-shrink pipeline.
+     *
+     * To disable this noisy per-turn log, return early at the top of
+     * this method body.  Keeping it as a separate method makes it easy
+     * to spot in a diff and toggle on/off globally.
+     */
+    private _logFinalContext(
+        messagesToSend: ChatMessageParam[],
+        agentLabel: string,
+        hasSummarizer: boolean,
+    ): void {
+        try {
+            const estTokens = estimateTokens(JSON.stringify(messagesToSend));
+            const roleCounts = new Map<string, number>();
+            for (const m of messagesToSend) { roleCounts.set(m.role, (roleCounts.get(m.role) ?? 0) + 1); }
+            const breakdown = Array.from(roleCounts.entries())
+                .map(([r, c]) => `${r}:${c}`).join(' ');
+            const compressTag = hasSummarizer
+                ? (this._summaries.length > 0 ? 'compressed' : 'no-compress')
+                : 'no-summarizer';
+
+            const seq = messagesToSend.map((m, idx) => {
+                const tc = m.toolCalls;
+                const tcIds = tc && tc.length > 0 ? tc.map(c => c.id).join(',') : '';
+                const tcId = m.toolCallId;
+                const len = typeof m.content === 'string' ? m.content.length : 0;
+                return `[${idx}] ${m.role}${tcIds ? ` toolCalls=${tcIds}` : ''}${tcId ? ` toolCallId=${tcId}` : ''} len=${len}`;
+            }).join('\n');
+            console.debug(
+                `[agent="${agentLabel}"] final context: ${messagesToSend.length} msgs ` +
+                `(${breakdown}), ~${estTokens} est-tokens, status=${compressTag}\n${seq}`,
+            );
+        } catch { /* noop */ }
     }
 }
