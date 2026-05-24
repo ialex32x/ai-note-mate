@@ -182,7 +182,7 @@ export const ja: Record<string, string> = {
 	'settings.thinkingLevelHigh': '高',
 	'settings.contextCompression': 'コンテキスト圧縮',
 	'settings.contextCompressionThreshold': '圧縮しきい値',
-	'settings.contextCompressionThresholdDesc': '圧縮を発動するトークン数。0 = プラグインのデフォルト（48000）を使用。モデルのコンテキストウィンドウの 50% 程度を推奨。ツールを多く有効にしている場合は下げてください。',
+	'settings.contextCompressionThresholdDesc': '圧縮を発動するトークン数。0 = 自動（モデルのコンテキストウィンドウの約45%に比例）。ツールを多く有効にしている場合は下げてください。',
 	'settings.slidingWindowSize': 'スライディングウィンドウサイズ',
 	'settings.slidingWindowSizeDesc': '圧縮後に残す最近メッセージ数の下限。ツール呼び出しのターンを完全に保つため実際の保持数はこれより多くなる場合があります。0 = プラグインのデフォルト（10）を使用。',
 	'settings.maxSummariesThreshold': '要約の最大数',

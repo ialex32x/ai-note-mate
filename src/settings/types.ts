@@ -52,10 +52,9 @@ export interface ProviderProfile {
 	// ── Context compression (per-profile tuning) ───────────────────────────
 	/**
 	 * Token threshold that triggers context compression for this profile.
-	 * 0 = use built-in default (48000). Recommended: ~50% of the model's
-	 * context window; lower it when many tools are enabled (their JSON
-	 * schemas count toward this budget) or when the model has a smaller
-	 * context window.
+	 * 0 = auto (computed as ~45% of the model's context window).
+	 * Lower it when many tools are enabled (their JSON schemas count
+	 * toward this budget) or when the model has a smaller context window.
 	 */
 	contextCompressionThreshold: number;
 	/**

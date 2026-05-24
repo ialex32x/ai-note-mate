@@ -181,7 +181,7 @@ export const zhCN: Record<string, string> = {
 	'settings.thinkingLevelHigh': '高',
 	'settings.contextCompression': '上下文压缩',
 	'settings.contextCompressionThreshold': '压缩触发阈值',
-	'settings.contextCompressionThresholdDesc': '触发上下文压缩的 token 数。0 = 使用插件默认值（48000）。推荐设为模型上下文窗口的约 50%; 启用较多工具时请适当下调。',
+	'settings.contextCompressionThresholdDesc': '触发上下文压缩的 token 数。0 = 自动（按模型上下文窗口的约 45% 计算）。启用较多工具时请适当下调。',
 	'settings.slidingWindowSize': '滑动窗口大小',
 	'settings.slidingWindowSizeDesc': '压缩后保留的最近消息数下限。为了让工具调用回合保持完整，实际保留数可能更多。0 = 使用插件默认值（10）。',
 	'settings.maxSummariesThreshold': '最大摘要数',

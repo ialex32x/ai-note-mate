@@ -182,7 +182,7 @@ export const zhTW: Record<string, string> = {
 	'settings.thinkingLevelHigh': '高',
 	'settings.contextCompression': '上下文壓縮',
 	'settings.contextCompressionThreshold': '壓縮觸發閾值',
-	'settings.contextCompressionThresholdDesc': '觸發上下文壓縮的 token 數。0 = 使用外掛預設值（48000）。建議設為模型上下文視窗的約 50%; 啟用較多工具時請適當下調。',
+	'settings.contextCompressionThresholdDesc': '觸發上下文壓縮的 token 數。0 = 自動（按模型上下文視窗的約 45% 計算）。啟用較多工具時請適當下調。',
 	'settings.slidingWindowSize': '滑動視窗大小',
 	'settings.slidingWindowSizeDesc': '壓縮後保留的最近訊息數下限。為了讓工具呼叫回合保持完整，實際保留數可能更多。0 = 使用外掛預設值（10）。',
 	'settings.maxSummariesThreshold': '最大摘要數',

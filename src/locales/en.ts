@@ -182,7 +182,7 @@ export const en: Record<string, string> = {
 	'settings.thinkingLevelHigh': 'High',
 	'settings.contextCompression': 'Context compression',
 	'settings.contextCompressionThreshold': 'Compression threshold',
-	'settings.contextCompressionThresholdDesc': "Token count that triggers compression. 0 = use plugin default (48000). Recommend ~50% of your model's context window; lower it when many tools are enabled.",
+	'settings.contextCompressionThresholdDesc': "Token count that triggers compression. 0 = auto (proportional to model's context window, ~45%). Lower it when many tools are enabled.",
 	'settings.slidingWindowSize': 'Sliding window size',
 	'settings.slidingWindowSizeDesc': 'Minimum recent messages to keep after compression. The real number may be larger to keep tool-call turns intact. 0 = use plugin default (10).',
 	'settings.maxSummariesThreshold': 'Max summaries',

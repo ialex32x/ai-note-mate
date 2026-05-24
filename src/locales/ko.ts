@@ -182,7 +182,7 @@ export const ko: Record<string, string> = {
 	'settings.thinkingLevelHigh': '높음',
 	'settings.contextCompression': '컨텍스트 압축',
 	'settings.contextCompressionThreshold': '압축 임계값',
-	'settings.contextCompressionThresholdDesc': '압축을 트리거하는 토큰 수. 0 = 플러그인 기본값(48000) 사용. 모델 컨텍스트 윈도우의 약 50%를 권장하며, 활성화된 도구가 많을 때는 낮추세요.',
+	'settings.contextCompressionThresholdDesc': '압축을 트리거하는 토큰 수. 0 = 자동 (모델 컨텍스트 윈도우의 약 45%에 비례). 활성화된 도구가 많을 때는 낮추세요.',
 	'settings.slidingWindowSize': '슬라이딩 윈도우 크기',
 	'settings.slidingWindowSizeDesc': '압축 후 유지할 최근 메시지의 최소 개수. 도구 호출 턴을 온전히 유지하기 위해 실제 개수는 더 많아질 수 있습니다. 0 = 플러그인 기본값(10) 사용.',
 	'settings.maxSummariesThreshold': '최대 요약 개수',

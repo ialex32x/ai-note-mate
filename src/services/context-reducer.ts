@@ -22,38 +22,38 @@ import type { ArtifactStore } from "./artifact-store";
 // the profile.
 
 /**
- * Token threshold that triggers context compression.
- * When the estimated token count of the effective payload (system + history
- * + summaries + tool schemas) exceeds this value, the reducer will summarize
- * older messages and keep recent ones.
+ * Fallback compression threshold used when the model's context window
+ * cannot be determined (unknown model identifier, tests, etc.).
  *
- * Sized for modern flagship models (128k+ context windows). Intentionally
- * **conservative** at ~45% of a 128k window so that:
- *   - tool-schema-heavy sessions still have room to grow before compression
- *     fires (a 10–15k schema budget eats meaningfully into the threshold);
- *   - TTFT and prompt-cache hit rates stay better than at higher thresholds
- *     (most providers' first-token latency scales gently with input size);
- *   - the {@link emergencyShrink} safety net at 1.5× threshold lands well
- *     inside the model window rather than at its edge.
- *
- * Reality calibration:
- *   - `estimateTokens` uses 4 chars/token for non-CJK, 1.5 for CJK; modern
- *     tokenizers come out 15–25% denser, so real tokens ≈ threshold × 1.2.
- *   - 48000 here ≈ ~57–60k real tokens, i.e. ~45% of a 128k window.
- *   - Add ~10k tool schemas + ~8k response budget and the no-compression
- *     ceiling is ~75–78k real tokens — leaves ~50k headroom on 128k models.
- *   - The 1.5× emergency line (72000 estimated ≈ ~86k real) is the point
- *     where `emergencyShrink` force-collapses every oversized tool_result,
- *     including the otherwise-exempt unconsumed tail.
- *
- * Verified comfortable on: DeepSeek-V3 (128k), GPT-4.1 (1M), Claude Sonnet
- * /Opus (200k), Gemini 2.x/3.x (1M+), Qwen3 (128k+), Kimi K2 (128k+).
- *
- * **Profiles targeting ≤64k context windows MUST override this downward**
- * via per-profile `contextCompressionThreshold`, otherwise compression
- * fires too late or the assembled prompt may exceed the model window.
+ * Sized conservatively at 48k estimated tokens (~57k real), which is
+ * ~45% of a 128k window — a safe middle ground that works for most
+ * mainstream models without risking overflow on smaller ones.
  */
-const DEFAULT_CONTEXT_COMPRESSION_THRESHOLD = 48000;
+const DEFAULT_COMPRESSION_THRESHOLD_FALLBACK = 48000;
+
+/**
+ * Fraction of the model's **real-token** context window that the
+ * default compression threshold targets. The reducer works in
+ * estimated tokens which are ~1.2× looser than real tokens, so the
+ * effective estimated-token threshold is:
+ *
+ *   threshold = modelContextWindow × {@link COMPRESSION_WINDOW_FRACTION} / {@link ESTIMATED_TO_REAL_RATIO}
+ *
+ * At 0.45 the threshold lands at ~45% of the model window in real
+ * tokens — same intent as the original fixed 48k for 128k models.
+ *
+ * For a 1M model this gives ~375k estimated tokens (~450k real),
+ * dramatically expanding the no-compression headroom compared to the
+ * old fixed default.
+ */
+const COMPRESSION_WINDOW_FRACTION = 0.45;
+
+/**
+ * Multiplier from the reducer's estimated tokens to real tokens.
+ * `estimateTokens` uses 4 chars/token for non-CJK, 1.5 for CJK;
+ * modern tokenizers are 15–25% denser, so real ≈ estimated × 1.2.
+ */
+const ESTIMATED_TO_REAL_RATIO = 1.2;
 
 /**
  * Minimum number of most recent messages to retain after compression
@@ -79,7 +79,7 @@ const DEFAULT_SLIDING_WINDOW_SIZE = 10;
  * When total summaries exceed this value, all summaries are re-summarized into
  * a single higher-level summary.
  *
- * Raised in tandem with `DEFAULT_CONTEXT_COMPRESSION_THRESHOLD`: a larger
+ * Raised in tandem with the default compression threshold: a larger
  * primary threshold means each Level-1 summary covers more conversation, so
  * triggering Level-2 ("summary of summaries", which is lossier) too eagerly
  * hurts recall. 8 lets the conversation accumulate substantially before a
@@ -102,7 +102,8 @@ interface PromptConfig {
  * profile without forcing users to re-tune their numbers.
  */
 export interface ContextReduceOptions {
-    /** Override DEFAULT_CONTEXT_COMPRESSION_THRESHOLD. <=0 falls back to built-in default. */
+    /** Override the default compression threshold. <=0 falls back to a computed
+     * default proportional to the model's context window (~45%). */
     compressionThreshold?: number;
     /** Override DEFAULT_SLIDING_WINDOW_SIZE. <=0 falls back to built-in default. */
     slidingWindowSize?: number;
@@ -795,9 +796,23 @@ export class ContextReducer {
         // ── 0. Resolve effective tunables ─────────────────────────────────
         // Each option follows the "<=0 = use built-in default" convention so
         // the on-disk profile shape stays trivial (0 means "I don't care").
+
+        // 0a. Model context window — must be resolved FIRST because the
+        // default compression threshold is now computed as a fraction of
+        // the model window rather than using a fixed value.
+        const modelContextWindow = options?.modelContextWindow && options.modelContextWindow > 0
+            ? options.modelContextWindow
+            : 0;
+
+        // 0b. Compression threshold. When the user hasn't set an explicit
+        // value (<=0), compute a default proportional to the model's context
+        // window. Falls back to a fixed safe floor when the window is unknown.
         const threshold = (options?.compressionThreshold && options.compressionThreshold > 0)
             ? options.compressionThreshold
-            : DEFAULT_CONTEXT_COMPRESSION_THRESHOLD;
+            : modelContextWindow > 0
+                ? Math.round(modelContextWindow * COMPRESSION_WINDOW_FRACTION / ESTIMATED_TO_REAL_RATIO)
+                : DEFAULT_COMPRESSION_THRESHOLD_FALLBACK;
+
         const windowSize = (options?.slidingWindowSize && options.slidingWindowSize > 0)
             ? options.slidingWindowSize
             : DEFAULT_SLIDING_WINDOW_SIZE;
@@ -812,12 +827,6 @@ export class ContextReducer {
         // storage. `null` is treated identically to `undefined` —
         // disables spilling, falls back to the legacy generic truncation.
         const artifactStore = options?.artifactStore ?? null;
-        // Model-aware emergency line. `<=0` (incl. undefined) keeps the
-        // pre-existing "threshold × 1.5 only" behaviour — see
-        // {@link emergencyShrink} for the math.
-        const modelContextWindow = options?.modelContextWindow && options.modelContextWindow > 0
-            ? options.modelContextWindow
-            : 0;
 
         // ── 1. Separate system messages (always preserved) ────────────────
         const systemMessages = rawMessages.filter(msg => msg.role === "system");
