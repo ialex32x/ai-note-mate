@@ -1,6 +1,7 @@
 import type NoteAssistantPlugin from "../../main";
 import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
+import { DEFAULT_RSS_FETCH_HARD_LIMIT, DEFAULT_RSS_FETCH_SOFT_LIMIT } from "../../settings/defaults";
 import { RSSParser } from "../search/rss-parser";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -46,6 +47,10 @@ function rssFetch(_plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["network"] as ToolCapability[],
+        maxCallsPerTurn: {
+            soft: DEFAULT_RSS_FETCH_SOFT_LIMIT,
+            hard: DEFAULT_RSS_FETCH_HARD_LIMIT,
+        },
         exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
             const url = args["url"] as string;
             const maxItems = Math.min((args["max_items"] as number | undefined) ?? 20, 50);

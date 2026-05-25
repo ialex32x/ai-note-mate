@@ -25,6 +25,19 @@ export const DEFAULT_WEB_FETCH_SOFT_LIMIT = 5;
 export const DEFAULT_WEB_FETCH_HARD_LIMIT = 12;
 
 /**
+ * Built-in fallback for the soft per-turn call budget on `rss_fetch_feed`.
+ * RSS calls return many feed items at once, so a lower soft threshold than
+ * page fetch keeps the agent from turning feed checks into broad crawling.
+ */
+export const DEFAULT_RSS_FETCH_SOFT_LIMIT = 3;
+/**
+ * Built-in fallback for the hard per-turn call budget on `rss_fetch_feed`.
+ * Allows deliberate comparison across several feeds while still blocking
+ * runaway feed enumeration loops within a single user turn.
+ */
+export const DEFAULT_RSS_FETCH_HARD_LIMIT = 8;
+
+/**
  * Default cap on the number of on-demand tools that pass the retriever
  * ranking. Combined with the always-on tool set (~8 entries), this keeps
  * the per-turn schema list at ~16 tools — within the comfortable range
