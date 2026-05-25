@@ -385,8 +385,14 @@ export class ScrollController {
     }
 
     private programmaticScrollToBottom(): void {
+        const target = this.messagesEl.scrollHeight;
+        // Skip when already at or near the bottom. Repeatedly writing
+        // scrollTop to an unchanged scroll position causes unnecessary
+        // layout operations that can interfere with iOS WKWebView's
+        // touch-gesture recognition during streaming renders.
+        if (Math.abs(this.messagesEl.scrollTop - target) < 2) return;
         this.programmaticScrollGuard++;
-        this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+        this.messagesEl.scrollTop = target;
         // Two RAFs cover iOS WebView's habit of coalescing the scroll
         // event for a programmatic write into the next frame.
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
