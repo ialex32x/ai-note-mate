@@ -19,7 +19,8 @@ import { setIcon } from 'obsidian';
  *
  *   - `wheel` deltaY < 0                              → autoFollow = false
  *   - `wheel` deltaY > 0 landing near bottom          → autoFollow = true
- *   - `touchmove` accumulating > THRESHOLD upward     → autoFollow = false
+ *   - `touchmove` first upward frame                 → autoFollow = false
+ *     (accumulated > THRESHOLD shows the button)
  *   - `touchmove` accumulating > THRESHOLD downward
  *     AND user landed near bottom                     → autoFollow = true
  *   - `keydown` PageUp / Home / ArrowUp               → autoFollow = false
@@ -140,6 +141,10 @@ export class ScrollController {
                 if (!touch) return;
                 this.touchStartY = touch.clientY;
                 this.touchAccumulatedDeltaY = 0;
+                // Cancel any pending follow frame so a previously
+                // scheduled programmatic scroll cannot yank the view
+                // back to the tail mid-gesture.
+                this.cancelPendingFollowFrame();
             },
             { passive: true },
         );
@@ -446,15 +451,26 @@ export class ScrollController {
     private onUserTouchMove(e: TouchEvent): void {
         const touch = e.touches[0];
         if (!touch) return;
-        // Per-frame delta is small and noisy on iOS (sub-pixel reports
-        // during momentum decel). Accumulate so brief unintentional
-        // jitter cannot flip autoFollow.
         const deltaY = this.touchStartY - touch.clientY;
         this.touchAccumulatedDeltaY += deltaY;
         this.touchStartY = touch.clientY;
 
-        if (this.touchAccumulatedDeltaY > ScrollController.TOUCH_GESTURE_THRESHOLD) {
+        // Immediately disable autoFollow on any upward drag — don't
+        // wait for the accumulated threshold.  If we wait, streaming
+        // content can fire a programmatic scroll (via the
+        // MutationObserver → RAF → onAsyncContentChanged path) before
+        // the threshold is met, yanking the view back to the tail and
+        // effectively resetting the user's drag progress each frame.
+        //
+        // We still gate the *button* visibility on the accumulated
+        // threshold so a fleeting upward jitter doesn't flash the
+        // "scroll to bottom" button.
+        if (deltaY > 0) {
             this.autoFollow = false;
+        }
+
+        if (this.touchAccumulatedDeltaY > ScrollController.TOUCH_GESTURE_THRESHOLD) {
+            // autoFollow already disabled above; just show the button.
             if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
         } else if (this.touchAccumulatedDeltaY < -ScrollController.TOUCH_GESTURE_THRESHOLD) {
             window.requestAnimationFrame(() => {
