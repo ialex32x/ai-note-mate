@@ -213,7 +213,12 @@ export const VAULT_ROUTING_KEYWORDS = [
 
 export const WEB_AGENT_DESCRIPTION = 'Handles web searches, fetching web page content, and internet-based information retrieval.';
 
-export const WEB_AGENT_PROMPT = `\
+export function createWebAgentPrompt(webSearchAvailable: boolean): string {
+    const fallbackInstruction = webSearchAvailable
+        ? `Either fall back to \`web_search\` for a different source, or report the failure to the caller honestly.`
+        : `Report the failure to the caller honestly. Do not try to call \`web_search\` as it is not available — use only the tools provided to you.`;
+
+    return `\
 You are a specialized web search and information retrieval agent. Your role is to search the internet and fetch web content for the user.
 
 ## Capabilities
@@ -230,14 +235,14 @@ You are a specialized web search and information retrieval agent. Your role is t
 - Do NOT retry the same tool call more than 3 times if it fails
 - A \`web_fetch_url\` failure (HTTP error, anti-bot challenge, empty content, "no readable text"…) means
   the page is unfetchable from this plugin. Treat it as terminal for that URL — do NOT retry the same URL
-  with minor variations, and do NOT chain through many other URLs hoping one will work. Either fall back
-  to \`web_search\` for a different source, or report the failure to the caller honestly.
+  with minor variations, and do NOT chain through many other URLs hoping one will work. ${fallbackInstruction}
 - Per-turn budgets apply to \`web_fetch_url\` and \`rss_fetch_feed\`. You will see a soft reminder appended to results when you
   approach the limit, and a hard refusal once you exceed it; both mean "stop calling this tool and
   synthesize an answer now". Do not try to work around the budget by reformatting the URL.
 ${READING_HANDOFF_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
+}
 
 export const WEB_ROUTING_KEYWORDS = [
     // English
