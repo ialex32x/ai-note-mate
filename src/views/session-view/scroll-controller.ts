@@ -18,7 +18,8 @@ import { setIcon } from 'obsidian';
  * State transitions are driven ONLY by explicit user gestures:
  *
  *   - `wheel` deltaY < 0                              → autoFollow = false
- *   - `wheel` deltaY > 0 landing near bottom          → autoFollow = true
+ *   - `wheel` deltaY > 0 landing at absolute bottom
+ *     (< 4 px from the tail)                          → autoFollow = true
  *   - `touchmove` first upward frame                 → autoFollow = false
  *     (accumulated > THRESHOLD shows the button)
  *   - `touchmove` accumulating > THRESHOLD downward
@@ -84,6 +85,19 @@ export class ScrollController {
     private static readonly KEY_DOWN = new Set(['PageDown', 'End', 'ArrowDown']);
 
     private autoFollow = true;
+
+    /**
+     * Set when auto-follow is disabled because the last message grew
+     * taller than the viewport. Once set, the oversized check is
+     * suppressed for the remainder of the turn — when the user
+     * manually scrolls back to the tail, auto-follow resumes and
+     * stays enabled, uninterupted by repeated oversized checks.
+     *
+     * Cleared at the start of every new turn (via
+     * {@link forceScrollToBottom}) and on session switch (via
+     * {@link resetScrollIntent}).
+     */
+    private followDisabledByHeight = false;
 
     /**
      * Non-zero while a programmatic scroll's coalesced `scroll` event is
@@ -257,9 +271,11 @@ export class ScrollController {
         this.onAsyncContentChanged();
     }
 
-    /** Force-pin to the bottom AND re-enable auto-follow. */
+    /** Force-pin to the bottom AND re-enable auto-follow. Also
+     * re-arms the oversized-message guard for the new turn. */
     forceScrollToBottom(): void {
         this.autoFollow = true;
+        this.followDisabledByHeight = false;
         this.programmaticScrollToBottom();
         this.scrollToBottomBtn.hide();
     }
@@ -274,9 +290,11 @@ export class ScrollController {
         if (this.isNearBottom()) this.scrollToBottomBtn.hide();
     }
 
-    /** Reset to default (autoFollow on, button hidden). Used on session switch. */
+    /** Reset to default (autoFollow on, button hidden, oversized guard
+     * cleared). Used on session switch. */
     resetScrollIntent(): void {
         this.autoFollow = true;
+        this.followDisabledByHeight = false;
         this.scrollToBottomBtn.hide();
     }
 
@@ -344,6 +362,24 @@ export class ScrollController {
     private onAsyncContentChanged(): void {
         if (this.suspendDepth > 0) return;
         if (this.autoFollow) {
+            // When the last message grows taller than the viewport,
+            // forcing auto-scroll on every token creates a jarring
+            // experience — the user cannot read the beginning of the
+            // message. Exit auto-follow so the view stays put.
+            //
+            // The check is armed at the start of each turn and fires
+            // exactly once per oversized message. Once fired,
+            // `followDisabledByHeight` stays set so that if the user
+            // manually scrolls to the tail to resume auto-follow,
+            // subsequent tokens won't immediately kick them out again.
+            if (!this.followDisabledByHeight && this.isLastMessageOversized()) {
+                this.followDisabledByHeight = true;
+                this.autoFollow = false;
+                if (this.isStreamingProvider()) {
+                    this.scrollToBottomBtn.show();
+                }
+                return;
+            }
             this.programmaticScrollToBottom();
             this.scrollToBottomBtn.hide();
             return;
@@ -351,6 +387,20 @@ export class ScrollController {
         if (this.isStreamingProvider() && !this.isNearBottom()) {
             this.scrollToBottomBtn.show();
         }
+    }
+
+    /**
+     * Returns true when the last message bubble is taller than the
+     * viewport. Used to avoid forcing auto-scroll on every token of a
+     * long streaming message — once the message fills the screen the
+     * user should be able to read from the top without the view
+     * constantly jumping to the tail.
+     */
+    private isLastMessageOversized(): boolean {
+        const bubbles = this.messagesEl.querySelectorAll('.session-bubble');
+        const lastBubble = bubbles[bubbles.length - 1];
+        if (!lastBubble) return false;
+        return lastBubble.getBoundingClientRect().height > this.messagesEl.clientHeight;
     }
 
     /**
@@ -438,9 +488,15 @@ export class ScrollController {
             this.autoFollow = false;
             if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
         } else if (e.deltaY > 0) {
-            // RAF so layout has settled before we check geometry.
+            // Only re-enable autoFollow when the user scrolls all the
+            // way to the absolute bottom — not just "near" it.  Using
+            // the generous isNearBottom() threshold here would cause
+            // every tiny downward flick (trackpad momentum bounce,
+            // mouse-wheel rebound) to latch autoFollow back on, pulling
+            // the view away from where the user was reading.
             window.requestAnimationFrame(() => {
-                if (this.isNearBottom()) {
+                const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
+                if (scrollHeight - scrollTop - clientHeight < 4) {
                     this.autoFollow = true;
                     this.scrollToBottomBtn.hide();
                 }
