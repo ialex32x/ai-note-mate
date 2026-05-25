@@ -152,7 +152,7 @@ export const en: Record<string, string> = {
 	'settings.imageGenConfig': 'Active Image Generation Config',
 	'settings.imageGenConfigDesc': 'Select a saved image generation configuration.',
 	'settings.addImageGenConfig': 'Add config',
-	'settings.imageGenSection': 'Image generation',
+	'settings.imageGenSection': 'Image',
 	'settings.imageGenName': 'Config name',
 	'settings.imageGenNamePlaceholder': 'Enter a name for this config',
 	'settings.deleteImageGenConfig': 'Delete this config',
@@ -287,7 +287,7 @@ export const en: Record<string, string> = {
 	'settings.skillAutoInjectThresholdDesc': 'Cosine similarity (0–1) above which the top-matched skill\'s full procedure is auto-injected into the system prompt, skipping the load_skill round trip. Should normally be ≥ the strong-hint threshold; if it isn\'t, it is silently pulled up so escalation stays monotonic.',
 
 	// ── MCP servers ───────────────────────────────────────
-	'settings.mcpServers': 'MCP Servers',
+	'settings.mcpServers': 'MCP',
 	'settings.mcpEmpty': 'No MCP servers configured. Add one to connect to external tools.',
 	'settings.mcpServerName': 'Server name',
 	'settings.mcpServerNameFallback': 'Unnamed server',

@@ -152,7 +152,7 @@ export const ja: Record<string, string> = {
 	'settings.imageGenConfig': '使用中の画像生成設定',
 	'settings.imageGenConfigDesc': '保存済みの画像生成設定を選択してください。',
 	'settings.addImageGenConfig': '設定追加',
-	'settings.imageGenSection': '画像生成',
+	'settings.imageGenSection': '画像',
 	'settings.imageGenName': '設定名',
 	'settings.imageGenNamePlaceholder': 'この設定の名前を入力してください',
 	'settings.deleteImageGenConfig': 'この設定を削除',
@@ -287,7 +287,7 @@ export const ja: Record<string, string> = {
 	'settings.skillAutoInjectThresholdDesc': 'コサイン類似度 (0–1)。これを超えると top-1 スキルの完全な手順がシステムプロンプトに自動注入され、load_skill の往復呼び出しがスキップされます。通常は強ヒントしきい値 ≥ にすべきです;それより小さい場合、エスカレーション順序を単調に保つため静かに引き上げられます。',
 
 	// ── MCP servers ───────────────────────────────────────
-	'settings.mcpServers': 'MCP サーバー',
+	'settings.mcpServers': 'MCP',
 	'settings.mcpEmpty': 'MCPサーバーが設定されていません。外部ツールに接続するには追加してください。',
 	'settings.mcpServerName': 'サーバー名',
 	'settings.mcpServerNameFallback': '名前未設定のサーバー',

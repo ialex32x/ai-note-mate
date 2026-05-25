@@ -152,7 +152,7 @@ export const ko: Record<string, string> = {
 	'settings.imageGenConfig': '활성 이미지 생성 설정',
 	'settings.imageGenConfigDesc': '저장된 이미지 생성 설정을 선택하세요.',
 	'settings.addImageGenConfig': '설정 추가',
-	'settings.imageGenSection': '이미지 생성',
+	'settings.imageGenSection': '이미지',
 	'settings.imageGenName': '설정 이름',
 	'settings.imageGenNamePlaceholder': '이 설정의 이름을 입력하세요',
 	'settings.deleteImageGenConfig': '이 설정 삭제',
@@ -287,7 +287,7 @@ export const ko: Record<string, string> = {
 	'settings.skillAutoInjectThresholdDesc': '코사인 유사도 (0–1). 이 값을 초과하면 top-1 스킬의 전체 절차가 시스템 프롬프트에 자동 주입되어 load_skill 왕복 호출을 건너뜁니다. 일반적으로 강력한 힌트 임계값 이상이어야 합니다; 그보다 작으면 에스컬레이션 순서를 단조롭게 유지하기 위해 조용히 상향됩니다.',
 
 	// ── MCP servers ───────────────────────────────────────
-	'settings.mcpServers': 'MCP 서버',
+	'settings.mcpServers': 'MCP',
 	'settings.mcpEmpty': 'MCP 서버가 설정되지 않았습니다. 외부 도구에 연결하려면 추가하세요.',
 	'settings.mcpServerName': '서버 이름',
 	'settings.mcpServerNameFallback': '이름 없는 서버',

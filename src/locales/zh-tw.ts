@@ -152,7 +152,7 @@ export const zhTW: Record<string, string> = {
 	'settings.imageGenConfig': '目前使用的圖片生成設定',
 	'settings.imageGenConfigDesc': '選擇已儲存的圖片生成配置。',
 	'settings.addImageGenConfig': '新增配置',
-	'settings.imageGenSection': '圖片生成',
+	'settings.imageGenSection': '圖片',
 	'settings.imageGenName': '配置名稱',
 	'settings.imageGenNamePlaceholder': '為此配置輸入名稱',
 	'settings.deleteImageGenConfig': '刪除此配置',
@@ -287,7 +287,7 @@ export const zhTW: Record<string, string> = {
 	'settings.skillAutoInjectThresholdDesc': '餘弦相似度 (0–1),超過此值後,top-1 技能的完整流程會被自動注入系統提示,省去 load_skill 的往返呼叫。通常應 ≥ 強提示閾值;若小於,系統會靜默上拉以保持升級順序單調。',
 
 	// ── MCP servers ───────────────────────────────────────
-	'settings.mcpServers': 'MCP 伺服器',
+	'settings.mcpServers': 'MCP',
 	'settings.mcpEmpty': '尚未配置 MCP 伺服器。新增一個以連接外部工具。',
 	'settings.mcpServerName': '伺服器名稱',
 	'settings.mcpServerNameFallback': '未命名伺服器',
