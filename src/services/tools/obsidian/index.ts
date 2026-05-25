@@ -18,6 +18,7 @@ import {
     vaultDeleteFiles,
     vaultDeleteFolder,
     vaultEditFilesFrontmatter,
+    vaultInstantiateTemplate,
     vaultPrependFile,
     vaultRenameFile,
     vaultEditLines,
@@ -97,6 +98,8 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultPrependFile(plugin),
         vaultReplaceText(plugin),
         vaultEditLines(plugin),
+        // Template instantiation (read template → replace vars → create file)
+        vaultInstantiateTemplate(plugin),
         // Structural writes (no content body)
         vaultDeleteFiles(plugin),
         vaultDeleteFolder(plugin),
