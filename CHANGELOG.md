@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.10
+
+### What's new
+
+- **Template instantiation tool** — A new `instantiate_template` tool lets the model create notes from your vault templates. Built-in variables like `{{date}}`, `{{time}}`, `{{title}}`, `{{yesterday}}`, and `{{tomorrow}}` are resolved deterministically (no LLM involvement in substitution), and you can pass custom `{{key}}` → value pairs. This eliminates the "LLM missed a variable" and "LLM hallucinated extra content" failure modes that plague manual template workflows.
+
+- **Built-in web upload tool** — A new `web_upload_file` tool lets the model upload vault files to external URLs (e.g., temporary sharing services). Disabled by default — enable it under **Settings → Note Mate → Builtin**.
+
+### Refinements
+
+- **Long conversations load on demand** — Session messages now stream in progressively instead of rendering all at once, keeping the UI responsive even after hundreds of turns.
+
+- **Smarter web agent prompts** — Web agent system prompts now adapt dynamically: when the model has no search tool configured, the agent skips search-related instructions entirely, avoiding misleading guidance.
+
+- **Sensitive headers redacted** — Tool call headers that may contain API keys or other sensitive data are now stripped before messages are persisted to disk or included in future turns.
+
+- **RSS per-turn budgets** — The `rss_fetch_feed` tool now respects the same per-turn call budget mechanism used by other tools, preventing runaway feed crawling in a single turn.
+
+- **Capabilities selector removed** — The session toolbar no longer shows the manual capabilities picker. All available tools are always exposed to the model, simplifying the UI.
+
+### Fixes
+
+- **Auto-scroll reliability** — Auto-follow now handles oversized messages gracefully instead of losing its position, and programmatic scrolling avoids triggering unnecessary layout recalculations.
+
+- **Touch scrolling on mobile** — Upward scroll gestures no longer interfere with auto-follow, so you can scroll back through the conversation without the view snapping back down.
+
+---
+
 ## 1.2.9
 
 ### What's new
