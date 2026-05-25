@@ -1161,3 +1161,29 @@
         }
     }
 }
+
+/* ── Customize settings: template variable reference table ─── */
+.oap-customize-variables-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: @spacing-sm;
+
+    td {
+        padding: @spacing-xs @spacing-sm;
+        font-size: 0.88em;
+        border-bottom: 1px solid @bg-modifier-border;
+        vertical-align: top;
+    }
+}
+
+.oap-customize-var-name {
+    width: 120px;
+    font-family: var(--font-monospace);
+    font-weight: 600;
+    color: @text-accent;
+    white-space: nowrap;
+}
+
+.oap-customize-var-desc {
+    color: @text-secondary;
+}

@@ -194,12 +194,22 @@ function buildClientAction(
 
 function stripPathDecorations(p: string): string {
     let s = p.trim();
-    // Wiki-link form: [[Path|Display]] or [[Path]]
+    // Wiki-link form: [[Path|Display]], [[Path#heading]], [[Path^block]], or combinations
     const wiki = /^\[\[([^\]]+)\]\]$/.exec(s);
     if (wiki) {
         const inner = wiki[1] ?? '';
-        // Drop alias after '|'.
+        // Drop alias after '|', then strip heading ref (#...) and block ref (^...).
         s = inner.split('|')[0]?.trim() ?? '';
+        // Strip heading reference: everything from # onward (but only after the path)
+        const hashIdx = s.indexOf('#');
+        const caretIdx = s.indexOf('^');
+        const cutoff = Math.min(
+            hashIdx === -1 ? Infinity : hashIdx,
+            caretIdx === -1 ? Infinity : caretIdx
+        );
+        if (cutoff !== Infinity) {
+            s = s.slice(0, cutoff).trim();
+        }
     }
     // Strip surrounding quotes / backticks.
     s = s.replace(/^['"`]+|['"`]+$/g, '').trim();

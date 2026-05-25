@@ -375,6 +375,18 @@ export const zhCN: Record<string, string> = {
 	'settings.memoriesEmpty': '暂无存储的记忆。',
 	'settings.memoryCount': '已存储 {count} 条记忆',
 
+	// ── Customize ──────────────────────────────────────────
+	'settings.customize': 'Customize',
+	'settings.customizeMenuNotePath': '菜单笔记路径',
+	'settings.customizeMenuNotePathDesc': '定义自定义右键菜单项的 Markdown 笔记的库内相对路径。一级标题选择菜单表面（Files → 文件菜单，Editor → 编辑器菜单）；每个二级标题是一个菜单标签，其正文内容为提示词模板。引用行（"> ..."）视为注释，会被过滤。',
+	'settings.customizeMenuNotePathPlaceholder': '例如 MENU.md',
+	'settings.customizeOpenNote': '在新标签页打开菜单笔记',
+	'settings.customizeNoteMissing': '菜单笔记尚未存在。',
+	'settings.customizeVariablesHeading': '模板变量',
+	'settings.customizeVarFilepath': '替换为文件路径（含文件名），如 "Input/Test Note.md"。',
+	'settings.customizeVarSelection': '替换为选区范围，如 "(Ln 29 - Ln 40)"。未选中任何内容时，显示光标位置。',
+	'settings.customizeVarBlockquote': '替换为选中文本的 Markdown 引用格式。长文本截断至 100 字符。',
+
 
 	// ── Token usage ───────────────────────────────────────
 	// (obsolete full-sentence token.* keys removed; see statusLabel.* below)

@@ -70,12 +70,16 @@ type SubmenuHost = {
  * `revealView` is supplied by the plugin so we don't have to re-implement
  * leaf creation logic here. `extraSubmenuItems` lets other modules add
  * sibling actions (e.g. "Send to AI Session") under the same "AI" parent.
+ * `dynamicExtraItems` is an optional getter evaluated at menu-open time,
+ * allowing dynamically-loaded items (e.g. from MENU.md) to appear
+ * alongside the static ones.
  */
 export function registerRewriteSelection(
     plugin: NoteAssistantPlugin,
     store: EditHistoryStore,
     revealView: () => Promise<void>,
     extraSubmenuItems: readonly AISubmenuItem[] = [],
+    dynamicExtraItems?: (editor: Editor, info?: MarkdownView | MarkdownFileInfo) => AISubmenuItem[],
 ): void {
     // ── editor-menu ──────────────────────────────────────────────────────
     // NOTE: the third callback arg (`info`) carries the `MarkdownView`/`MarkdownFileInfo`
@@ -89,10 +93,12 @@ export function registerRewriteSelection(
             // Decide which extras should appear for this invocation up-front
             // so we can suppress the entire parent item when nothing inside
             // it would be actionable.
-            const visibleExtras = extraSubmenuItems.filter(
+            const staticExtras = extraSubmenuItems.filter(
                 (e) => !e.isAvailable || e.isAvailable(editor, info),
             );
-            if (!hasSelection && visibleExtras.length === 0) return;
+            const dynamicExtras = dynamicExtraItems?.(editor, info) ?? [];
+
+            if (!hasSelection && staticExtras.length === 0 && dynamicExtras.length === 0) return;
 
             menu.addItem((item) => {
                 item.setTitle(t("editHistory.menu.aiSubmenu"))
@@ -113,10 +119,23 @@ export function registerRewriteSelection(
                 // Visually separate the rewrite trio from caller-contributed
                 // extras (e.g. "Send to AI Session") only when both groups
                 // are actually present in this menu invocation.
-                if (hasSelection && visibleExtras.length > 0) {
+                const allExtras = [...staticExtras, ...dynamicExtras];
+                if (hasSelection && allExtras.length > 0) {
                     sub.addSeparator?.();
                 }
-                for (const extra of visibleExtras) {
+                for (const extra of staticExtras) {
+                    sub.addItem((s) => {
+                        s.setTitle(extra.title);
+                        s.setIcon(extra.icon);
+                        s.onClick(() => extra.onClick(editor, info));
+                    });
+                }
+                // Custom (dynamic) items from MENU.md — visually separate
+                // them from static extras if both groups have items.
+                if (staticExtras.length > 0 && dynamicExtras.length > 0) {
+                    sub.addSeparator?.();
+                }
+                for (const extra of dynamicExtras) {
                     sub.addItem((s) => {
                         s.setTitle(extra.title);
                         s.setIcon(extra.icon);

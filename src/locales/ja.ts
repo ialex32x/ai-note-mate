@@ -376,6 +376,18 @@ export const ja: Record<string, string> = {
 	'settings.memoriesEmpty': '保存された記憶はありません。',
 	'settings.memoryCount': '{count} 件の記憶を保存',
 
+	// ── Customize ──────────────────────────────────────────
+	'settings.customize': 'Customize',
+	'settings.customizeMenuNotePath': 'メニューノートのパス',
+	'settings.customizeMenuNotePathDesc': 'カスタム右クリックメニュー項目を定義する Markdown ノートのボールト相対パス。H1 見出しでメニュー面を選択（Files → ファイルメニュー、Editor → エディターメニュー）。各 H2 見出しはメニューラベルで、その本文がプロンプトテンプレートです。引用行（"> ..."）はコメントとして扱われ、削除されます。',
+	'settings.customizeMenuNotePathPlaceholder': '例: MENU.md',
+	'settings.customizeOpenNote': 'メニューノートを新しいタブで開く',
+	'settings.customizeNoteMissing': 'メニューノートはまだ存在しません。',
+	'settings.customizeVariablesHeading': 'テンプレート変数',
+	'settings.customizeVarFilepath': 'ファイルパス（ファイル名を含む）に置換されます（例: "Input/Test Note.md"）。',
+	'settings.customizeVarSelection': '選択範囲に置換されます（例: "(Ln 29 - Ln 40)"）。何も選択されていない場合はカーソル位置を表示します。',
+	'settings.customizeVarBlockquote': '選択テキストを Markdown 引用形式で置換します。長いテキストは 100 文字で切り捨てられます。',
+
 
 	// ── Token usage ───────────────────────────────────────
 	// (obsolete full-sentence token.* keys removed; see statusLabel.* below)

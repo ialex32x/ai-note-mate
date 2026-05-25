@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo, debounce } from 'obsidian';
 import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig } from "./settings";
 import { SessionView } from 'views/session-view';
 import { resolveLocale, setLocale, t } from './i18n';
@@ -14,6 +14,8 @@ import { SessionManager } from './session-manager';
 import { SessionRuntimePool } from './services/session-runtime';
 import { VaultMutator, GlobalFileLockManager, SnapshotManager } from './services/vault';
 import { MemoryStore } from './services/memory';
+import { CustomMenuService } from './services/custom-menu/custom-menu-service';
+import { replaceMenuVariables } from './services/custom-menu/variable-replacer';
 
 export default class NoteAssistantPlugin extends Plugin {
 	settings!: NoteAssistantPluginSettings;
@@ -72,6 +74,13 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * one chat is immediately visible to the next.
 	 */
 	memoryStore!: MemoryStore;
+	/**
+	 * User-customisable right-click / file-menu prompts. Parsed from
+	 * the vault note configured at {@link NoteAssistantPluginSettings.customMenuNotePath}.
+	 * Items are eagerly cached so synchronous menu-event callbacks can
+	 * read them without awaiting.
+	 */
+	customMenuService!: CustomMenuService;
 
 	private readonly _settingsListeners: Array<() => void> = [];
 
@@ -160,6 +169,34 @@ export default class NoteAssistantPlugin extends Plugin {
 		// configured path lazily so changes to `memoryNotePath` take
 		// effect on the next access without an explicit reload.
 		this.memoryStore = new MemoryStore(this);
+		// Custom menu service — parses MENU.md into menu items. Cache is
+		// kept fresh via vault events so synchronous menu callbacks always
+		// read up-to-date data without awaiting.
+		this.customMenuService = new CustomMenuService(this);
+		void this.customMenuService.refresh();
+
+		// Keep the custom-menu cache fresh via vault events.
+		const menuPath = () => this.settings.customMenuNotePath.trim();
+
+		const onMenuFileChanged = (file: TAbstractFile) => {
+			if (menuPath() && file.path === menuPath()) {
+				void this.customMenuService.refresh();
+			}
+		};
+
+		// `modify` fires on every keystroke — debounce to avoid
+		// excessive re-parsing while the user types.
+		const debouncedModify = debounce(onMenuFileChanged, 500);
+
+		this.registerEvent(this.app.vault.on('modify', (file) => debouncedModify(file)));
+		this.registerEvent(this.app.vault.on('create', onMenuFileChanged));
+		this.registerEvent(this.app.vault.on('delete', onMenuFileChanged));
+		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+			const path = menuPath();
+			if (path && (file.path === path || oldPath === path)) {
+				void this.customMenuService.refresh();
+			}
+		}));
 		this.registerView(
 			EditHistoryView.VIEW_TYPE,
 			(leaf) => new EditHistoryView(leaf, this, this.editHistory, this.vaultEditLog),
@@ -233,7 +270,26 @@ export default class NoteAssistantPlugin extends Plugin {
 			this.editHistory,
 			() => this.revealEditHistoryView(),
 			[sendToSessionItem, sendToNewSessionItem, explainSelectionItem, autoTagFileItem],
+			(_editor, info) => {
+				// Dynamic items from MENU.md (Editor category). Cache is
+				// kept warm by vault events — no await needed.
+				const customItems = this.customMenuService.getCachedItems('editor-menu');
+				if (customItems.length === 0) return [];
+
+				const filePath = (info as { file?: { path?: string } } | undefined)?.file?.path;
+				return customItems.map(ci => ({
+					title: ci.label,
+					icon: 'sparkles' as const,
+					onClick: (editor: Editor) => {
+						void this.executeCustomMenuItem(ci, {
+							filePath,
+							editor,
+						});
+					},
+				}));
+			},
 		);
+
 		this.addCommand({
 			id: 'open-ai-edit-history',
 			name: t('editHistory.openView'),
@@ -266,6 +322,19 @@ export default class NoteAssistantPlugin extends Plugin {
 			this.app.workspace.on('file-menu', (menu, file) => {
 				if (!(file instanceof TAbstractFile)) return;
 
+				// Cache is kept warm by vault events — no await needed.
+				const customItems = this.customMenuService.getCachedItems('file-menu');
+
+				// Suppress the entire "AI" parent when there is nothing to
+				// show (no built-in actions AND no custom items).
+				const hasAutoTag = file instanceof TFile && file.extension === 'md';
+				if (customItems.length === 0 && !hasAutoTag) {
+					// Still show "Send to Session" / "Send to New Session"
+					// for any file — those are always available.
+					// If we also had no custom items and no auto-tag, we
+					// just show the two send entries.
+				}
+
 				menu.addItem((item) => {
 					item
 						.setTitle(t('editHistory.menu.aiSubmenu'))
@@ -280,6 +349,7 @@ export default class NoteAssistantPlugin extends Plugin {
 							setIcon: (n: string) => unknown;
 							onClick: (cb: () => void) => unknown;
 						}) => void) => unknown;
+						addSeparator?: () => unknown;
 					} }).setSubmenu();
 
 					sub.addItem((s) => {
@@ -296,11 +366,29 @@ export default class NoteAssistantPlugin extends Plugin {
 							void this.sendFileToNewSession(file);
 						});
 					});
+
+					// Separator between built-in actions and custom items.
+					if (customItems.length > 0) {
+						sub.addSeparator?.();
+					}
+					for (const ci of customItems) {
+						sub.addItem((s) => {
+							s.setTitle(ci.label);
+							s.setIcon('sparkles');
+							s.onClick(() => {
+								void this.executeCustomMenuItem(ci, { filePath: file.path });
+							});
+						});
+					}
+
 					// "Auto-tag" only applies to markdown notes: tags are a
 					// frontmatter / inline-`#tag` concept, so showing the
 					// entry on folders, canvases, PDFs, etc. would dispatch
 					// a prompt the AI can't sensibly answer.
-					if (file instanceof TFile && file.extension === 'md') {
+					if (hasAutoTag) {
+						if (customItems.length > 0) {
+							sub.addSeparator?.();
+						}
 						sub.addItem((s) => {
 							s.setTitle(t('view.autoTagFile'));
 							s.setIcon('tags');
@@ -758,6 +846,30 @@ export default class NoteAssistantPlugin extends Plugin {
 			if (preview) snippet = `${snippet}\n${preview}`;
 		}
 		return { filePath, snippet };
+	}
+
+	/**
+	 * Execute a single custom menu item: replace template variables with
+	 * live context, then park the resulting prompt in the session input
+	 * via {@link SessionView.fillPromptDraft}. The fill-or-refuse
+	 * semantics are the same as "Explain" / "Auto-tag" — if the input
+	 * already contains user text a Notice is surfaced and the action is
+	 * refused.
+	 */
+	private async executeCustomMenuItem(
+		item: import('./services/custom-menu/types').CustomMenuItem,
+		ctx: { filePath?: string; editor?: Editor },
+	): Promise<void> {
+		const prompt = replaceMenuVariables(item.promptTemplate, {
+			filePath: ctx.filePath,
+			editor: ctx.editor,
+		});
+
+		await this.createSessionView(true);
+		const view = this.getActiveSessionView();
+		if (!view) return;
+
+		view.fillPromptDraft(prompt);
 	}
 
 }

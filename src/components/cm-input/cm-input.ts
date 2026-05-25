@@ -39,8 +39,9 @@ export interface CMInputOptions {
 export function extractFileRefs(content: string): Array<{ start: number; end: number; path: string }> {
     const refs: Array<{ start: number; end: number; path: string }> = [];
     // Use non-greedy quantifier (+? instead of +) to find the nearest closing ]]
-    // Path can contain any character except ], |, and [ (to avoid matching nested [[)
-    const regex = /\[\[([^[\]|]+?)(?:\|[^\]]+?)?\]\]/g;
+    // Capture only the file path portion, stripping alias (|y), heading ref (#h),
+    // and block ref (^b) so the chip resolves and navigates to the actual file.
+    const regex = /\[\[([^[\]|#^]+?)(?:[#^][^\]|]*?)?(?:\|[^\]]+?)?\]\]/g;
     let match;
     while ((match = regex.exec(content)) !== null) {
         refs.push({

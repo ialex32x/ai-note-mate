@@ -274,6 +274,21 @@ export interface NoteAssistantPluginSettings {
 	 */
 	skillAutoInjectThreshold: number;
 
+	// ── Custom menu (user-defined right-click prompts) ──────────────────────
+	/**
+	 * Vault-relative path of the markdown note that defines custom menu items.
+	 * Each H1 heading selects a surface (Files → file-menu, Editor → editor-
+	 * menu); each H2 heading is a menu label whose body is the prompt template
+	 * (with blockquote lines stripped as user comments).
+	 *
+	 * The prompt template may use `{{filepath}}`, `{{selection}}`, and
+	 * `{{blockquote}}` placeholder variables, replaced at click time with
+	 * concrete values from the current file / editor context.
+	 *
+	 * Default: `'MENU.md'`. Empty string disables the feature.
+	 */
+	customMenuNotePath: string;
+
 	// ── Memory (heading-anchored note store) ───────────────────────────────
 	/**
 	 * Master switch for the Memory feature. When false, the memory tools are

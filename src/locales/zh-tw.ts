@@ -376,6 +376,18 @@ export const zhTW: Record<string, string> = {
 	'settings.memoriesEmpty': '暫無儲存的記憶。',
 	'settings.memoryCount': '已儲存 {count} 條記憶',
 
+	// ── Customize ──────────────────────────────────────────
+	'settings.customize': 'Customize',
+	'settings.customizeMenuNotePath': '選單筆記路徑',
+	'settings.customizeMenuNotePathDesc': '定義自訂右鍵選單項目的 Markdown 筆記的庫內相對路徑。一級標題選擇選單表面（Files → 檔案選單，Editor → 編輯器選單）；每個二級標題是一個選單標籤，其正文內容為提示詞模板。引用行（"> ..."）視為註解，會被過濾。',
+	'settings.customizeMenuNotePathPlaceholder': '例如 MENU.md',
+	'settings.customizeOpenNote': '在新分頁開啟選單筆記',
+	'settings.customizeNoteMissing': '選單筆記尚未存在。',
+	'settings.customizeVariablesHeading': '模板變數',
+	'settings.customizeVarFilepath': '替換為檔案路徑（含檔名），如 "Input/Test Note.md"。',
+	'settings.customizeVarSelection': '替換為選取範圍，如 "(Ln 29 - Ln 40)"。未選取任何內容時，顯示游標位置。',
+	'settings.customizeVarBlockquote': '替換為選取文字的 Markdown 引用格式。長文字截斷至 100 字元。',
+
 
 	// ── Token usage ───────────────────────────────────────
 	// (obsolete full-sentence token.* keys removed; see statusLabel.* below)

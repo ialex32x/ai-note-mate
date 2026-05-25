@@ -376,6 +376,18 @@ export const ko: Record<string, string> = {
 	'settings.memoriesEmpty': '저장된 기억이 없습니다.',
 	'settings.memoryCount': '{count}개의 기억 저장됨',
 
+	// ── Customize ──────────────────────────────────────────
+	'settings.customize': 'Customize',
+	'settings.customizeMenuNotePath': '메뉴 노트 경로',
+	'settings.customizeMenuNotePathDesc': '사용자 정의 우클릭 메뉴 항목을 정의하는 Markdown 노트의 보관함 상대 경로. H1 제목으로 메뉴 표면을 선택합니다（Files → 파일 메뉴, Editor → 편집기 메뉴）. 각 H2 제목은 메뉴 레이블이며, 그 본문이 프롬프트 템플릿입니다. 인용 줄（"> ..."）은 주석으로 처리되어 제거됩니다.',
+	'settings.customizeMenuNotePathPlaceholder': '예: MENU.md',
+	'settings.customizeOpenNote': '새 탭에서 메뉴 노트 열기',
+	'settings.customizeNoteMissing': '메뉴 노트가 아직 존재하지 않습니다.',
+	'settings.customizeVariablesHeading': '템플릿 변수',
+	'settings.customizeVarFilepath': '파일 경로（파일명 포함）로 대체됩니다（예: "Input/Test Note.md"）. ',
+	'settings.customizeVarSelection': '선택 범위로 대체됩니다（예: "(Ln 29 - Ln 40)"）. 선택된 내용이 없으면 커서 위치를 표시합니다.',
+	'settings.customizeVarBlockquote': '선택한 텍스트를 Markdown 인용 형식으로 대체합니다. 긴 텍스트는 100자로 잘립니다.',
+
 
 	// ── Token usage ───────────────────────────────────────
 	// (obsolete full-sentence token.* keys removed; see statusLabel.* below)

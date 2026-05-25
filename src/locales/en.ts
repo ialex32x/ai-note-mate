@@ -376,6 +376,18 @@ export const en: Record<string, string> = {
 	'settings.memoriesEmpty': 'No memories stored yet.',
 	'settings.memoryCount': '{count} memories stored',
 
+	// ── Customize ──────────────────────────────────────────
+	'settings.customize': 'Customize',
+	'settings.customizeMenuNotePath': 'Menu note path',
+	'settings.customizeMenuNotePathDesc': 'Vault-relative path of the markdown note that defines custom right-click menu items. H1 headings select a surface (Files → file-menu, Editor → editor-menu); each H2 heading is a menu label whose body is the prompt template. Blockquote lines ("> ...") are treated as comments and stripped.',
+	'settings.customizeMenuNotePathPlaceholder': 'e.g. MENU.md',
+	'settings.customizeOpenNote': 'Open the menu note in a new tab',
+	'settings.customizeNoteMissing': 'Menu note does not exist yet.',
+	'settings.customizeVariablesHeading': 'Template variables',
+	'settings.customizeVarFilepath': 'Replaced with the file path including filename (e.g. "Input/Test Note.md").',
+	'settings.customizeVarSelection': 'Replaced with the selection range (e.g. "(Ln 29 - Ln 40)"). When nothing is selected, shows the cursor position.',
+	'settings.customizeVarBlockquote': 'Replaced with the selected text as a markdown blockquote. Truncated to 100 characters for long selections.',
+
 
 	// ── Token usage ───────────────────────────────────────
 	// (obsolete full-sentence token.* keys removed; see statusLabel.* below)

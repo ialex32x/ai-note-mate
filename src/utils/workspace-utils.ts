@@ -37,7 +37,12 @@ export interface ResolvedFileRef {
 export function resolveFileRef(app: App, path: string): ResolvedFileRef | null {
     // If path contains path separators, treat as full path
     if (path.includes('/')) {
-        const file = app.vault.getAbstractFileByPath(path);
+        let file = app.vault.getAbstractFileByPath(path);
+        // Obsidian wikilinks may omit the .md extension; try appending it
+        // as a fallback when the exact path is not found.
+        if (!file) {
+            file = app.vault.getAbstractFileByPath(path + '.md');
+        }
         if (file) {
             return {
                 path: file.path,

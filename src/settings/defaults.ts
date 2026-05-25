@@ -182,6 +182,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	subAgentFilterTopK: DEFAULT_SUB_AGENT_FILTER_TOP_K,
 	skillHintThreshold: DEFAULT_SKILL_HINT_THRESHOLD,
 	skillAutoInjectThreshold: DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
+	customMenuNotePath: 'MENU.md',
 	memoryEnabled: true,
 	memoryNotePath: 'MEMORY.md',
 	memoryAutoExtract: false,
