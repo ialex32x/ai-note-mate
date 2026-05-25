@@ -14,7 +14,7 @@ import { findTailTurn } from '../services/turn-utils';
 import { optimizePrompt, PromptOptimizationError } from '../services/prompt-optimizer';
 import { getActiveEmbeddingConfig, getActiveProfile } from '../settings';
 import { exportSessionToVault } from '../services/session-exporter';
-import { ALL_TOOL_CAPABILITIES } from '../services/llm-provider';
+
 import { inferModelContextWindow } from '../services/model-context-window';
 import NoteAssistantPlugin from 'main';
 import { t } from '../i18n';
@@ -39,7 +39,6 @@ import {
 
 import {
     createProfileSelector, type ProfileSelectorHandle,
-    createCapabilitiesSelector, type CapabilitiesSelectorHandle,
     createCheckpointSelector, type CheckpointSelectorHandle,
     createTipsButton, type TipsButtonHandle,
     createIssueTracerButton, type IssueTracerButtonHandle,
@@ -157,12 +156,9 @@ export class SessionView extends ItemView {
 
     // ── Toolbar selectors ────────────────────────────────────────────────────────────
     private profileSelector!: ProfileSelectorHandle;
-    private capabilitiesSelector!: CapabilitiesSelectorHandle;
     private checkpointSelector!: CheckpointSelectorHandle;
     private tipsButton: TipsButtonHandle | null = null;
     private issueTracerButton: IssueTracerButtonHandle | null = null;
-    /** Settings-change listener that keeps the capabilities toolbar in sync. */
-    private onSettingsChangedForCapabilities: (() => void) | null = null;
     /**
      * MCP-manager change listener that refreshes the session-status panel
      * while it is open, so connection/disconnection events update live
@@ -760,30 +756,6 @@ export class SessionView extends ItemView {
             // ── Profile selector (using DropdownManager) ───────────────────────────
             this.profileSelector = createProfileSelector(thinkingRow, this.plugin, this.dropdownManager);
 
-            // ── Capabilities selector (using DropdownManager) ────────────────────────
-            this.capabilitiesSelector = createCapabilitiesSelector(thinkingRow, this.dropdownManager, {
-                initial: this.plugin.settings.allowedCapabilities,
-                onChange: (allowed) => {
-                    // Only persist when actually different to avoid feedback
-                    // loops with the settings-change listener below.
-                    const current = this.plugin.settings.allowedCapabilities ?? [];
-                    if (
-                        current.length === allowed.length
-                        && current.every((c: string, i: number) => allowed[i] === c)
-                    ) {
-                        return;
-                    }
-                    this.plugin.settings.allowedCapabilities = allowed;
-                    void this.plugin.saveSettings();
-                },
-            });
-            // Keep the toolbar selector in sync with external settings changes
-            // (e.g. toggled from the global settings tab while a session is open).
-            this.onSettingsChangedForCapabilities = () => {
-                this.capabilitiesSelector.setAllowed(this.plugin.settings.allowedCapabilities);
-            };
-            this.plugin.onSettingsChange(this.onSettingsChangedForCapabilities);
-
             // ── Issue tracer button (mounted before Tips so Tips stays last) ──
             // The wrapper hides itself via CSS when zero issues are recorded,
             // so it costs no real estate during healthy sessions.
@@ -884,10 +856,6 @@ export class SessionView extends ItemView {
         this.tipsButton = null;
         this.issueTracerButton?.dispose();
         this.issueTracerButton = null;
-        if (this.onSettingsChangedForCapabilities) {
-            this.plugin.offSettingsChange(this.onSettingsChangedForCapabilities);
-            this.onSettingsChangedForCapabilities = null;
-        }
         if (this.onMcpStateChangedForStatusPanel) {
             this.plugin.mcpManager?.offChange(this.onMcpStateChangedForStatusPanel);
             this.onMcpStateChangedForStatusPanel = null;
@@ -1521,10 +1489,7 @@ export class SessionView extends ItemView {
 
     private async sendPrompt(text: string): Promise<void> {
         await this.ensureRuntimeAttached().chat.prompt(text, {
-            allowedCapabilities: (() => {
-                const allowed = this.capabilitiesSelector.getAllowed();
-                return allowed.length < ALL_TOOL_CAPABILITIES.length ? allowed : undefined;
-            })(),
+            allowedCapabilities: this.plugin.settings.allowedCapabilities,
             provider: createProviderForActiveProfileOf(this.plugin),
             // Pull thinkingLevel from the active profile. Older profiles
             // saved before this field existed leave it `undefined`, which
