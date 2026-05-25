@@ -212,6 +212,8 @@ export const ko: Record<string, string> = {
 	'settings.builtinWebSearchDesc': '내장 웹 검색 도구를 어시스턴트에 노출하여 필요할 때 웹에서 정보를 가져올 수 있도록 합니다. 내장 네트워크 접근 기능과 안정성은 제한적입니다. 더 안정적이고 강력한 네트워크 접근이 필요하다면, 네트워크 접근을 제공하는 전용 MCP 도구의 사용을 고려해 보세요.',
 	'settings.builtinWebFetch': '내장 웹 페이지 가져오기 도구',
 	'settings.builtinWebFetchDesc': '내장 웹 페이지 가져오기 도구를 어시스턴트에 노출하여 지정한 URL에서 읽을 수 있는 본문 내용을 가져오고 추출할 수 있도록 합니다.',
+	'settings.builtinWebUpload': '내장 웹 업로드 도구',
+	'settings.builtinWebUploadDesc': '내장 웹 업로드 도구를 어시스턴트에 노출하여 Vault 파일을 외부 URL(예: MCP 서버)로 업로드할 수 있도록 합니다. 기본적으로 비활성화되어 있습니다. 신뢰할 수 있는 서비스에만 활성화하세요.',
 	'settings.webFetchSoftLimit': '웹 페이지 가져오기 소프트 제한(턴당)',
 	'settings.webFetchSoftLimitDesc': '한 턴 안에서 어시스턴트의 web_fetch_url 호출이 이 횟수를 넘으면, 각 결과 끝에 가져오기를 멈추고 답변을 정리하라는 안내가 덧붙여집니다. 0으로 설정하면 플러그인 기본값(5)을 사용합니다. 새 세션부터 적용됩니다.',
 	'settings.webFetchHardLimit': '웹 페이지 가져오기 하드 제한(턴당)',

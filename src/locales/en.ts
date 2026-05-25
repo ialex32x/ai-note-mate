@@ -212,6 +212,8 @@ export const en: Record<string, string> = {
 	'settings.builtinWebSearchDesc': 'Expose the built-in web search tool to the assistant so it can fetch information from the web when needed. The built-in web access has limited capability and reliability — for more stable and powerful results, consider using a dedicated MCP tool that provides web access.',
 	'settings.builtinWebFetch': 'Built-in web fetch tool',
 	'settings.builtinWebFetchDesc': 'Expose the built-in web fetch tool to the assistant so it can retrieve and extract readable content from a specific URL.',
+	'settings.builtinWebUpload': 'Built-in web upload tool',
+	'settings.builtinWebUploadDesc': 'Expose the built-in web upload tool to the assistant so it can upload vault files to external URLs (e.g. MCP servers). Off by default — only enable if you trust the target services.',
 	'settings.webFetchSoftLimit': 'Web fetch soft limit (per turn)',
 	'settings.webFetchSoftLimitDesc': 'Once the assistant calls web_fetch_url more than this many times in a single turn, each result is suffixed with a reminder nudging it to stop fetching and synthesize an answer. Set to 0 to use the plugin default (5). Takes effect on next session.',
 	'settings.webFetchHardLimit': 'Web fetch hard limit (per turn)',

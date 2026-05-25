@@ -9,6 +9,7 @@ import { joinPath } from "../../utils/path-helper";
 import { generateImageWithGemini } from "../image-gen/gemini-image";
 import { generateImageWithQwen } from "../image-gen/qwen-image";
 import { generateImageWithOpenAI } from "../image-gen/openai-image";
+import { getMimeType, mimeTypeToExt } from "../../utils/mime-helper";
 import { recordIssue } from "../diagnostics/issue-tracer";
 
 /**
@@ -57,8 +58,8 @@ async function readReferenceImages(app: App, paths: string[]): Promise<Reference
             throw new Error(`Referenced image not found in vault: ${rawPath}`);
         }
         const ext = file.extension.toLowerCase();
-        const mimeType = extToMimeType(ext);
-        if (!mimeType) {
+        const mimeType = getMimeType(ext, null);
+        if (mimeType === null) {
             throw new Error(`Referenced file is not a supported image (${ext}): ${rawPath}`);
         }
         let arrayBuffer: ArrayBuffer;
@@ -78,17 +79,6 @@ async function readReferenceImages(app: App, paths: string[]): Promise<Reference
         });
     }
     return result;
-}
-
-function extToMimeType(ext: string): string | null {
-    const map: Record<string, string> = {
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        webp: "image/webp",
-        gif: "image/gif",
-    };
-    return map[ext] || null;
 }
 
 /**
@@ -410,16 +400,6 @@ function handleImageGenError(err: unknown): ToolCallResult {
         type: "text",
         content: `Image generation failed: ${msg}`,
     };
-}
-
-function mimeTypeToExt(mimeType: string): string {
-    const map: Record<string, string> = {
-        "image/png": "png",
-        "image/jpeg": "jpg",
-        "image/webp": "webp",
-        "image/gif": "gif",
-    };
-    return map[mimeType] || "png";
 }
 
 async function buildUniqueFilename(base64Data: string, ext: string): Promise<string> {

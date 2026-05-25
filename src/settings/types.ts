@@ -140,6 +140,7 @@ export interface NoteAssistantPluginSettings {
 
 	builtinWebSearchEnabled: boolean;
 	builtinWebFetchEnabled: boolean;
+	builtinWebUploadEnabled: boolean;
 	builtinRSSFetchEnabled: boolean;
 	builtinJavaScriptEnabled: boolean;
 

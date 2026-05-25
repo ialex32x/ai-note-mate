@@ -158,6 +158,19 @@ export class GlobalSettingsSection implements SettingsSection {
 			experimental: true,
 		});
 
+		// Built-in web upload tool toggle
+		createToggleField({
+			container,
+			name: t('settings.builtinWebUpload'),
+			desc: t('settings.builtinWebUploadDesc'),
+			value: plugin.settings.builtinWebUploadEnabled,
+			onChange: async (value) => {
+				plugin.settings.builtinWebUploadEnabled = value;
+				await plugin.saveSettings();
+			},
+			sessionRestartRequired: true,
+		});
+
 		// ── Sub-agent return cache (artifact store) ─────────────────────────
 		// All three knobs are read once at SessionRuntime construction
 		// (see runtime-factory.ts). Existing runtimes are NOT re-tuned —

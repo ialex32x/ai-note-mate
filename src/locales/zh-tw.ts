@@ -212,6 +212,8 @@ export const zhTW: Record<string, string> = {
 	'settings.builtinWebSearchDesc': '向助手公開內建的網路搜尋工具，使其在需要時可從網路取得資訊。內建網路存取能力與穩定性有限，如需更穩定、更強大的網路存取能力，建議使用專門提供網路存取的 MCP 工具。',
 	'settings.builtinWebFetch': '內建網頁擷取工具',
 	'settings.builtinWebFetchDesc': '向助手公開內建的網頁擷取工具，使其可從指定 URL 取得並擷取可讀正文內容。',
+	'settings.builtinWebUpload': '內建檔案上傳工具',
+	'settings.builtinWebUploadDesc': '向助手公開內建的檔案上傳工具，使其可將 Vault 中的檔案上傳到外部 URL（例如 MCP 伺服器）。預設關閉——僅在信任目標服務時啟用。',
 	'settings.webFetchSoftLimit': '網頁擷取軟上限（每輪）',
 	'settings.webFetchSoftLimitDesc': '在一輪對話內，助手對 web_fetch_url 的呼叫超過此次數後，每次結果都會附帶一段提示，引導其停止繼續擷取並開始綜合作答。設為 0 表示使用外掛預設值（5）。需切換新會話才生效。',
 	'settings.webFetchHardLimit': '網頁擷取硬上限（每輪）',

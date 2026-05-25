@@ -212,6 +212,8 @@ export const ja: Record<string, string> = {
 	'settings.builtinWebSearchDesc': '組み込みのウェブ検索ツールをアシスタントに公開し、必要に応じてウェブから情報を取得できるようにします。組み込みのネットワークアクセスは機能・安定性ともに限定的です。より安定して強力なネットワークアクセスが必要な場合は、ネットワークアクセスを提供する専用の MCP ツールの利用を検討してください。',
 	'settings.builtinWebFetch': '組み込みのウェブ取得ツール',
 	'settings.builtinWebFetchDesc': '組み込みのウェブ取得ツールをアシスタントに公開し、指定した URL から読みやすい本文内容を取得・抽出できるようにします。',
+	'settings.builtinWebUpload': '組み込みのウェブアップロードツール',
+	'settings.builtinWebUploadDesc': '組み込みのウェブアップロードツールをアシスタントに公開し、Vault内のファイルを外部URL（MCPサーバーなど）にアップロードできるようにします。デフォルトでは無効です。信頼できるサービスにのみ有効にしてください。',
 	'settings.webFetchSoftLimit': 'ウェブ取得のソフト上限（1 ターンあたり）',
 	'settings.webFetchSoftLimitDesc': '1 ターン内で web_fetch_url の呼び出し回数がこの値を超えると、各結果に「取得をやめて回答をまとめましょう」というリマインダーが追記されます。0 にするとプラグインの既定値（5）が使われます。新しいセッションで有効になります。',
 	'settings.webFetchHardLimit': 'ウェブ取得のハード上限（1 ターンあたり）',

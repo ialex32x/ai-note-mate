@@ -211,6 +211,8 @@ export const zhCN: Record<string, string> = {
 	'settings.builtinWebSearchDesc': '向助手暴露内置的网络搜索工具，使其可以在需要时从网络获取信息。内置网络访问能力和稳定性有限，如需更稳定、更强大的网络访问能力，建议使用专门提供网络访问的 MCP 工具。',
 	'settings.builtinWebFetch': '内置网页抓取工具',
 	'settings.builtinWebFetchDesc': '向助手暴露内置的网页抓取工具，使其可以从指定 URL 获取并提取可读正文内容。',
+	'settings.builtinWebUpload': '内置文件上传工具',
+	'settings.builtinWebUploadDesc': '向助手暴露内置的文件上传工具，使其可以将 Vault 中的文件上传到外部 URL（例如 MCP 服务器）。默认关闭——仅在信任目标服务时启用。',
 	'settings.webFetchSoftLimit': '网页抓取软上限（每轮）',
 	'settings.webFetchSoftLimitDesc': '在一轮对话内，助手对 web_fetch_url 的调用超过该次数后，每次结果都会附带一条提示，引导其停止继续抓取并开始综合作答。设为 0 表示使用插件默认值（5）。需切换新会话生效。',
 	'settings.webFetchHardLimit': '网页抓取硬上限（每轮）',

@@ -161,6 +161,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	imageDownloadDir: 'Attachments',
 	builtinWebSearchEnabled: true,
 	builtinWebFetchEnabled: true,
+	builtinWebUploadEnabled: false,
 	builtinRSSFetchEnabled: true,
 	builtinJavaScriptEnabled: false,
 	webFetchSoftLimit: DEFAULT_WEB_FETCH_SOFT_LIMIT,

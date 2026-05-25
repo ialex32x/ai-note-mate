@@ -1,7 +1,6 @@
 import { TFile, TFolder } from "obsidian";
 import type { App } from "obsidian";
 import type { ToolCallResult } from "../../chat-stream";
-import type { ModalityCapability } from "../../llm-provider";
 
 // ─────────────────────────────────────────────
 // Media helper utilities (images + videos + audio + pdf)
@@ -21,6 +20,13 @@ export const MEDIA_EXTENSIONS = new Set([
 export function isMediaFile(file: TFile): boolean {
     return MEDIA_EXTENSIONS.has(file.extension.toLowerCase());
 }
+
+// ─────────────────────────────────────────────
+// MIME-type helpers — implemented in utils/mime-helper.ts; re-exported
+// here for backward-compat within the obsidian/ tool family.
+// ─────────────────────────────────────────────
+
+export { getMimeType, mimeTypeToExt, mediaKindFromMime } from "../../../utils/mime-helper";
 
 // ─────────────────────────────────────────────
 // Non-media binary formats
@@ -65,53 +71,6 @@ export const NON_MEDIA_BINARY_EXTENSIONS = new Set([
 
 export function isNonMediaBinaryFile(file: TFile): boolean {
     return NON_MEDIA_BINARY_EXTENSIONS.has(file.extension.toLowerCase());
-}
-
-export function getMimeType(extension: string): string {
-    const mimeMap: Record<string, string> = {
-        // Images
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        gif: "image/gif",
-        webp: "image/webp",
-        svg: "image/svg+xml",
-        bmp: "image/bmp",
-        ico: "image/x-icon",
-        tiff: "image/tiff",
-        tif: "image/tiff",
-        // Videos
-        mp4: "video/mp4",
-        webm: "video/webm",
-        mov: "video/quicktime",
-        avi: "video/x-msvideo",
-        mkv: "video/x-matroska",
-        // Audio
-        mp3: "audio/mpeg",
-        wav: "audio/wav",
-        ogg: "audio/ogg",
-        flac: "audio/flac",
-        aac: "audio/aac",
-        wma: "audio/x-ms-wma",
-        m4a: "audio/mp4",
-        opus: "audio/opus",
-        // Documents
-        pdf: "application/pdf",
-    };
-    return mimeMap[extension.toLowerCase()] ?? "application/octet-stream";
-}
-
-/**
- * Infer the modality kind for a MIME type. Used when constructing a
- * `MediaAttachment` from a vault file or a tool result. Falls back to
- * `image` so callers always end up with a valid kind value.
- */
-export function mediaKindFromMime(mime: string): ModalityCapability {
-    const m = mime.toLowerCase();
-    if (m.startsWith("audio/")) return "audio";
-    if (m.startsWith("video/")) return "video";
-    if (m === "application/pdf") return "pdf";
-    return "image";
 }
 
 // ─────────────────────────────────────────────
