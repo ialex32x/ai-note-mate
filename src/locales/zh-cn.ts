@@ -58,7 +58,6 @@ export const zhCN: Record<string, string> = {
 	'view.openInBrowser': '在浏览器中打开',
 	'view.openInSystemBrowser': '在系统浏览器中打开',
 	'view.revealInExplorer': '在文件管理器中显示',
-	'view.openNoteInNewTab': '在新标签页打开笔记',
 	'view.roleYou': '用户',
 	'view.roleAI': 'AI',
 	'view.roleTool': '工具',

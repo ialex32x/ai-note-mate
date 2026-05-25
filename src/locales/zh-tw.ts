@@ -58,7 +58,6 @@ export const zhTW: Record<string, string> = {
 	'view.openInBrowser': '在瀏覽器中開啟',
 	'view.openInSystemBrowser': '在系統瀏覽器中開啟',
 	'view.revealInExplorer': '在檔案總管中顯示',
-	'view.openNoteInNewTab': '在新分頁開啟筆記',
 	'view.roleYou': '使用者',
 	'view.roleAI': 'AI',
 	'view.roleTool': '工具',

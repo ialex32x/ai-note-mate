@@ -58,7 +58,6 @@ export const ko: Record<string, string> = {
 	'view.openInBrowser': '브라우저에서 열기',
 	'view.openInSystemBrowser': '시스템 브라우저에서 열기',
 	'view.revealInExplorer': '파일 탐색기에서 표시',
-	'view.openNoteInNewTab': '새 탭에서 노트 열기',
 	'view.roleYou': '사용자',
 	'view.roleAI': 'AI',
 	'view.roleTool': '도구',

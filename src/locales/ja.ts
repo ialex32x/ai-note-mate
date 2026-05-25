@@ -58,7 +58,6 @@ export const ja: Record<string, string> = {
 	'view.openInBrowser': 'ブラウザで開く',
 	'view.openInSystemBrowser': 'システムブラウザで開く',
 	'view.revealInExplorer': 'エクスプローラーで表示',
-	'view.openNoteInNewTab': '新しいタブでノートを開く',
 	'view.roleYou': 'あなた',
 	'view.roleAI': 'AI',
 	'view.roleTool': 'ツール',

@@ -517,16 +517,13 @@ export class EditHistoryView extends ItemView {
 
     private async openTaskFile(task: EditTask): Promise<void> {
         if (!task.filePath) return;
-        const file = this.app.vault.getAbstractFileByPath(task.filePath);
-        if (!(file instanceof TFile)) {
-            new Notice(t("editHistory.notice.fileMissing"));
-            return;
-        }
-        const leaf = this.app.workspace.getLeaf(false);
-        await leaf.openFile(file);
+        // Use Obsidian's standard open behaviour so click replaces the
+        // active tab and Cmd/Ctrl-click opens a new tab, consistent with
+        // how wikilinks work everywhere else in the vault.
+        await this.app.workspace.openLinkText(task.filePath, '', false);
         // Best-effort: restore the original selection in the opened editor.
-        const view = leaf.view;
-        if (view instanceof MarkdownView) {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (view && view.file?.path === task.filePath) {
             try {
                 view.editor.setSelection(
                     { line: task.fromLine, ch: task.fromCh },
@@ -672,8 +669,8 @@ export class EditHistoryView extends ItemView {
     private async openLogEntry(entry: VaultEditLogEntry): Promise<void> {
         const abs = this.app.vault.getAbstractFileByPath(entry.path);
         if (abs instanceof TFile) {
-            const leaf = this.app.workspace.getLeaf(false);
-            await leaf.openFile(abs);
+            // Use Obsidian's standard open behaviour.
+            await this.app.workspace.openLinkText(entry.path, '', false);
             return;
         }
         if (abs instanceof TFolder) {

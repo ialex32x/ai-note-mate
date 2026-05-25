@@ -55,8 +55,9 @@ export async function exportSessionToVault(app: App, messages: ChatMessage[]): P
         }
         const file = app.vault.getAbstractFileByPath(filePath);
         if (file instanceof TFile) {
-            const leaf = app.workspace.getLeaf('tab');
-            void leaf.openFile(file);
+            // Follow Obsidian's standard behaviour: click replaces the
+            // active tab, Cmd/Ctrl+click opens a new tab.
+            void app.workspace.openLinkText(filePath, '', false);
         }
         new Notice('Session exported successfully');
     } catch (err) {

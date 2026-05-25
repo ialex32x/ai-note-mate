@@ -58,7 +58,6 @@ export const en: Record<string, string> = {
 	'view.openInBrowser': 'Open in browser',
 	'view.openInSystemBrowser': 'Open in system browser',
 	'view.revealInExplorer': 'Reveal in file explorer',
-	'view.openNoteInNewTab': 'Open note in new tab',
 	'view.roleYou': 'You',
 	'view.roleAI': 'AI',
 	'view.roleTool': 'Tool',

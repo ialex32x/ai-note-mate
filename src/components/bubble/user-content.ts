@@ -1,7 +1,6 @@
 import { setIcon, setTooltip, TFile, TFolder } from 'obsidian';
 import { extractFileRefs } from '../cm-input/cm-input';
 import {
-    openFileInWorkspace,
     revealInNavigation,
     resolveFileRef,
 } from '../../utils/workspace-utils';
@@ -102,7 +101,9 @@ function renderInlineFileRef(
         if (file instanceof TFolder) {
             revealInNavigation(app, file);
         } else if (file instanceof TFile) {
-            openFileInWorkspace(app, file);
+            // Follow Obsidian's standard behaviour: click replaces the
+            // active tab, Cmd/Ctrl+click opens a new tab.
+            void app.workspace.openLinkText(resolvedPath, '', false);
         }
     });
 }

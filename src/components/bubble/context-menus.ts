@@ -2,10 +2,7 @@ import { Menu, TFile } from 'obsidian';
 import { t } from '../../i18n';
 import { resolveAppUrlToVaultPath } from '../../utils/path-helper';
 import { copyToClipboard } from '../../utils/clipboard';
-import {
-    openFileInWorkspace,
-    revealInNavigation,
-} from '../../utils/workspace-utils';
+import { revealInNavigation } from '../../utils/workspace-utils';
 import type { BubbleContext } from './bubble-context';
 
 /**
@@ -88,11 +85,33 @@ export function attachImageContextMenu(
 }
 
 /**
+ * Strip a heading reference (`#…`) or block reference (`^…`) suffix from a
+ * wikilink path so the remaining portion can be passed to
+ * `getFirstLinkpathDest` for file resolution.
+ *
+ * Handles both `#` and `^` at any position after the first character,
+ * taking the earliest delimiter when both are present (e.g.
+ * `Note#heading^block` → `Note`).
+ */
+function stripHeadingBlockRef(linkText: string): string {
+    const hashIdx = linkText.indexOf('#');
+    const caretIdx = linkText.indexOf('^');
+    if (hashIdx >= 0 && caretIdx >= 0) {
+        return linkText.slice(0, Math.min(hashIdx, caretIdx));
+    }
+    if (hashIdx >= 0) return linkText.slice(0, hashIdx);
+    if (caretIdx >= 0) return linkText.slice(0, caretIdx);
+    return linkText;
+}
+
+/**
  * Attach click + context-menu handlers to every `<a>` inside `container`.
  *
  * Resolves three link flavours:
- * 1. Internal vault links (`app://…` URLs or bare vault paths) — opened in
- *    the workspace, with Obsidian's native hover-preview wired up.
+ * 1. Internal vault links (`app://…` URLs, Obsidian `internal-link` class,
+ *    or bare vault paths) — opened via `openLinkText` which handles
+ *    heading/block references, non-existent notes, and mobile workspaces
+ *    correctly. Obsidian's native hover-preview is wired up.
  * 2. External `http(s)` links — opened via workspace linker or system shell.
  * 3. Anchors / unsupported schemes — copy-link only.
  */
@@ -104,71 +123,79 @@ export function attachLinkContextMenu(
     const links = container.querySelectorAll('a');
     links.forEach((link) => {
         const hrefAttr = link.getAttribute('href') || '';
+        // Obsidian's MarkdownRenderer stores the raw wikilink text (without
+        // `[[` `]]`) in `data-href`. Use this as the canonical link text
+        // for `openLinkText` because it preserves heading/block references.
+        const linkText = link.getAttribute('data-href') || hrefAttr;
 
-        const resolveVaultFile = (): TFile | null => {
-            if (!hrefAttr) return null;
-
-            if (hrefAttr.startsWith('app://')) {
-                const relativePath = resolveAppUrlToVaultPath(app, hrefAttr);
-                if (relativePath) {
-                    const file = app.vault.getAbstractFileByPath(relativePath);
-                    if (file instanceof TFile) return file;
-                }
-                return null;
-            }
-
-            // Bare path (no scheme, not an anchor): try as-is and with `.md`
-            // appended — matches how the renderer emits internal links.
-            if (!hrefAttr.includes('://') && !hrefAttr.startsWith('#')) {
-                let pathToTry = hrefAttr;
-                if (!pathToTry.includes('.')) {
-                    pathToTry = pathToTry + '.md';
-                }
-                const file = app.vault.getAbstractFileByPath(pathToTry);
-                if (file instanceof TFile) return file;
-
-                const fileNoExt = app.vault.getAbstractFileByPath(hrefAttr);
-                if (fileNoExt instanceof TFile) return fileNoExt;
-            }
-
-            return null;
-        };
-
+        // ── Detect link type ───────────────────────────────────────────
         const isExternalLink = hrefAttr.startsWith('http://') || hrefAttr.startsWith('https://');
-        const vaultFile = resolveVaultFile();
-        const isInternalLink = vaultFile !== null;
 
-        if (isInternalLink && vaultFile) {
+        // Internal links are either:
+        //   - Marked by Obsidian's MarkdownRenderer with class `internal-link`
+        //   - `app://` resource URLs (images, attachments)
+        const isObsidianInternal = link.classList.contains('internal-link');
+        const isAppUrl = hrefAttr.startsWith('app://');
+
+        // Resolve the target file using Obsidian's wikilink resolver. For
+        // `app://` URLs we still resolve via vault path; for wikilinks we
+        // strip heading/block refs before calling `getFirstLinkpathDest`.
+        let resolvedFile: TFile | null = null;
+        if (isObsidianInternal && linkText) {
+            const pathOnly = stripHeadingBlockRef(linkText);
+            const dest = app.metadataCache.getFirstLinkpathDest(pathOnly, '');
+            if (dest instanceof TFile) resolvedFile = dest;
+        }
+        if (!resolvedFile && isAppUrl) {
+            const relativePath = resolveAppUrlToVaultPath(app, hrefAttr);
+            if (relativePath) {
+                const file = app.vault.getAbstractFileByPath(relativePath);
+                if (file instanceof TFile) resolvedFile = file;
+            }
+        }
+
+        const isInternalLink = resolvedFile !== null || isObsidianInternal || isAppUrl;
+
+        // ── Click handler ──────────────────────────────────────────────
+        // Always attach for recognised internal links so the user never
+        // hits the browser's built-in `target="_blank"` behaviour on
+        // wiki-links — that fallback is a known crash source on mobile
+        // Capacitor WebViews.
+        if (isInternalLink) {
+            // Hover preview: use the resolved file path for the preview,
+            // falling back to the raw linkText (which may include a heading).
             link.addEventListener('mouseenter', (evt) => {
                 app.workspace.trigger('hover-link', {
                     event: evt,
                     source: 'ai-assistant',
                     hoverParent: container,
                     targetEl: link,
-                    linktext: vaultFile.path,
+                    linktext: resolvedFile?.path || linkText,
                 });
             });
 
             link.addEventListener('click', (e: MouseEvent) => {
                 e.preventDefault();
                 e.stopPropagation();
-                openFileInWorkspace(app, vaultFile);
+                const inNewTab = e.metaKey || e.ctrlKey || e.button === 1;
+                void app.workspace.openLinkText(linkText, '', inNewTab);
+            });
+
+            // Middle-click (auxclick) — same as Cmd/Ctrl+click.
+            link.addEventListener('auxclick', (e: MouseEvent) => {
+                if (e.button !== 1) return;
+                e.preventDefault();
+                e.stopPropagation();
+                void app.workspace.openLinkText(linkText, '', true);
             });
         }
 
+        // ── Context menu ───────────────────────────────────────────────
         link.addEventListener('contextmenu', (e: MouseEvent) => {
             e.preventDefault();
             const menu = new Menu();
 
-            if (isInternalLink && vaultFile) {
-                menu.addItem((item) => {
-                    item.setTitle(t('view.openNoteInNewTab'));
-                    item.onClick(() => {
-                        const leaf = app.workspace.getLeaf('tab');
-                        void leaf.openFile(vaultFile);
-                    });
-                });
-            } else if (isExternalLink) {
+            if (isExternalLink) {
                 menu.addItem((item) => {
                     item.setTitle(t('view.openInBrowser'));
                     item.onClick(() => {

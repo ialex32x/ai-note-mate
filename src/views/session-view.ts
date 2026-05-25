@@ -36,7 +36,7 @@ import {
     type ConversationInsight,
     type InsightCardState,
 } from '../services/insights';
-import { openFileInWorkspace } from '../utils/workspace-utils';
+
 import {
     createProfileSelector, type ProfileSelectorHandle,
     createCapabilitiesSelector, type CapabilitiesSelectorHandle,
@@ -1819,9 +1819,9 @@ export class SessionView extends ItemView {
                 // matches the behaviour we want for LLM-provided paths.
                 const dest = this.app.metadataCache.getFirstLinkpathDest(action.path, '');
                 if (dest) {
-                    // Reuse an existing leaf when the note is already open so we
-                    // don't stack duplicate tabs on repeated picks.
-                    openFileInWorkspace(this.app, dest);
+                    // Use Obsidian's standard open behaviour: click replaces
+                    // the active tab, Cmd/Ctrl+click opens a new tab.
+                    void this.app.workspace.openLinkText(action.path, '', false);
                 } else {
                     // Note doesn't exist — defer to Obsidian's standard
                     // wiki-link behaviour. With the default "Automatically
@@ -1830,7 +1830,7 @@ export class SessionView extends ItemView {
                     // its usual "unresolved link" handling. Either way the
                     // outcome matches what users get from clicking [[link]],
                     // which is exactly the contract documented to the model.
-                    void this.app.workspace.openLinkText(action.path, '', 'tab');
+                    void this.app.workspace.openLinkText(action.path, '', false);
                 }
                 return true;
             }
