@@ -7,7 +7,7 @@ import type { SectionContext, SettingsSection } from "./types";
  * {@link CustomMenuService}.
  *
  * Layout (top → bottom):
- *   1. Note path field + "Open" button.
+ *   1. Note path field + dual-action button (create / open).
  *   2. Variable reference table.
  */
 export class CustomizeSettingsSection implements SettingsSection {
@@ -16,9 +16,11 @@ export class CustomizeSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin } = this.ctx;
+		const { plugin, refreshSection } = this.ctx;
 
-		// ── Note path ────────────────────────────────────────────────
+		const fileExists = plugin.customMenuService.findFile() !== null;
+
+		// ── Note path + helpers ──────────────────────────────────────
 		const pathSetting = new Setting(container)
 			.setName(t('settings.customizeMenuNotePath'))
 			.setDesc(t('settings.customizeMenuNotePathDesc'))
@@ -33,15 +35,27 @@ export class CustomizeSettingsSection implements SettingsSection {
 			});
 
 		pathSetting.addExtraButton(btn => {
-			btn.setIcon('external-link');
-			btn.setTooltip(t('settings.customizeOpenNote'));
+			btn.setIcon('file-plus-2');
+			btn.setTooltip(
+				fileExists
+					? t('settings.customizeOpenNote')
+					: t('settings.customizeCreateDefault'),
+			);
 			btn.onClick(async () => {
-				const file = plugin.customMenuService.findFile();
-				if (!file) {
-					new Notice(t('settings.customizeNoteMissing'));
+				const existing = plugin.customMenuService.findFile();
+				if (existing) {
+					await plugin.app.workspace.openLinkText(existing.path, '', true);
 					return;
 				}
-				await plugin.app.workspace.openLinkText(file.path, '', true);
+				try {
+					const file = await plugin.customMenuService.ensureFile();
+					new Notice(t('settings.customizeCreated', { path: file.path }));
+					refreshSection(this);
+				} catch (err) {
+					new Notice(
+						err instanceof Error ? err.message : String(err),
+					);
+				}
 			});
 		});
 

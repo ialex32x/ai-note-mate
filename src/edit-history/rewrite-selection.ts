@@ -2,7 +2,7 @@
  * Editor right-click menu + command-palette entry points for the
  * AI Edit History feature, plus a shared "AI" submenu host on `editor-menu`.
  *
- * For each of `expand` / `shorten` / `polish`:
+ * For each of `expand` / `shorten` / `continue`:
  * - registers a command palette command,
  * - registers a sub-menu item under a parent "AI" entry on `editor-menu`.
  *
@@ -26,12 +26,11 @@ import { createProviderForActiveProfile } from "../utils/provider-factory";
 import { resolveSecret } from "../utils/secret-helper";
 import { EditHistoryView } from "./edit-history-view";
 
-const ACTIONS: readonly EditAction[] = ["expand", "shorten", "polish", "continue"];
+const ACTIONS: readonly EditAction[] = ["expand", "shorten", "continue"];
 
 const ACTION_ICONS: Record<EditAction, IconName> = {
     expand: "maximize-2",
     shorten: "minimize-2",
-    polish: "wand-2",
     continue: "chevrons-right",
 };
 

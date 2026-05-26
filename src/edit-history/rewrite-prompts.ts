@@ -42,6 +42,5 @@ const CONTINUE_RULES = [
 export const REWRITE_PROMPTS: Record<EditAction, string> = {
     expand: `${COMMON_RULES}\nTask: Expand the following text with more detail, examples, or context. Keep the original meaning intact.`,
     shorten: `${COMMON_RULES}\nTask: Shorten the following text while preserving every key fact and the original meaning.`,
-    polish: `${COMMON_RULES}\nTask: Polish the following text — improve fluency, word choice, and grammar without changing the meaning.`,
     continue: `${CONTINUE_RULES}\nTask: Continue writing from where the following text ends.`,
 };

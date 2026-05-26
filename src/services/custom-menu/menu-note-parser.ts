@@ -4,11 +4,11 @@
  * Structure (by example):
  * ```
  * # Files
- * ## Summarise this note
+ * ## Summarise this note [sparkles]
  * Please summarise {{filepath}}...
  * > This is a comment — it will be stripped
  *
- * ## Translate this note
+ * ## Translate this note [languages]
  * Translate {{filepath}} to English...
  *
  * # Editor
@@ -19,7 +19,10 @@
  *
  * - H1 headings map to categories ({@link FILE_CATEGORY_H1_TEXTS} /
  *   {@link EDITOR_CATEGORY_H1_TEXTS}).
- * - H2 headings become menu item labels.
+ * - H2 headings become menu item labels. An optional trailing `[icon]`
+ *   suffix (e.g. `[sparkles]`, `[wand-2]`) sets the Lucide icon for the
+ *   menu entry; the suffix is stripped from the label. When omitted the
+ *   consumer defaults to `sparkles`.
  * - Body text between the H2 and the next heading (or EOF) becomes the
  *   prompt template.
  * - Blockquote lines (`> ...`) in the body are treated as user comments
@@ -36,6 +39,7 @@ import {
 import type { CustomMenuItem, CustomMenuCategory, ParsedMenuNote } from './types';
 
 const HEADING_REGEX = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
+const ICON_SUFFIX_REGEX = /^(.*?)\s+\[([\w][\w-]*)\]\s*$/;
 const BLOCKQUOTE_REGEX = /^>\s?/;
 const FENCE_REGEX = /^(\s*)(```+|~~~+)/;
 
@@ -56,14 +60,29 @@ export function parseMenuNote(content: string): ParsedMenuNote {
 	let inFence = false;
 	let fenceMarker = '';
 
+	/**
+	 * Split a heading text like `一键规范 [wand-2]` into its label and
+	 * optional icon name. When no `[icon]` suffix is present the icon
+	 * remains undefined (caller falls back to the default).
+	 */
+	const splitIcon = (heading: string): { label: string; icon?: string } => {
+		const m = ICON_SUFFIX_REGEX.exec(heading);
+		if (m) {
+			return { label: m[1]!.trim(), icon: m[2] };
+		}
+		return { label: heading };
+	};
+
 	const flushItem = (endLineExclusive: number) => {
 		if (!currentCategory || !currentLabel) return;
 		const rawBody = lines.slice(bodyStart, endLineExclusive).join('\n');
 		const cleanedBody = stripBlockquotes(rawBody).trim();
 		if (cleanedBody) {
+			const { label, icon } = splitIcon(currentLabel);
 			items.push({
 				category: currentCategory,
-				label: currentLabel,
+				label,
+				icon,
 				promptTemplate: cleanedBody,
 			});
 		}

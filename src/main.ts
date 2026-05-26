@@ -231,22 +231,6 @@ export default class NoteAssistantPlugin extends Plugin {
 				void this.sendEditorContextToNewSession(editor, info);
 			},
 		};
-		// "Explain" turns the current selection into a ready-made prompt and
-		// either sends it directly or — when the AI is mid-turn — drops it
-		// into the input for the user to send manually. Selection is required;
-		// without one there is nothing meaningful to explain.
-		const explainSelectionItem: AISubmenuItem = {
-			title: t('view.explainSelection'),
-			icon: 'help-circle',
-			isAvailable: (editor, info) => {
-				const sel = editor.getSelection();
-				if (!sel || !sel.trim()) return false;
-				return !!(info as { file?: { path?: string } } | undefined)?.file?.path;
-			},
-			onClick: (editor, info) => {
-				void this.explainEditorSelection(editor, info);
-			},
-		};
 		// "Auto-tag" is a session-level action — no selection required.
 		// It dispatches a fully-formed prompt directly to the AI session
 		// without touching the input box, so any draft the user is composing
@@ -269,7 +253,7 @@ export default class NoteAssistantPlugin extends Plugin {
 			this,
 			this.editHistory,
 			() => this.revealEditHistoryView(),
-			[sendToSessionItem, sendToNewSessionItem, explainSelectionItem, autoTagFileItem],
+			[sendToSessionItem, sendToNewSessionItem, autoTagFileItem],
 			(_editor, info) => {
 				// Dynamic items from MENU.md (Editor category). Cache is
 				// kept warm by vault events — no await needed.
@@ -279,7 +263,7 @@ export default class NoteAssistantPlugin extends Plugin {
 				const filePath = (info as { file?: { path?: string } } | undefined)?.file?.path;
 				return customItems.map(ci => ({
 					title: ci.label,
-					icon: 'sparkles' as const,
+					icon: ci.icon ?? 'sparkles',
 					onClick: (editor: Editor) => {
 						void this.executeCustomMenuItem(ci, {
 							filePath,
@@ -374,7 +358,7 @@ export default class NoteAssistantPlugin extends Plugin {
 					for (const ci of customItems) {
 						sub.addItem((s) => {
 							s.setTitle(ci.label);
-							s.setIcon('sparkles');
+							s.setIcon(ci.icon ?? 'sparkles');
 							s.onClick(() => {
 								void this.executeCustomMenuItem(ci, { filePath: file.path });
 							});
@@ -690,52 +674,10 @@ export default class NoteAssistantPlugin extends Plugin {
 	}
 
 	/**
-	 * Build an "explain" prompt from the active editor's selection and
-	 * park it in the AI session input as a draft via
-	 * {@link SessionView.fillPromptDraft}. The user reviews + sends
-	 * manually; we never auto-send. If the input already contains a draft
-	 * the view surfaces a Notice and the action is refused.
-	 *
-	 * Selection is required (the menu entry's `isAvailable` already enforces
-	 * this; we re-check defensively here in case future call sites bypass
-	 * the menu wiring).
-	 *
-	 * The prompt template is sourced from the locale bundle
-	 * (`view.explainPrompt`) so the parked draft matches the user's UI
-	 * language; the wikilink + range syntax embedded inside `{snippet}`
-	 * stays constant across languages because the AI session needs a
-	 * stable file reference. When the selection fits in the inline preview
-	 * budget, `{snippet}` also carries a quoted preview block immediately
-	 * under the file ref:
-	 *     <localized text> [[path]] (Ln A - Ln B)
-	 *     > <selection preview...>
-	 */
-	private async explainEditorSelection(
-		editor: Editor,
-		info?: MarkdownView | MarkdownFileInfo,
-	): Promise<void> {
-		const sel = editor.getSelection();
-		if (!sel || !sel.trim()) return;
-
-		const ctx = this.formatEditorContextSnippet(editor, info);
-		if (!ctx) return;
-
-		const prompt = t('view.explainPrompt', { snippet: ctx.snippet });
-
-		// Activate the session view so the user immediately sees the
-		// freshly parked draft (or the refusal Notice).
-		await this.createSessionView(true);
-		const view = this.getActiveSessionView();
-		if (!view) return;
-
-		view.fillPromptDraft(prompt);
-	}
-
-	/**
 	 * "Auto-tag" entry point shared by the editor right-click menu and the
 	 * file-menu submenu. Builds a fully-formed prompt referencing the
 	 * target note via wikilink and parks it in the session input via
-	 * {@link SessionView.fillPromptDraft}, mirroring `explainEditorSelection`:
+	 * {@link SessionView.fillPromptDraft}:
 	 *
 	 *   - if the input is empty, the prompt is loaded as a draft and the
 	 *     user reviews + sends manually;
@@ -796,7 +738,7 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * cursor / selection. Returns `null` if no file path can be resolved
 	 * (e.g. unsaved buffer with no associated TFile). See the long comment
 	 * on `sendEditorContextToSession` for the exact format rules; this
-	 * helper exists so multiple entry points (Send to AI Session, Explain)
+	 * helper exists so multiple entry points (Send to AI Session, Auto-tag)
 	 * can share one source of truth for the formatting.
 	 */
 	private formatEditorContextSnippet(
@@ -852,7 +794,7 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * Execute a single custom menu item: replace template variables with
 	 * live context, then park the resulting prompt in the session input
 	 * via {@link SessionView.fillPromptDraft}. The fill-or-refuse
-	 * semantics are the same as "Explain" / "Auto-tag" — if the input
+	 * semantics are the same as "Auto-tag" — if the input
 	 * already contains user text a Notice is surfaced and the action is
 	 * refused.
 	 */

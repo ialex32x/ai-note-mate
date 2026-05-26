@@ -20,8 +20,13 @@ export type CustomMenuCategory = 'file-menu' | 'editor-menu';
 export interface CustomMenuItem {
 	/** Which menu surface (editor right-click vs. file right-click). */
 	category: CustomMenuCategory;
-	/** Menu label (the `##` heading text). */
+	/** Menu label (the `##` heading text, with `[icon]` suffix stripped). */
 	label: string;
+	/**
+	 * Optional Lucide icon name extracted from a trailing `[icon]` in the
+	 * H2 heading. When unset the consumer falls back to `sparkles`.
+	 */
+	icon?: string;
 	/**
 	 * Prompt template body. Lines between the `##` heading and the next
 	 * heading (or EOF), with blockquote lines (`> ...`) stripped.

@@ -3,7 +3,7 @@
  * under a single tabbed panel:
  *
  *   1. **Rewrites** — selection-rewrite tasks triggered from the editor
- *      (expand / shorten / polish). Thin presenter on top of
+ *      (expand / shorten / continue). Thin presenter on top of
  *      {@link EditHistoryStore}; subscribes to `change` / `task-updated`
  *      and patches a single item element on streaming updates.
  *   2. **File changes** — a flat log of vault mutations performed by AI
@@ -36,7 +36,6 @@ const STATUS_ICONS: Record<EditTaskStatus, IconName> = {
 const ACTION_ICONS: Record<EditAction, IconName> = {
     expand: "maximize-2",
     shorten: "minimize-2",
-    polish: "wand-2",
     continue: "chevrons-right",
 };
 

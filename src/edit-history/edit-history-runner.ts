@@ -144,7 +144,7 @@ type WriteResult = "ok" | "stale";
 /**
  * Locate the original editor and apply the AI output back into the buffer.
  *
- * - For rewrite actions (expand/shorten/polish), `rewritten` REPLACES the
+ * - For rewrite actions (expand/shorten), `rewritten` REPLACES the
  *   captured `from..to` range.
  * - For `continue`, the captured range is kept intact and `rewritten` is
  *   INSERTED immediately after `to`. The stale check still validates that

@@ -7,10 +7,43 @@
  * menu-event callbacks can read them without awaiting.
  */
 
-import { TFile } from 'obsidian';
+import { TFile, TFolder, normalizePath, type App } from 'obsidian';
 import type NoteAssistantPlugin from '../../main';
 import { parseMenuNote } from './menu-note-parser';
 import type { CustomMenuItem, CustomMenuCategory } from './types';
+
+// ── Default template ──────────────────────────────────────────────
+
+/** Auto-created when the user clicks "Create default" and the file is missing. */
+const DEFAULT_MENU_TEMPLATE = `> 💡 Menu icons: visit https://lucide.dev/icons/ to browse available icon names (e.g., sparkles, wand-2, languages).
+
+# Files
+
+## Summarise this note [sparkles]
+Please summarise the content of {{filepath}} in one paragraph.
+
+> This is a comment — it is stripped from the prompt shown to the assistant.
+> Blockquotes are your personal annotations.
+
+## Translate this note [languages]
+Translate {{filepath}} to English, preserving markdown formatting.
+
+# Editor
+
+## Explain selection [sparkles]
+Explain the following content:
+{{blockquote}}
+
+## Improve writing [wand-2]
+Polish the following text for clarity and conciseness, keeping the original tone:
+{{selection}}
+`;
+
+/** Simple error description helper (same pattern as MemoryStore). */
+function describeError(err: unknown): string {
+	if (err instanceof Error) return err.message;
+	return String(err);
+}
 
 /**
  * Lightweight cache entry. Keyed by file path + mtime so the parser is
@@ -24,10 +57,19 @@ interface CacheEntry {
 
 export class CustomMenuService {
 	private readonly plugin: NoteAssistantPlugin;
+	private readonly app: App;
 	private cache: CacheEntry | null = null;
 
 	constructor(plugin: NoteAssistantPlugin) {
 		this.plugin = plugin;
+		this.app = plugin.app;
+	}
+
+	/** Currently configured menu note path, normalised. Empty when unset. */
+	private menuPath(): string {
+		const raw = this.plugin.settings.customMenuNotePath?.trim() ?? '';
+		if (!raw) return '';
+		return normalizePath(raw);
 	}
 
 	/**
@@ -83,10 +125,53 @@ export class CustomMenuService {
 	 * or the file doesn't exist.
 	 */
 	findFile(): TFile | null {
-		const path = this.plugin.settings.customMenuNotePath.trim();
+		const path = this.menuPath();
 		if (!path) return null;
-		const file = this.plugin.app.vault.getAbstractFileByPath(path);
+		const file = this.app.vault.getAbstractFileByPath(path);
 		return file instanceof TFile ? file : null;
+	}
+
+	/**
+	 * Ensure the menu note exists, creating it (and any missing parent
+	 * folders) from the default template when necessary.
+	 *
+	 * Refuses to create when the configured path collides with a folder.
+	 */
+	async ensureFile(): Promise<TFile> {
+		const path = this.menuPath();
+		if (!path) {
+			throw new Error('Menu note path is empty.');
+		}
+
+		const existing = this.app.vault.getAbstractFileByPath(path);
+		if (existing instanceof TFile) return existing;
+		if (existing) {
+			throw new Error(`Menu note path ${path} resolves to a folder, not a file.`);
+		}
+
+		// Walk parent folders and create any missing segments.
+		const parts = path.split('/');
+		if (parts.length > 1) {
+			const parentPath = parts.slice(0, -1).join('/');
+			const parent = this.app.vault.getAbstractFileByPath(parentPath);
+			if (!parent) {
+				try {
+					await this.app.vault.createFolder(parentPath);
+				} catch (err) {
+					throw new Error(`Failed to create menu note parent folder ${parentPath}: ${describeError(err)}`);
+				}
+			} else if (!(parent instanceof TFolder)) {
+				throw new Error(`Menu note parent ${parentPath} exists but is not a folder.`);
+			}
+		}
+
+		try {
+			const file = await this.app.vault.create(path, DEFAULT_MENU_TEMPLATE);
+			void this.refresh();
+			return file;
+		} catch (err) {
+			throw new Error(`Failed to create menu note ${path}: ${describeError(err)}`);
+		}
 	}
 
 	/**
