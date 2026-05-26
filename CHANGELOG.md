@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0
+
+### What's new
+
+- **Custom right-click menu from a vault note** — Define your own AI actions in a vault note (`MENU.md` by default) and they appear in the right-click menu under an **AI** submenu on both files and the editor. Each `##` heading becomes a menu label; the body text is a prompt template with `{{filepath}}`, `{{selection}}`, and `{{blockquote}}` variables filled at click time. Add a `[icon]` suffix to any H2 heading (e.g. `[wand-2]`, `[languages]`) to set a Lucide icon for that entry. Blockquote lines (`> ...`) are treated as private comments and stripped before the prompt is sent. Manage everything under **Settings → Note Mate → Customize**, where a dual-action button creates the note from a default template or opens the existing one.
+
+### Refinements
+
+- **Shorter setting labels** — "Image generation" → "Image" and "MCP Servers" → "MCP" in settings navigation for a cleaner sidebar layout.
+
+### Removed
+
+- **Built-in "Explain" and "Polish selection"** — Both are now covered by the default custom menu template. The explain menu item and polish edit action have been removed; the default `MENU.md` template includes equivalent entries so you still get the same behaviour out of the box.
+
+### Fixes
+
+- **Wiki-link chips with references** — Chips for paths like `[[Note#heading]]` or `[[Note^block]]` now correctly resolve to the file instead of treating the heading/block suffix as part of the filename.
+
+---
+
 ## 1.2.10
 
 ### What's new
