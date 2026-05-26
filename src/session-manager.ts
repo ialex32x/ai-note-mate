@@ -6,33 +6,6 @@ import type { TodoState } from './services/tools/todo-state';
 
 type ReadonlyChatMessages = ReadonlyArray<ChatMessage>;
 
-// ── Redaction helpers ─────────────────────────────────────────────────────
-
-/** Tool names whose `toolArgs.headers` contain sensitive data and must be
- *  redacted before persisting to disk. */
-const SENSITIVE_TOOL_HEADERS: ReadonlySet<string> = new Set(['web_upload_file']);
-
-/**
- * Shallow-clones `messages`, replacing `toolArgs.headers` with a placeholder
- * for any tool_call whose name appears in {@link SENSITIVE_TOOL_HEADERS}.
- * The runtime (in-memory) copy inside the cache is **not** modified.
- */
-function redactToolHeaders(messages: ChatMessage[]): ChatMessage[] {
-    return messages.map(msg => {
-        const meta = msg.toolCallMeta;
-        if (!meta || !SENSITIVE_TOOL_HEADERS.has(meta.toolName)) return msg;
-        const headers = meta.toolArgs.headers;
-        if (headers == null || typeof headers !== 'object') return msg;
-        return {
-            ...msg,
-            toolCallMeta: {
-                ...meta,
-                toolArgs: { ...meta.toolArgs, headers: '***redacted***' },
-            },
-        };
-    });
-}
-
 /** Session metadata (stored in list.json) */
 export interface SessionMetadata {
     id: string;
@@ -838,7 +811,7 @@ export class SessionManager {
             const data: SessionMessagesFile = {
                 version,
                 id,
-                messages: redactToolHeaders(messages),
+                messages,
                 summaries: summaries && summaries.length > 0 ? summaries : undefined,
                 subAgentMessages: hasSubAgentData ? subAgentMessages : undefined,
                 agentTokenBreakdown: hasBreakdownData ? agentTokenBreakdown : undefined,

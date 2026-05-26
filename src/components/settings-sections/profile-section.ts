@@ -11,7 +11,7 @@ import {
 import { createDefaultProfile, generateId } from "../../settings/defaults";
 import type { ProviderProfile } from "../../settings/types";
 import {
-	applyAdvancedOnlyGroupHeading,
+	createSettingsGroupHeading,
 	createApiKeyField,
 	createDropdownField,
 	createModelFieldWithSelector,
@@ -86,9 +86,9 @@ export class ProfileSettingsSection implements SettingsSection {
 				});
 		}
 
-		new Setting(container)
-			.setName(t('settings.followUpSection'))
-			.setHeading();
+		createSettingsGroupHeading(container, {
+			name: t('settings.followUpSection'),
+		});
 
 		// ── Insights profile selector (below summarizer; empty = same as summarizer) ──
 		let insightsDropdown: DropdownComponent;
@@ -405,10 +405,10 @@ export class ProfileSettingsSection implements SettingsSection {
 		// Section divider — same DOM shape as the modalities title above
 		// (a Setting row with name+desc only, no control), so the editor
 		// keeps a consistent rhythm.
-		const contextCompressionHeading = new Setting(container)
-			.setName(t('settings.contextCompression'))
-			.setHeading();
-		applyAdvancedOnlyGroupHeading(contextCompressionHeading);
+		createSettingsGroupHeading(container, {
+			name: t('settings.contextCompression'),
+			advancedOnly: true,
+		});
 
 		// Compression threshold (0 = use plugin default)
 		createTextField({

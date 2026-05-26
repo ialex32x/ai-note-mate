@@ -4,8 +4,8 @@ import { hasMcpServersConfigured } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
 import type { TipDefinition } from '../types';
 
-/** Anchor id of the MCP section in the plugin settings tab. */
-const MCP_SECTION_ID = 'settings.mcpServers';
+/** Anchor id of the Tools section in the plugin settings tab. */
+const TOOLS_SECTION_ID = 'settings.toolsSection';
 
 /**
  * Onboarding tip: guide the user to add MCP servers so external tools
@@ -22,7 +22,7 @@ export const configureMcpServersTip: TipDefinition = {
         const ok = openPluginSettings(
             ctx.plugin.app,
             ctx.plugin.manifest.id,
-            MCP_SECTION_ID,
+            TOOLS_SECTION_ID,
         );
         if (!ok) {
             new Notice(t('tips.configureMcp.openFailed'));

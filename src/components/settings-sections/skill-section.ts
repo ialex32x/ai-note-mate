@@ -9,31 +9,10 @@ import { retrieve, type RetrievalResult } from "../../services/retriever";
 import { buildSkillEmbeddingText } from "../../skills/skill-catalogue";
 import { createEmbeddingConfig } from "../../views/session-view/chat-factory";
 import { createTextField, isAdvancedSettingsVisible } from "../settings-components";
+import { SkillDetailsModal } from "./skill-details-modal";
 import type { NoteAssistantPluginSettings } from "../../settings/types";
 import type { SkillDefinition } from "../../skills/skill-loader";
 import type { SectionContext, SettingsSection } from "./types";
-
-/**
- * Authoring quality issues we surface as inline badges so users notice
- * weak skill metadata before complaining about poor recall. Each lint
- * has a stable id (used as a CSS modifier hook + i18n key suffix) and a
- * `level` controlling the badge tone.
- */
-type SkillLint = {
-	id: 'no-when-to-use' | 'no-triggers' | 'description-too-short';
-	level: 'warn' | 'info';
-	labelKey: string;
-	tooltipKey: string;
-};
-
-/**
- * Minimum description length below which we flag the skill as
- * "description-too-short". 30 chars roughly corresponds to a single
- * substantive phrase ("Reformats project notes to the team style") —
- * shorter than that and both the embedder and the model have very
- * little to latch onto.
- */
-const SHORT_DESCRIPTION_THRESHOLD = 30;
 
 export class SkillSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.skills';
@@ -154,12 +133,22 @@ export class SkillSettingsSection implements SettingsSection {
 			}
 		});
 
-		// Show loaded skills count
+		// Show loaded skills count with a "Show details" button
 		const loadedSkills = plugin.skillManager.getSkills();
 		if (loadedSkills.length > 0) {
-			container.createEl('div', {
+			const statusRow = container.createEl('div', {
+				cls: 'oap-settings-status-row',
+			});
+			statusRow.createEl('span', {
 				cls: 'oap-settings-status',
 				text: t('settings.skillsLoaded', { count: loadedSkills.length }),
+			});
+			const detailsBtn = statusRow.createEl('button', {
+				cls: 'oap-settings-details-btn',
+				text: t('settings.skillShowDetails'),
+			});
+			detailsBtn.addEventListener('click', () => {
+				new SkillDetailsModal(plugin.app, loadedSkills).open();
 			});
 
 			// ── Matching tuning + trigger tester ──
@@ -173,52 +162,6 @@ export class SkillSettingsSection implements SettingsSection {
 			// match right now" — in one mental unit.
 			this.renderMatchingTuning(container);
 			this.renderTriggerTester(container, loadedSkills);
-
-			// List detected skills with name, description, and lint badges
-			const listEl = container.createEl('div', {
-				cls: 'oap-settings-skill-list',
-			});
-			for (const skill of loadedSkills) {
-				const itemEl = listEl.createEl('div', {
-					cls: 'oap-settings-skill-item',
-				});
-				const nameRow = itemEl.createEl('div', {
-					cls: 'oap-settings-skill-name-row',
-				});
-				nameRow.createEl('div', {
-					cls: 'oap-settings-skill-name',
-					text: skill.name,
-				});
-				nameRow.createEl('div', {
-					cls: 'oap-settings-skill-location',
-					text: skill.location,
-				});
-
-				const lints = computeSkillLints(skill);
-				if (lints.length > 0) {
-					const badgeRow = itemEl.createEl('div', {
-						cls: 'oap-settings-skill-badges',
-					});
-					for (const lint of lints) {
-						const badge = badgeRow.createEl('span', {
-							cls: `oap-settings-skill-badge oap-settings-skill-badge--${lint.level}`,
-							text: t(lint.labelKey),
-						});
-						setTooltip(badge, t(lint.tooltipKey));
-					}
-				}
-
-				itemEl.createEl('div', {
-					cls: 'oap-settings-skill-desc',
-					text: skill.description,
-				});
-				if (skill.whenToUse) {
-					itemEl.createEl('div', {
-						cls: 'oap-settings-skill-when',
-						text: `${t('settings.skillWhenToUseLabel')}: ${skill.whenToUse}`,
-					});
-				}
-			}
 		}
 	}
 
@@ -438,40 +381,6 @@ async function runRetrieveAndRender(opts: {
 	});
 
 	renderTesterResults(resultsEl, skills, ranked, bandThresholds, topK, !!embeddingConfig);
-}
-
-/**
- * Compute every lint that currently applies to a skill. Ordered most
- * actionable → least actionable so the user reads the right one first
- * when the list is truncated by available width.
- */
-function computeSkillLints(skill: SkillDefinition): SkillLint[] {
-	const out: SkillLint[] = [];
-	if (!skill.whenToUse) {
-		out.push({
-			id: 'no-when-to-use',
-			level: 'warn',
-			labelKey: 'settings.skillLintNoWhenToUseLabel',
-			tooltipKey: 'settings.skillLintNoWhenToUseTooltip',
-		});
-	}
-	if (!skill.triggers || skill.triggers.length === 0) {
-		out.push({
-			id: 'no-triggers',
-			level: 'info',
-			labelKey: 'settings.skillLintNoTriggersLabel',
-			tooltipKey: 'settings.skillLintNoTriggersTooltip',
-		});
-	}
-	if (skill.description.length < SHORT_DESCRIPTION_THRESHOLD) {
-		out.push({
-			id: 'description-too-short',
-			level: 'warn',
-			labelKey: 'settings.skillLintShortDescLabel',
-			tooltipKey: 'settings.skillLintShortDescTooltip',
-		});
-	}
-	return out;
 }
 
 /**

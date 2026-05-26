@@ -512,6 +512,35 @@ export function applyAdvancedOnlyGroupHeading(setting: Setting): void {
 	}
 }
 
+/** Shared visual class for in-section group dividers (Artifacts, MCP servers, …). */
+export function markSettingsGroupHeading(setting: Setting): void {
+	setting.settingEl.addClass('oap-settings-group-heading');
+}
+
+/**
+ * Section divider inside a settings section body. Applies
+ * {@link markSettingsGroupHeading} styling so group titles stand out from
+ * regular setting rows.
+ */
+export function createSettingsGroupHeading(
+	container: HTMLElement,
+	options: {
+		name: string;
+		desc?: string;
+		/** Hide when advanced settings are off (use when all child fields are advanced). */
+		advancedOnly?: boolean;
+	},
+): Setting {
+	const setting = new Setting(container).setName(options.name);
+	if (options.desc) setting.setDesc(options.desc);
+	setting.setHeading();
+	markSettingsGroupHeading(setting);
+	if (options.advancedOnly) {
+		applyAdvancedOnlyGroupHeading(setting);
+	}
+	return setting;
+}
+
 interface SettingIndicatorOptions {
 	sessionRestartRequired?: boolean;
 	experimental?: boolean;
