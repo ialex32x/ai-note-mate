@@ -118,6 +118,23 @@ export interface EmbeddingConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Upload Config
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type UploadProviderType = 'bailian-oss';
+
+export interface UploadConfig {
+	/** Unique ID (auto-generated) */
+	id: string;
+	/** Display name for this config */
+	name: string;
+	/** Upload provider type */
+	provider: UploadProviderType;
+	/** API key for the upload provider */
+	apiKey: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Plugin Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -188,6 +205,12 @@ export interface NoteAssistantPluginSettings {
 
 	// ── MCP servers ─────────────────────────────────────────────────────────
 	mcpServers: MCPServerConfig[];
+
+	// ── Upload ──────────────────────────────────────────────────────────────
+	/** Upload configs array. If empty, upload is disabled. */
+	uploadConfigs: UploadConfig[];
+	/** ID of the currently active upload config */
+	activeUploadId: string;
 
 	// ── Skills ──────────────────────────────────────────────────────────────
 	/** List of directories to search for skill definitions */

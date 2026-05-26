@@ -8,12 +8,12 @@ import {
 	EmbeddingSettingsSection,
 	GlobalSettingsSection,
 	ImageGenSettingsSection,
-	MCPSettingsSection,
 	MemorySettingsSection,
 	ProfileSettingsSection,
 	SectionContext,
 	SettingsSection,
 	SkillSettingsSection,
+	ToolsSettingsSection,
 } from "../components/settings-sections";
 
 export class NoteAssistantSettingTab extends PluginSettingTab {
@@ -47,7 +47,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			new ProfileSettingsSection(ctx),
 			new EmbeddingSettingsSection(ctx),
 			new ImageGenSettingsSection(ctx),
-			new MCPSettingsSection(ctx),
+			new ToolsSettingsSection(ctx),
 			new SkillSettingsSection(ctx),
 			new MemorySettingsSection(ctx),
 			new CustomizeSettingsSection(ctx),

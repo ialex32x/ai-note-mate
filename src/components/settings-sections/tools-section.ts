@@ -1,11 +1,14 @@
-import { SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
+import { DropdownComponent, SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { MCPManager } from "../../services/mcp/mcp-manager";
 import type { MCPServerConfig, MCPServerState, MCPToolConfig } from "../../services/mcp/mcp-types";
 import { copyToClipboard } from "../../utils/clipboard";
 import { RegenerateSlugConfirmModal } from "../../modals/regenerate-slug-confirm-modal";
 import { ALL_TOOL_CAPABILITIES, type ToolCapability } from "../../services/llm-provider";
+import { createDefaultUploadConfig } from "../../settings/defaults";
+import type { UploadConfig, UploadProviderType } from "../../settings/types";
 import {
+	createApiKeyField,
 	createDropdownField,
 	createSettingsGroupHeading,
 	createTabBar,
@@ -13,6 +16,8 @@ import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
+	refreshDropdownOptions,
+	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -79,7 +84,7 @@ function applyStatusToTabDot(dot: HTMLElement, state: MCPServerState | undefined
 	setTooltip(dot, resolveStatusTooltip(state));
 }
 
-export class MCPSettingsSection implements SettingsSection {
+export class ToolsSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.toolsSection';
 
 	/** ID of the server currently being edited in the tab bar. */
@@ -100,6 +105,9 @@ export class MCPSettingsSection implements SettingsSection {
 	private editorToolsSignature: string | null = null;
 	/** Coalesce rapid onChange emissions into a single update pass. */
 	private updateScheduled = false;
+
+	// ── Upload state ──
+	private editingUploadId: string | null = null;
 
 	constructor(private readonly ctx: SectionContext) {}
 
@@ -159,11 +167,6 @@ export class MCPSettingsSection implements SettingsSection {
 	private renderWebFetchLimits(container: HTMLElement): void {
 		const { plugin } = this.ctx;
 
-		// Per-turn budget for web_fetch_url. Both knobs are session-restart
-		// dependent because `maxCallsPerTurn` is captured into the tool
-		// definition at registration time (createWebFetchTools), not read
-		// per call. Values <= 0 fall back to plugin defaults at use-site
-		// (see resolveBudget in web-fetch-toolcall.ts).
 		createTextField({
 			container,
 			name: t('settings.webFetchSoftLimit'),
@@ -198,9 +201,6 @@ export class MCPSettingsSection implements SettingsSection {
 	private renderArtifactStore(container: HTMLElement): void {
 		const { plugin } = this.ctx;
 
-		// All three knobs are read once at SessionRuntime construction
-		// (see runtime-factory.ts). Existing runtimes are NOT re-tuned —
-		// users are warned via the session-restart hint.
 		createSettingsGroupHeading(container, {
 			name: t('settings.artifactStore'),
 			desc: t('settings.artifactStoreDesc'),
@@ -216,9 +216,6 @@ export class MCPSettingsSection implements SettingsSection {
 			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
-				// `< 1` falls back to default at use-site (deriveArtifactStoreOptions);
-				// store the user's literal here so the UI reflects what they typed,
-				// even if it's a sentinel like 0.
 				plugin.settings.artifactStoreTotalBytesKb = isNaN(num) ? 0 : num;
 				await plugin.saveSettings();
 			},
@@ -249,9 +246,6 @@ export class MCPSettingsSection implements SettingsSection {
 			advanced: true,
 			onChange: async (value) => {
 				const num = parseInt(value, 10);
-				// Negative falls back to default; 0 explicitly disables TTL
-				// (see deriveArtifactStoreOptions). NaN → -1 so the helper
-				// reads it as "use default".
 				plugin.settings.artifactStoreTtlMinutes = isNaN(num) ? -1 : num;
 				await plugin.saveSettings();
 			},
@@ -281,9 +275,6 @@ export class MCPSettingsSection implements SettingsSection {
 	private renderCapabilityToggles(container: HTMLElement): void {
 		const { plugin } = this.ctx;
 
-		// Title + description on their own Setting row, then a separate row
-		// below containing label-only checkboxes distributed evenly across
-		// the full width. Descriptions are surfaced via Obsidian's tooltip.
 		new Setting(container)
 			.setName(t('settings.allowedCapabilities'))
 			.setDesc(t('settings.allowedCapabilitiesDesc'));
@@ -307,12 +298,170 @@ export class MCPSettingsSection implements SettingsSection {
 				} else {
 					current.delete(cap);
 				}
-				// Preserve canonical order.
 				plugin.settings.allowedCapabilities = ALL_TOOL_CAPABILITIES.filter(c => current.has(c));
 				void plugin.saveSettings();
 			});
 		}
 	}
+
+	// ─────────────────────────────────────────────────────────────────────
+	// Upload config
+	// ─────────────────────────────────────────────────────────────────────
+
+	private renderUploadConfig(container: HTMLElement): void {
+		const { plugin, refreshSection, containerEl } = this.ctx;
+		const uploadConfigs = plugin.settings.uploadConfigs;
+
+		createSettingsGroupHeading(container, {
+			name: t('settings.uploadConfig'),
+		});
+
+		// ── Active upload selector ──
+		let activeUploadDropdown: DropdownComponent;
+		new Setting(container)
+			.setName(t('settings.uploadConfig'))
+			.setDesc(t('settings.uploadConfigDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				activeUploadDropdown = dropdown;
+				for (const c of uploadConfigs) {
+					dropdown.addOption(c.id, c.name || 'Unnamed');
+				}
+				dropdown.setValue(plugin.settings.activeUploadId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.activeUploadId = value;
+					await plugin.saveSettings();
+					refreshSection(this);
+					scrollActiveTabIntoView(containerEl, '.oap-upload-tabs .oap-profile-tabs__scroll');
+				});
+			});
+
+		// ── Upload tab bar (always visible, even with 0 configs) ──
+		const editingId = this.getEditingUploadId();
+		const editingUpload = uploadConfigs.length > 0
+			? (uploadConfigs.find(c => c.id === editingId) || uploadConfigs[0]!)
+			: null;
+		if (editingUpload) {
+			this.editingUploadId = editingUpload.id;
+		}
+
+		const tabBarResult = createTabBar({
+			container,
+			items: uploadConfigs.map(c => ({
+				id: c.id,
+				name: c.name,
+				tooltip: c.name || 'Unnamed',
+			})),
+			activeId: plugin.settings.activeUploadId,
+			editingId: editingUpload?.id ?? '',
+			onTabClick: (id) => {
+				this.editingUploadId = id;
+				refreshSection(this);
+			},
+			activeDotTooltip: t('settings.uploadConfig'),
+			extraClass: 'oap-upload-tabs',
+			onAdd: async () => {
+				const newConfig = createDefaultUploadConfig();
+				newConfig.name = `Upload ${uploadConfigs.length + 1}`;
+				uploadConfigs.push(newConfig);
+				plugin.settings.activeUploadId = newConfig.id;
+				this.editingUploadId = newConfig.id;
+				await plugin.saveSettings();
+				refreshSection(this);
+			},
+			addTooltip: t('settings.addUploadConfig'),
+			onDelete: editingUpload ? async () => {
+				if (uploadConfigs.length <= 1) return;
+				const idx = uploadConfigs.findIndex(c => c.id === editingUpload.id);
+				uploadConfigs.splice(idx, 1);
+				if (plugin.settings.activeUploadId === editingUpload.id) {
+					plugin.settings.activeUploadId = uploadConfigs[0]!.id;
+				}
+				this.editingUploadId = uploadConfigs[0]!.id;
+				await plugin.saveSettings();
+				refreshSection(this);
+			} : undefined,
+			deleteTooltip: t('settings.deleteUploadConfigDesc'),
+			disableDelete: !editingUpload || uploadConfigs.length <= 1,
+		});
+
+		const refreshActiveUploadDropdown = () => {
+			if (activeUploadDropdown == null) return;
+			refreshDropdownOptions(activeUploadDropdown, uploadConfigs);
+		};
+
+		// Editor (only when a config exists)
+		if (editingUpload) {
+			this.renderUploadEditor(
+				container,
+				editingUpload,
+				tabBarResult.refreshTabLabel,
+				refreshActiveUploadDropdown,
+			);
+		}
+	}
+
+	private getEditingUploadId(): string {
+		const { plugin } = this.ctx;
+		if (this.editingUploadId) {
+			const exists = plugin.settings.uploadConfigs.some(c => c.id === this.editingUploadId);
+			if (exists) return this.editingUploadId;
+		}
+		return plugin.settings.activeUploadId
+			|| plugin.settings.uploadConfigs[0]?.id
+			|| '';
+	}
+
+	private renderUploadEditor(
+		container: HTMLElement,
+		config: UploadConfig,
+		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
+		refreshDropdown: () => void,
+	): void {
+		const { app, plugin } = this.ctx;
+
+		createTextField({
+			container,
+			name: t('settings.uploadName'),
+			placeholder: t('settings.uploadNamePlaceholder'),
+			value: config.name,
+			onChange: async (value) => {
+				config.name = value || 'Unnamed';
+				await plugin.saveSettings();
+				refreshTabLabel(config.id, config.name, config.name);
+				refreshDropdown();
+			},
+		});
+
+		createDropdownField({
+			container,
+			name: t('settings.uploadProvider'),
+			desc: t('settings.uploadProviderDesc'),
+			options: {
+				'bailian-oss': t('settings.uploadProviderBailianOss'),
+			},
+			value: config.provider,
+			onChange: async (value) => {
+				config.provider = value as UploadProviderType;
+				await plugin.saveSettings();
+			},
+		});
+
+		createApiKeyField({
+			container,
+			app,
+			name: t('common.apiKey'),
+			desc: t('settings.uploadApiKeyDesc'),
+			value: config.apiKey,
+			onChange: async (value) => {
+				config.apiKey = value;
+				await plugin.saveSettings();
+			},
+		});
+	}
+
+	// ─────────────────────────────────────────────────────────────────────
+	// Main render
+	// ─────────────────────────────────────────────────────────────────────
 
 	render(container: HTMLElement): void {
 		const { plugin, refreshSection } = this.ctx;
@@ -328,6 +477,7 @@ export class MCPSettingsSection implements SettingsSection {
 
 		this.renderArtifactStore(container);
 
+		// ── MCP Servers ──
 		createSettingsGroupHeading(container, {
 			name: t('settings.mcpServers'),
 		});
@@ -345,11 +495,7 @@ export class MCPSettingsSection implements SettingsSection {
 			this.editingServerId = editingServer.id;
 		}
 
-		// ── Tab bar (always rendered so the "+" Add button is available even
-		//    when there are no servers yet) ──
-		// Empty display names are allowed (with a non-blocking warning in
-		// the editor) — render the i18n fallback label here so the tab
-		// is still visible/clickable.
+		// ── Tab bar ──
 		const tabBarResult = createTabBar({
 			container,
 			items: mcpServers.map(s => {
@@ -360,9 +506,6 @@ export class MCPSettingsSection implements SettingsSection {
 					tooltip: s.url || label,
 				};
 			}),
-			// MCP has no "active" concept (each server is independently
-			// enabled), so reuse `editingId` here. activeDotTooltip is omitted
-			// so no extra dot is drawn.
 			activeId: editingServer?.id ?? '',
 			editingId: editingServer?.id ?? '',
 			onTabClick: (id) => {
@@ -376,11 +519,6 @@ export class MCPSettingsSection implements SettingsSection {
 				mcpServers.unshift(config);
 				this.editingServerId = config.id;
 				await plugin.saveSettings();
-				// Intentionally not awaited: addServer() performs a
-				// network handshake that can take seconds. The UI shows
-				// the new server immediately and the status dot will
-				// update via the onChange listener once connection
-				// settles (or fails).
 				void plugin.mcpManager?.addServer(config);
 				refreshSection(this);
 			},
@@ -398,8 +536,7 @@ export class MCPSettingsSection implements SettingsSection {
 			disableDelete: !editingServer,
 		});
 
-		// Augment each tab with a small status dot. Placed before the label
-		// (prepended) to keep visual consistency with `.oap-profile-tab__active-dot`.
+		// Augment each tab with a small status dot.
 		for (const server of mcpServers) {
 			const tabEl = tabBarResult.tabElMap.get(server.id);
 			if (!tabEl) continue;
@@ -420,9 +557,10 @@ export class MCPSettingsSection implements SettingsSection {
 			this.renderEditor(container, editingServer, tabBarResult.refreshTabLabel);
 		}
 
-		// Subscribe to MCP state changes so the UI reflects live connection
-		// status (connecting / connected / error) without manual refresh.
-		// Subscribe only once; the listener performs incremental updates.
+		// ── Upload ──
+		this.renderUploadConfig(container);
+
+		// Subscribe to MCP state changes.
 		if (!this.onMcpStateChanged) {
 			const listener = () => this.scheduleStatusUpdate();
 			this.onMcpStateChanged = listener;
@@ -472,9 +610,6 @@ export class MCPSettingsSection implements SettingsSection {
 		if (!manager) return;
 
 		const configured = plugin.settings.mcpServers ?? [];
-		// If the set of servers we rendered diverges from the current
-		// configuration (e.g. a server was added/removed outside of our
-		// explicit refresh paths), fall back to a full section re-render.
 		if (configured.length !== this.tabDots.size) {
 			refreshSection(this);
 			return;
@@ -486,12 +621,10 @@ export class MCPSettingsSection implements SettingsSection {
 			}
 		}
 
-		// Update each tab's status dot.
 		for (const [serverId, dot] of this.tabDots) {
 			applyStatusToTabDot(dot, manager.getServerState(serverId));
 		}
 
-		// Update the editor's status button (only one server is shown).
 		if (this.editorStatusBtn && this.editorStatusServerId) {
 			applyStatusToButton(
 				this.editorStatusBtn,
@@ -499,9 +632,6 @@ export class MCPSettingsSection implements SettingsSection {
 			);
 		}
 
-		// If the tools list of the currently-edited server changed (e.g.
-		// after a successful (re)connect synced new tools into the
-		// config), do a full re-render so the list stays accurate.
 		if (this.editorStatusServerId && this.editorToolsSignature !== null) {
 			const editingServer = configured.find(s => s.id === this.editorStatusServerId);
 			if (editingServer) {
@@ -521,11 +651,6 @@ export class MCPSettingsSection implements SettingsSection {
 		const { app, plugin, refreshSection } = this.ctx;
 		const state = plugin.mcpManager?.getServerState(server.id);
 
-		// ── Header row: name + enabled toggle + reconnect + status ──
-		// Refs we update on every name keystroke so the empty-name
-		// warning and slug-divergence indicator stay in sync without
-		// having to re-render the whole editor (which would steal focus
-		// from the input).
 		let nameWarningEl: HTMLElement | null = null;
 		let slugInfoEl: HTMLElement | null = null;
 
@@ -535,9 +660,6 @@ export class MCPSettingsSection implements SettingsSection {
 				.setValue(server.name)
 				.setPlaceholder(t('settings.mcpServerName'))
 				.onChange(async (value) => {
-					// Persist the raw user input (no "Unnamed" fallback) —
-					// the empty-name warning is non-blocking and the
-					// renderer below handles display fallback.
 					server.name = value;
 					await plugin.saveSettings();
 					const label = server.name.trim() || t('settings.mcpServerNameFallback');
@@ -563,7 +685,6 @@ export class MCPSettingsSection implements SettingsSection {
 					await plugin.mcpManager?.reconnectServer(server.id);
 				}));
 
-		// Status icon with tooltip — also clickable to copy details.
 		const statusBtn = headerSetting.controlEl.createEl('button', {
 			cls: 'oap-settings-mcp-status clickable-icon',
 		});
@@ -575,16 +696,9 @@ export class MCPSettingsSection implements SettingsSection {
 		this.editorStatusBtn = statusBtn;
 		this.editorStatusServerId = server.id;
 
-		// ── Empty-name warning (under the name field, non-blocking) ──
-		// Rendered as a sibling of the Setting row so it inherits the
-		// row's horizontal padding via the explicit class.
 		nameWarningEl = container.createDiv({ cls: 'oap-mcp-name-warning' });
 		this.refreshNameWarning(nameWarningEl, server.name);
 
-		// ── Slug preview / Regenerate row ────────────────────────────
-		// Shown right after the name so the link between display name
-		// and tool-id is visually obvious. Slug is read-only (the user
-		// can only "regenerate" it explicitly).
 		const slugSetting = new Setting(container)
 			.setName(t('settings.mcpServerSlug'))
 			.setDesc(t('settings.mcpServerSlugDesc'));
@@ -592,8 +706,6 @@ export class MCPSettingsSection implements SettingsSection {
 		const slugValueEl = slugSetting.controlEl.createEl('code', {
 			cls: 'oap-mcp-slug-value',
 		});
-		// Tool-id preview + divergence note live in the description column
-		// so they align with other setting labels/descriptions.
 		slugInfoEl = slugSetting.descEl.createDiv({ cls: 'oap-mcp-slug-info' });
 
 		slugSetting.addExtraButton(btn => btn
@@ -601,7 +713,6 @@ export class MCPSettingsSection implements SettingsSection {
 			.setTooltip(t('settings.mcpSlugRegenerate'))
 			.onClick(async () => {
 				await this.handleRegenerateSlug(server);
-				// Pull the (possibly) updated slug back into the UI.
 				slugValueEl.setText(server.slug ?? '');
 				this.refreshSlugInfo(slugInfoEl, server);
 				refreshSection(this);
@@ -610,19 +721,12 @@ export class MCPSettingsSection implements SettingsSection {
 		slugValueEl.setText(server.slug ?? '');
 		this.refreshSlugInfo(slugInfoEl, server);
 
-		// Slug is an advanced concept (only relevant when authoring Skill
-		// files that reference a specific tool id). Mirror the
-		// advanced-handling baked into `applySettingIndicators`: when
-		// advanced is on, decorate the row with the badge + hint;
-		// otherwise hide it via the shared collapse class so toggling
-		// "Show advanced" makes the row appear/disappear without rebuild.
 		if (isAdvancedSettingsVisible()) {
 			markSettingAdvanced(slugSetting);
 		} else {
 			slugSetting.settingEl.addClass('oap-setting--advanced-collapsed');
 		}
 
-		// URL field
 		createTextField({
 			container,
 			name: t('settings.mcpServerUrl'),
@@ -635,7 +739,6 @@ export class MCPSettingsSection implements SettingsSection {
 			},
 		});
 
-		// API Key field
 		new Setting(container)
 			.setName(t('common.apiKey'))
 			.addComponent(el => new SecretComponent(app, el)
@@ -645,7 +748,6 @@ export class MCPSettingsSection implements SettingsSection {
 					await plugin.saveSettings();
 				}));
 
-		// Use requestUrl toggle
 		createToggleField({
 			container,
 			name: t('settings.mcpUseRequestUrl'),
@@ -657,20 +759,9 @@ export class MCPSettingsSection implements SettingsSection {
 			},
 		});
 
-		// ── Tools list ──
-		// Persisted, synced from the server on each successful connect.
-		// Users can individually toggle which tools are exposed to the model.
 		this.renderToolsList(container, server);
 	}
 
-	/**
-	 * Update the empty-name warning element under the name field.
-	 *
-	 * Non-blocking by design: an empty display name is allowed (so users
-	 * can hit "Add" first and finish naming later) but discouraged
-	 * because anywhere the name is shown will then have to fall back to
-	 * a generic placeholder.
-	 */
 	private refreshNameWarning(el: HTMLElement | null, name: string): void {
 		if (!el) return;
 		const empty = !name || !name.trim();
@@ -682,17 +773,11 @@ export class MCPSettingsSection implements SettingsSection {
 		}
 	}
 
-	/**
-	 * Refresh the "Tool ID: mcp_<slug>_*" preview line plus the
-	 * divergence hint shown when the user has renamed the server but
-	 * not regenerated its slug.
-	 */
 	private refreshSlugInfo(el: HTMLElement | null, server: MCPServerConfig): void {
 		if (!el) return;
 		el.empty();
 		const { plugin } = this.ctx;
 		const slug = server.slug ?? '';
-		// Tool-id preview — what Skill files would reference.
 		const preview = el.createDiv({ cls: 'oap-mcp-slug-preview' });
 		preview.createSpan({
 			cls: 'oap-mcp-slug-preview__label',
@@ -703,8 +788,6 @@ export class MCPSettingsSection implements SettingsSection {
 			text: slug ? `mcp_${slug}_*` : '—',
 		});
 
-		// Divergence indicator: only shown when name and slug have
-		// drifted apart and a regenerate would actually change something.
 		const expected = plugin.mcpManager?.previewSlugForServer(server.id) ?? '';
 		if (expected && expected !== slug) {
 			const note = el.createDiv({ cls: 'oap-mcp-slug-divergence' });
@@ -712,11 +795,6 @@ export class MCPSettingsSection implements SettingsSection {
 		}
 	}
 
-	/**
-	 * Prompt the user to confirm regenerating a server's slug, then
-	 * execute. No-op (returns silently) when the resulting slug would
-	 * equal the current one — there is nothing to confirm in that case.
-	 */
 	private async handleRegenerateSlug(server: MCPServerConfig): Promise<void> {
 		const { app, plugin } = this.ctx;
 		const manager = plugin.mcpManager;
@@ -735,19 +813,11 @@ export class MCPSettingsSection implements SettingsSection {
 		await manager.regenerateSlug(server.id);
 	}
 
-	/**
-	 * Render the per-server tool list. Records a signature of the tools
-	 * shown so {@link applyStatusUpdates} can detect server-side changes
-	 * (e.g. after a (re)connect) and trigger a full re-render.
-	 */
 	private renderToolsList(container: HTMLElement, server: MCPServerConfig): void {
 		const { plugin } = this.ctx;
 		const tools = server.tools ?? [];
 		this.editorToolsSignature = computeToolsSignature(tools);
 
-		// Render tools at the same nesting level as other server fields so
-		// horizontal alignment matches. No section header — the tool rows
-		// (or the empty-state hint) speak for themselves.
 		if (tools.length === 0) {
 			container.createDiv({
 				cls: 'oap-mcp-tools-empty',
@@ -757,9 +827,6 @@ export class MCPSettingsSection implements SettingsSection {
 		}
 
 		for (const tool of tools) {
-			// One Setting per tool: name on the left, description as desc,
-			// toggle on the right. Setting's standard layout keeps things
-			// visually consistent with the rest of the settings page.
 			const setting = new Setting(container)
 				.setName(tool.name)
 				.addToggle(toggle => toggle
@@ -768,9 +835,6 @@ export class MCPSettingsSection implements SettingsSection {
 						tool.enabled = value;
 						setting.settingEl.toggleClass('is-disabled', !value);
 						await plugin.mcpManager?.setToolEnabled(server.id, tool.name, value);
-						// Refresh our local signature so the change-detection
-						// in applyStatusUpdates doesn't trigger a redundant
-						// re-render after our own toggle.
 						this.editorToolsSignature = computeToolsSignature(server.tools ?? []);
 					}));
 
@@ -788,10 +852,6 @@ export class MCPSettingsSection implements SettingsSection {
 	}
 }
 
-/**
- * Compute a compact signature of a tools list so we can detect changes
- * (additions/removals/description updates/enabled toggles) cheaply.
- */
 function computeToolsSignature(tools: MCPToolConfig[] | undefined): string {
 	if (!tools || tools.length === 0) return '';
 	return tools

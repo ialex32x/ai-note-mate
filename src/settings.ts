@@ -8,6 +8,7 @@ export {
 	createDefaultEmbeddingConfig,
 	createDefaultImageGenConfig,
 	createDefaultProfile,
+	createDefaultUploadConfig,
 } from "./settings/defaults";
 export {
 	getActiveEmbeddingConfig,
@@ -15,6 +16,7 @@ export {
 	getActiveProfile,
 	getSummarizerProfile,
 	getInsightsProfile,
+	getActiveUploadConfig,
 	isActiveProfileConfigured,
 	isActiveImageGenConfigured,
 	hasMcpServersConfigured,

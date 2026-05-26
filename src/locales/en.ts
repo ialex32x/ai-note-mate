@@ -311,6 +311,18 @@ export const en: Record<string, string> = {
 	'mcp.regenerateSlugWarning': 'Any Skill that references the old tool names will stop working until you update them.',
 	'mcp.regenerateSlugConfirm': 'Regenerate',
 
+	// ── Upload ─────────────────────────────────────────────
+	'settings.uploadConfig': 'Active upload config',
+	'settings.uploadConfigDesc': 'Select a saved upload configuration.',
+	'settings.addUploadConfig': 'Add config',
+	'settings.uploadName': 'Config name',
+	'settings.uploadNamePlaceholder': 'Enter a name for this config',
+	'settings.uploadProvider': 'Provider',
+	'settings.uploadProviderDesc': 'Select the upload provider type.',
+	'settings.uploadProviderBailianOss': 'Bailian OSS',
+	'settings.uploadApiKeyDesc': 'API key for the upload provider.',
+	'settings.deleteUploadConfigDesc': 'Remove this upload config.',
+
 	// ── Skills ─────────────────────────────────────────────
 	'settings.skills': 'Skills',
 	'settings.skillsDesc': 'Configure directories to search for skill definitions. AI will load skills from these directories.',

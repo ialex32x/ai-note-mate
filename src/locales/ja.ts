@@ -311,6 +311,18 @@ export const ja: Record<string, string> = {
 	'mcp.regenerateSlugWarning': '古いツール名を参照しているすべての Skill は、更新するまで動作しなくなります。',
 	'mcp.regenerateSlugConfirm': '再生成',
 
+	// ── Upload ─────────────────────────────────────────────
+	'settings.uploadConfig': '有効なアップロード設定',
+	'settings.uploadConfigDesc': '保存済みのアップロード設定を選択してください。',
+	'settings.addUploadConfig': '設定追加',
+	'settings.uploadName': '設定名',
+	'settings.uploadNamePlaceholder': 'この設定の名前を入力してください',
+	'settings.uploadProvider': 'プロバイダー',
+	'settings.uploadProviderDesc': 'アップロードプロバイダーの種類を選択してください。',
+	'settings.uploadProviderBailianOss': 'Bailian OSS',
+	'settings.uploadApiKeyDesc': 'アップロードプロバイダーの API キー。',
+	'settings.deleteUploadConfigDesc': 'このアップロード設定を削除します。',
+
 	// ── Skills ─────────────────────────────────────────────
 	'settings.skills': 'Skills',
 	'settings.skillsDesc': 'スキル定義を検索するディレクトリを設定します。AIはこれらのディレクトリからスキルを読み込みます。',

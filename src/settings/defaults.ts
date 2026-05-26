@@ -4,6 +4,7 @@ import type {
 	ImageGenConfig,
 	NoteAssistantPluginSettings,
 	ProviderProfile,
+	UploadConfig,
 } from "./types";
 import { ALL_TOOL_CAPABILITIES } from "../services/llm-provider";
 
@@ -152,6 +153,15 @@ export function createDefaultEmbeddingConfig(): EmbeddingConfig {
 	};
 }
 
+export function createDefaultUploadConfig(): UploadConfig {
+	return {
+		id: generateId(),
+		name: 'Upload',
+		provider: 'bailian-oss',
+		apiKey: '',
+	};
+}
+
 export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	profiles: [createDefaultProfile()],
 	activeProfileId: '',  // will be set to the first profile's id in loadSettings
@@ -172,6 +182,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	showAdvanced: false,
 	toolConfirmMode: 'auto',
 	mcpServers: [],
+	uploadConfigs: [],
+	activeUploadId: '',
 	skillSearchPaths: [],
 	embeddingEnabled: false,
 	embeddingConfigs: [],
