@@ -19,10 +19,11 @@
  *
  * - H1 headings map to categories ({@link FILE_CATEGORY_H1_TEXTS} /
  *   {@link EDITOR_CATEGORY_H1_TEXTS}).
- * - H2 headings become menu item labels. An optional trailing `[icon]`
- *   suffix (e.g. `[sparkles]`, `[wand-2]`) sets the Lucide icon for the
- *   menu entry; the suffix is stripped from the label. When omitted the
- *   consumer defaults to `sparkles`.
+ * - H2 headings become menu item labels. Optional trailing bracket
+ *   suffixes (see {@link parseMenuH2Heading}):
+ *     `[icon]` — Lucide icon (e.g. `[sparkles]`, `[wand-2]`)
+ *     `[.png, .jpg]` — show only for those file types; omitted suffix
+ *     defaults to markdown (`.md`) notes only.
  * - Body text between the H2 and the next heading (or EOF) becomes the
  *   prompt template.
  * - Blockquote lines (`> ...`) in the body are treated as user comments
@@ -37,9 +38,9 @@ import {
 	EDITOR_CATEGORY_H1_TEXTS,
 } from './types';
 import type { CustomMenuItem, CustomMenuCategory, ParsedMenuNote } from './types';
+import { parseMenuH2Heading } from './menu-h2-parser';
 
 const HEADING_REGEX = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
-const ICON_SUFFIX_REGEX = /^(.*?)\s+\[([\w][\w-]*)\]\s*$/;
 const BLOCKQUOTE_REGEX = /^>\s?/;
 const FENCE_REGEX = /^(\s*)(```+|~~~+)/;
 
@@ -60,29 +61,17 @@ export function parseMenuNote(content: string): ParsedMenuNote {
 	let inFence = false;
 	let fenceMarker = '';
 
-	/**
-	 * Split a heading text like `一键规范 [wand-2]` into its label and
-	 * optional icon name. When no `[icon]` suffix is present the icon
-	 * remains undefined (caller falls back to the default).
-	 */
-	const splitIcon = (heading: string): { label: string; icon?: string } => {
-		const m = ICON_SUFFIX_REGEX.exec(heading);
-		if (m) {
-			return { label: m[1]!.trim(), icon: m[2] };
-		}
-		return { label: heading };
-	};
-
 	const flushItem = (endLineExclusive: number) => {
 		if (!currentCategory || !currentLabel) return;
 		const rawBody = lines.slice(bodyStart, endLineExclusive).join('\n');
 		const cleanedBody = stripBlockquotes(rawBody).trim();
 		if (cleanedBody) {
-			const { label, icon } = splitIcon(currentLabel);
+			const parsed = parseMenuH2Heading(currentLabel);
 			items.push({
 				category: currentCategory,
-				label,
-				icon,
+				label: parsed.label,
+				icon: parsed.icon,
+				fileExtensions: parsed.fileExtensions,
 				promptTemplate: cleanedBody,
 			});
 		}

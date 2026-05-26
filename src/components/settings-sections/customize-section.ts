@@ -8,7 +8,8 @@ import type { SectionContext, SettingsSection } from "./types";
  *
  * Layout (top → bottom):
  *   1. Note path field + dual-action button (create / open).
- *   2. Variable reference table.
+ *   2. Default template preview (read-only).
+ *   3. Variable reference table.
  */
 export class CustomizeSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.customize';
@@ -59,15 +60,34 @@ export class CustomizeSettingsSection implements SettingsSection {
 			});
 		});
 
+		// ── Default template preview ─────────────────────────────────
+		this.renderTemplatePreview(container);
+
 		// ── Variable reference ───────────────────────────────────────
 		this.renderVariableReference(container);
+	}
+
+	/** Read-only preview of the localized default MENU.md template. */
+	private renderTemplatePreview(container: HTMLElement): void {
+		container.createEl('h4', {
+			text: t('settings.customizeTemplatePreviewHeading'),
+		});
+		container.createEl('p', {
+			cls: 'setting-item-description',
+			text: t('settings.customizeTemplatePreviewDesc'),
+		});
+
+		const wrap = container.createEl('div', { cls: 'oap-customize-template-preview' });
+		wrap.createEl('pre', {
+			cls: 'oap-customize-template-preview__code',
+			text: t('settings.customizeMenuDefaultTemplate'),
+		});
 	}
 
 	/**
 	 * Render a short reference table explaining the available template
 	 * variables. Kept minimal so it doesn't overwhelm the settings panel;
-	 * the actual examples live in the MENU.md template that users can
-	 * create from their vault.
+	 * the full default template is shown in the preview block above.
 	 */
 	private renderVariableReference(container: HTMLElement): void {
 		container.createEl('h4', {
@@ -75,6 +95,8 @@ export class CustomizeSettingsSection implements SettingsSection {
 		});
 
 		const vars: Array<{ placeholder: string; descKey: string }> = [
+			{ placeholder: '[icon]', descKey: 'settings.customizeVarIcon' },
+			{ placeholder: '[.ext, …]', descKey: 'settings.customizeVarFileExtensions' },
 			{ placeholder: '{{filepath}}', descKey: 'settings.customizeVarFilepath' },
 			{ placeholder: '{{selection}}', descKey: 'settings.customizeVarSelection' },
 			{ placeholder: '{{blockquote}}', descKey: 'settings.customizeVarBlockquote' },

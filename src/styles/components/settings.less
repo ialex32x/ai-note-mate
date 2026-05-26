@@ -1187,3 +1187,29 @@
 .oap-customize-var-desc {
     color: @text-secondary;
 }
+
+.oap-customize-template-preview {
+    margin-top: @spacing-sm;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-md;
+    background: @bg-secondary;
+    max-height: 200px;
+    overflow: auto;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
+}
+
+.oap-customize-template-preview__code {
+    margin: 0;
+    padding: @spacing-md;
+    font-family: var(--font-monospace);
+    font-size: 0.75em;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: @text-faint;
+    opacity: 0.5;
+    user-select: text;
+    -webkit-user-select: text;
+}

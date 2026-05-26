@@ -1,13 +1,6 @@
 /*
- * AI Edit History view styles.
- * Used by `EditHistoryView` to render the per-task list and details.
- *
- * Conventions:
- * - Uses Obsidian theme variables (var(--text-*) / var(--background-*)) so
- *   the view adapts to light/dark themes without overrides.
- * - Status-dependent left border colour acts as the at-a-glance state cue.
- * - Before/After previews are always stacked vertically for readability,
- *   matching diff-style review UX on both desktop and mobile.
+ * AI Edit History view — file-change audit log.
+ * Used by `EditHistoryView` to render grouped vault mutation rows.
  */
 
 .ai-edit-history-view {
@@ -19,25 +12,12 @@
     overflow: hidden;
 }
 
-// Host for the (re-rendered) header — lets us swap the toolbar per tab
-// without losing the body's scroll position.
-.ai-edit-history-header-host {
-    flex-shrink: 0;
-}
-
-.ai-edit-history-body {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
-
 .ai-edit-history-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: @spacing-md;
-    flex-wrap: wrap;
+    flex-shrink: 0;
 }
 
 .ai-edit-history-header-left {
@@ -54,43 +34,6 @@
     color: @text-primary;
 }
 
-.ai-edit-history-tabs {
-    display: flex;
-    gap: @spacing-xs;
-    align-items: center;
-}
-
-.ai-edit-history-tab {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: 1px solid transparent;
-    min-width: 28px;
-    min-height: 28px;
-    padding: 4px;
-    border-radius: @radius-sm;
-    font-size: var(--font-ui-smaller);
-    color: @text-secondary;
-    cursor: pointer;
-
-    // Icon from `setIcon` — keep stroke aligned with tab chrome.
-    svg {
-        display: block;
-    }
-
-    &:hover {
-        background: @bg-modifier-hover;
-        color: @text-primary;
-    }
-
-    &.is-active {
-        background: @bg-modifier-hover;
-        color: @text-primary;
-        border-color: @bg-modifier-border;
-    }
-}
-
 .ai-edit-history-header-actions {
     display: flex;
     gap: @spacing-sm;
@@ -101,8 +44,9 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: @spacing-sm;
+    gap: @spacing-xs;
     padding-right: @spacing-xs;
+    min-height: 0;
 }
 
 .ai-edit-history-empty {
@@ -112,11 +56,8 @@
     padding: @spacing-xl @spacing-md;
 }
 
-// ── Item ─────────────────────────────────────────────────────────────────
-
 .ai-edit-history-item {
     border: 1px solid @bg-modifier-border;
-    border-left-width: 3px;
     border-radius: @radius-md;
     padding: @spacing-sm @spacing-md;
     background: @bg-secondary;
@@ -125,57 +66,12 @@
     &:hover {
         background: @bg-modifier-hover;
     }
-
-    // Status-dependent left border tint.
-    &--pending   { border-left-color: @text-secondary; }
-    &--running   { border-left-color: @text-accent; }
-    &--applied   { border-left-color: @text-success; }
-    &--cancelled { border-left-color: @text-secondary; }
-    &--failed    { border-left-color: @text-error; }
-    &--stale     { border-left-color: @text-warning; }
-
-    // Details panel collapsed by default.
-    .ai-edit-history-details {
-        display: none;
-        margin-top: @spacing-md;
-        padding-top: @spacing-md;
-        border-top: 1px solid @bg-modifier-border;
-    }
-    &.is-expanded .ai-edit-history-details {
-        display: block;
-    }
 }
 
 .ai-edit-history-item-head {
     display: flex;
     align-items: center;
     gap: @spacing-sm;
-    cursor: pointer;
-    user-select: none;
-}
-
-.ai-edit-history-status-icon {
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: var(--icon-size, 16px);
-    height: var(--icon-size, 16px);
-    color: @text-secondary;
-    margin-right: @spacing-xs;        // visual separator from action buttons
-
-    &--running {
-        color: @text-accent;
-        animation: ai-edit-history-spin 1s linear infinite;
-    }
-    &--applied   { color: @text-success; }
-    &--failed    { color: @text-error; }
-    &--stale     { color: @text-warning; }
-    &--cancelled { color: @text-faint; }
-}
-
-@keyframes ai-edit-history-spin {
-    to { transform: rotate(360deg); }
 }
 
 .ai-edit-history-action-icon {
@@ -196,29 +92,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     cursor: pointer;
-    direction: rtl;        // keep the file name (tail) visible when truncated
+    direction: rtl;
     text-align: left;
     unicode-bidi: plaintext;
 
     &:hover { text-decoration: underline; }
-}
-
-.ai-edit-history-bytes {
-    flex-shrink: 0;
-    white-space: nowrap;
-    color: @text-secondary;
-    font-size: var(--font-ui-smaller);
-}
-
-.ai-edit-history-buttons {
-    display: flex;
-    align-items: center;
-    gap: @spacing-xs;
-    flex-shrink: 0;
-}
-
-.ai-edit-history-icon-btn {
-    padding: 2px;
 }
 
 .ai-edit-history-preview-line {
@@ -230,75 +108,6 @@
     white-space: nowrap;
 }
 
-// ── Details panel ───────────────────────────────────────────────────────
-
-// Error box shown in the expanded details panel of a failed task.
-// Uses a neutral panel background (same as the "After" preview) with an
-// error-tinted left border, so the red text remains legible across both
-// light and dark Obsidian themes. The previous design painted red text
-// over an error-tinted background, which collapsed contrast to near zero
-// in dark themes.
-.ai-edit-history-error {
-    margin-bottom: @spacing-sm;
-    padding: @spacing-sm;
-    border: 1px solid @bg-modifier-border;
-    border-left: 3px solid @text-error;
-    border-radius: @radius-sm;
-    background: @bg-primary;
-    color: @text-error;
-    font-size: var(--font-ui-smaller);
-    white-space: pre-wrap;
-    word-break: break-word;
-}
-
-.ai-edit-history-preview-grid {
-    display: flex;
-    flex-direction: column;
-    gap: @spacing-md;
-}
-
-.ai-edit-history-preview-col {
-    display: flex;
-    flex-direction: column;
-    gap: @spacing-xs;
-    min-width: 0;
-}
-
-.ai-edit-history-preview-title {
-    font-size: var(--font-ui-smaller);
-    font-weight: 600;
-    color: @text-secondary;
-}
-
-.ai-edit-history-preview-text {
-    margin: 0;
-    padding: @spacing-sm;
-    background: @bg-primary;
-    border: 1px solid @bg-modifier-border;
-    border-radius: @radius-sm;
-    font-size: var(--font-ui-smaller);
-    font-family: var(--font-text);
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 240px;
-    overflow-y: auto;
-    color: @text-primary;
-}
-
-.ai-edit-history-meta {
-    margin-top: @spacing-md;
-    color: @text-faint;
-    font-size: var(--font-ui-smaller);
-}
-
-// ── File changes tab ────────────────────────────────────────────────────
-
-.ai-edit-history-list--file-changes {
-    gap: @spacing-xs;
-}
-
-// Session / group header between blocks of file-change rows. Subdued so
-// the rows themselves remain the focal point.
 .ai-edit-history-group-title {
     font-size: var(--font-ui-smaller);
     color: @text-faint;
@@ -306,15 +115,12 @@
     border-bottom: 1px dashed @bg-modifier-border;
     margin-bottom: @spacing-xs;
 
-    // Collapse top margin / border for the first group so it sits flush.
     &:first-child {
         padding-top: 0;
         border-top: none;
     }
 }
 
-// Log-row colour hints per mutation kind, mirroring the border tint
-// convention used by rewrite rows above.
 .ai-edit-history-item--log {
     border-left-width: 3px;
 
@@ -324,8 +130,6 @@
     &.ai-edit-history-item--log-delete { border-left-color: @text-error; }
 }
 
-// Disabled file label for delete rows — not clickable, shown in the
-// "faint" colour so it reads as archival metadata.
 .ai-edit-history-file.is-disabled {
     color: @text-faint;
     cursor: default;

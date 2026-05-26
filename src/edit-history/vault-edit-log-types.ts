@@ -5,11 +5,6 @@
  * tool call (create / modify / rename / delete). The log is a lightweight
  * audit trail — it stores ONLY metadata (paths, tool name, timestamp,
  * optional sessionId), never the pre/post file content.
- *
- * This is intentionally kept separate from {@link EditTask} (the editor
- * selection-rewrite history): the two have very different shapes, capacity
- * needs, and lifecycles. Sharing the UI panel via a tab is fine, but
- * sharing a store / schema would force both to the lowest common denominator.
  */
 
 /** Kind of vault mutation that produced a log entry. */

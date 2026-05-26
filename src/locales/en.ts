@@ -113,8 +113,6 @@ export const en: Record<string, string> = {
 	'view.sessionTitlePlaceholder': 'Enter session name',
 	'view.sendToSession': 'Send to AI Session',
 	'view.sendToNewSession': 'Send to New AI Session',
-	'view.autoTagFile': 'Auto-tag',
-	'view.autoTagPrompt': 'Please auto-tag the note [[{path}]] with tags that follow this Vault\'s tag conventions.',
 	'view.inputHasDraftNotice': 'The AI input box already contains text. Send or clear it before triggering this action.',
 	'view.promptFilledNotice': 'Prompt added to the AI session input. Switch to the session to review and send.',
 	'view.deleteHistorySessions': 'Delete history sessions',
@@ -377,15 +375,61 @@ export const en: Record<string, string> = {
 	// ── Customize ──────────────────────────────────────────
 	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': 'Menu note path',
-	'settings.customizeMenuNotePathDesc': 'Vault-relative path of the markdown note that defines custom right-click menu items. H1 headings select a surface (Files → file-menu, Editor → editor-menu); each H2 heading is a menu label whose body is the prompt template. Blockquote lines ("> ...") are treated as comments and stripped.',
+	'settings.customizeMenuNotePathDesc': 'Vault-relative path of the markdown note that defines custom right-click menu items. H1 headings select a surface (Files → file-menu, Editor → editor-menu); each H2 heading is a menu label whose body is the prompt template. By default, items appear for markdown notes only; append `[.png, .jpg]` to an H2 title to target other file types. Blockquote lines ("> ...") are treated as comments and stripped.',
 	'settings.customizeMenuNotePathPlaceholder': 'e.g. MENU.md',
 	'settings.customizeOpenNote': 'Open the menu note in a new tab',
 	'settings.customizeCreateDefault': 'Create the menu note from the default template',
 	'settings.customizeCreated': 'Menu note created at {path}.',
-	'settings.customizeVariablesHeading': 'Template variables',
+	'settings.customizeTemplatePreviewHeading': 'Default template',
+	'settings.customizeTemplatePreviewDesc': 'Preview of the note content created when the menu note is missing. Edit the note in your vault to customize menu items.',
+	'settings.customizeVariablesHeading': 'H2 suffixes & template variables',
+	'settings.customizeVarIcon': 'Optional Lucide icon on the H2 title (e.g. `[sparkles]`). Browse names at lucide.dev/icons/.',
+	'settings.customizeVarFileExtensions': 'Optional file-type filter on the H2 title (e.g. `[.png, .jpg]`). When omitted, the item is limited to markdown (`.md`) notes.',
 	'settings.customizeVarFilepath': 'Replaced with the file path including filename (e.g. "Input/Test Note.md").',
 	'settings.customizeVarSelection': 'Replaced with the selection range (e.g. "(Ln 29 - Ln 40)"). When nothing is selected, shows the cursor position.',
 	'settings.customizeVarBlockquote': 'Replaced with the selected text as a markdown blockquote. Truncated to 100 characters for long selections.',
+	'settings.customizeMenuDefaultTemplate': `> 💡 Menu icons: visit https://lucide.dev/icons/ for icon names (e.g. sparkles, tags). File types: append [.png, .jpg] to an H2 title to limit that item to those extensions; default is markdown (.md) only.
+
+# Files
+
+## Summarise this note [sparkles]
+Please summarise the content of {{filepath}} in one paragraph.
+
+> This is a comment — it is stripped from the prompt shown to the assistant.
+> Blockquotes are your personal annotations.
+
+## Translate this note [languages]
+Translate {{filepath}} to English, preserving markdown formatting.
+
+## Auto-tag [tags]
+Please auto-tag the note {{filepath}} with tags that follow this Vault's tag conventions.
+
+# Editor
+
+## Expand selection [maximize-2]
+Expand the following text with more detail, examples, or context. Keep the original meaning intact. Preserve the original language, tone, and inline formatting.
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## Shorten selection [minimize-2]
+Shorten the following text while preserving every key fact and the original meaning. Preserve the original language, tone, and inline formatting.
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## Continue writing [chevrons-right]
+Continue writing from where the following text ends. Output only the new continuation — do not repeat or restate the input.
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## Explain selection [sparkles]
+Explain the following content:
+{{blockquote}}
+
+## Improve writing [wand-2]
+Polish the following text for clarity and conciseness, keeping the original tone:
+{{filepath}} {{selection}}
+{{blockquote}}
+`,
 
 
 	// ── Token usage ───────────────────────────────────────
@@ -469,36 +513,16 @@ export const en: Record<string, string> = {
 	// ── AI Edit History ───────────────────────────────────
 	'editHistory.title': 'AI Edit History',
 	'editHistory.openView': 'Open AI Edit History',
-	'editHistory.empty': 'No rewrite tasks yet.',
-	'editHistory.unsavedDraft': '(unsaved)',
 	'editHistory.menu.aiSubmenu': 'AI',
-	'editHistory.action.expand': 'Expand selection',
-	'editHistory.action.shorten': 'Shorten selection',
-	'editHistory.action.continue': 'Continue writing',
-	'editHistory.command.expand': 'AI: Expand selection',
-	'editHistory.command.shorten': 'AI: Shorten selection',
-	'editHistory.command.continue': 'AI: Continue writing',
-	'editHistory.status.pending': 'Pending',
-	'editHistory.status.running': 'Generating',
-	'editHistory.status.applied': 'Applied',
-	'editHistory.status.cancelled': 'Cancelled',
-	'editHistory.status.failed': 'Failed',
-	'editHistory.status.stale': 'Target changed',
-	'editHistory.button.retry': 'Retry',
-	'editHistory.button.remove': 'Remove',
-	'editHistory.button.clearFinished': 'Clear finished',
-	'editHistory.preview.after': 'After',
-	'editHistory.menu.copyOriginal': 'Copy original',
-	'editHistory.menu.copyResult': 'Copy result',
-	'editHistory.progress.bytes': '{n} chars',
-	'editHistory.notice.noProfile': 'No usable AI profile configured. Open settings to add one.',
-	'editHistory.notice.emptySelection': 'Select some text first.',
-	'editHistory.notice.tooLarge': 'Selection too large (max {size} characters).',
-	'editHistory.notice.failed': 'Rewrite failed: {0}',
-	'editHistory.notice.stale': 'Target text was modified — rewrite was not applied.',
-	'editHistory.notice.emptyResponse': 'Model returned no content.',
 	'editHistory.notice.fileMissing': 'Original file is no longer available.',
-	'editHistory.notice.lockConflict': 'This file has unconfirmed AI changes in another session. Accept or discard them first.',
+	'editHistory.fileChanges.empty': 'No AI file changes yet.',
+	'editHistory.fileChanges.kind.create': 'Created',
+	'editHistory.fileChanges.kind.modify': 'Modified',
+	'editHistory.fileChanges.kind.rename': 'Moved',
+	'editHistory.fileChanges.renamedFrom': 'from {0}',
+	'editHistory.fileChanges.deletedHint': 'Deleted — cannot open',
+	'editHistory.fileChanges.clearAll': 'Clear all',
+	'editHistory.fileChanges.sessionUnknown': 'Unattributed changes',
 	'view.checkpointsAriaLabel': 'AI file change checkpoints',
 	'view.checkpointEmpty': 'No file changes in this session yet.',
 	'view.checkpointEmptyFiles': 'No files captured in this round.',
@@ -519,18 +543,6 @@ export const en: Record<string, string> = {
 	'view.checkpointDiscardAll': 'Discard all',
 	'view.checkpointAcceptAllHint': 'Accepts the newest pending checkpoint, which accepts every earlier pending checkpoint too.',
 	'view.checkpointDiscardAllHint': 'Discards the oldest pending checkpoint, which discards every later pending checkpoint and restores from snapshots.',
-
-	// ── AI Edit History: File changes tab ────────────────
-	'editHistory.tab.rewrites': 'Rewrites',
-	'editHistory.tab.fileChanges': 'File changes',
-	'editHistory.fileChanges.empty': 'No AI file changes yet.',
-	'editHistory.fileChanges.kind.create': 'Created',
-	'editHistory.fileChanges.kind.modify': 'Modified',
-	'editHistory.fileChanges.kind.rename': 'Moved',
-	'editHistory.fileChanges.renamedFrom': 'from {0}',
-	'editHistory.fileChanges.deletedHint': 'Deleted — cannot open',
-	'editHistory.fileChanges.clearAll': 'Clear all',
-	'editHistory.fileChanges.sessionUnknown': 'Unattributed changes',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': 'Usage tips',

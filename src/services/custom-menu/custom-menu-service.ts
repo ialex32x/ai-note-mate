@@ -7,37 +7,12 @@
  * menu-event callbacks can read them without awaiting.
  */
 
-import { TFile, TFolder, normalizePath, type App } from 'obsidian';
+import { TFile, TFolder, normalizePath, type App, type TAbstractFile } from 'obsidian';
 import type NoteAssistantPlugin from '../../main';
+import { t } from '../../i18n';
 import { parseMenuNote } from './menu-note-parser';
 import type { CustomMenuItem, CustomMenuCategory } from './types';
-
-// ── Default template ──────────────────────────────────────────────
-
-/** Auto-created when the user clicks "Create default" and the file is missing. */
-const DEFAULT_MENU_TEMPLATE = `> 💡 Menu icons: visit https://lucide.dev/icons/ to browse available icon names (e.g., sparkles, wand-2, languages).
-
-# Files
-
-## Summarise this note [sparkles]
-Please summarise the content of {{filepath}} in one paragraph.
-
-> This is a comment — it is stripped from the prompt shown to the assistant.
-> Blockquotes are your personal annotations.
-
-## Translate this note [languages]
-Translate {{filepath}} to English, preserving markdown formatting.
-
-# Editor
-
-## Explain selection [sparkles]
-Explain the following content:
-{{blockquote}}
-
-## Improve writing [wand-2]
-Polish the following text for clarity and conciseness, keeping the original tone:
-{{selection}}
-`;
+import { customMenuItemMatchesTarget } from './menu-item-match';
 
 /** Simple error description helper (same pattern as MemoryStore). */
 function describeError(err: unknown): string {
@@ -114,6 +89,19 @@ export class CustomMenuService {
 	}
 
 	/**
+	 * Cached items for a category that apply to the given vault file or
+	 * path. Non-file targets (folders, extensionless paths) yield [].
+	 */
+	getCachedItemsForTarget(
+		category: CustomMenuCategory,
+		target: TAbstractFile | string | undefined | null,
+	): CustomMenuItem[] {
+		return this.getCachedItems(category).filter(item =>
+			customMenuItemMatchesTarget(item, target),
+		);
+	}
+
+	/**
 	 * Return ALL cached items (useful for settings preview).
 	 */
 	getAllCachedItems(): CustomMenuItem[] {
@@ -166,7 +154,7 @@ export class CustomMenuService {
 		}
 
 		try {
-			const file = await this.app.vault.create(path, DEFAULT_MENU_TEMPLATE);
+			const file = await this.app.vault.create(path, t('settings.customizeMenuDefaultTemplate'));
 			void this.refresh();
 			return file;
 		} catch (err) {

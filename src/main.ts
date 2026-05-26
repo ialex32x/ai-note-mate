@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo, debounce } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TAbstractFile, MarkdownView, Editor, MarkdownFileInfo, debounce } from 'obsidian';
 import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig } from "./settings";
 import { SessionView } from 'views/session-view';
 import { resolveLocale, setLocale, t } from './i18n';
@@ -6,10 +6,9 @@ import { MCPManager } from './services/mcp/mcp-manager';
 import { SkillManager, createVaultFsAdapter } from './skills/skill-manager';
 import { initGlobalEmbedder, disposeGlobalEmbedder } from './services/embedder';
 import { PluginPaths } from './plugin-paths';
-import { EditHistoryStore } from './edit-history/edit-history-store';
 import { EditHistoryView } from './edit-history/edit-history-view';
 import { VaultEditLogStore } from './edit-history/vault-edit-log-store';
-import { registerRewriteSelection, type AISubmenuItem } from './edit-history/rewrite-selection';
+import { registerEditorAISubmenu, type AISubmenuItem } from './edit-history/rewrite-selection';
 import { SessionManager } from './session-manager';
 import { SessionRuntimePool } from './services/session-runtime';
 import { VaultMutator, GlobalFileLockManager, SnapshotManager } from './services/vault';
@@ -22,11 +21,10 @@ export default class NoteAssistantPlugin extends Plugin {
 	mcpManager!: MCPManager;
 	skillManager!: SkillManager;
 	paths!: PluginPaths;
-	editHistory!: EditHistoryStore;
 	/**
 	 * Log of vault file mutations performed by AI tool calls (create /
-	 * modify / rename / delete). Metadata-only — no file content. Shared
-	 * with the AI Edit History view via a dedicated "File changes" tab.
+	 * modify / rename / delete). Metadata-only — no file content. Shown
+	 * in the AI Edit History sidebar view.
 	 */
 	vaultEditLog!: VaultEditLogStore;
 	/**
@@ -133,23 +131,14 @@ export default class NoteAssistantPlugin extends Plugin {
 
 		this.registerView(SessionView.VIEW_TYPE, (leaf) => new SessionView(leaf, this));
 
-		// AI Edit History: store + view + editor menu/commands.
-		// Persisted under cache/ since the data is rebuildable derived state
-		// (we never want to mix it with user-owned sessions/).
-		this.editHistory = new EditHistoryStore(this.app, {
-			persistPath: `${this.paths.cache()}/edit-history.json`,
-		});
-		await this.editHistory.load();
-		// AI file-changes log: separate store from the selection-rewrite
-		// history above. Persisted under cache/ for the same reason — it's
-		// rebuildable audit metadata, not user-owned content.
+		// AI file-changes log — persisted under cache/ since it's rebuildable
+		// audit metadata, not user-owned content.
 		this.vaultEditLog = new VaultEditLogStore(this.app, {
 			persistPath: `${this.paths.cache()}/vault-edit-log.json`,
 		});
 		await this.vaultEditLog.load();
-		// Cross-session file lock table; consulted by VaultMutator (write
-		// path) and the AI Edit rewrite runner (read-only check before
-		// starting a selection rewrite). Pure in-memory state.
+		// Cross-session file lock table; consulted by VaultMutator before
+		// AI-driven vault writes. Pure in-memory state.
 		this.fileLockManager = new GlobalFileLockManager();
 		// Snapshot blob store for checkpoint rollback. Lives under cache/
 		// since the data is runtime-only. The clearAll() call here is the
@@ -199,11 +188,11 @@ export default class NoteAssistantPlugin extends Plugin {
 		}));
 		this.registerView(
 			EditHistoryView.VIEW_TYPE,
-			(leaf) => new EditHistoryView(leaf, this, this.editHistory, this.vaultEditLog),
+			(leaf) => new EditHistoryView(leaf, this, this.vaultEditLog),
 		);
 		// "Send to AI Session" lives inside the same "AI" submenu as the
-		// rewrite actions (expand/shorten/polish) so all AI-related editor
-		// entries share a single parent. Unlike rewrites, this entry also
+		// MENU.md editor items so all AI-related editor entries share a
+		// single parent. Unlike selection-scoped prompts, this entry also
 		// works without a selection — in that case it inserts only a file
 		// reference + cursor coordinates.
 		const sendToSessionItem: AISubmenuItem = {
@@ -231,36 +220,18 @@ export default class NoteAssistantPlugin extends Plugin {
 				void this.sendEditorContextToNewSession(editor, info);
 			},
 		};
-		// "Auto-tag" is a session-level action — no selection required.
-		// It dispatches a fully-formed prompt directly to the AI session
-		// without touching the input box, so any draft the user is composing
-		// stays intact. Only meaningful for markdown notes (the .md guard
-		// also hides the entry for canvas / PDF / image files where tags
-		// aren't an Obsidian concept).
-		const autoTagFileItem: AISubmenuItem = {
-			title: t('view.autoTagFile'),
-			icon: 'tags',
-			isAvailable: (_editor, info) => {
-				const file = this.resolveMarkdownFileFromInfo(info);
-				return file !== null;
-			},
-			onClick: (_editor, info) => {
-				const file = this.resolveMarkdownFileFromInfo(info);
-				if (file) void this.autoTagFile(file);
-			},
-		};
-		registerRewriteSelection(
+		registerEditorAISubmenu(
 			this,
-			this.editHistory,
-			() => this.revealEditHistoryView(),
-			[sendToSessionItem, sendToNewSessionItem, autoTagFileItem],
+			[sendToSessionItem, sendToNewSessionItem],
 			(_editor, info) => {
 				// Dynamic items from MENU.md (Editor category). Cache is
 				// kept warm by vault events — no await needed.
-				const customItems = this.customMenuService.getCachedItems('editor-menu');
-				if (customItems.length === 0) return [];
-
 				const filePath = (info as { file?: { path?: string } } | undefined)?.file?.path;
+				const customItems = this.customMenuService.getCachedItemsForTarget(
+					'editor-menu',
+					filePath,
+				);
+				if (customItems.length === 0) return [];
 				return customItems.map(ci => ({
 					title: ci.label,
 					icon: ci.icon ?? 'sparkles',
@@ -299,7 +270,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		});
 
 		// Register file context menu handler. Uses a two-level "AI" submenu
-		// (mirroring the editor-menu structure built in registerRewriteSelection)
+		// (mirroring the editor-menu structure built in registerEditorAISubmenu)
 		// so file-scoped AI actions stay grouped under one parent entry
 		// instead of cluttering the top level of the file menu.
 		this.registerEvent(
@@ -307,17 +278,10 @@ export default class NoteAssistantPlugin extends Plugin {
 				if (!(file instanceof TAbstractFile)) return;
 
 				// Cache is kept warm by vault events — no await needed.
-				const customItems = this.customMenuService.getCachedItems('file-menu');
-
-				// Suppress the entire "AI" parent when there is nothing to
-				// show (no built-in actions AND no custom items).
-				const hasAutoTag = file instanceof TFile && file.extension === 'md';
-				if (customItems.length === 0 && !hasAutoTag) {
-					// Still show "Send to Session" / "Send to New Session"
-					// for any file — those are always available.
-					// If we also had no custom items and no auto-tag, we
-					// just show the two send entries.
-				}
+				const customItems = this.customMenuService.getCachedItemsForTarget(
+					'file-menu',
+					file,
+				);
 
 				menu.addItem((item) => {
 					item
@@ -326,7 +290,7 @@ export default class NoteAssistantPlugin extends Plugin {
 						.setSection('action');
 					// `setSubmenu()` is exposed at runtime but missing from
 					// Obsidian's public typings — narrow it locally, the
-					// same pattern is used by registerRewriteSelection.
+					// same pattern is used by registerEditorAISubmenu.
 					const sub = (item as unknown as { setSubmenu: () => {
 						addItem: (cb: (s: {
 							setTitle: (n: string) => unknown;
@@ -364,23 +328,6 @@ export default class NoteAssistantPlugin extends Plugin {
 							});
 						});
 					}
-
-					// "Auto-tag" only applies to markdown notes: tags are a
-					// frontmatter / inline-`#tag` concept, so showing the
-					// entry on folders, canvases, PDFs, etc. would dispatch
-					// a prompt the AI can't sensibly answer.
-					if (hasAutoTag) {
-						if (customItems.length > 0) {
-							sub.addSeparator?.();
-						}
-						sub.addItem((s) => {
-							s.setTitle(t('view.autoTagFile'));
-							s.setIcon('tags');
-							s.onClick(() => {
-								void this.autoTagFile(file);
-							});
-						});
-					}
 				});
 			})
 		);
@@ -395,7 +342,6 @@ export default class NoteAssistantPlugin extends Plugin {
 		this.runtimePool?.disposeAll();
 		void this.mcpManager?.closeAll();
 		void disposeGlobalEmbedder();
-		this.editHistory?.dispose();
 		this.vaultEditLog?.dispose();
 		// Snapshots are runtime-only — best-effort wipe on unload so the
 		// directory doesn't grow between launches in the happy-path
@@ -431,8 +377,6 @@ export default class NoteAssistantPlugin extends Plugin {
 
 	/**
 	 * Ensure the AI Edit History view is open and revealed in the right sidebar.
-	 * Called both from the explicit command and after an editor rewrite is
-	 * triggered, so the user immediately sees the running task.
 	 */
 	private async revealEditHistoryView(): Promise<void> {
 		const { workspace } = this.app;
@@ -673,58 +617,6 @@ export default class NoteAssistantPlugin extends Plugin {
 		view.cmInput.focus();
 	}
 
-	/**
-	 * "Auto-tag" entry point shared by the editor right-click menu and the
-	 * file-menu submenu. Builds a fully-formed prompt referencing the
-	 * target note via wikilink and parks it in the session input via
-	 * {@link SessionView.fillPromptDraft}:
-	 *
-	 *   - if the input is empty, the prompt is loaded as a draft and the
-	 *     user reviews + sends manually;
-	 *   - if the input already holds an unsent draft, the view surfaces a
-	 *     Notice and the action is refused. We never silently overwrite
-	 *     user-authored text.
-	 *
-	 * The prompt template is sourced from the locale bundle
-	 * (`view.autoTagPrompt`) so the parked draft matches the user's UI
-	 * language; the wikilink for the target note stays constant across
-	 * languages because the AI session needs a stable file reference.
-	 * The session pipeline (skill auto-injection, tools) is what actually
-	 * figures out the vault's tag conventions; we only kick off the turn.
-	 */
-	private async autoTagFile(file: TFile): Promise<void> {
-		if (!file?.path) return;
-
-		const prompt = t('view.autoTagPrompt', { path: file.path });
-
-		await this.createSessionView(true);
-		const view = this.getActiveSessionView();
-		if (!view) return;
-
-		view.fillPromptDraft(prompt);
-	}
-
-	/**
-	 * Resolve a markdown {@link TFile} from the `MarkdownFileInfo` passed
-	 * into `editor-menu` callbacks, falling back to the workspace's active
-	 * markdown view. Returns `null` for non-markdown files (canvas, PDF,
-	 * images, etc.) so callers that act exclusively on notes — like
-	 * "Auto-tag" — can use it as a single source of truth for visibility
-	 * and dispatch logic alike.
-	 */
-	private resolveMarkdownFileFromInfo(
-		info?: MarkdownView | MarkdownFileInfo,
-	): TFile | null {
-		const fromInfo = (info as { file?: TFile } | undefined)?.file;
-		const candidate = fromInfo instanceof TFile
-			? fromInfo
-			: this.app.workspace.getActiveViewOfType(MarkdownView)?.file ?? null;
-		if (candidate instanceof TFile && candidate.extension === 'md') {
-			return candidate;
-		}
-		return null;
-	}
-
 	/** Resolve the (first) live SessionView leaf, or null if none. */
 	private getActiveSessionView(): SessionView | null {
 		const leaves = this.app.workspace.getLeavesOfType(SessionView.VIEW_TYPE);
@@ -738,8 +630,8 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * cursor / selection. Returns `null` if no file path can be resolved
 	 * (e.g. unsaved buffer with no associated TFile). See the long comment
 	 * on `sendEditorContextToSession` for the exact format rules; this
-	 * helper exists so multiple entry points (Send to AI Session, Auto-tag)
-	 * can share one source of truth for the formatting.
+	 * helper exists so the Send to AI Session entry points can share one
+	 * source of truth for the formatting.
 	 */
 	private formatEditorContextSnippet(
 		editor: Editor,
@@ -794,7 +686,7 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * Execute a single custom menu item: replace template variables with
 	 * live context, then park the resulting prompt in the session input
 	 * via {@link SessionView.fillPromptDraft}. The fill-or-refuse
-	 * semantics are the same as "Auto-tag" — if the input
+	 * semantics match other session draft actions — if the input
 	 * already contains user text a Notice is surfaced and the action is
 	 * refused.
 	 */

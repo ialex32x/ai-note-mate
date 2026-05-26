@@ -16,17 +16,26 @@
  */
 export type CustomMenuCategory = 'file-menu' | 'editor-menu';
 
+/** Default file extensions when an H2 heading has no `[.ext, …]` suffix. */
+export const DEFAULT_MENU_FILE_EXTENSIONS: readonly string[] = ['md'];
+
 /** One parsed menu entry from the MENU.md note. */
 export interface CustomMenuItem {
 	/** Which menu surface (editor right-click vs. file right-click). */
 	category: CustomMenuCategory;
-	/** Menu label (the `##` heading text, with `[icon]` suffix stripped). */
+	/** Menu label (the `##` heading text, with suffix brackets stripped). */
 	label: string;
 	/**
 	 * Optional Lucide icon name extracted from a trailing `[icon]` in the
 	 * H2 heading. When unset the consumer falls back to `sparkles`.
 	 */
 	icon?: string;
+	/**
+	 * Vault file extensions (without dots) for which this item is shown.
+	 * Defaults to {@link DEFAULT_MENU_FILE_EXTENSIONS} when the heading
+	 * omits an explicit `[.ext, …]` suffix.
+	 */
+	fileExtensions: readonly string[];
 	/**
 	 * Prompt template body. Lines between the `##` heading and the next
 	 * heading (or EOF), with blockquote lines (`> ...`) stripped.

@@ -113,8 +113,6 @@ export const ko: Record<string, string> = {
 	'view.sessionTitlePlaceholder': '세션 이름 입력',
 	'view.sendToSession': 'AI 세션으로 전송',
 	'view.sendToNewSession': '새 AI 세션으로 전송',
-	'view.autoTagFile': '자동 태그 지정',
-	'view.autoTagPrompt': '이 Vault의 태그 규칙에 따라 노트 [[{path}]]에 적절한 태그를 자동으로 지정해 주세요.',
 	'view.inputHasDraftNotice': 'AI 입력란에 이미 내용이 있습니다. 먼저 보내거나 비운 후 다시 시도하세요.',
 	'view.promptFilledNotice': '프롬프트를 AI 세션 입력란에 입력했습니다. 세션으로 전환하여 확인 후 진행하세요.',
 	'view.deleteHistorySessions': '히스토리 세션 삭제',
@@ -377,15 +375,61 @@ export const ko: Record<string, string> = {
 	// ── Customize ──────────────────────────────────────────
 	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': '메뉴 노트 경로',
-	'settings.customizeMenuNotePathDesc': '사용자 정의 우클릭 메뉴 항목을 정의하는 Markdown 노트의 보관함 상대 경로. H1 제목으로 메뉴 표면을 선택합니다（Files → 파일 메뉴, Editor → 편집기 메뉴）. 각 H2 제목은 메뉴 레이블이며, 그 본문이 프롬프트 템플릿입니다. 인용 줄（"> ..."）은 주석으로 처리되어 제거됩니다.',
+	'settings.customizeMenuNotePathDesc': '사용자 정의 우클릭 메뉴 항목을 정의하는 Markdown 노트의 보관함 상대 경로. H1 제목으로 메뉴 표면을 선택합니다（Files → 파일 메뉴, Editor → 편집기 메뉴）. 각 H2 제목은 메뉴 레이블이며, 그 본문이 프롬프트 템플릿입니다. 기본적으로 Markdown（.md） 노트에만 표시됩니다. H2 끝에 `[.png, .jpg]`를 붙이면 다른 확장자로 제한할 수 있습니다. 인용 줄（"> ..."）은 주석으로 처리되어 제거됩니다.',
 	'settings.customizeMenuNotePathPlaceholder': '예: MENU.md',
 	'settings.customizeOpenNote': '새 탭에서 메뉴 노트 열기',
 	'settings.customizeCreateDefault': '기본 템플릿으로 메뉴 노트 생성',
 	'settings.customizeCreated': '메뉴 노트가 생성되었습니다: {path}.',
-	'settings.customizeVariablesHeading': '템플릿 변수',
+	'settings.customizeTemplatePreviewHeading': '기본 템플릿',
+	'settings.customizeTemplatePreviewDesc': '메뉴 노트가 없을 때 만들기 버튼으로 작성되는 내용 미리보기입니다. 보관함에서 노트를 편집해 메뉴 항목을 사용자 정의할 수 있습니다.',
+	'settings.customizeVariablesHeading': 'H2 접미사 및 템플릿 변수',
+	'settings.customizeVarIcon': 'H2 제목의 Lucide 아이콘 접미사（예: `[sparkles]`）. 이름은 lucide.dev/icons/ 참조.',
+	'settings.customizeVarFileExtensions': 'H2 제목의 확장자 필터（예: `[.png, .jpg]`）. 생략 시 Markdown（`.md`） 노트만 표시.',
 	'settings.customizeVarFilepath': '파일 경로（파일명 포함）로 대체됩니다（예: "Input/Test Note.md"）. ',
 	'settings.customizeVarSelection': '선택 범위로 대체됩니다（예: "(Ln 29 - Ln 40)"）. 선택된 내용이 없으면 커서 위치를 표시합니다.',
 	'settings.customizeVarBlockquote': '선택한 텍스트를 Markdown 인용 형식으로 대체합니다. 긴 텍스트는 100자로 잘립니다.',
+	'settings.customizeMenuDefaultTemplate': `> 💡 아이콘: https://lucide.dev/icons/（예: sparkles, tags）. 파일 형식: H2 끝에 [.png, .jpg]로 대상 확장자 제한. 기본값은 Markdown（.md）만.
+
+# Files
+
+## 이 노트 요약 [sparkles]
+{{filepath}} 내용을 한 단락으로 요약해 주세요.
+
+> 이 줄은 주석입니다 — 어시스턴트에 보내는 프롬프트에는 포함되지 않습니다.
+> 인용 블록은 개인 메모에 사용할 수 있습니다.
+
+## 이 노트 번역 [languages]
+{{filepath}} 를 영어로 번역하고 Markdown 서식을 유지해 주세요.
+
+## 자동 태그 지정 [tags]
+이 Vault의 태그 규칙에 따라 노트 {{filepath}}에 적절한 태그를 자동으로 지정해 주세요.
+
+# Editor
+
+## 선택 영역 확장 [maximize-2]
+다음 텍스트를 더 자세히, 예시나 배경을 추가해 확장해 주세요. 원래 의미는 유지하고, 원문 언어, 어조, 인라인 서식을 보존해 주세요.
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 선택 영역 축약 [minimize-2]
+다음 텍스트를 축약하되 모든 핵심 사실과 원래 의미는 유지해 주세요. 원문 언어, 어조, 인라인 서식을 보존해 주세요.
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 선택 영역 이어 쓰기 [chevrons-right]
+다음 텍스트 끝에서 이어서 작성해 주세요. 새로운 이어쓰기만 출력하고 입력 내용을 반복하거나 다시 말하지 마세요.
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 선택 영역 설명 [sparkles]
+다음 내용을 설명해 주세요:
+{{blockquote}}
+
+## 글 다듬기 [wand-2]
+다음 텍스트를 더 명확하고 간결하게 다듬되 원래 어조는 유지해 주세요:
+{{filepath}} {{selection}}
+{{blockquote}}
+`,
 
 
 	// ── Token usage ───────────────────────────────────────
@@ -469,36 +513,16 @@ export const ko: Record<string, string> = {
 	// ── AI Edit History ───────────────────────────────────
 	'editHistory.title': 'AI 편집 기록',
 	'editHistory.openView': 'AI 편집 기록 열기',
-	'editHistory.empty': '아직 다시 쓰기 작업이 없습니다.',
-	'editHistory.unsavedDraft': '(저장되지 않음)',
 	'editHistory.menu.aiSubmenu': 'AI',
-	'editHistory.action.expand': '선택 영역 확장',
-	'editHistory.action.shorten': '선택 영역 축약',
-	'editHistory.action.continue': '선택 영역 이어 쓰기',
-	'editHistory.command.expand': 'AI: 선택 영역 확장',
-	'editHistory.command.shorten': 'AI: 선택 영역 축약',
-	'editHistory.command.continue': 'AI: 선택 영역 이어 쓰기',
-	'editHistory.status.pending': '대기 중',
-	'editHistory.status.running': '생성 중',
-	'editHistory.status.applied': '적용됨',
-	'editHistory.status.cancelled': '취소됨',
-	'editHistory.status.failed': '실패',
-	'editHistory.status.stale': '대상이 변경됨',
-	'editHistory.button.retry': '재시도',
-	'editHistory.button.remove': '제거',
-	'editHistory.button.clearFinished': '완료된 항목 정리',
-	'editHistory.preview.after': '다시 쓴 결과',
-	'editHistory.menu.copyOriginal': '원문 복사',
-	'editHistory.menu.copyResult': '결과 복사',
-	'editHistory.progress.bytes': '{n}자',
-	'editHistory.notice.noProfile': '사용 가능한 AI 프로파일이 없습니다. 설정에서 추가하세요.',
-	'editHistory.notice.emptySelection': '먼저 텍스트를 선택하세요.',
-	'editHistory.notice.tooLarge': '선택 영역이 너무 큽니다(최대 {size}자).',
-	'editHistory.notice.failed': '다시 쓰기 실패: {0}',
-	'editHistory.notice.stale': '대상 텍스트가 변경되어 적용되지 않았습니다.',
-	'editHistory.notice.emptyResponse': '모델이 내용을 반환하지 않았습니다.',
 	'editHistory.notice.fileMissing': '원본 파일을 더 이상 사용할 수 없습니다.',
-	'editHistory.notice.lockConflict': '이 파일은 다른 세션에서 확정되지 않은 AI 수정이 있습니다. 먼저 적용하거나 취소하세요.',
+	'editHistory.fileChanges.empty': 'AI 파일 변경 내역이 아직 없습니다.',
+	'editHistory.fileChanges.kind.create': '생성',
+	'editHistory.fileChanges.kind.modify': '수정',
+	'editHistory.fileChanges.kind.rename': '이동',
+	'editHistory.fileChanges.renamedFrom': '이전 경로 {0}',
+	'editHistory.fileChanges.deletedHint': '삭제됨 — 열 수 없음',
+	'editHistory.fileChanges.clearAll': '모두 지우기',
+	'editHistory.fileChanges.sessionUnknown': '귀속되지 않은 변경',
 	'view.checkpointsAriaLabel': 'AI 파일 변경 체크포인트',
 	'view.checkpointEmpty': '이 세션에서 발생한 파일 변경이 없습니다.',
 	'view.checkpointEmptyFiles': '이 라운드에 기록된 파일이 없습니다.',
@@ -519,18 +543,6 @@ export const ko: Record<string, string> = {
 	'view.checkpointDiscardAll': '모두 취소',
 	'view.checkpointAcceptAllHint': '가장 최근의 대기 중 체크포인트를 수락합니다. 그보다 이전의 대기 중 체크포인트도 함께 수락됩니다.',
 	'view.checkpointDiscardAllHint': '가장 오래된 대기 중 체크포인트를 취소합니다. 그보다 이후의 대기 중 체크포인트도 함께 취소되며 스냅샷으로 복원됩니다.',
-
-	// ── AI Edit History: File changes tab ────────────────
-	'editHistory.tab.rewrites': '재작성 기록',
-	'editHistory.tab.fileChanges': '파일 변경',
-	'editHistory.fileChanges.empty': 'AI 파일 변경 내역이 아직 없습니다.',
-	'editHistory.fileChanges.kind.create': '생성',
-	'editHistory.fileChanges.kind.modify': '수정',
-	'editHistory.fileChanges.kind.rename': '이동',
-	'editHistory.fileChanges.renamedFrom': '이전 경로 {0}',
-	'editHistory.fileChanges.deletedHint': '삭제됨 — 열 수 없음',
-	'editHistory.fileChanges.clearAll': '모두 지우기',
-	'editHistory.fileChanges.sessionUnknown': '귀속되지 않은 변경',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '사용 팁',

@@ -113,8 +113,6 @@ export const ja: Record<string, string> = {
 	'view.sessionTitlePlaceholder': 'セッション名を入力',
 	'view.sendToSession': 'AIセッションに送信',
 	'view.sendToNewSession': '新しいAIセッションに送信',
-	'view.autoTagFile': '自動タグ付け',
-	'view.autoTagPrompt': 'この Vault のタグ規約に従って、ノート [[{path}]] に適切なタグを自動で付与してください。',
 	'view.inputHasDraftNotice': 'AI 入力欄に既に内容があります。送信または消去してから再度実行してください。',
 	'view.promptFilledNotice': 'プロンプトを AI セッション入力欄に入力しました。セッションに切り替えて確認・送信してください。',
 	'view.deleteHistorySessions': '履歴セッションを削除',
@@ -377,15 +375,61 @@ export const ja: Record<string, string> = {
 	// ── Customize ──────────────────────────────────────────
 	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': 'メニューノートのパス',
-	'settings.customizeMenuNotePathDesc': 'カスタム右クリックメニュー項目を定義する Markdown ノートのボールト相対パス。H1 見出しでメニュー面を選択（Files → ファイルメニュー、Editor → エディターメニュー）。各 H2 見出しはメニューラベルで、その本文がプロンプトテンプレートです。引用行（"> ..."）はコメントとして扱われ、削除されます。',
+	'settings.customizeMenuNotePathDesc': 'カスタム右クリックメニュー項目を定義する Markdown ノートのボールト相対パス。H1 見出しでメニュー面を選択（Files → ファイルメニュー、Editor → エディターメニュー）。各 H2 見出しはメニューラベルで、その本文がプロンプトテンプレートです。既定では Markdown（.md）ノートのみに表示。H2 末尾に `[.png, .jpg]` を付けると他の拡張子に限定できます。引用行（"> ..."）はコメントとして扱われ、削除されます。',
 	'settings.customizeMenuNotePathPlaceholder': '例: MENU.md',
 	'settings.customizeOpenNote': 'メニューノートを新しいタブで開く',
 	'settings.customizeCreateDefault': 'デフォルトテンプレートでメニューノートを作成',
 	'settings.customizeCreated': 'メニューノートを作成しました: {path}。',
-	'settings.customizeVariablesHeading': 'テンプレート変数',
+	'settings.customizeTemplatePreviewHeading': 'デフォルトテンプレート',
+	'settings.customizeTemplatePreviewDesc': 'メニューノートが存在しないとき、作成ボタンで書き込まれる内容のプレビューです。ボールト内のノートを編集してメニュー項目をカスタマイズできます。',
+	'settings.customizeVariablesHeading': 'H2 サフィックスとテンプレート変数',
+	'settings.customizeVarIcon': 'H2 見出し末尾の Lucide アイコン（例: `[sparkles]`）。名称は lucide.dev/icons/ を参照。',
+	'settings.customizeVarFileExtensions': 'H2 見出し末尾の拡張子フィルター（例: `[.png, .jpg]`）。省略時は Markdown（`.md`）ノートのみ。',
 	'settings.customizeVarFilepath': 'ファイルパス（ファイル名を含む）に置換されます（例: "Input/Test Note.md"）。',
 	'settings.customizeVarSelection': '選択範囲に置換されます（例: "(Ln 29 - Ln 40)"）。何も選択されていない場合はカーソル位置を表示します。',
 	'settings.customizeVarBlockquote': '選択テキストを Markdown 引用形式で置換します。長いテキストは 100 文字で切り捨てられます。',
+	'settings.customizeMenuDefaultTemplate': `> 💡 アイコン: https://lucide.dev/icons/（例: sparkles, tags）。ファイル種別: H2 末尾に [.png, .jpg] で対象拡張子を限定。既定は Markdown（.md）のみ。
+
+# Files
+
+## このノートを要約 [sparkles]
+{{filepath}} の内容を 1 段落で要約してください。
+
+> これはコメント行です — 助手に送るプロンプトには含まれません。
+> 引用ブロックは個人的なメモに使えます。
+
+## このノートを翻訳 [languages]
+{{filepath}} を英語に翻訳し、Markdown 書式を保持してください。
+
+## 自動タグ付け [tags]
+この Vault のタグ規約に従って、ノート {{filepath}} に適切なタグを自動で付与してください。
+
+# Editor
+
+## 選択範囲を拡張 [maximize-2]
+次のテキストを詳細、例、背景情報を加えて拡張してください。原意は変えず、元の言語、トーン、インライン書式を保持してください。
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 選択範囲を短縮 [minimize-2]
+次のテキストを短縮し、重要な事実と原意はすべて残してください。元の言語、トーン、インライン書式を保持してください。
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 選択範囲から続きを書く [chevrons-right]
+次のテキストの末尾から続きを書いてください。新しい続きのみを出力し、入力内容を繰り返したり言い換えたりしないでください。
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 選択範囲を説明 [sparkles]
+次の内容を説明してください：
+{{blockquote}}
+
+## 文章を改善 [wand-2]
+次のテキストを明確で簡潔になるよう推敲し、元のトーンは保ってください：
+{{filepath}} {{selection}}
+{{blockquote}}
+`,
 
 
 	// ── Token usage ───────────────────────────────────────
@@ -469,36 +513,16 @@ export const ja: Record<string, string> = {
 	// ── AI Edit History ───────────────────────────────────
 	'editHistory.title': 'AI 編集履歴',
 	'editHistory.openView': 'AI 編集履歴を開く',
-	'editHistory.empty': '書き換えタスクはまだありません。',
-	'editHistory.unsavedDraft': '（未保存）',
 	'editHistory.menu.aiSubmenu': 'AI',
-	'editHistory.action.expand': '選択範囲を拡張',
-	'editHistory.action.shorten': '選択範囲を短縮',
-	'editHistory.action.continue': '選択範囲から続きを書く',
-	'editHistory.command.expand': 'AI: 選択範囲を拡張',
-	'editHistory.command.shorten': 'AI: 選択範囲を短縮',
-	'editHistory.command.continue': 'AI: 選択範囲から続きを書く',
-	'editHistory.status.pending': '待機中',
-	'editHistory.status.running': '生成中',
-	'editHistory.status.applied': '適用済み',
-	'editHistory.status.cancelled': 'キャンセル',
-	'editHistory.status.failed': '失敗',
-	'editHistory.status.stale': '対象が変更されました',
-	'editHistory.button.retry': '再試行',
-	'editHistory.button.remove': '削除',
-	'editHistory.button.clearFinished': '完了分をクリア',
-	'editHistory.preview.after': '書き換え後',
-	'editHistory.menu.copyOriginal': '元のテキストをコピー',
-	'editHistory.menu.copyResult': '書き換え結果をコピー',
-	'editHistory.progress.bytes': '{n} 文字',
-	'editHistory.notice.noProfile': '利用可能な AI プロファイルが設定されていません。設定から追加してください。',
-	'editHistory.notice.emptySelection': 'まずテキストを選択してください。',
-	'editHistory.notice.tooLarge': '選択範囲が大きすぎます（最大 {size} 文字）。',
-	'editHistory.notice.failed': '書き換えに失敗しました：{0}',
-	'editHistory.notice.stale': '対象テキストが変更されたため、書き戻しは行われませんでした。',
-	'editHistory.notice.emptyResponse': 'モデルから応答がありませんでした。',
 	'editHistory.notice.fileMissing': '元のファイルが見つかりません。',
-	'editHistory.notice.lockConflict': 'このファイルは別のセッションに未確定の AI 変更があります。先に承認または破棄してください。',
+	'editHistory.fileChanges.empty': 'AI によるファイル変更はまだありません。',
+	'editHistory.fileChanges.kind.create': '作成',
+	'editHistory.fileChanges.kind.modify': '変更',
+	'editHistory.fileChanges.kind.rename': '移動',
+	'editHistory.fileChanges.renamedFrom': '元のパス {0}',
+	'editHistory.fileChanges.deletedHint': '削除済み — 開けません',
+	'editHistory.fileChanges.clearAll': 'すべてクリア',
+	'editHistory.fileChanges.sessionUnknown': '未紐付けの変更',
 	'view.checkpointsAriaLabel': 'AI ファイル変更チェックポイント',
 	'view.checkpointEmpty': 'このセッションではまだファイル変更がありません。',
 	'view.checkpointEmptyFiles': 'このラウンドで記録されたファイルはありません。',
@@ -519,18 +543,6 @@ export const ja: Record<string, string> = {
 	'view.checkpointDiscardAll': 'すべて破棄',
 	'view.checkpointAcceptAllHint': '最新の保留中チェックポイントを承認します。それより前の保留中もまとめて承認されます。',
 	'view.checkpointDiscardAllHint': '最も古い保留中チェックポイントを破棄します。それより後の保留中もまとめて破棄され、スナップショットから復元されます。',
-
-	// ── AI Edit History: File changes tab ────────────────
-	'editHistory.tab.rewrites': '書き直し履歴',
-	'editHistory.tab.fileChanges': 'ファイル変更',
-	'editHistory.fileChanges.empty': 'AI によるファイル変更はまだありません。',
-	'editHistory.fileChanges.kind.create': '作成',
-	'editHistory.fileChanges.kind.modify': '変更',
-	'editHistory.fileChanges.kind.rename': '移動',
-	'editHistory.fileChanges.renamedFrom': '元のパス {0}',
-	'editHistory.fileChanges.deletedHint': '削除済み — 開けません',
-	'editHistory.fileChanges.clearAll': 'すべてクリア',
-	'editHistory.fileChanges.sessionUnknown': '未紐付けの変更',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使い方のヒント',

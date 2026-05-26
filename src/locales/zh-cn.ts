@@ -113,8 +113,6 @@ export const zhCN: Record<string, string> = {
 	'view.sessionTitlePlaceholder': '输入会话名称',
 	'view.sendToSession': '发送到 AI 会话',
 	'view.sendToNewSession': '发送到新 AI 会话',
-	'view.autoTagFile': '自动打标签',
-	'view.autoTagPrompt': '请按照本 Vault 的标签规范,为笔记 [[{path}]] 自动添加合适的标签。',
 	'view.inputHasDraftNotice': 'AI 输入框已有内容,请先发送或清空后再执行此操作。',
 	'view.promptFilledNotice': '已填入 AI 会话输入框,请切换过去查看并继续操作。',
 	'view.deleteHistorySessions': '删除历史会话',
@@ -376,15 +374,61 @@ export const zhCN: Record<string, string> = {
 	// ── Customize ──────────────────────────────────────────
 	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': '菜单笔记路径',
-	'settings.customizeMenuNotePathDesc': '定义自定义右键菜单项的 Markdown 笔记的库内相对路径。一级标题选择菜单表面（Files → 文件菜单，Editor → 编辑器菜单）；每个二级标题是一个菜单标签，其正文内容为提示词模板。引用行（"> ..."）视为注释，会被过滤。',
+	'settings.customizeMenuNotePathDesc': '定义自定义右键菜单项的 Markdown 笔记的库内相对路径。一级标题选择菜单表面（Files → 文件菜单，Editor → 编辑器菜单）；每个二级标题是一个菜单标签，其正文内容为提示词模板。默认仅对 Markdown（.md）笔记显示；在 H2 标题末尾追加 `[.png, .jpg]` 可限定其它文件类型。引用行（"> ..."）视为注释，会被过滤。',
 	'settings.customizeMenuNotePathPlaceholder': '例如 MENU.md',
 	'settings.customizeOpenNote': '在新标签页打开菜单笔记',
 	'settings.customizeCreateDefault': '按默认模板创建菜单笔记',
 	'settings.customizeCreated': '已创建菜单笔记: {path}。',
-	'settings.customizeVariablesHeading': '模板变量',
+	'settings.customizeTemplatePreviewHeading': '默认模板',
+	'settings.customizeTemplatePreviewDesc': '菜单笔记不存在时，点击创建按钮将写入以下内容。可在库内编辑该笔记以自定义菜单项。',
+	'settings.customizeVariablesHeading': 'H2 后缀与模板变量',
+	'settings.customizeVarIcon': 'H2 标题可选 Lucide 图标后缀（如 `[sparkles]`）。图标名见 lucide.dev/icons/。',
+	'settings.customizeVarFileExtensions': 'H2 标题可选文件类型后缀（如 `[.png, .jpg]`）。省略时仅对 Markdown（`.md`）笔记显示。',
 	'settings.customizeVarFilepath': '替换为文件路径（含文件名），如 "Input/Test Note.md"。',
 	'settings.customizeVarSelection': '替换为选区范围，如 "(Ln 29 - Ln 40)"。未选中任何内容时，显示光标位置。',
 	'settings.customizeVarBlockquote': '替换为选中文本的 Markdown 引用格式。长文本截断至 100 字符。',
+	'settings.customizeMenuDefaultTemplate': `> 💡 菜单图标：见 https://lucide.dev/icons/（如 sparkles、tags）。文件类型：在 H2 标题追加 [.png, .jpg] 可限定适用扩展名；默认为 Markdown（.md）。
+
+# Files
+
+## 总结此笔记 [sparkles]
+请用一段话总结 {{filepath}} 的内容。
+
+> 这是注释行 — 不会出现在发给助手的提示词中。
+> 引用块可用于你的个人批注。
+
+## 翻译此笔记 [languages]
+将 {{filepath}} 翻译成英文，保留 Markdown 格式。
+
+## 自动打标签 [tags]
+请按照本 Vault 的标签规范，为笔记 {{filepath}} 自动添加合适的标签。
+
+# Editor
+
+## 扩写选中内容 [maximize-2]
+扩写以下文本，补充细节、示例或背景，保持原意不变。保留原文语言、语气和行内格式。
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 缩写选中内容 [minimize-2]
+缩写以下文本，保留所有关键信息和原意。保留原文语言、语气和行内格式。
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 续写选中内容 [chevrons-right]
+从以下文本末尾继续写作，只输出新的续写内容，不要重复或复述原文。
+{{filepath}} {{selection}}
+{{blockquote}}
+
+## 解释选中内容 [sparkles]
+解释以下内容：
+{{blockquote}}
+
+## 润色写作 [wand-2]
+润色以下文本，使其更清晰简洁，同时保持原有语气：
+{{filepath}} {{selection}}
+{{blockquote}}
+`,
 
 
 	// ── Token usage ───────────────────────────────────────
@@ -468,36 +512,16 @@ export const zhCN: Record<string, string> = {
 	// ── AI Edit History ───────────────────────────────────
 	'editHistory.title': 'AI 编辑历史',
 	'editHistory.openView': '打开 AI 编辑历史',
-	'editHistory.empty': '暂无改写任务。',
-	'editHistory.unsavedDraft': '（未保存）',
 	'editHistory.menu.aiSubmenu': 'AI',
-	'editHistory.action.expand': '扩写选中内容',
-	'editHistory.action.shorten': '缩写选中内容',
-	'editHistory.action.continue': '续写选中内容',
-	'editHistory.command.expand': 'AI：扩写选中内容',
-	'editHistory.command.shorten': 'AI：缩写选中内容',
-	'editHistory.command.continue': 'AI：续写选中内容',
-	'editHistory.status.pending': '排队中',
-	'editHistory.status.running': '生成中',
-	'editHistory.status.applied': '已应用',
-	'editHistory.status.cancelled': '已取消',
-	'editHistory.status.failed': '失败',
-	'editHistory.status.stale': '目标已变化',
-	'editHistory.button.retry': '重试',
-	'editHistory.button.remove': '移除',
-	'editHistory.button.clearFinished': '清理已完成',
-	'editHistory.preview.after': '改写后',
-	'editHistory.menu.copyOriginal': '复制原文',
-	'editHistory.menu.copyResult': '复制结果',
-	'editHistory.progress.bytes': '已生成 {n} 字',
-	'editHistory.notice.noProfile': '未配置可用的 AI 配置，请先在设置中添加。',
-	'editHistory.notice.emptySelection': '请先选择要改写的文本。',
-	'editHistory.notice.tooLarge': '选区过大（最多 {size} 字符）。',
-	'editHistory.notice.failed': '改写失败：{0}',
-	'editHistory.notice.stale': '目标内容已被修改，未写回编辑器。',
-	'editHistory.notice.emptyResponse': '模型未返回任何内容。',
 	'editHistory.notice.fileMissing': '原文件已不存在。',
-	'editHistory.notice.lockConflict': '该文件在另一个会话中存在未确认的 AI 修改,请先接受或丢弃后再继续。',
+	'editHistory.fileChanges.empty': '暂无 AI 文件改动记录。',
+	'editHistory.fileChanges.kind.create': '创建',
+	'editHistory.fileChanges.kind.modify': '修改',
+	'editHistory.fileChanges.kind.rename': '移动',
+	'editHistory.fileChanges.renamedFrom': '原路径 {0}',
+	'editHistory.fileChanges.deletedHint': '已删除 — 无法打开',
+	'editHistory.fileChanges.clearAll': '全部清空',
+	'editHistory.fileChanges.sessionUnknown': '未归属的改动',
 	'view.checkpointsAriaLabel': 'AI 文件变更检查点',
 	'view.checkpointEmpty': '本会话尚未产生文件变更。',
 	'view.checkpointEmptyFiles': '本轮未记录任何文件。',
@@ -518,18 +542,6 @@ export const zhCN: Record<string, string> = {
 	'view.checkpointDiscardAll': '全部丢弃',
 	'view.checkpointAcceptAllHint': '接受最新的待处理检查点，同时接受其之前的所有待处理检查点。',
 	'view.checkpointDiscardAllHint': '丢弃最早的待处理检查点，同时丢弃其之后的所有待处理检查点，并从快照还原文件。',
-
-	// ── AI Edit History: File changes tab ────────────────
-	'editHistory.tab.rewrites': '重写历史',
-	'editHistory.tab.fileChanges': '文件改动',
-	'editHistory.fileChanges.empty': '暂无 AI 文件改动记录。',
-	'editHistory.fileChanges.kind.create': '创建',
-	'editHistory.fileChanges.kind.modify': '修改',
-	'editHistory.fileChanges.kind.rename': '移动',
-	'editHistory.fileChanges.renamedFrom': '原路径 {0}',
-	'editHistory.fileChanges.deletedHint': '已删除 — 无法打开',
-	'editHistory.fileChanges.clearAll': '全部清空',
-	'editHistory.fileChanges.sessionUnknown': '未归属的改动',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使用提示',
