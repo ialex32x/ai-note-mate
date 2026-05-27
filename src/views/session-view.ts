@@ -755,7 +755,7 @@ export class SessionView extends ItemView {
                 cls: 'session-thinking-row__icon-btn',
                 attr: { 'aria-label': t('view.addFileRef') },
             });
-            setIcon(addFileRefBtn, 'at-sign');
+            setIcon(addFileRefBtn, 'brackets');
             setTooltip(addFileRefBtn, t('view.addFileRef'));
             addFileRefBtn.addEventListener('click', (e) => {
                 e.preventDefault();
