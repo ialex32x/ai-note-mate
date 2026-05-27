@@ -99,8 +99,8 @@ export function handleTitleClick(opts: TitleClickOptions): void {
 
 /**
  * Automatically generate a session title from the conversation content
- * after enough rounds, using the summarizer profile. No-op if already
- * titled, too few rounds, or no summarizer configured.
+ * after the first user message, using the summarizer profile. No-op if
+ * already titled, no rounds, or no summarizer configured.
  *
  * When `sessionId` is provided, operates on that specific session
  * (used by background SessionRuntime instances whose finish event
@@ -128,7 +128,7 @@ export async function maybeGenerateSessionTitle(
 
     if (session.title) return;
     const rounds = session.messages.filter(m => m.role === 'user').length;
-    if (rounds <= 2) return;
+    if (rounds < 1) return;
 
     if (!summarizerConfig) return;
 
