@@ -262,6 +262,13 @@ const DELEGATION_VAULT_INSPECTOR_TIPS = `
   ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Locate every occurrence of \`query\` in the file at \`path\` using grep_file. Return the matching line numbers under result.", "handoff": { "path": "Notes/Foo.md", "query": "{{date}}" } })\`
   ❌ Bad (chained verbs): \`delegate_task({ "agent": "vault_inspector", "task": "Read the file \\"Notes/Foo.md\\". Search for \\"{{date}}\\" and return the line numbers." })\` — the literal "Read the file" forces a wasteful full-file read; path and query also belong in \`handoff\`, not in the prose.
 
+**Keep paths out of the \`task\` prose; reference them by key name.** When the task involves a file whose path is in \`handoff\` (e.g. under \`path\` or \`source\`), refer to it abstractly — "the file at \`path\`" rather than spelling out the concrete filename. This avoids a second, potentially conflicting source of truth.
+
+  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Read lines \`start_line\` through \`end_line\` from the file at \`path\` and return the exact text under result.", "handoff": { "path": "Path/To/SomeFile.md", "start_line": 33, "end_line": 43 } })\`
+  ❌ Avoid: \`delegate_task({ "agent": "vault_inspector", "task": "Read lines 33-43 from SomeFile.md ...", "handoff": { "path": "Path/To/SomeFile.md", ... } })\` — the filename in prose may be incomplete or conflict with the authoritative path in \`handoff\`.
+
+When you need to pass multiple paths, use a single key (typically \`source\`) with an array value — e.g. \`handoff: { source: ["Notes/A.md", "Topics/B.md"] }\` — and refer to "the files in \`source\`" in the task prose.
+
 **Do NOT replace step 1 with a "read full content and return it verbatim" task.** When you find yourself about to write something like \`task: "Read the full content at \\\`path\\\` and return it verbatim under result"\` (or "return result.content", or "give me the bytes of X so I can find Y") — STOP. That is the locate step rewritten as a full-file dump, and it is even worse than the chained-verb anti-pattern: it skips grep entirely and pushes the whole file body through your context just so you can do the locate work yourself. Almost every "I need to see the file to modify part of it" is actually "I need a few line numbers + a narrow slice"; do step 1 (grep) and step 2 (narrow read) instead.
 
   ❌ Bad (full-file dump masquerading as a read task): \`delegate_task({ "agent": "vault_inspector", "task": "Read the full content of the file at \`path\` and return it verbatim under result.content.", "handoff": { "path": "Notes/Foo.md" } })\` — if the user asked you to edit only a part of \`Foo.md\`, this dumps the entire file into your context to do work that \`grep_file\` should do at the source.
@@ -330,7 +337,7 @@ const DELEGATION_SHARED_HANDOFF_AND_ENVELOPE = `
 
 - Whenever you have programmatic data the sub-agent will consume — file paths, lists of paths, prior delegation results, focus strings, constraints, configuration — pass it via \`handoff\`. It's clearer than prose, avoids escaping issues, and the sub-agent won't have to re-parse it.
 - **Refer to seeded keys in the task prose by their BARE NAME in backticks** (e.g. "the \`path\` key", "search for \`query\` in the file at \`path\`"). Do NOT write \`handoff.path\` / \`inputs.path\` / any dotted prefix — sub-agents have empirically tried to use those literal strings as the \`read_handoff\` key and missed the actual entry. The store key is literally \`path\`, not \`handoff.path\`.
-- Do NOT duplicate data in BOTH \`task\` and \`handoff\`; reference it from \`task\` by key name and put the actual data in \`handoff\`.
+- **Do NOT duplicate data between \`task\` prose and \`handoff\`.** If a value is already in \`handoff\` (e.g. under \`path\` or \`source\`), reference it by key name in the task — "the file at \`path\`", not its concrete filename. This keeps a single source of truth; the sub-agent resolves values from \`read_handoff\`, not from your prose.
 - By convention, use the key \`source\` for "the thing the sub-agent should operate on".
 - Each value MUST be JSON-serializable and ≤ 32 KB serialized; oversized values are rejected (the call fails, no sub-agent runs).
 

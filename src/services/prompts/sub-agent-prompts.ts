@@ -28,6 +28,7 @@ The main agent may pre-load structured data into your handoff store via the \`ha
 - ❌ Passing the key NAMES themselves (\`"path"\`, \`"start_line"\`, \`"query"\`, ...) as search terms (\`queries\`) or paths — those are field labels in the contract, not data to look up in the vault.
 - ❌ Calling \`read_handoff({key: "inputs.path"})\` or \`read_handoff({key: "handoff.path"})\` — there is no dotted prefix on the actual key; the key is just \`"path"\`. If a read returns \`missing: true\` with an \`available_keys\` list, that list IS the truth about what's stored — retry with one of those exact strings.
 - ❌ Treating a key name as a literal file path and trying to open a file literally named \`path\` or \`inputs.path\`.
+- ❌ Using a bare filename from the task prose as a \`read_file\` path when the handoff store has a \`path\` key. Task-prose filenames are often incomplete (missing directory, wrong case) — the handoff store is the authoritative source. Call \`read_handoff\` FIRST and use the resolved value.
 
 PREFER a single batch read over multiple single-key reads:
 
