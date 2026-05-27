@@ -613,6 +613,9 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tips.configureMcp.title': 'Connect MCP servers',
 	'tips.configureMcp.body': 'MCP servers let the assistant call external tools — web search, databases, custom APIs, and more. Add at least one server with its streamable HTTP URL (and API key if required) so those tools appear in chat. Click Try it to jump straight to the MCP Servers section.',
 	'tips.configureMcp.openFailed': 'Could not open the settings panel. Open Settings → Note Mate → MCP Servers manually.',
+	'tips.configureImageGen.title': 'Set up image generation',
+	'tips.configureImageGen.body': 'Image generation lets the assistant create illustrations, diagrams, and cover art right inside your vault. Set up a provider (Gemini, Qwen, or OpenAI-compatible) with a model and API key, then the image tool becomes available in chat. Click Try it to jump straight to the Image section.',
+	'tips.configureImageGen.openFailed': 'Could not open the settings panel. Open Settings → Note Mate → Image manually.',
 
 	// ── Tool trigger keywords (BM25 / embedding ranker only) ───
 	// These do NOT change what the LLM sees in tool schemas; they are

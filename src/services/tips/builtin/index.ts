@@ -1,5 +1,6 @@
 import type { TipDefinition } from '../types';
 import { configureProfileTip } from './configure-profile';
+import { configureImageGenTip } from './configure-image-gen';
 import { fileRefTriggerTip } from './file-ref-trigger';
 import { createFirstSkillTip } from './create-first-skill';
 import { createExampleBaseTip } from './create-example-base';
@@ -16,6 +17,7 @@ import { seedMemoryNoteTip } from './seed-memory-note';
  */
 export const BUILTIN_TIPS: readonly TipDefinition[] = [
     configureProfileTip,
+    configureImageGenTip,
     noteIllustrationTip,
     fileRefTriggerTip,
     // Memory is a flagship feature; surface its seeding tip right

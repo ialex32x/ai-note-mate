@@ -613,6 +613,9 @@ export const ja: Record<string, string> = {
 	'tips.configureMcp.title': 'MCP サーバーを接続する',
 	'tips.configureMcp.body': 'MCP サーバーにより、アシスタントは Web 検索、データベース、カスタム API などの外部ツールを呼び出せます。Streamable HTTP の URL（必要なら API キーも）を設定してサーバーを 1 つ以上追加すると、チャットでそれらのツールが使えるようになります。「試す」をクリックすると MCP サーバーセクションへ移動します。',
 	'tips.configureMcp.openFailed': '設定パネルを開けませんでした。手動で 設定 → Note Mate → MCP サーバー を開いてください。',
+	'tips.configureImageGen.title': '画像生成を設定する',
+	'tips.configureImageGen.body': '画像生成機能を使うと、アシスタントがノートに挿絵や図、カバー画像を直接作成できます。プロバイダ（Gemini、Qwen、OpenAI互換）とモデル、APIキーを設定するだけで、チャットで画像生成ツールが使えるようになります。「試してみる」で画像セクションに直接移動できます。',
+	'tips.configureImageGen.openFailed': '設定パネルを自動で開けませんでした。手動で 設定 → Note Mate → 画像 を開いてください。',
 
 	// ── ツールのトリガーキーワード（BM25 / 埋め込みランカー専用）──
 	// これらのエントリは LLM が見るツールスキーマを変更しません。

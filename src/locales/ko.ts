@@ -613,6 +613,9 @@ export const ko: Record<string, string> = {
 	'tips.configureMcp.title': 'MCP 서버 연결',
 	'tips.configureMcp.body': 'MCP 서버를 통해 어시스턴트가 웹 검색, 데이터베이스, 사용자 정의 API 등 외부 도구를 호출할 수 있습니다. Streamable HTTP URL(필요 시 API 키)을 설정해 서버를 하나 이상 추가하면 채팅에서 해당 도구를 사용할 수 있습니다. 「시도해 보기」를 누르면 MCP 서버 섹션으로 이동합니다.',
 	'tips.configureMcp.openFailed': '설정 패널을 열 수 없습니다. 설정 → Note Mate → MCP 서버 를 수동으로 여세요.',
+	'tips.configureImageGen.title': '이미지 생성 설정',
+	'tips.configureImageGen.body': '이미지 생성 기능을 사용하면 어시스턴트가 노트에 삽화, 다이어그램, 커버 이미지를 직접 만들 수 있습니다. 제공자(Gemini, Qwen, OpenAI 호환)와 모델, API 키를 설정하면 채팅에서 이미지 생성 도구를 사용할 수 있습니다. 「해보기」를 누르면 이미지 섹션으로 바로 이동합니다.',
+	'tips.configureImageGen.openFailed': '설정 패널을 자동으로 열 수 없습니다. 설정 → Note Mate → 이미지 를 직접 열어 주세요.',
 
 	// ── 도구 트리거 키워드(BM25 / 임베딩 랭커 전용) ─────────
 	// 이 항목들은 LLM 이 보는 도구 스키마를 바꾸지 않습니다.

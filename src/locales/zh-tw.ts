@@ -613,6 +613,9 @@ export const zhTW: Record<string, string> = {
 	'tips.configureMcp.title': '設定 MCP 伺服器',
 	'tips.configureMcp.body': 'MCP 伺服器讓助理可以呼叫外部工具——網頁搜尋、資料庫、自訂 API 等。至少新增一個伺服器並填寫其 Streamable HTTP 位址（如需驗證則填寫 API Key），這些工具才會在對話中可用。點擊「試試看」可直接跳轉到 MCP 伺服器分區。',
 	'tips.configureMcp.openFailed': '無法自動開啟設定面板，請手動進入 設定 → Note Mate → MCP 伺服器。',
+	'tips.configureImageGen.title': '設定圖片生成',
+	'tips.configureImageGen.body': '圖片生成功能可以讓助理直接在筆記庫中建立插圖、示意圖和封面圖。選擇一個服務商（Gemini、Qwen 或 OpenAI 相容介面），填寫模型和 API 金鑰，即可在對話中生成圖片。點擊「試試看」可直接跳轉到圖片分區。',
+	'tips.configureImageGen.openFailed': '無法自動開啟設定面板，請手動前往 設定 → Note Mate → 圖片。',
 
 	// ── 工具觸發關鍵詞（僅用於 BM25 / 向量排序）─────────────
 	// 這些條目不會改變 LLM 看到的工具 schema；它們會拼接到工具

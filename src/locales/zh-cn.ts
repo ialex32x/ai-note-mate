@@ -612,6 +612,9 @@ export const zhCN: Record<string, string> = {
 	'tips.configureMcp.title': '配置 MCP 服务器',
 	'tips.configureMcp.body': 'MCP 服务器让助手可以调用外部工具——网页搜索、数据库、自定义 API 等。至少添加一个服务器并填写其 Streamable HTTP 地址（如需认证则填写 API Key），这些工具才会在对话中可用。点击「试一试」可直接跳转到 MCP 服务器分区。',
 	'tips.configureMcp.openFailed': '无法自动打开设置面板，请手动进入 设置 → Note Mate → MCP 服务器。',
+	'tips.configureImageGen.title': '配置图片生成',
+	'tips.configureImageGen.body': '图片生成功能可以让助手直接在笔记库中创建插图、示意图和封面图。选择一个服务商（Gemini、Qwen 或 OpenAI 兼容接口），填写模型和 API 密钥，即可在对话中生成图片。点击「试试看」可直接跳转到图片分区。',
+	'tips.configureImageGen.openFailed': '无法自动打开设置面板，请手动进入 设置 → Note Mate → 图片。',
 
 	// ── 工具触发关键词（仅用于 BM25 / 向量排序）─────────────
 	// 这些条目不会改变 LLM 看到的工具 schema；它们会拼接到工具
