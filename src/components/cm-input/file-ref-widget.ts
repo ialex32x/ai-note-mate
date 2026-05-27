@@ -20,7 +20,8 @@ export class FileRefWidget extends WidgetType {
         readonly path: string,
         readonly app: App,
         readonly onClick?: (path: string) => void,
-        readonly onDelete?: (path: string) => void
+        readonly onDelete?: (path: string) => void,
+        readonly displayName?: string
     ) {
         super();
         // Resolve the file reference once during construction
@@ -49,8 +50,8 @@ export class FileRefWidget extends WidgetType {
         container.className = exists ? 'cm-file-ref' : 'cm-file-ref cm-file-ref--missing';
         container.setAttribute('data-path', displayPath);
 
-        // Get file/folder name from path
-        const name = displayPath.split('/').pop() ?? displayPath;
+        // Get file/folder name from displayName if provided, otherwise from path
+        const name = this.displayName ?? displayPath.split('/').pop() ?? displayPath;
         const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() : '';
 
         // Add icon based on resolved type or extension
@@ -108,7 +109,7 @@ export class FileRefWidget extends WidgetType {
      * This means arrow keys will skip over the entire widget.
      */
     override eq(other: FileRefWidget): boolean {
-        return other.path === this.path && other.app === this.app;
+        return other.path === this.path && other.app === this.app && other.displayName === this.displayName;
     }
 
     /**

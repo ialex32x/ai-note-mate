@@ -30,7 +30,7 @@ export function renderUserContent(
         if (ref.start > lastEnd) {
             container.appendText(content.slice(lastEnd, ref.start));
         }
-        renderInlineFileRef(ctx, container, ref.path);
+        renderInlineFileRef(ctx, container, ref.path, ref.displayName);
         lastEnd = ref.end;
     }
 
@@ -50,6 +50,7 @@ function renderInlineFileRef(
     ctx: BubbleContext,
     container: HTMLElement,
     path: string,
+    displayName?: string,
 ): void {
     const app = ctx.app;
     const resolved = resolveFileRef(app, path);
@@ -75,7 +76,7 @@ function renderInlineFileRef(
     const iconEl = chip.createEl('span', { cls: 'bubble-file-ref__icon' });
     setIcon(iconEl, isFolder ? 'folder' : 'file');
 
-    const name = resolvedPath.split('/').pop() ?? resolvedPath;
+    const name = displayName ?? resolvedPath.split('/').pop() ?? resolvedPath;
     chip.createEl('span', { cls: 'bubble-file-ref__name', text: name });
 
     // Hover preview (files only; folders have no preview surface).

@@ -36,18 +36,19 @@ export interface CMInputOptions {
  * This ensures that `[[ [[test]]` is parsed as one link `[[test]]` (the second [[),
  * not as `[[ [[test]]` starting from the first [[.
  */
-export function extractFileRefs(content: string): Array<{ start: number; end: number; path: string }> {
-    const refs: Array<{ start: number; end: number; path: string }> = [];
+export function extractFileRefs(content: string): Array<{ start: number; end: number; path: string; displayName?: string }> {
+    const refs: Array<{ start: number; end: number; path: string; displayName?: string }> = [];
     // Use non-greedy quantifier (+? instead of +) to find the nearest closing ]]
-    // Capture only the file path portion, stripping alias (|y), heading ref (#h),
-    // and block ref (^b) so the chip resolves and navigates to the actual file.
-    const regex = /\[\[([^[\]|#^]+?)(?:[#^][^\]|]*?)?(?:\|[^\]]+?)?\]\]/g;
+    // Group 1: file path (stripped of heading ref #h and block ref ^b).
+    // Group 2: optional display name after | (e.g. [[file|My Label]] → displayName = "My Label").
+    const regex = /\[\[([^[\]|#^]+?)(?:[#^][^\]|]*?)?(?:\|([^\]]+?))?\]\]/g;
     let match;
     while ((match = regex.exec(content)) !== null) {
         refs.push({
             start: match.index,
             end: match.index + match[0].length,
             path: match[1]!,
+            displayName: match[2] ?? undefined,
         });
     }
     return refs;
@@ -78,7 +79,7 @@ function buildDecorations(
 
     for (const ref of refs) {
         const chip = Decoration.replace({
-            widget: new FileRefWidget(ref.path, app, onFileRefClick, onDeleteFileRef),
+            widget: new FileRefWidget(ref.path, app, onFileRefClick, onDeleteFileRef, ref.displayName),
             inclusive: false,
         });
         builder.add(ref.start, ref.end, chip);
