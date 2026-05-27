@@ -513,55 +513,6 @@ export class SessionView extends ItemView {
             });
             this.sessionNavigator.mount(leftGroup);
 
-            // Session status indicator (primary metric: token usage).
-            // Structure:
-            //   .session-toolbar__status            (wrapper, positioning only; no hover/interaction)
-            //     .session-toolbar__status-main     (the actual button: click, hover, tooltip)
-            //     .session-dropdown-menu ...         (details panel; independent hover/tooltip)
-            // Panel is kept as a child of the wrapper so DropdownManager's
-            // outside-click detection (wrapper.contains) treats clicks inside
-            // the panel as "inside". The button and panel are visually/interactively
-            // independent — hovering the panel neither highlights the button nor
-            // shows the button's tooltip.
-            this.sessionStatusEl = leftGroup.createEl('div', {
-                cls: 'session-toolbar__status',
-            });
-            this.sessionStatusMainEl = this.sessionStatusEl.createEl('div', {
-                cls: 'session-toolbar__status-main',
-                attr: {
-                    role: 'button',
-                    tabindex: '0',
-                },
-            });
-            setTooltip(this.sessionStatusMainEl, t('status.ariaLabel'));
-            // Note: `session-dropdown-menu` MUST be the first class so that
-            // DropdownManager derives the `--open` toggle class from it.
-            this.sessionStatusPanelEl = this.sessionStatusEl.createEl('div', {
-                cls: 'session-dropdown-menu session-dropdown-menu--toolbar session-status-panel',
-            });
-            this.dropdownManager.registerToggle({
-                wrapper: this.sessionStatusEl,
-                button: this.sessionStatusMainEl,
-                dropdown: this.sessionStatusPanelEl,
-                onOpen: () => {
-                    if (this.chat) {
-                        const profile = getActiveProfile(this.plugin.settings);
-                        const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
-                        SessionStatusDisplay.renderPanel(
-                            this.sessionStatusPanelEl,
-                            this.chat,
-                            max,
-                            this.plugin.mcpManager,
-                            this.computeEmbeddingPanelInfo(),
-                            this.runtime?.artifactStore.stats() ?? null,
-                        );
-                    } else {
-                        this.sessionStatusPanelEl.empty();
-                    }
-                },
-            });
-            this.updateSessionStatusDisplay();
-
             // Center group: session title
             const centerGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--center' });
             this.sessionTitleEl = centerGroup.createEl('span', { cls: 'session-toolbar__title' });
@@ -782,15 +733,58 @@ export class SessionView extends ItemView {
             // Holds buttons that should sit on the right edge of the toolbar.
             // Pushed right via `margin-left: auto` on the group itself, so the
             // left-aligned controls above keep their natural packing order.
-            // Order inside the group: context ring → refine prompt → send.
+            // Order inside the group: session status → context ring → refine prompt → send.
             const thinkingRowRight = thinkingRow.createEl('div', {
                 cls: 'session-thinking-row__right',
             });
 
+            // ── Session status indicator ───────────────────────────────────────
+            // Primary metric: compact token usage badge that also opens a
+            // detailed panel on click. Placed first in the right toolbar so
+            // the eye-flow is "status → context ring → refine → send".
+            this.sessionStatusEl = thinkingRowRight.createEl('div', {
+                cls: 'session-toolbar__status',
+            });
+            this.sessionStatusMainEl = this.sessionStatusEl.createEl('div', {
+                cls: 'session-toolbar__status-main',
+                attr: {
+                    role: 'button',
+                    tabindex: '0',
+                },
+            });
+            setTooltip(this.sessionStatusMainEl, t('status.ariaLabel'));
+            // Note: `session-dropdown-menu` MUST be the first class so that
+            // DropdownManager derives the `--open` toggle class from it.
+            this.sessionStatusPanelEl = this.sessionStatusEl.createEl('div', {
+                cls: 'session-dropdown-menu session-dropdown-menu--toolbar-up-right session-status-panel',
+            });
+            this.dropdownManager.registerToggle({
+                wrapper: this.sessionStatusEl,
+                button: this.sessionStatusMainEl,
+                dropdown: this.sessionStatusPanelEl,
+                onOpen: () => {
+                    if (this.chat) {
+                        const profile = getActiveProfile(this.plugin.settings);
+                        const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
+                        SessionStatusDisplay.renderPanel(
+                            this.sessionStatusPanelEl,
+                            this.chat,
+                            max,
+                            this.plugin.mcpManager,
+                            this.computeEmbeddingPanelInfo(),
+                            this.runtime?.artifactStore.stats() ?? null,
+                        );
+                    } else {
+                        this.sessionStatusPanelEl.empty();
+                    }
+                },
+            });
+            this.updateSessionStatusDisplay();
+
             // ── Context-window usage ring ──────────────────────────────────────
             // Percentage ring showing how much of the context window the most
-            // recent API call consumed. Lives left of the refine-prompt button
-            // so the eye-flow is "check usage → optimize prompt → send".
+            // recent API call consumed. Lives to the right of session status
+            // so the eye-flow is "check status/usage → optimize prompt → send".
             this.contextRingEl = thinkingRowRight.createEl('span', {
                 cls: 'session-context-ring-host',
             });
