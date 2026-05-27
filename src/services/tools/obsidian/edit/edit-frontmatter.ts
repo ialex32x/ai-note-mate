@@ -15,7 +15,8 @@ import { runVaultMutation } from "../../../vault";
 // strings, or quoted scalars.
 //
 // SCOPE BOUNDARY: deliberately refuses edits to `tags` / `tag` keys.
-// Tag operations belong on `edit_files_tags` (per-file add/remove/set with
+// Tag operations belong on `add_files_tags` / `remove_files_tags` /
+// `set_files_tags` (targeted files — accepts one or more paths, with
 // inline-tag awareness) and `rename_tag` (vault-wide). Routing tag edits
 // through this generic tool would either:
 //   - drop the inline `#tag` body channel (silent capability gap), or
@@ -132,8 +133,8 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                     "an existing array (e.g. aliases), read the current value first and `set` the merged " +
                     "array. " +
                     "\n\n" +
-                    "Editing the `tags` / `tag` keys is REFUSED — use `edit_files_tags` (per-file, with " +
-                    "inline-tag awareness) or `rename_tag` (vault-wide) instead. " +
+                    "Editing the `tags` / `tag` keys is REFUSED — use `add_files_tags` / `remove_files_tags` / " +
+                    "`set_files_tags` (accepts one or more paths) or `rename_tag` (vault-wide) instead. " +
                     "\n\n" +
                     "Use this for any non-tag frontmatter change (e.g. 'set status to done', 'clear " +
                     "due_date on these notes', 'add author=John', 'set aliases to [...]').",
@@ -160,7 +161,7 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                             description:
                                 "[op=set only] Object mapping frontmatter key → new value. " +
                                 "Values may be string, number, boolean, array, object, or null. " +
-                                "Keys `tags` / `tag` are refused — use edit_files_tags / rename_tag.",
+                                "Keys `tags` / `tag` are refused — use add_files_tags / remove_files_tags / set_files_tags / rename_tag.",
                             additionalProperties: true,
                         },
                         keys: {
@@ -168,7 +169,7 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                             items: { type: "string" },
                             description:
                                 "[op=unset only] Frontmatter keys to remove. " +
-                                "Keys `tags` / `tag` are refused — use edit_files_tags.",
+                                "Keys `tags` / `tag` are refused — use add_files_tags / remove_files_tags / set_files_tags.",
                         },
                         dry_run: {
                             type: "boolean",
@@ -244,10 +245,10 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                             type: "text",
                             content:
                                 `edit_files_frontmatter cannot edit the '${key}' key. ` +
-                                `For tag operations use \`edit_files_tags\` (per-file add / remove / set, with ` +
-                                `inline-tag awareness) or \`rename_tag\` (vault-wide rename). ` +
-                                `These tools handle YAML + inline tags safely and support add/remove/descendant ` +
-                                `semantics that this generic tool intentionally does not.`,
+                                `For tag operations use \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` ` +
+                                `(each accepts one or more paths, with inline-tag awareness) or \`rename_tag\` ` +
+                                `(vault-wide rename). These tools handle YAML + inline tags safely and support ` +
+                                `add/remove/descendant semantics that this generic tool intentionally does not.`,
                         };
                     }
                     const value = (props as Record<string, unknown>)[key];
@@ -294,8 +295,9 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                             type: "text",
                             content:
                                 `edit_files_frontmatter cannot unset the '${k}' key. ` +
-                                `Use \`edit_files_tags\` (op='set', tags=[]) to clear tags safely — that path ` +
-                                `also coalesces the alternate 'tag'/'tags' keys and respects inline tags.`,
+                                `Use \`set_files_tags\` with an empty tags array to clear frontmatter tags safely — ` +
+                                `that path also coalesces the alternate 'tag'/'tags' keys. Use \`remove_files_tags\` ` +
+                                `for inline tag removal.`,
                         };
                     }
                     unsetKeys.push(k);

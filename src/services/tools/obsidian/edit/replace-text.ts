@@ -735,7 +735,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                         `Refusing to use replace_text on tag-shaped text: ${tagRefusals.join("; ")}. ` +
                         `Tags may appear in YAML frontmatter or as inline #tag, and text replacement ` +
                         `can partial-match (e.g. '#foo' inside '#foobar') or corrupt frontmatter. ` +
-                        `Prefer edit_files_tags (per-file) or rename_tag (vault-wide). ` +
+                        `Prefer add_files_tags / remove_files_tags / set_files_tags (accepts one or more paths) or rename_tag (vault-wide). ` +
                         `If you really intend a raw text replace, retry the offending entries with force=true ` +
                         `(running with dry_run=true first is recommended).`,
                 };

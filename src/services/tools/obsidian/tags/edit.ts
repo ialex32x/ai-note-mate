@@ -12,7 +12,7 @@ import {
 } from "./_tag-ops";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: edit_files_tags
+// Shared types
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface EditTagsFileResult {
@@ -25,71 +25,405 @@ interface EditTagsFileResult {
     no_op_tags?: string[];
 }
 
-/**
- * Add, remove, or set tags on one or more specific notes.
- *
- * Unlike `rename_tag` (which operates on the whole vault), this tool targets a small list of
- * files explicitly chosen by the caller. Frontmatter writes go through `processFrontMatter`, and
- * inline edits use the metadata cache's precise offsets, so neither YAML structure nor in-body
- * prose can get corrupted by the kind of accidents `replace_text` is prone to.
- */
-export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared execution engine — the three tool wrappers below each pre-process
+// their args and delegate to this single code path. The `op` parameter
+// (add/remove/set) was the single biggest cause of LLM call failures — the
+// model would routinely forget to pass it. Splitting into three
+// single-purpose tools eliminates the parameter entirely.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type EffLocation = "frontmatter" | "inline" | "both";
+
+interface SharedExecParams {
+    /** Tool name for the response `action` field, e.g. "add_files_tags". */
+    actionName: string;
+    /** The underlying operation. */
+    opName: "add" | "remove" | "set";
+    /** Already-validated array of vault-relative paths. */
+    paths: string[];
+    /** Tag names (with or without '#') — validated inside executeTagsEdit. */
+    rawTags: unknown;
+    /** Already-resolved concrete location (never "auto"). */
+    location: EffLocation;
+    /** Only meaningful for remove. */
+    includeDescendants: boolean;
+    dryRun: boolean;
+}
+
+async function executeTagsEdit(
+    plugin: NoteAssistantPlugin,
+    params: SharedExecParams,
+): Promise<ToolCallResult> {
+    const { actionName, opName, paths, rawTags, location, includeDescendants, dryRun } = params;
+
+    // ─── Validate tags ────────────────────────────────────────────
+    if (!Array.isArray(rawTags)) {
+        return { success: false, type: "text", content: "tags must be an array of tag names." };
+    }
+    if ((opName === "add" || opName === "remove") && rawTags.length === 0) {
+        return {
+            success: false,
+            type: "text",
+            content: `tags must be non-empty for '${opName}'. For add, provide the tags to add; for remove, provide the tags to remove.`,
+        };
+    }
+    const bareTags: string[] = [];
+    for (const t of rawTags) {
+        if (typeof t !== "string") {
+            return { success: false, type: "text", content: "Each tag must be a string." };
+        }
+        const n = normaliseTagName(t);
+        if (n === null) {
+            return { success: false, type: "text", content: `Invalid tag name: '${t}'.` };
+        }
+        bareTags.push(n);
+    }
+    const uniqueBareTags = Array.from(new Set(bareTags));
+
+    // ─── Resolve all files up front ───────────────────────────────
+    const files: TFile[] = [];
+    for (const p of paths) {
+        const f = requireFile(plugin.app, p);
+        if (isFailure(f)) return f;
+        if (!(f instanceof TFile) || f.extension !== "md") {
+            return { success: false, type: "text", content: `Not a markdown file: ${p}` };
+        }
+        files.push(f);
+    }
+
+    // Build the underlying TagOp for inline / frontmatter rewrite passes.
+    const removeOp: TagOp | null =
+        opName === "remove"
+            ? { kind: "remove", targetBares: uniqueBareTags, includeDescendants }
+            : null;
+
+    const fileResults: EditTagsFileResult[] = [];
+    const skipped: { path: string; reason: string }[] = [];
+    let totalInline = 0;
+    let totalFrontmatter = 0;
+
+    for (const file of files) {
+        let inlineChanges = 0;
+        let frontmatterChanges = 0;
+        const noOpTags: string[] = [];
+
+        // ────────────────── ADD ──────────────────
+        if (opName === "add") {
+            const existing = new Set(
+                collectTagsForFile(plugin, file).map((t) => (t.startsWith("#") ? t.substring(1) : t)),
+            );
+            const tagsToAdd = uniqueBareTags.filter((t) => {
+                if (existing.has(t)) {
+                    noOpTags.push("#" + t);
+                    return false;
+                }
+                return true;
+            });
+
+            if (tagsToAdd.length > 0) {
+                if (location === "frontmatter" || location === "both") {
+                    if (!dryRun) {
+                        try {
+                            await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                                frontmatterChanges = addTagsToFrontmatter(fm, tagsToAdd);
+                            });
+                        } catch (err) {
+                            skipped.push({
+                                path: file.path,
+                                reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
+                            });
+                            continue;
+                        }
+                    } else {
+                        const cache = plugin.app.metadataCache.getFileCache(file);
+                        const fm = cache?.frontmatter;
+                        const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
+                        if (fm) {
+                            for (const key of ["tags", "tag"]) {
+                                const v = (fm as Record<string, unknown>)[key];
+                                if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
+                            }
+                        }
+                        frontmatterChanges = addTagsToFrontmatter(fmClone, tagsToAdd);
+                    }
+                }
+                if (location === "inline") {
+                    if (!dryRun) {
+                        const content = await plugin.app.vault.read(file);
+                        const sep = content.length === 0 || content.endsWith("\n") ? "" : "\n";
+                        const line = tagsToAdd.map((t) => "#" + t).join(" ");
+                        await plugin.app.vault.modify(file, content + sep + line + "\n");
+                    }
+                    inlineChanges = tagsToAdd.length;
+                }
+            }
+        }
+
+        // ────────────────── REMOVE ──────────────────
+        else if (opName === "remove") {
+            if (location === "inline" || location === "both") {
+                const cache = plugin.app.metadataCache.getFileCache(file);
+                const inlineCacheEntries = (cache?.tags ?? []).map((entry) => ({
+                    tag: entry.tag,
+                    from: entry.position.start.offset,
+                    to: entry.position.end.offset,
+                }));
+                if (inlineCacheEntries.length > 0) {
+                    const content = await plugin.app.vault.read(file);
+                    const { newContent, count } = rewriteInlineTags(content, inlineCacheEntries, removeOp!);
+                    inlineChanges = count;
+                    if (count > 0 && !dryRun) {
+                        await plugin.app.vault.modify(file, newContent);
+                    }
+                }
+            }
+
+            if (location === "frontmatter" || location === "both") {
+                if (dryRun) {
+                    const cache = plugin.app.metadataCache.getFileCache(file);
+                    const fm = cache?.frontmatter;
+                    if (fm) {
+                        const fmClone: Record<string, unknown> = { ...fm };
+                        for (const key of ["tags", "tag"]) {
+                            const v = (fm as Record<string, unknown>)[key];
+                            if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
+                        }
+                        frontmatterChanges = rewriteFrontmatterTags(fmClone, removeOp!);
+                    }
+                } else {
+                    try {
+                        await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                            frontmatterChanges = rewriteFrontmatterTags(fm, removeOp!);
+                        });
+                    } catch (err) {
+                        skipped.push({
+                            path: file.path,
+                            reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
+                        });
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // ────────────────── SET ──────────────────
+        else if (opName === "set") {
+            if (dryRun) {
+                const cache = plugin.app.metadataCache.getFileCache(file);
+                const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+                const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
+                if (fm) {
+                    for (const key of ["tags", "tag"]) {
+                        const v = fm[key];
+                        if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
+                    }
+                }
+                frontmatterChanges = setFrontmatterTags(fmClone, uniqueBareTags);
+            } else {
+                try {
+                    await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                        frontmatterChanges = setFrontmatterTags(fm, uniqueBareTags);
+                    });
+                } catch (err) {
+                    skipped.push({
+                        path: file.path,
+                        reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
+                    });
+                    continue;
+                }
+            }
+        }
+
+        if (inlineChanges > 0 || frontmatterChanges > 0 || noOpTags.length > 0) {
+            fileResults.push({
+                path: file.path,
+                inline_changes: inlineChanges,
+                frontmatter_changes: frontmatterChanges,
+                ...(noOpTags.length > 0 ? { no_op_tags: noOpTags } : {}),
+            });
+            totalInline += inlineChanges;
+            totalFrontmatter += frontmatterChanges;
+        }
+    }
+
+    const resultContent: Record<string, unknown> = {
+        action: dryRun ? `dry_run_${actionName}` : actionName,
+        op: opName,
+        location,
+        tags: uniqueBareTags.map((t) => "#" + t),
+        dry_run: dryRun,
+        files_processed: files.length,
+        files_changed: fileResults.length,
+        total_inline_changes: totalInline,
+        total_frontmatter_changes: totalFrontmatter,
+        files: fileResults,
+    };
+    if (opName === "remove") {
+        resultContent["include_descendants"] = includeDescendants;
+    }
+    if (skipped.length > 0) {
+        resultContent["skipped"] = skipped;
+    }
+
+    return {
+        success: true,
+        type: "object",
+        content: resultContent,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: add_files_tags
+//
+// Add tags to one or more specific notes. Writes to frontmatter by default;
+// can optionally write inline `#tag` occurrences instead via `location`.
+// Idempotent: adding a tag that already exists is a no-op for that file.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "edit_files_tags",
+                name: "add_files_tags",
                 description:
-                    "Add / remove / set tags on one or more specific notes. Frontmatter is updated via " +
-                    "`processFrontMatter` (preserves YAML structure, quoting, key order); inline `#tag` " +
-                    "occurrences are located via the metadata cache's exact offsets — neither YAML nor " +
-                    "in-body prose can get corrupted. Operations are idempotent: adding an existing tag " +
-                    "or removing a missing tag is a no-op.",
+                    "Add tags to one or more specific notes. Tags are written to YAML frontmatter by default " +
+                    "(preserving existing structure); use `location='inline'` to append inline `#tag` occurrences " +
+                    "instead. Idempotent — adding a tag that already exists is a no-op. " +
+                    "Frontmatter is updated via `processFrontMatter` (preserves YAML structure, quoting, key order); " +
+                    "inline edits use the metadata cache's exact offsets so nothing gets corrupted.",
                 parameters: {
                     type: "object",
                     properties: {
                         paths: {
                             type: "array",
                             items: { type: "string" },
+                            minItems: 1,
                             description:
-                                "Vault-relative paths of the markdown files to edit (1 or more). " +
+                                "Vault-relative paths of the markdown files to add tags to (1 or more). " +
                                 "All paths must point to existing markdown files.",
-                        },
-                        op: {
-                            type: "string",
-                            enum: ["add", "remove", "set", "unset"],
-                            description:
-                                "The operation to perform: " +
-                                "'add' = add the given tags (skipping any already present); " +
-                                "'remove' = remove the given tags (skipping any not present); " +
-                                "'unset' = accepted alias for 'remove' (same as edit_files_frontmatter naming); " +
-                                "'set' = replace the file's frontmatter tags with exactly the given list (deduplicated). " +
-                                "'set' deliberately does NOT touch inline '#tag' occurrences in the body (use 'remove' explicitly for that).",
                         },
                         tags: {
                             type: "array",
                             items: { type: "string" },
+                            minItems: 1,
                             description:
-                                "List of tag names to add / remove / set, with or without the leading '#'. " +
-                                "Must be non-empty for 'add' and 'remove'. May be empty for 'set' to clear frontmatter tags. " +
-                                "Example: ['todo', '#project/alpha'].",
+                                "Tag names to add, with or without the leading '#'. " +
+                                "Must be non-empty. Example: ['todo', '#project/alpha'].",
                         },
                         location: {
                             type: "string",
-                            enum: ["frontmatter", "inline", "auto"],
+                            enum: ["frontmatter", "inline"],
                             description:
-                                "Where to apply the operation. " +
-                                "Defaults: 'add' → 'auto' (writes to frontmatter); 'remove' → 'auto' (removes from BOTH frontmatter and inline); 'set' → 'frontmatter' (does not touch inline). " +
-                                "'frontmatter' = only edit YAML frontmatter tags. " +
-                                "'inline' = only edit inline '#tag' occurrences in the body (for 'add', appends '#tag' on a new line at end of file). " +
-                                "'auto' = the default behaviour described above.",
+                                "Where to add the tags. " +
+                                "`frontmatter` (default) = add to YAML frontmatter tags. " +
+                                "`inline` = append `#tag` occurrences on a new line at the end of the file. " +
+                                "Defaults to `frontmatter`.",
+                        },
+                        dry_run: {
+                            type: "boolean",
+                            description:
+                                "If true, return the per-file impact report without modifying any files. " +
+                                "Defaults to false.",
+                        },
+                    },
+                    required: ["paths", "tags"],
+                },
+            },
+        },
+        capabilities: ["write_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+            const rawPaths = args["paths"];
+            const rawTags = args["tags"];
+            const rawLocation = (args["location"] as string | undefined) ?? "frontmatter";
+
+            // Validate paths
+            if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
+                return { success: false, type: "text", content: "paths must be a non-empty array of vault-relative file paths." };
+            }
+            if (rawPaths.some((p) => typeof p !== "string" || p.length === 0)) {
+                return { success: false, type: "text", content: "Each entry in paths must be a non-empty string." };
+            }
+            const paths = rawPaths as string[];
+
+            // Validate location
+            if (rawLocation !== "frontmatter" && rawLocation !== "inline") {
+                return { success: false, type: "text", content: `Invalid location '${rawLocation}'; must be 'frontmatter' or 'inline'.` };
+            }
+
+            return executeTagsEdit(plugin, {
+                actionName: "add_files_tags",
+                opName: "add",
+                paths,
+                rawTags,
+                location: rawLocation,
+                includeDescendants: false,
+                dryRun: (args["dry_run"] as boolean) ?? false,
+            });
+        },
+        requiresConfirmation: true,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: remove_files_tags
+//
+// Remove tags from one or more specific notes. Removes from BOTH frontmatter
+// and inline `#tag` occurrences by default; can be scoped via `location`.
+// Idempotent: removing a tag that doesn't exist is a no-op.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "remove_files_tags",
+                description:
+                    "Remove tags from one or more specific notes. Removes from BOTH YAML frontmatter and inline " +
+                    "`#tag` occurrences by default; use `location` to scope to frontmatter-only or inline-only. " +
+                    "Idempotent — removing a tag that doesn't exist is a no-op. " +
+                    "Frontmatter is updated via `processFrontMatter` (preserves YAML structure, quoting, key order); " +
+                    "inline `#tag` occurrences are located via the metadata cache's exact offsets — neither YAML " +
+                    "nor in-body prose can get corrupted.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        paths: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
+                            description:
+                                "Vault-relative paths of the markdown files to remove tags from (1 or more). " +
+                                "All paths must point to existing markdown files.",
+                        },
+                        tags: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
+                            description:
+                                "Tag names to remove, with or without the leading '#'. " +
+                                "Must be non-empty. Example: ['todo', '#project/alpha'].",
+                        },
+                        location: {
+                            type: "string",
+                            enum: ["frontmatter", "inline", "both"],
+                            description:
+                                "Where to remove the tags from. " +
+                                "`both` (default) = remove from YAML frontmatter AND inline `#tag` occurrences. " +
+                                "`frontmatter` = only remove from YAML frontmatter tags. " +
+                                "`inline` = only remove inline `#tag` occurrences in the body. " +
+                                "Defaults to `both`.",
                         },
                         include_descendants: {
                             type: "boolean",
                             description:
-                                "Only used when op='remove'. If true, also remove every nested sub-tag " +
+                                "If true, also remove every nested sub-tag " +
                                 "(e.g. removing 'project' will also remove '#project/alpha', '#project/beta', etc.). " +
                                 "Defaults to false (exact match only).",
                         },
@@ -100,21 +434,18 @@ export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool 
                                 "Defaults to false.",
                         },
                     },
-                    required: ["paths", "op", "tags"],
+                    required: ["paths", "tags"],
                 },
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
             const rawPaths = args["paths"];
-            const rawOp = args["op"] as string;
-            const opName = rawOp === "unset" ? "remove" : rawOp;
             const rawTags = args["tags"];
-            const rawLocation = (args["location"] as string | undefined) ?? "auto";
+            const rawLocation = (args["location"] as string | undefined) ?? "both";
             const includeDescendants = (args["include_descendants"] as boolean) ?? false;
-            const dryRun = (args["dry_run"] as boolean) ?? false;
 
-            // ─── Validate paths ───────────────────────────────────────────
+            // Validate paths
             if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
                 return { success: false, type: "text", content: "paths must be a non-empty array of vault-relative file paths." };
             }
@@ -123,261 +454,108 @@ export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool 
             }
             const paths = rawPaths as string[];
 
-            // ─── Validate op ──────────────────────────────────────────────
-            if (opName !== "add" && opName !== "remove" && opName !== "set") {
-                return { success: false, type: "text", content: `Invalid op '${opName}'; must be one of 'add', 'remove', 'set'.` };
+            // Validate location
+            if (rawLocation !== "frontmatter" && rawLocation !== "inline" && rawLocation !== "both") {
+                return { success: false, type: "text", content: `Invalid location '${rawLocation}'; must be 'frontmatter', 'inline', or 'both'.` };
             }
 
-            // ─── Validate location ────────────────────────────────────────
-            if (rawLocation !== "frontmatter" && rawLocation !== "inline" && rawLocation !== "auto") {
-                return { success: false, type: "text", content: `Invalid location '${rawLocation}'; must be 'frontmatter', 'inline', or 'auto'.` };
-            }
-
-            // ─── Validate tags ────────────────────────────────────────────
-            if (!Array.isArray(rawTags)) {
-                return { success: false, type: "text", content: "tags must be an array of tag names." };
-            }
-            if ((opName === "add" || opName === "remove") && rawTags.length === 0) {
-                return { success: false, type: "text", content: `tags must be non-empty for op='${opName}'.` };
-            }
-            const bareTags: string[] = [];
-            for (const t of rawTags) {
-                if (typeof t !== "string") {
-                    return { success: false, type: "text", content: "Each tag must be a string." };
-                }
-                const n = normaliseTagName(t);
-                if (n === null) {
-                    return { success: false, type: "text", content: `Invalid tag name: '${t}'.` };
-                }
-                bareTags.push(n);
-            }
-            // De-duplicate while preserving order
-            const uniqueBareTags = Array.from(new Set(bareTags));
-
-            // ─── Resolve effective location (auto → concrete) ─────────────
-            // add: auto = frontmatter
-            // remove: auto = both
-            // set: auto = frontmatter (set never touches inline by design)
-            type EffLocation = "frontmatter" | "inline" | "both";
-            let effLocation: EffLocation;
-            if (rawLocation === "frontmatter") effLocation = "frontmatter";
-            else if (rawLocation === "inline") effLocation = "inline";
-            else {
-                // auto
-                if (opName === "remove") effLocation = "both";
-                else effLocation = "frontmatter";
-            }
-            // Hard rule: 'set' never modifies inline regardless of location, except when caller
-            // explicitly selected 'inline' (in which case we respect them but warn via response).
-            // For simplicity: 'set' + 'inline' is rejected — it's almost certainly a misuse.
-            if (opName === "set" && effLocation === "inline") {
-                return {
-                    success: false,
-                    type: "text",
-                    content: "op='set' cannot be combined with location='inline'. Use op='remove' (with all current inline tags) followed by op='add' (with new ones), or omit location to default to frontmatter.",
-                };
-            }
-
-            // ─── Resolve all files up front so we can fail fast on bad paths ─
-            const files: TFile[] = [];
-            for (const p of paths) {
-                const f = requireFile(plugin.app, p);
-                if (isFailure(f)) return f;
-                if (!(f instanceof TFile) || f.extension !== "md") {
-                    return { success: false, type: "text", content: `Not a markdown file: ${p}` };
-                }
-                files.push(f);
-            }
-
-            // Build the underlying TagOp for inline / frontmatter rewrite passes.
-            // For 'add' there is no rewrite-style op — we add tags directly via processFrontMatter / append.
-            // For 'set' we treat frontmatter as a wholesale overwrite (no rewrite-op pass needed).
-            const removeOp: TagOp | null =
-                opName === "remove"
-                    ? { kind: "remove", targetBares: uniqueBareTags, includeDescendants }
-                    : null;
-
-            const fileResults: EditTagsFileResult[] = [];
-            const skipped: { path: string; reason: string }[] = [];
-            let totalInline = 0;
-            let totalFrontmatter = 0;
-
-            for (const file of files) {
-                let inlineChanges = 0;
-                let frontmatterChanges = 0;
-                const noOpTags: string[] = [];
-
-                // ────────────────── ADD ──────────────────
-                if (opName === "add") {
-                    // Determine which tags are already present (so we don't re-add).
-                    const existing = new Set(
-                        collectTagsForFile(plugin, file).map((t) => (t.startsWith("#") ? t.substring(1) : t)),
-                    );
-                    const tagsToAdd = uniqueBareTags.filter((t) => {
-                        if (existing.has(t)) {
-                            noOpTags.push("#" + t);
-                            return false;
-                        }
-                        return true;
-                    });
-
-                    if (tagsToAdd.length > 0) {
-                        if (effLocation === "frontmatter" || effLocation === "both") {
-                            if (!dryRun) {
-                                try {
-                                    await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                                        frontmatterChanges = addTagsToFrontmatter(fm, tagsToAdd);
-                                    });
-                                } catch (err) {
-                                    skipped.push({
-                                        path: file.path,
-                                        reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
-                                    });
-                                    continue;
-                                }
-                            } else {
-                                // Dry-run: simulate against the cached frontmatter snapshot.
-                                const cache = plugin.app.metadataCache.getFileCache(file);
-                                const fm = cache?.frontmatter;
-                                const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
-                                if (fm) {
-                                    for (const key of ["tags", "tag"]) {
-                                        const v = (fm as Record<string, unknown>)[key];
-                                        if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
-                                    }
-                                }
-                                frontmatterChanges = addTagsToFrontmatter(fmClone, tagsToAdd);
-                            }
-                        }
-                        if (effLocation === "inline") {
-                            // Append '#tag1 #tag2 ...' on a new line at end of file.
-                            if (!dryRun) {
-                                const content = await plugin.app.vault.read(file);
-                                const sep = content.length === 0 || content.endsWith("\n") ? "" : "\n";
-                                const line = tagsToAdd.map((t) => "#" + t).join(" ");
-                                await plugin.app.vault.modify(file, content + sep + line + "\n");
-                            }
-                            inlineChanges = tagsToAdd.length;
-                        }
-                    }
-                }
-
-                // ────────────────── REMOVE ──────────────────
-                else if (opName === "remove") {
-                    // Inline pass
-                    if (effLocation === "inline" || effLocation === "both") {
-                        const cache = plugin.app.metadataCache.getFileCache(file);
-                        const inlineCacheEntries = (cache?.tags ?? []).map((entry) => ({
-                            tag: entry.tag,
-                            from: entry.position.start.offset,
-                            to: entry.position.end.offset,
-                        }));
-                        if (inlineCacheEntries.length > 0) {
-                            const content = await plugin.app.vault.read(file);
-                            const { newContent, count } = rewriteInlineTags(content, inlineCacheEntries, removeOp!);
-                            inlineChanges = count;
-                            if (count > 0 && !dryRun) {
-                                await plugin.app.vault.modify(file, newContent);
-                            }
-                        }
-                    }
-
-                    // Frontmatter pass
-                    if (effLocation === "frontmatter" || effLocation === "both") {
-                        if (dryRun) {
-                            const cache = plugin.app.metadataCache.getFileCache(file);
-                            const fm = cache?.frontmatter;
-                            if (fm) {
-                                const fmClone: Record<string, unknown> = { ...fm };
-                                for (const key of ["tags", "tag"]) {
-                                    const v = (fm as Record<string, unknown>)[key];
-                                    if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
-                                }
-                                frontmatterChanges = rewriteFrontmatterTags(fmClone, removeOp!);
-                            }
-                        } else {
-                            try {
-                                await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                                    frontmatterChanges = rewriteFrontmatterTags(fm, removeOp!);
-                                });
-                            } catch (err) {
-                                skipped.push({
-                                    path: file.path,
-                                    reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
-                                });
-                                continue;
-                            }
-                        }
-                    }
-                }
-
-                // ────────────────── SET ──────────────────
-                else if (opName === "set") {
-                    // 'set' only ever touches frontmatter (we already rejected location='inline' above).
-                    if (dryRun) {
-                        const cache = plugin.app.metadataCache.getFileCache(file);
-                        const fm = cache?.frontmatter as Record<string, unknown> | undefined;
-                        const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
-                        if (fm) {
-                            for (const key of ["tags", "tag"]) {
-                                const v = fm[key];
-                                if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
-                            }
-                        }
-                        frontmatterChanges = setFrontmatterTags(fmClone, uniqueBareTags);
-                    } else {
-                        try {
-                            await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                                frontmatterChanges = setFrontmatterTags(fm, uniqueBareTags);
-                            });
-                        } catch (err) {
-                            skipped.push({
-                                path: file.path,
-                                reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
-                            });
-                            continue;
-                        }
-                    }
-                }
-
-                if (inlineChanges > 0 || frontmatterChanges > 0 || noOpTags.length > 0) {
-                    fileResults.push({
-                        path: file.path,
-                        inline_changes: inlineChanges,
-                        frontmatter_changes: frontmatterChanges,
-                        ...(noOpTags.length > 0 ? { no_op_tags: noOpTags } : {}),
-                    });
-                    totalInline += inlineChanges;
-                    totalFrontmatter += frontmatterChanges;
-                }
-            }
-
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? `dry_run_edit_files_tags_${opName}` : `edit_files_tags_${opName}`,
-                    op: opName,
-                    location: rawLocation,
-                    effective_location: effLocation,
-                    tags: uniqueBareTags.map((t) => "#" + t),
-                    include_descendants: opName === "remove" ? includeDescendants : undefined,
-                    dry_run: dryRun,
-                    files_processed: files.length,
-                    files_changed: fileResults.length,
-                    total_inline_changes: totalInline,
-                    total_frontmatter_changes: totalFrontmatter,
-                    files: fileResults,
-                    ...(skipped.length > 0 ? { skipped } : {}),
-                },
-            };
+            return executeTagsEdit(plugin, {
+                actionName: "remove_files_tags",
+                opName: "remove",
+                paths,
+                rawTags,
+                location: rawLocation,
+                includeDescendants,
+                dryRun: (args["dry_run"] as boolean) ?? false,
+            });
         },
         requiresConfirmation: true,
     };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Frontmatter add / set helpers (used by edit_files_tags only)
+// Tool: set_files_tags
+//
+// Replace the frontmatter tags on one or more notes with exactly the given
+// list. Deliberately does NOT touch inline `#tag` occurrences — use
+// `remove_files_tags` explicitly for those. Pass an empty `tags` array to
+// clear all frontmatter tags.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultSetFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "set_files_tags",
+                description:
+                    "Replace the YAML frontmatter tags on one or more notes with exactly the given list " +
+                    "(deduplicated). This operates ONLY on frontmatter — inline `#tag` occurrences in the body " +
+                    "are deliberately NOT touched. To also remove inline tags, use `remove_files_tags` first. " +
+                    "Pass an empty `tags` array to clear all frontmatter tags from the selected notes. " +
+                    "Frontmatter is updated via `processFrontMatter` (preserves YAML structure, quoting, key order).",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        paths: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
+                            description:
+                                "Vault-relative paths of the markdown files to set tags on (1 or more). " +
+                                "All paths must point to existing markdown files.",
+                        },
+                        tags: {
+                            type: "array",
+                            items: { type: "string" },
+                            description:
+                                "The exact list of tag names to set, with or without the leading '#'. " +
+                                "May be empty to clear all frontmatter tags. " +
+                                "Example: ['todo', '#project/alpha', 'reviewed'].",
+                        },
+                        dry_run: {
+                            type: "boolean",
+                            description:
+                                "If true, return the per-file impact report without modifying any files. " +
+                                "Defaults to false.",
+                        },
+                    },
+                    required: ["paths", "tags"],
+                },
+            },
+        },
+        capabilities: ["write_file"] as ToolCapability[],
+        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+            const rawPaths = args["paths"];
+            const rawTags = args["tags"];
+
+            // Validate paths
+            if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
+                return { success: false, type: "text", content: "paths must be a non-empty array of vault-relative file paths." };
+            }
+            if (rawPaths.some((p) => typeof p !== "string" || p.length === 0)) {
+                return { success: false, type: "text", content: "Each entry in paths must be a non-empty string." };
+            }
+            const paths = rawPaths as string[];
+
+            return executeTagsEdit(plugin, {
+                actionName: "set_files_tags",
+                opName: "set",
+                paths,
+                rawTags,
+                location: "frontmatter", // set always operates on frontmatter only
+                includeDescendants: false,
+                dryRun: (args["dry_run"] as boolean) ?? false,
+            });
+        },
+        requiresConfirmation: true,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Frontmatter add / set helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -391,7 +569,6 @@ export function vaultEditFilesTags(plugin: NoteAssistantPlugin): RegisteredTool 
 function addTagsToFrontmatter(fm: Record<string, unknown>, bareTagsToAdd: string[]): number {
     if (bareTagsToAdd.length === 0) return 0;
 
-    // Discover existing tags across both possible keys, preserving the canonical key style.
     const existingBare = new Set<string>();
     for (const key of ["tags", "tag"]) {
         const v = fm[key];
@@ -411,22 +588,18 @@ function addTagsToFrontmatter(fm: Record<string, unknown>, bareTagsToAdd: string
     const toAdd = bareTagsToAdd.filter((t) => !existingBare.has(t));
     if (toAdd.length === 0) return 0;
 
-    // Pick the key to write to: prefer existing 'tags', then existing 'tag', otherwise create 'tags'.
     const targetKey = "tags" in fm ? "tags" : "tag" in fm ? "tag" : "tags";
     const cur = fm[targetKey];
 
     if (cur === undefined) {
-        // Brand new — write as a YAML array (most idiomatic in Obsidian).
         fm[targetKey] = toAdd.slice();
     } else if (typeof cur === "string") {
-        // Preserve string form. Append with comma+space, stripping any leading/trailing junk.
         const trimmed = cur.trim();
         const joined = (trimmed.length > 0 ? trimmed + ", " : "") + toAdd.join(", ");
         fm[targetKey] = joined;
     } else if (Array.isArray(cur)) {
         for (const t of toAdd) cur.push(t);
     } else {
-        // Existing value is some other shape (object/null/number) — leave it alone and create 'tags' array instead.
         fm["tags"] = toAdd.slice();
     }
 
@@ -442,7 +615,6 @@ function addTagsToFrontmatter(fm: Record<string, unknown>, bareTagsToAdd: string
  * to roughly indicate the magnitude of change).
  */
 function setFrontmatterTags(fm: Record<string, unknown>, bareTags: string[]): number {
-    // Count prior entries to give a meaningful "changes" number.
     let prior = 0;
     for (const key of ["tags", "tag"]) {
         const v = fm[key];
@@ -461,6 +633,5 @@ function setFrontmatterTags(fm: Record<string, unknown>, bareTags: string[]): nu
         delete fm["tag"];
     }
 
-    // Number of "changes" = max(prior, new) — gives a sensible non-zero indicator either way.
     return Math.max(prior, bareTags.length);
 }
