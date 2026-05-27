@@ -29,6 +29,13 @@ export interface ActionBarOptions {
      * is not rendered at all.
      */
     onExtractInsights?: (msg: ChatMessage) => void;
+    /**
+     * When true, the runtime is actively producing output (streaming or
+     * waiting on tool calls). The insights button is suppressed during
+     * this window so the user doesn't trigger an extraction while the
+     * conversation is still in-flight.
+     */
+    isBusy?: boolean;
 }
 
 /**
@@ -63,10 +70,11 @@ export function renderActionBar(
     }
 
     // Extract-insights button — only meaningful for non-aborted replies
-    // and when a host callback is wired. Mirrors Copy/Speak as a plain
-    // icon button (rather than a menu) to stay consistent with the rest
-    // of the action bar and remain tap-friendly on mobile.
-    if (onExtractInsights && !abortedMessageIds.has(msg.id)) {
+    // when a host callback is wired and the runtime is not busy.
+    // Mirrors Copy/Speak as a plain icon button (rather than a menu) to
+    // stay consistent with the rest of the action bar and remain
+    // tap-friendly on mobile.
+    if (onExtractInsights && !abortedMessageIds.has(msg.id) && !opts.isBusy) {
         const insightBtn = actions.createEl('button', {
             cls: 'session-icon-btn session-bubble__action-btn',
             attr: {

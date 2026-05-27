@@ -158,6 +158,7 @@ export class BubbleRenderer extends Component {
             abortedMessageIds?: Set<string>;
             pendingConfirmations?: Map<string, (approved: boolean) => void>;
             parentEl?: HTMLElement;
+            isBusy?: boolean;
         } = {}
     ): HTMLElement {
         const { parentEl, ...renderOptions } = options;
@@ -201,6 +202,7 @@ export class BubbleRenderer extends Component {
             wasToolDetailExpanded?: boolean;
             abortedMessageIds?: Set<string>;
             pendingConfirmations?: Map<string, (approved: boolean) => void>;
+            isBusy?: boolean;
         } = {}
     ): void {
         // Sub-agent assistant reply with empty content: hide the bubble entirely
@@ -318,6 +320,7 @@ export class BubbleRenderer extends Component {
             wasToolDetailExpanded?: boolean;
             abortedMessageIds?: Set<string>;
             pendingConfirmations?: Map<string, (approved: boolean) => void>;
+            isBusy?: boolean;
         } = {}
     ): void {
         const {
@@ -325,6 +328,7 @@ export class BubbleRenderer extends Component {
             wasToolDetailExpanded = false,
             abortedMessageIds = new Set<string>(),
             pendingConfirmations = new Map<string, (approved: boolean) => void>(),
+            isBusy = false,
         } = options;
 
         // System messages: special handling
@@ -417,6 +421,7 @@ export class BubbleRenderer extends Component {
                 abortedMessageIds,
                 speechController: this.speechController,
                 onExtractInsights: this.onExtractInsights,
+                isBusy,
             });
         }
 

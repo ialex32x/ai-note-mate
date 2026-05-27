@@ -1642,6 +1642,7 @@ export class SessionView extends ItemView {
         this.bubbleRenderer.renderInto(bubble, msg, {
             abortedMessageIds: this.abortedMessageIds,
             pendingConfirmations: this.pendingConfirmations,
+            isBusy: this.isStreaming,
         });
 
         this.messageBubbles.set(msg.id, bubble);
@@ -1669,6 +1670,7 @@ export class SessionView extends ItemView {
                 wasToolDetailExpanded,
                 abortedMessageIds: this.abortedMessageIds,
                 pendingConfirmations: this.pendingConfirmations,
+                isBusy: this.isStreaming,
             });
         });
     }
