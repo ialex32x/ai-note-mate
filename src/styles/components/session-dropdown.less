@@ -7,6 +7,32 @@
     position: static;
 }
 
+// Numeric badge on the session-list toolbar button. Mirrors the
+// issue-tracer badge style: small red pill overlaying the list icon.
+// Shows the number of sessions that have pending vault checkpoints.
+.session-session-selector__badge {
+    display: none;
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: @text-error;
+    color: var(--text-on-accent, #ffffff);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+.session-session-selector__badge--visible {
+    display: inline-block;
+}
+
 .session-dropdown {
     display: none;
     position: absolute;

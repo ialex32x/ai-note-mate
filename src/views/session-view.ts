@@ -159,6 +159,8 @@ export class SessionView extends ItemView {
     private checkpointSelector!: CheckpointSelectorHandle;
     private tipsButton: TipsButtonHandle | null = null;
     private issueTracerButton: IssueTracerButtonHandle | null = null;
+    /** Tear-down for active-runtime checkpoint change subscription. */
+    private unsubCheckpointChange: (() => void) | null = null;
     /**
      * MCP-manager change listener that refreshes the session-status panel
      * while it is open, so connection/disconnection events update live
@@ -271,6 +273,13 @@ export class SessionView extends ItemView {
         // Point the checkpoint dropdown at this runtime's store so its
         // count badge and dropdown contents reflect the new session.
         this.checkpointSelector?.setRuntime(runtime);
+        // Subscribe to checkpoint-store changes on the active runtime
+        // so the session-navigator badge stays live even when the
+        // dropdown isn't open.
+        this.unsubCheckpointChange?.();
+        this.unsubCheckpointChange = runtime.checkpointStore.on('change', () => {
+            this.sessionNavigator?.updatePendingBadge();
+        });
         // The emergency-shrink Notice gate resets per attach: each
         // session deserves an independent "have we told the user yet?"
         // budget. If the runtime was already in the shrunk state when
@@ -1044,6 +1053,10 @@ export class SessionView extends ItemView {
         // Unbind the checkpoint selector before releasing the runtime so
         // its change listener is removed cleanly.
         this.checkpointSelector?.setRuntime(undefined);
+        // Unsubscribe from checkpoint-store changes; the badge will
+        // refresh on the next dropdown open.
+        this.unsubCheckpointChange?.();
+        this.unsubCheckpointChange = null;
         this.runtime = undefined;
         this.plugin.runtimePool.release(id);
     }

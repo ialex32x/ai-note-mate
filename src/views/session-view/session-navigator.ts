@@ -96,6 +96,7 @@ export class SessionNavigator {
     private sessionBtn: HTMLButtonElement | null = null;
     private moreActionsBtn: HTMLButtonElement | null = null;
     private dropdownEl: HTMLElement | null = null;
+    private pendingBadge: HTMLElement | null = null;
 
     constructor(deps: SessionNavigatorDeps) {
         this.deps = deps;
@@ -120,6 +121,13 @@ export class SessionNavigator {
         });
         setIcon(sessionBtn, 'list');
         this.sessionBtn = sessionBtn;
+
+        // Badge for sessions with pending vault checkpoints.
+        // Mirrors the issue-tracer badge style.
+        const pendingBadge = sessionBtn.createEl('span', {
+            cls: 'session-session-selector__badge',
+        });
+        this.pendingBadge = pendingBadge;
 
         const dropdownEl = sessionWrapper.createEl('div', {
             cls: 'session-dropdown',
@@ -166,6 +174,40 @@ export class SessionNavigator {
                 // DropdownManager automatically closes other active dropdowns
             },
         });
+
+        // Initial badge update.
+        this.updatePendingBadge();
+    }
+
+    /**
+     * Update the pending-checkpoint badge on the session list button.
+     *
+     * The badge shows the number of sessions that have at least one
+     * pending vault checkpoint. Styled identically to the issue-tracer
+     * badge (small red pill overlaying the icon).
+     *
+     * Safe to call at any time — cheap Map iteration over cached data,
+     * no I/O.
+     */
+    updatePendingBadge(): void {
+        if (!this.pendingBadge) return;
+
+        const sessions = this.deps.sessionManager.getAllSessions();
+        let count = 0;
+        for (const s of sessions) {
+            if ((this.deps.getSessionPendingCheckpoints(s.id) ?? 0) > 0) {
+                count++;
+            }
+        }
+
+        if (count === 0) {
+            this.pendingBadge.setText('');
+            this.pendingBadge.removeClass('session-session-selector__badge--visible');
+            return;
+        }
+
+        this.pendingBadge.setText(count > 99 ? '99+' : String(count));
+        this.pendingBadge.addClass('session-session-selector__badge--visible');
     }
 
     /**
@@ -186,6 +228,7 @@ export class SessionNavigator {
             getStatus: (id) => this.deps.getSessionStatus(id),
             getPendingCheckpoints: (id) => this.deps.getSessionPendingCheckpoints(id),
         });
+        this.updatePendingBadge();
     }
 
     /**
