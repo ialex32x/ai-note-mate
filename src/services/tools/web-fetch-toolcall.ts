@@ -134,10 +134,6 @@ function webFetch(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "string",
                             description: "The full URL of the page to fetch.",
                         },
-                        depth: {
-                            type: "number",
-                            description: "How many link-levels deep to crawl from the starting URL (default 1, i.e. only the given page).",
-                        },
                     },
                     required: ["url"],
                 },
@@ -147,7 +143,6 @@ function webFetch(plugin: NoteAssistantPlugin): RegisteredTool {
         maxCallsPerTurn: resolveBudget(plugin),
         exec: async (chatStream, args, signal, context): Promise<ToolCallResult> => {
             const url = args["url"] as string;
-            const depth = (args["depth"] as number | undefined) ?? 1;
 
             // ── Per-turn URL dedupe ──────────────────────────────────
             // Skip a second hit on the same URL within the same user
@@ -174,7 +169,7 @@ function webFetch(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             try {
-                const fetcher = new UrlContentFetcher({ depth, maxPages: 5 });
+                const fetcher = new UrlContentFetcher();
                 const pages = await fetcher.fetch(url, signal);
 
                 // If the entry page extraction failed, surface that as a

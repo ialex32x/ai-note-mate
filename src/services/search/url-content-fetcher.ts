@@ -65,13 +65,9 @@ export interface WebPageContent {
     /** Title of the web page */
     title: string;
 
-    /** Structured content */
+    /** Structured content (links within blocks are preserved as markdown [text](url)) */
     contents: ContentElement[];
 
-    /** List of links */
-    links: string[];
-
-    depth: number;
     timestamp: string;
 
     /**
@@ -92,33 +88,21 @@ export interface WebPageContent {
 }
 
 /**
- * Crawl options interface
+ * Fetch options interface
  */
 export interface PageFetchOptions {
-    /** Crawl depth, default is 1 (only crawl the starting page) */
-    depth?: number;
-    /** Maximum pages per depth, default is 10 */
-    maxPages?: number;
     /** Request timeout in milliseconds, default is 10000 */
     timeout?: number;
-    /** Whether to only crawl links under the same domain, default is true */
-    sameDomain?: boolean;
     /** User-Agent */
     userAgent?: string;
-    /** URL patterns to exclude (array of regex strings) */
-    excludePatterns?: string[];
 }
 
 /**
  * Default options
  */
 const DEFAULT_OPTIONS: PageFetchOptions = {
-    depth: 1,
-    maxPages: 10,
     timeout: 10000,
-    sameDomain: true,
     userAgent: undefined,
-    excludePatterns: [],
 };
 
 /**
@@ -168,93 +152,41 @@ export function normalizeUrl(url: string): string {
  * Simple web crawler class
  */
 export class UrlContentFetcher {
-    private visitedUrls: Set<string> = new Set();
-    private results: WebPageContent[] = [];
     private options: PageFetchOptions;
-    private baseDomain: string = "";
 
     constructor(options: PageFetchOptions = {}) {
         this.options = { ...DEFAULT_OPTIONS, ...options };
     }
 
     /**
-     * Start crawling
-     * @param startUrl Starting URL
-     * @returns Array of crawl results
+     * Fetch and parse a single page. Returns a single-element array for
+     * consistency with the original multi-page API.
+     * @param url The URL to fetch
+     * @returns Array containing the single page result (or empty on failure)
      */
-    async fetch(startUrl: string, signal?: AbortSignal): Promise<WebPageContent[]> {
-        // Reset state
-        this.visitedUrls.clear();
-        this.results = [];
-
+    async fetch(url: string, signal?: AbortSignal): Promise<WebPageContent[]> {
         // Normalize starting URL
-        const normalizedUrl = this.normalizeUrl(startUrl);
+        const normalizedUrl = this.normalizeUrl(url);
 
         try {
-            const urlObj = new URL(normalizedUrl);
-            this.baseDomain = urlObj.hostname;
+            // Validate URL
+            void new URL(normalizedUrl);
         } catch {
-            throw new Error(`Invalid URL: ${startUrl}`);
+            throw new Error(`Invalid URL: ${url}`);
         }
 
-        // Start recursive crawling
-        await this.crawlRecursive(normalizedUrl, 0, signal);
-
-        return this.results;
-    }
-
-    /**
-     * Recursive crawling
-     */
-    private async crawlRecursive(url: string, currentDepth: number, signal?: AbortSignal): Promise<void> {
-        // Check for abort
         checkAbort(signal);
 
-        // Check depth limit
-        if (currentDepth > this.options.depth!) {
-            return;
-        }
-
-        // Check if already visited
-        if (this.visitedUrls.has(url)) {
-            return;
-        }
-
-        // Check page count limit
-        if (this.results.length >= this.options.maxPages!) {
-            return;
-        }
-
-        // Check exclusion patterns
-        if (this.shouldExclude(url)) {
-            return;
-        }
-
-        // Mark as visited
-        this.visitedUrls.add(url);
-
         try {
-            // Fetch page content
-            const result = await this.fetchAndParse(url, currentDepth, signal);
+            const result = await this.fetchAndParse(normalizedUrl, signal);
             if (result) {
-                this.results.push(result);
-
-                // If there's remaining depth, continue crawling links
-                if (currentDepth < this.options.depth!) {
-                    const validLinks = result.links.filter(link => this.isValidLink(link));
-
-                    for (const link of validLinks) {
-                        // Check page count limit
-                        if (this.results.length >= this.options.maxPages!) {
-                            break;
-                        }
-                        await this.crawlRecursive(link, currentDepth + 1, signal);
-                    }
-                }
+                return [result];
             }
+            return [];
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') throw error;
-            console.error(`[Crawler] Error crawling ${url}:`, error instanceof Error ? error.message : String(error));
+            console.error(`[Crawler] Error fetching ${url}:`, error instanceof Error ? error.message : String(error));
+            return [];
         }
     }
 
@@ -275,15 +207,11 @@ export class UrlContentFetcher {
      * genuinely cannot represent (network exception); the outer
      * crawler logs and continues.
      */
-    private async fetchAndParse(url: string, depth: number, signal?: AbortSignal): Promise<WebPageContent | null> {
+    private async fetchAndParse(url: string, signal?: AbortSignal): Promise<WebPageContent | null> {
         try {
             const params: RequestUrlParam = {
                 url,
                 method: 'GET',
-                // Obsidian's requestUrl defaults to throwing on 4xx/5xx; opt out so
-                // we can attach the real HTTP status to the structured result and
-                // tell the model "this URL is not fetchable" instead of dropping
-                // the round-trip on the floor.
                 throw: false,
                 headers: {
                     "User-Agent": this.options.userAgent || getUserAgent(),
@@ -297,7 +225,6 @@ export class UrlContentFetcher {
             const httpStatus = response.status;
             const baseResult = {
                 url,
-                depth,
                 timestamp: new Date().toISOString(),
                 httpStatus,
             } as const;
@@ -311,7 +238,6 @@ export class UrlContentFetcher {
                     ...baseResult,
                     title: `HTTP ${httpStatus}`,
                     contents: [],
-                    links: [],
                     extractionStatus: 'http_error',
                     totalTextLength: 0,
                 };
@@ -325,7 +251,7 @@ export class UrlContentFetcher {
             // returns nothing we fall back to body text (covers pages
             // that don't expose recognisable region selectors but still
             // have readable content in nested wrappers).
-            let contents = this.extractContent($);
+            let contents = this.extractContent($, url);
             let totalTextLength = sumBlockText(contents);
 
             if (totalTextLength === 0) {
@@ -336,8 +262,6 @@ export class UrlContentFetcher {
                 }
             }
 
-            const links = this.extractLinks($, url);
-
             // Anti-bot challenge detection: short body + a known
             // challenge marker. We check this AFTER extraction so the
             // marker phrase has a chance to land in `contents`.
@@ -346,22 +270,18 @@ export class UrlContentFetcher {
                     ...baseResult,
                     title,
                     contents: [],
-                    links,
                     extractionStatus: 'anti_bot_challenge',
                     totalTextLength: 0,
                 };
             }
 
             // Empty / under-threshold extraction → mark as empty so the
-            // toolcall layer can convert it to a failure result. We still
-            // return whatever links we could parse, in case the caller
-            // can use them for a deeper crawl.
+            // toolcall layer can convert it to a failure result.
             if (totalTextLength < EMPTY_PAGE_THRESHOLD) {
                 return {
                     ...baseResult,
                     title,
                     contents,
-                    links,
                     extractionStatus: 'empty',
                     totalTextLength,
                 };
@@ -371,15 +291,13 @@ export class UrlContentFetcher {
                 ...baseResult,
                 title,
                 contents,
-                links,
                 extractionStatus: 'ok',
                 totalTextLength,
             };
         } catch (error) {
             // Preserve the original `DOMException` identity for aborts —
             // wrapping it into a plain `Error` would strip the `name`
-            // discriminator that `crawlRecursive` (and every higher
-            // layer up to the tool-exec catch) uses to distinguish
+            // discriminator that higher layers use to distinguish
             // user-initiated cancellation from a real network failure.
             // Without this re-throw, an abort during web_fetch_url would
             // be logged as a normal "Request failed" and silently turned
@@ -420,7 +338,7 @@ export class UrlContentFetcher {
     /**
      * Extract structured content from page
      */
-    private extractContent($: CheerioAPI) {
+    private extractContent($: CheerioAPI, baseUrl: string) {
         // Remove unnecessary elements
         $("script, style, noscript").remove();
 
@@ -446,7 +364,7 @@ export class UrlContentFetcher {
             const regionElement = $region.get(0) as Element | undefined;
             if (regionElement && processedElements.has(regionElement)) continue;
 
-            const blocks = this.extractBlocks($, $region, processedElements);
+            const blocks = this.extractBlocks($, $region, processedElements, baseUrl);
             if (blocks.length > 0) {
                 regions.push({
                     name,
@@ -458,7 +376,7 @@ export class UrlContentFetcher {
 
         // If no regions found, extract from body
         if (regions.length === 0) {
-            const blocks = this.extractBlocks($, $('body'), processedElements);
+            const blocks = this.extractBlocks($, $('body'), processedElements, baseUrl);
             if (blocks.length > 0) {
                 regions.push({
                     name: 'body',
@@ -477,7 +395,8 @@ export class UrlContentFetcher {
     private extractBlocks(
         $: CheerioAPI,
         $container: Cheerio<AnyNode>,
-        processedElements: Set<Element>
+        processedElements: Set<Element>,
+        baseUrl: string,
     ): ContentBlock[] {
         const blocks: ContentBlock[] = [];
 
@@ -490,7 +409,7 @@ export class UrlContentFetcher {
             const tagName = $el.prop('tagName')?.toLowerCase() || '';
 
             // Extract content based on tag type
-            const block = this.createBlock($, $el, tagName);
+            const block = this.createBlock($, $el, tagName, baseUrl);
             if (block) {
                 blocks.push(block);
             }
@@ -501,10 +420,22 @@ export class UrlContentFetcher {
     }
 
     /**
-     * Create a content block
+     * Create a content block. Links within the block are preserved as
+     * markdown [text](url) so the model can see them in context.
      */
-    private createBlock(_$: CheerioAPI, $el: Cheerio<AnyNode>, tagName: string): ContentBlock | null {
-        const text = $el.text().trim();
+    private createBlock($: CheerioAPI, $el: Cheerio<AnyNode>, tagName: string, baseUrl: string): ContentBlock | null {
+        // Handle div/span specially — only direct text nodes and direct
+        // <a> children (non-recursive) to avoid duplicating content from
+        // child blocks that are extracted separately.
+        if (tagName === 'div' || tagName === 'span') {
+            const directText = this.getDirectTextWithLinks($, $el, baseUrl);
+            if (directText.length >= 20) {
+                return { type: 'text', text: directText };
+            }
+            return null;
+        }
+
+        const text = this.getTextWithLinks($, $el, baseUrl);
 
         // Ignore empty or too short content
         if (!text || text.length < 5) return null;
@@ -535,21 +466,78 @@ export class UrlContentFetcher {
             return { type: 'code', text };
         }
 
-        // Handle div/span (need to check if there's enough direct text)
-        if (tagName === 'div' || tagName === 'span') {
-            // Get direct text nodes
-            const directText = $el.contents()
-                .filter((_, node) => isTextNode(node))
-                .text()
-                .trim();
-
-            // Only treat as text block when direct text is long enough
-            if (directText.length >= 20) {
-                return { type: 'text', text: directText };
-            }
-        }
-
         return null;
+    }
+
+    /**
+     * Extract text from an element, recursively converting <a> children
+     * to markdown [text](url) while preserving the rest of the structure.
+     * Relative URLs are resolved against `baseUrl`.
+     */
+    private getTextWithLinks($: CheerioAPI, $el: Cheerio<AnyNode>, baseUrl: string): string {
+        const parts: string[] = [];
+        $el.contents().each((_, node) => {
+            if (isTextNode(node)) {
+                parts.push(node.data || '');
+            } else {
+                const el = node as Element;
+                const childTag = el.tagName?.toLowerCase();
+                if (childTag === 'a') {
+                    const $a = $(el);
+                    const href = $a.attr('href') || '';
+                    const linkText = $a.text().trim();
+                    if (href && linkText) {
+                        try {
+                            const resolved = new URL(href, baseUrl).href;
+                            parts.push(`[${linkText}](${resolved})`);
+                        } catch {
+                            parts.push(`[${linkText}](${href})`);
+                        }
+                    } else if (linkText) {
+                        parts.push(linkText);
+                    }
+                } else {
+                    // Recurse into other inline elements
+                    parts.push(this.getTextWithLinks($, $(el), baseUrl));
+                }
+            }
+        });
+        return parts.join('');
+    }
+
+    /**
+     * Non-recursive variant of {@link getTextWithLinks}: only processes
+     * direct text-node and <a> children. Used for div/span wrappers to
+     * avoid pulling in text from child blocks that are already extracted
+     * separately.
+     */
+    private getDirectTextWithLinks($: CheerioAPI, $el: Cheerio<AnyNode>, baseUrl: string): string {
+        const parts: string[] = [];
+        $el.contents().each((_, node) => {
+            if (isTextNode(node)) {
+                parts.push(node.data || '');
+            } else {
+                const el = node as Element;
+                if (el.tagName?.toLowerCase() === 'a') {
+                    const $a = $(el);
+                    const href = $a.attr('href') || '';
+                    const linkText = $a.text().trim();
+                    if (href && linkText) {
+                        try {
+                            const resolved = new URL(href, baseUrl).href;
+                            parts.push(`[${linkText}](${resolved})`);
+                        } catch {
+                            parts.push(`[${linkText}](${href})`);
+                        }
+                    } else if (linkText) {
+                        parts.push(linkText);
+                    }
+                }
+                // Non-<a> element children are silently skipped (their
+                // content will be captured by their own createBlock calls).
+            }
+        });
+        return parts.join('').trim();
     }
 
     /**
@@ -573,121 +561,9 @@ export class UrlContentFetcher {
     }
 
     /**
-     * Extract links from page
-     */
-    private extractLinks($: CheerioAPI, baseUrl: string): string[] {
-        const links: string[] = [];
-        const seen = new Set<string>();
-
-        $("a[href]").each((_, el) => {
-            let href = $(el).attr("href");
-            if (!href) return;
-
-            try {
-                // Handle relative URLs
-                const absoluteUrl = new URL(href, baseUrl).href;
-                const normalized = this.normalizeUrl(absoluteUrl);
-
-                // Deduplicate
-                if (!seen.has(normalized)) {
-                    seen.add(normalized);
-                    links.push(normalized);
-                }
-            } catch {
-                // Ignore invalid URLs
-            }
-        });
-
-        return links;
-    }
-
-    /**
-     * Check if URL is a root URL (without path component)
-     * Example: https://www.example.com/ or https://www.example.com
-     */
-    private isRootUrl(url: string): boolean {
-        try {
-            const urlObj = new URL(url);
-            const path = urlObj.pathname;
-            // Root URL has path as '/' or empty
-            return path === '/' || path === '';
-        } catch {
-            return false;
-        }
-    }
-
-    /**
-     * Check if link is valid (should be crawled)
-     */
-    private isValidLink(url: string): boolean {
-        // Check if already visited
-        if (this.visitedUrls.has(url)) {
-            return false;
-        }
-
-        // Filter out root URLs (links without path component)
-        if (this.isRootUrl(url)) {
-            return false;
-        }
-
-        // Check exclusion patterns
-        if (this.shouldExclude(url)) {
-            return false;
-        }
-
-        // Check if same domain
-        if (this.options.sameDomain) {
-            try {
-                const urlObj = new URL(url);
-                if (urlObj.hostname !== this.baseDomain) {
-                    return false;
-                }
-            } catch {
-                return false;
-            }
-        }
-
-        // Check if valid web page URL
-        try {
-            const urlObj = new URL(url);
-            // Only allow http and https
-            if (!["http:", "https:"].includes(urlObj.protocol)) {
-                return false;
-            }
-            // Exclude common non-webpage resources
-            const ext = urlObj.pathname.split(".").pop()?.toLowerCase();
-            const excludedExtensions = ["pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "zip", "rar", "jpg", "jpeg", "png", "gif", "svg", "mp3", "mp4", "avi", "mov"];
-            if (ext && excludedExtensions.includes(ext)) {
-                return false;
-            }
-        } catch {
-            return false;
-        }
-
-        return true;
-    }
-
-    /**
-     * Check if URL should be excluded
-     */
-    private shouldExclude(url: string): boolean {
-        for (const pattern of this.options.excludePatterns!) {
-            try {
-                const regex = new RegExp(pattern, "i");
-                if (regex.test(url)) {
-                    return true;
-                }
-            } catch {
-                // Ignore invalid regex patterns
-            }
-        }
-        return false;
-    }
-
-    /**
      * Normalize URL. Thin instance wrapper around the module-level
-     * {@link normalizeUrl} so the toolcall layer and the crawler share
-     * one implementation; keeps the existing call sites unchanged.
+     * {@link normalizeUrl} so the toolcall layer and the fetcher share
+     * one implementation.
      */
     private normalizeUrl(url: string): string {
         return normalizeUrl(url);
