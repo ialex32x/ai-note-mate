@@ -65,8 +65,9 @@ function normaliseEdit(edit: unknown, index: number, totalLines: number): Normal
     const op = e["op"];
 
     if (op === "replace") {
-        const start = e["start_line"];
-        const end = e["end_line"];
+        // Accept common LLM aliases (start → start_line, end → end_line)
+        const start = e["start_line"] ?? e["start"];
+        const end = e["end_line"] ?? e["end"];
         const content = e["content"];
         if (typeof content !== "string") {
             return `edits[${index}] (replace): content must be a string.`;
@@ -332,17 +333,21 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                                             "'replace' rewrites/deletes a 1-based inclusive line range " +
                                             "(use start_line + end_line; pass content='' to delete). " +
                                             "'insert' inserts content BEFORE the given line (use the " +
-                                            "`line` field; line = totalLines + 1 appends at end of file).",
+                                            "`line` field; line = totalLines + 1 appends at end of file). " +
+                                            "NOTE: The field names are `start_line` and `end_line` with underscores — " +
+                                            "NOT `start` or `end`.",
                                     },
                                     start_line: {
                                         type: "number",
                                         description:
-                                            "[op=replace only] 1-based inclusive start of the range to replace.",
+                                            "[op=replace only] 1-based inclusive start of the range to replace. " +
+                                            "Field name is `start_line` (with underscore).",
                                     },
                                     end_line: {
                                         type: "number",
                                         description:
-                                            "[op=replace only] 1-based inclusive end of the range to replace.",
+                                            "[op=replace only] 1-based inclusive end of the range to replace. " +
+                                            "Field name is `end_line` (with underscore).",
                                     },
                                     line: {
                                         type: "number",
