@@ -754,6 +754,144 @@ describe('buildDelegatePayload (artifact promotion)', () => {
     });
 });
 
+// ─── buildDelegatePayload — text artifact promotion ───────
+//
+// When sub-agent text output is too large to inline (>32 KB), it is
+// promoted to the artifact store using the same three-bucket model as
+// structured handoff values. This replaces the old _summarizeResult
+// LLM summarisation path in SubAgent.
+
+describe('buildDelegatePayload (text artifact promotion)', () => {
+    function midSizeText(): string {
+        // ~50 KB — above inline cap (32 KB), below artifact cap (128 KB)
+        return 'T'.repeat(50_000);
+    }
+
+    function oversizeText(): string {
+        // ~150 KB — above artifact store's per-entry cap
+        return 'O'.repeat(150_000);
+    }
+
+    it('promotes oversized text to the artifact store when store is wired', () => {
+        const store: HandoffStore = new Map();
+        // Empty handoff store — the text is the only thing being promoted.
+        const text = midSizeText();
+        const artifactStore = new ArtifactStore();
+
+        const payload = buildDelegatePayload(text, store, 'test-agent', {
+            artifactStore,
+            delegateCallId: 'tc-text',
+        });
+
+        // text field should be replaced with a placeholder, not the full content.
+        expect(payload.text.length).toBeLessThan(text.length);
+        expect(payload.text).toContain('too large to inline');
+        expect(payload.text).toContain('recall_artifact');
+
+        // artifacts.text should carry the ArtifactRef.
+        expect(payload.artifacts).toBeDefined();
+        const ref = payload.artifacts!['text'];
+        expect(ref).toBeDefined();
+        expect(typeof ref.key).toBe('string');
+        expect(ref.key.length).toBeGreaterThan(0);
+        expect(ref.size).toBe(text.length);
+        expect(ref.reason).toBe('oversize');
+        expect(ref.preview).toBeDefined();
+
+        // The store actually holds the full text.
+        const got = artifactStore.get(ref.key);
+        expect(got.found).toBe(true);
+        if (got.found) {
+            expect(got.value).toBe(text);
+        }
+    });
+
+    it('drops oversized text to omitted with too_large_for_store flag when >128KB', () => {
+        const store: HandoffStore = new Map();
+        const text = oversizeText();
+        const artifactStore = new ArtifactStore();
+
+        const payload = buildDelegatePayload(text, store, 'big-agent', {
+            artifactStore,
+            delegateCallId: 'tc-huge-text',
+        });
+
+        // text should be replaced with a short placeholder.
+        expect(payload.text.length).toBeLessThan(200);
+        expect(payload.text).toContain('too large');
+        expect(payload.text).toContain('unrecoverable');
+
+        // No artifact entry for text (store rejected it).
+        expect(payload.artifacts?.['text']).toBeUndefined();
+
+        // Marked as omitted.
+        expect(payload.omitted).toBeDefined();
+        expect(payload.omitted!['text_omitted']).toBe(true);
+        expect(payload.omitted!['text_size']).toBe(text.length);
+        expect(payload.omitted!['text_too_large_for_store']).toBe(true);
+    });
+
+    it('leaves small text inlined (no store consumed)', () => {
+        const store: HandoffStore = new Map();
+        const text = 'Short result';
+        const artifactStore = new ArtifactStore();
+
+        const payload = buildDelegatePayload(text, store, 'agent', {
+            artifactStore,
+            delegateCallId: 'tc-short',
+        });
+
+        // Small text stays inlined as-is.
+        expect(payload.text).toBe('Short result');
+        expect(payload.artifacts).toBeUndefined();
+        expect(payload.omitted).toBeUndefined();
+        expect(artifactStore.stats().liveCount).toBe(0);
+    });
+
+    it('leaves text as-is when no artifact store is provided (legacy path)', () => {
+        const store: HandoffStore = new Map();
+        const text = midSizeText();
+
+        // No artifact store — back-compat: text is inlined as-is.
+        const payload = buildDelegatePayload(text, store, 'agent');
+
+        expect(payload.text).toBe(text);
+        expect(payload.artifacts).toBeUndefined();
+        expect(payload.omitted).toBeUndefined();
+    });
+
+    it('coexists with structured handoff artifacts in the same envelope', () => {
+        const store: HandoffStore = new Map();
+        store.set('result', { ok: true });  // small, inlines
+
+        const text = midSizeText();
+        const midValue = 'm'.repeat(50_000);
+        store.set('details', midValue);      // mid, promotes
+
+        const artifactStore = new ArtifactStore();
+        const payload = buildDelegatePayload(text, store, 'agent', {
+            artifactStore,
+            delegateCallId: 'tc-mixed-text',
+        });
+
+        // result inlines.
+        expect(payload.result).toEqual({ ok: true });
+
+        // text promoted to artifact.
+        expect(payload.artifacts!['text']).toBeDefined();
+        expect(payload.artifacts!['text'].reason).toBe('oversize');
+        expect(payload.text).not.toBe(text);
+
+        // details promoted to artifact.
+        expect(payload.artifacts!['details']).toBeDefined();
+        expect(payload.artifacts!['details'].reason).toBe('oversize');
+
+        // No cross-contamination.
+        expect(payload.artifacts!['result']).toBeUndefined();
+        expect(payload.omitted).toBeUndefined();
+    });
+});
+
 // ─── buildDelegatePayload — vault_inspector result schema ──
 //
 // The validator is wired into buildDelegatePayload behind an optional

@@ -94,14 +94,14 @@ describe('SubAgent', () => {
         expect(result.fullContent).toBe('Done with context');
     });
 
-    it('should truncate large results when exceeding resultMaxTokens', async () => {
-        const largeResponse = 'x'.repeat(50000); // Well above threshold to trigger truncation fallback
+    it('should return fullContent as summary regardless of resultMaxTokens (artifact promotion replaces summarization)', async () => {
+        const largeResponse = 'x'.repeat(50000);
         const config: SubAgentConfig = {
             name: 'large-result-agent',
             description: 'Large result agent',
             systemPrompt: 'You are a large result agent.',
             tools: [],
-            resultMaxTokens: 100, // Very low threshold to trigger summarization
+            resultMaxTokens: 100, // No longer triggers summarization — oversized text is handled by buildDelegatePayload
         };
 
         const agent = new SubAgent(config);
@@ -109,10 +109,10 @@ describe('SubAgent', () => {
             provider: createMockProvider(largeResponse) as any,
         });
 
-        // Summary should be shorter than full content
+        // Sub-agents no longer summarise/compress results.
+        // Oversized text is promoted to artifacts downstream by buildDelegatePayload.
         expect(result.fullContent).toBe(largeResponse);
-        expect(result.summary.length).toBeLessThan(result.fullContent.length);
-        expect(result.summary).toContain('Result');
+        expect(result.summary).toBe(largeResponse);
     });
 
     it('should return execution log after execution', async () => {

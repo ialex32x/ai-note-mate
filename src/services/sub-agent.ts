@@ -10,8 +10,8 @@
 
 import { ChatStream, ChatMessage, RegisteredTool, type ToolFilterOptions } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
-import { estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
-import { safeSliceHead, safeSliceTail, stripLoneSurrogates } from "../utils/string-safe";
+import { type ContextReduceOptions } from "./context-reducer";
+import { safeSliceHead, stripLoneSurrogates } from "../utils/string-safe";
 import { createHandoffTools, type HandoffStore } from "./tools/handoff-toolcall";
 
 // ─────────────────────────────────────────────
@@ -186,6 +186,7 @@ export class SubAgent {
             provider: LLMProvider;
             thinkingLevel?: ThinkingLevel;
             allowedCapabilities?: ToolCapability[];
+            /** Forwarded to ChatStream for context compression (unrelated to the removed result summarization). */
             summarizer?: MinimalModelConfig;
             embedding?: MinimalModelConfig;
             embeddingFilter?: ToolFilterOptions;
@@ -283,17 +284,14 @@ export class SubAgent {
         // (ChatStream.sessionTokenUsage is cumulative across reuses)
         const tokenBefore: TokenUsage = { ...chatStream.sessionTokenUsage };
 
-        // All post-prompt work (token accounting, optional LLM
-        // summarization of the result, handoff-store auto-fill) lives
-        // inside the `try` below so the `finally` can guarantee per-
+        // All post-prompt work (token accounting, handoff-store auto-fill)
+        // lives inside the `try` below so the `finally` can guarantee per-
         // execution state is cleared on every exit path — including
-        // when `_summarizeResult` propagates an AbortError or
-        // `chatStream.prompt` throws a non-Abort failure. Pre-existing
-        // behaviour leaked `_chatStream` / `_abortController` /
-        // `_currentExec*` on the throw path, which was harmless for
-        // most users (the next `execute()` overwrites them all) but
-        // tripped diagnostics that asserted clean idle state between
-        // dispatches.
+        // when `chatStream.prompt` throws. Pre-existing behaviour leaked
+        // `_chatStream` / `_abortController` / `_currentExec*` on the
+        // throw path, which was harmless for most users (the next
+        // `execute()` overwrites them all) but tripped diagnostics that
+        // asserted clean idle state between dispatches.
         try {
             try {
                 await chatStream.prompt(userMessage, {
@@ -341,25 +339,15 @@ export class SubAgent {
                 aborted,
             };
 
-            // Determine if result needs summarization
-            const resultMaxTokens = this._config.resultMaxTokens ?? 10000;
-            const estimatedTokens = estimateTokens(fullContent);
+            // Sub-agents no longer summarise/compress their results.
+            // Oversized text output is handled downstream by
+            // buildDelegatePayload, which promotes large text to the
+            // artifact store (same three-bucket model as structured values).
             let summary: string;
 
             if (aborted) {
-                // console.log(`[SubAgent:${this.name}] Aborted after ${endTime - startTime}ms, partial content: ${fullContent.length} chars`);
                 summary = `[Sub-agent "${this.name}" was aborted. Partial result: ${safeSliceHead(fullContent, 200)}...]`;
-            } else if (estimatedTokens > resultMaxTokens) {
-                // Result is too large — summarize via LLM if summarizer is available
-                // console.log(`[SubAgent:${this.name}] Result exceeds threshold (${estimatedTokens} tokens > ${resultMaxTokens}), attempting LLM summarization...`);
-                summary = await this._summarizeResult(
-                    fullContent,
-                    this._toolCallSummaries,
-                    options.summarizer,
-                    this._abortController?.signal,
-                );
             } else {
-                // console.log(`[SubAgent:${this.name}] Result within threshold (${estimatedTokens} tokens <= ${resultMaxTokens}), returning as-is`);
                 summary = fullContent;
             }
 
@@ -408,11 +396,11 @@ export class SubAgent {
             };
         } finally {
             // Per-dispatch cleanup runs on every exit — normal return,
-            // AbortError from `_summarizeResult`, or a non-Abort throw
-            // out of `chatStream.prompt`. `_reusableChatStream` is
-            // intentionally kept; only the per-execution references
-            // are cleared so the next dispatch starts with a clean
-            // slate. See `subAgent.abort()` for the cascading abort.
+            // AbortError, or a non-Abort throw out of `chatStream.prompt`.
+            // `_reusableChatStream` is intentionally kept; only the
+            // per-execution references are cleared so the next dispatch
+            // starts with a clean slate. See `subAgent.abort()` for the
+            // cascading abort.
             this._chatStream = null;
             this._abortController = null;
             this._currentExecIds = null;
@@ -427,13 +415,8 @@ export class SubAgent {
     /** Abort the current execution */
     abort(): void {
         // Abort both the inner ChatStream (so its in-flight provider /
-        // tool work unwinds) AND our own controller (so the
-        // post-prompt result-summarization step below can observe the
-        // same signal and bail out). Without aborting `_abortController`,
-        // a sub-agent that finished its main loop just before the user
-        // hit stop would still happily kick off `_summarizeResult` —
-        // potentially another 15–40 s of summarizer LLM work the user
-        // already implicitly cancelled.
+        // tool work unwinds) AND our own controller (so any post-prompt
+        // async work observes the same signal and bails out).
         this._chatStream?.abort();
         this._abortController?.abort();
     }
@@ -501,98 +484,6 @@ export class SubAgent {
             return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`result\` (plus extras: ${extras.join(', ')}) in the envelope.]`;
         }
         return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`extras\`: ${extras.join(', ')}.]`;
-    }
-
-    /**
-     * Summarize the sub-agent's result using LLM when available,
-     * falling back to structured truncation when no summarizer is configured.
-     */
-    private async _summarizeResult(
-        fullContent: string,
-        toolCalls: ToolCallSummary[],
-        summarizer?: MinimalModelConfig,
-        signal?: AbortSignal,
-    ): Promise<string> {
-        // Try LLM summarization first
-        if (summarizer) {
-            try {
-                const toolContext = toolCalls.length > 0
-                    ? `\n\nTools executed during this task:\n${toolCalls.map(tc => {
-                        const status = tc.success ? '✓' : '✗';
-                        return `  ${status} ${tc.toolName}(${safeSliceHead(JSON.stringify(tc.args), 120)})`;
-                    }).join('\n')}\n\n`
-                    : '';
-
-                const messages = [
-                    {
-                        role: 'system',
-                        content: `You are a result summarization assistant. Your task is to condense a sub-agent's execution result into a concise but complete summary that preserves ALL key information, data, and conclusions. Do NOT lose any important facts, numbers, file paths, or actionable details. Output ONLY the summary text.`,
-                    },
-                    {
-                        role: 'user',
-                        content: `Please summarize the following sub-agent result. Preserve all key information and conclusions.${toolContext}\n---\n${fullContent}`,
-                    },
-                ];
-
-                // console.log(`[SubAgent:${this.name}] Sending ${estimateTokens(fullContent)} tokens to LLM summarizer...`);
-                const llmSummary = await createChatCompletion(summarizer, messages, signal);
-
-                if (llmSummary && llmSummary.trim().length > 0) {
-                    // console.log(`[SubAgent:${this.name}] LLM summarization complete: ${estimateTokens(fullContent)} → ${estimateTokens(llmSummary)} tokens`);
-                    return llmSummary.trim();
-                }
-
-                console.warn(`[SubAgent:${this.name}] LLM summarizer returned empty result, falling back to truncation`);
-            } catch (err) {
-                // Propagate user-initiated aborts: the surrounding
-                // `execute()` flow expects AbortError to bubble up so
-                // the orchestrator can unwind cleanly. Without this
-                // re-throw we'd silently fall back to truncation and
-                // ship a "completed" sub-agent result for a turn the
-                // user already cancelled.
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
-                console.error(`[SubAgent:${this.name}] LLM summarization failed, falling back to truncation:`, err);
-            }
-        } else {
-            console.warn(`[SubAgent:${this.name}] No summarizer configured, falling back to truncation`);
-        }
-
-        // Fallback: structured truncation (preserves head + tail)
-        return this._truncateResult(fullContent, toolCalls);
-    }
-
-    /**
-     * Fallback truncation when LLM summarization is unavailable or fails.
-     * Preserves both the beginning and end of the content for better context.
-     */
-    private _truncateResult(fullContent: string, toolCalls: ToolCallSummary[]): string {
-        const parts: string[] = [];
-
-        // Add tool call summaries
-        if (toolCalls.length > 0) {
-            const toolSummary = toolCalls.map(tc => {
-                const status = tc.success ? '✓' : '✗';
-                return `  ${status} ${tc.toolName}: ${safeSliceHead(tc.resultPreview, 150)}`;
-            }).join('\n');
-            parts.push(`Tools executed:\n${toolSummary}`);
-        }
-
-        // Preserve head + tail for better context
-        const maxChars = 20000;
-        if (fullContent.length > maxChars) {
-            const headSize = Math.floor(maxChars * 0.7);
-            const tailSize = Math.floor(maxChars * 0.3);
-            parts.push(
-                `Result (truncated, original ${fullContent.length} chars):\n` +
-                `${safeSliceHead(fullContent, headSize)}\n` +
-                `\n... [${fullContent.length - headSize - tailSize} chars omitted] ...\n\n` +
-                `${safeSliceTail(fullContent, tailSize)}`
-            );
-        } else {
-            parts.push(`Result:\n${fullContent}`);
-        }
-
-        return parts.join('\n\n');
     }
 
     /**

@@ -309,6 +309,49 @@ export function buildDelegatePayload(
         omitted[`${key}_size`] = size;
     }
 
+    // Text overflow: promote the sub-agent's text reply to the artifact
+    // store when it's too large to inline. This replaces the old
+    // _summarizeResult LLM summarisation path in SubAgent — we keep the
+    // full text recoverable instead of throwing away information via a
+    // lossy extra LLM call.
+    if (text.length > HANDOFF_VALUE_MAX_BYTES) {
+        if (promotionEnabled && storeRef && callId) {
+            const putResult = storeRef.put(text, text.length);
+            if (putResult.stored) {
+                artifacts ??= {};
+                const agentLabel = agentName ? `"${agentName}"` : 'unknown';
+                artifacts["text"] = {
+                    key: putResult.key,
+                    size: text.length,
+                    preview: buildArtifactPreview(text),
+                    reason: "oversize",
+                };
+                payload.text =
+                    `[Sub-agent ${agentLabel} full response too large to inline ` +
+                    `(${text.length} chars). Stored as artifact "${putResult.key}". ` +
+                    `Use recall_artifact({key: "${putResult.key}"}) to retrieve. ` +
+                    `Preview available in artifacts.text.preview.]`;
+            } else if (putResult.reason === "too_large_for_store") {
+                omitted ??= {};
+                omitted["text_omitted"] = true;
+                omitted["text_size"] = text.length;
+                omitted["text_too_large_for_store"] = true;
+                const agentLabel = agentName ? `"${agentName}"` : 'unknown';
+                payload.text =
+                    `[Sub-agent ${agentLabel} response too large ` +
+                    `(${text.length} chars) — exceeds both inline and artifact ` +
+                    `store limits. Content is unrecoverable.]`;
+            }
+            // A future PutResult variant would land here — leave text as-is.
+        }
+        // When no artifact store is available, leave text as-is. The
+        // caller (SubAgent) no longer summarises, so the raw full content
+        // is inlined. This is acceptable because:
+        //   - In normal operation an artifact store is always wired
+        //   - When absent (legacy sessions, tests), the LLM's context
+        //     window absorbs it (same as pre-artifact behaviour)
+    }
+
     // Run the per-agent validator only when the result is actually
     // observable by the main agent — either inlined (bucket 1) or
     // recoverable via recall (bucket 2). When the result was dropped
