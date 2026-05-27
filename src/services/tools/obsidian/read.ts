@@ -351,15 +351,15 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "read_section",
                 description:
-                    "Read a single section of a markdown file by heading path. " +
+                    "Read a single section of a markdown file by heading_path. " +
                     "Use this AFTER get_metadata has revealed the heading outline " +
                     "to drill into a specific heading instead of pulling the whole file. " +
                     "The section spans from the matched heading line up to (but not including) " +
                     "the next heading at the same OR shallower level — i.e. nested subsections " +
                     "are included by default. Set include_subsections=false to stop at the very " +
                     "next heading of any level. Matching is exact (case-sensitive, trimmed). " +
-                    "If the heading path is ambiguous or missing, the tool returns an error " +
-                    "with concrete diagnostics so you can refine the path on the next call.",
+                    "If the heading_path is ambiguous or missing, the tool returns an error " +
+                    "with concrete diagnostics so you can refine the heading_path on the next call.",
                 parameters: {
                     type: "object",
                     properties: {
