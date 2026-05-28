@@ -298,6 +298,41 @@
     opacity: 1;
 }
 
+// External action bar — used by sub-agent / user messages where the toolbar
+// is rendered outside the bubble's padded border so the border-left accent
+// stripe doesn't clip the action buttons (sub-agent) or so the toolbar sits
+// cleanly below the bubble (user).
+.session-bubble__actions--external {
+    margin-top: @spacing-xs;
+    margin-bottom: 0;
+    max-width: @bubble-max-width;
+    opacity: 0;
+    transition: opacity @duration-normal ease;
+}
+
+// An external action bar that follows a right-aligned user bubble should
+// itself be right-aligned so it stays visually attached to the bubble.
+.session-bubble--user + .session-bubble__actions--external {
+    align-self: flex-end;
+}
+
+// Show the external action bar on hover of the immediately preceding bubble,
+// OR when the action bar itself is hovered. The sibling selector alone isn't
+// enough because the pointer crosses a narrow gap between the bubble and the
+// toolbar, causing a brief "hover off" that hides the buttons before they can
+// be clicked.
+.session-bubble--subagent:hover + .session-bubble__actions--external,
+.session-bubble--user:hover + .session-bubble__actions--external,
+.session-bubble__actions--external:hover {
+    opacity: 1;
+}
+
+// Keep the external action bar visible when the preceding bubble has its
+// actions pinned (e.g. while the voice dropdown is open)
+.session-bubble--actions-pinned + .session-bubble__actions--external {
+    opacity: 1;
+}
+
 .session-bubble__action-btn {
     .button-small();
     
@@ -386,5 +421,9 @@
     
     .session-bubble__actions {
         opacity: 1; // Always show actions on mobile for better UX
+    }
+
+    .session-bubble__actions--external {
+        opacity: 1; // Always show external actions on mobile
     }
 });

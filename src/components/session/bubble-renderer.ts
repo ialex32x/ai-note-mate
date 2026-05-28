@@ -18,11 +18,10 @@ import { renderUserContent } from '../bubble/user-content';
 import {
     attachImageContextMenu,
     attachLinkContextMenu,
-    attachUserBubbleContextMenu,
 } from '../bubble/context-menus';
 import { renderToolCallContent as renderToolCallContentImpl } from '../bubble/tool-call';
 import { SpeechController } from '../bubble/speech-controller';
-import { renderActionBar as renderActionBarImpl } from '../bubble/action-bar';
+import { renderActionBar as renderActionBarImpl, renderUserActionBar } from '../bubble/action-bar';
 
 /**
  * Message bubble renderer - handles rendering of all message types.
@@ -244,10 +243,31 @@ export class BubbleRenderer extends Component {
             bubble.addClass(`session-bubble--subagent-${msg.subAgent.agentName}`);
         }
 
+        // Remove any stale external action bar left from a previous render
+        // before the bubble is rebuilt (applies to sub-agent and user bubbles
+        // whose toolbars live outside the bubble border).
+        if (msg.subAgent || msg.role === 'user') {
+            const oldExternal = bubble.nextElementSibling;
+            if (oldExternal?.classList.contains('session-bubble__actions--external')) {
+                oldExternal.remove();
+            }
+        }
+
         // Clear existing content
         bubble.empty();
 
         this.renderBubbleContent(bubble, msg, options);
+
+        // For sub-agents, move the action bar outside the bubble border
+        // so the toolbar (copy/speak/insights) sits below the bubble rather
+        // than inside its padded area
+        if (msg.role === 'assistant' && msg.subAgent && msg.content.trim()) {
+            const actionsEl = bubble.querySelector(':scope > .session-bubble__actions');
+            if (actionsEl) {
+                actionsEl.classList.add('session-bubble__actions--external');
+                bubble.insertAdjacentElement('afterend', actionsEl);
+            }
+        }
     }
 
     /**
@@ -396,12 +416,22 @@ export class BubbleRenderer extends Component {
             }
         } else if (msg.role === 'user') {
             renderUserContent(this.ctx, contentEl, msg.content);
-            const branchHandler = this.onBranchFromMessage;
-            attachUserBubbleContextMenu(
+            // Render inline action bar (Copy + Branch) — replaces the
+            // previous right-click context menu so the same actions are
+            // discoverable on hover without a secondary gesture.
+            renderUserActionBar(
                 bubble,
-                msg.content,
-                branchHandler ? () => branchHandler(msg) : undefined,
+                msg,
+                this.onBranchFromMessage,
             );
+            // Move the user action bar outside the bubble border so it
+            // sits below the bubble rather than inside its padded area,
+            // matching the sub-agent toolbar behaviour.
+            const userActionsEl = bubble.querySelector(':scope > .session-bubble__actions');
+            if (userActionsEl) {
+                userActionsEl.classList.add('session-bubble__actions--external');
+                bubble.insertAdjacentElement('afterend', userActionsEl);
+            }
         } else {
             contentEl.setText(msg.content);
         }

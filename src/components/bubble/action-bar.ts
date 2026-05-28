@@ -6,6 +6,53 @@ import type { BubbleContext } from './bubble-context';
 import { SpeechController } from './speech-controller';
 
 /**
+ * Render a minimal action bar for a user message bubble.
+ *
+ * Provides Copy and (optionally) Branch-from-here actions — the two
+ * operations that were previously exposed only via right-click context menu.
+ * The bar uses the same hover-driven reveal pattern as the assistant
+ * action bar: hidden until the bubble is hovered.
+ *
+ * @param bubble    The user bubble element to append the action bar into.
+ * @param msg       The user message whose content is used for copy/branch.
+ * @param onBranch  Optional callback invoked when "Branch from here" is
+ *                  clicked. When omitted the button is not rendered.
+ */
+export function renderUserActionBar(
+    bubble: HTMLElement,
+    msg: ChatMessage,
+    onBranch?: (msg: ChatMessage) => void,
+): void {
+    const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
+
+    // Copy button — reuses createCopyButton for consistent flash-feedback
+    const copyBtn = createCopyButton(
+        t('common.copy'),
+        () => msg.content,
+        'session-icon-btn session-bubble__action-btn',
+    );
+    actions.appendChild(copyBtn);
+
+    // Branch button — only shown when the host has wired a branch handler
+    if (onBranch) {
+        const branchBtn = actions.createEl('button', {
+            cls: 'session-icon-btn session-bubble__action-btn',
+            attr: {
+                'aria-label': t('view.branchFromHere'),
+                type: 'button',
+            },
+        });
+        setIcon(branchBtn, 'git-branch');
+        setTooltip(branchBtn, t('view.branchFromHere'));
+        branchBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onBranch(msg);
+        });
+    }
+}
+
+/**
  * Options passed alongside the shared {@link BubbleContext} when rendering
  * an assistant action bar.
  *

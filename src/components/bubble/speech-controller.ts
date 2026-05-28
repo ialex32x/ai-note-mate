@@ -85,7 +85,17 @@ export class SpeechController {
 
         // Walk up to the enclosing bubble so we can pin the action bar
         // while the dropdown is open (see doc-comment above).
-        const findBubble = (): HTMLElement | null => actions.closest('.session-bubble');
+        // For external action bars (sub-agent messages), the bubble is the
+        // preceding sibling rather than an ancestor.
+        const findBubble = (): HTMLElement | null => {
+            const bubble = actions.closest('.session-bubble');
+            if (bubble) return bubble as HTMLElement;
+            if (actions.classList.contains('session-bubble__actions--external')) {
+                const prev = actions.previousElementSibling;
+                if (prev?.classList.contains('session-bubble')) return prev as HTMLElement;
+            }
+            return null;
+        };
 
         const populateVoiceDropdown = (): boolean => {
             if (!voiceDropdown) return false;
