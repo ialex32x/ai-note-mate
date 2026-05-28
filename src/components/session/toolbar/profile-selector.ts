@@ -53,7 +53,7 @@ export function createProfileSelector(
     const { button, textEl } = DropdownManager.createButton({
         parent: profileWrapper,
         cls: 'session-dropdown-btn',
-        ariaLabel: t('view.profile'),
+        ariaLabel: t('settings.profileSection'),
     });
     const profileBtnEl = button;
     const profileBtnTextEl = textEl;
@@ -75,7 +75,7 @@ export function createProfileSelector(
         const profilesHeader = profileDropdownEl.createEl('div', {
             cls: 'session-dropdown-section-header',
         });
-        profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.profiles') });
+        profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.profileSection') });
         appendSectionSettingsAction(profilesHeader, plugin, dropdownManager, PROFILE_SECTION_ID);
 
         // Effective insights extractor id: dedicated profile when set
@@ -126,7 +126,7 @@ export function createProfileSelector(
         const imageGenHeader = profileDropdownEl.createEl('div', {
             cls: 'session-dropdown-section-header',
         });
-        imageGenHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.imageGen') });
+        imageGenHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.imageGenSection') });
         appendSectionSettingsAction(imageGenHeader, plugin, dropdownManager, IMAGE_GEN_SECTION_ID);
 
         const imageGenConfigs = current.imageGenConfigs;
