@@ -140,6 +140,7 @@ export async function maybeGenerateSessionTitle(
             summarySource,
             1,
             signal,
+            true, // skipTrailingUserInstruction: fold instruction into system prompt
         );
         if (!generatedTitle) return;
         // Strip any markdown formatting the model may have emitted

@@ -2039,6 +2039,17 @@ export async function summarizeConversation(
     messages: HistoryMessage[],
     level: number = 1,
     signal?: AbortSignal,
+    /**
+     * When true, prepend the summarization instruction to the system
+     * prompt instead of appending it as a trailing user message. This
+     * avoids recency bias from an English trailing instruction in
+     * title-generation workflows (where the output language should
+     * match the conversation, not the instruction's language). Context
+     * summarization (the default false path) is deliberately left with
+     * the trailing-user-message behaviour to preserve existing
+     * semantics — internal summaries are not user-facing.
+     */
+    skipTrailingUserInstruction?: boolean,
 ): Promise<string | null> {
     let userInstruction: string;
 
@@ -2054,11 +2065,18 @@ export async function summarizeConversation(
     // causing the summary to lose all tool interaction context.
     const collapsedMessages = ContextReducer.collapseToolMessagesForSummary(messages);
 
-    // Build the summarizer request: system prompt + conversation to summarize
+    // Build the summarizer request: system prompt + conversation to summarize.
+    // When skipTrailingUserInstruction is true, the userInstruction is folded
+    // into the system prompt so the last message in the sequence is the
+    // conversation content (in the user's language), not an English instruction.
+    const effectiveSystemContent = skipTrailingUserInstruction
+        ? prompt.content + '\n\n' + userInstruction
+        : prompt.content;
+
     const summarizerMessages = [
-        { role: "system", content: prompt.content },
+        { role: "system", content: effectiveSystemContent },
         ...(collapsedMessages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))),
-        { role: "user", content: userInstruction },
+        ...(skipTrailingUserInstruction ? [] : [{ role: "user", content: userInstruction }]),
     ];
 
     try {

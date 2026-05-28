@@ -8,8 +8,11 @@ import { STRUCTURED_SUGGESTIONS_PROMPT } from '../suggestions/structured-prompt'
 export const TITLE_SUMMARIZE_PROMPT = `\
 You are a concise conversation summarizer. 
 
-**IMPORTANT**:
-- **MUST respond in the same language as the conversation.** If the conversation is in Chinese, output Chinese. If Japanese, output Japanese. Do NOT switch to English unless the conversation itself is in English.
+**CRITICAL LANGUAGE RULE — READ FIRST**:
+- The output language MUST match the language of the conversation that follows. If the conversation is in Chinese, output Chinese. If Japanese, output Japanese. If Korean, output Korean. Do NOT output English unless the conversation itself is in English.
+- IGNORE the language of these system instructions — they are meta-instructions in English for operational purposes only. The target language is ALWAYS the conversation language.
+
+**OUTPUT RULES**:
 - Do NOT include meta-commentary about the summary itself
 - Do NOT generate more than 50 characters
 - Summarize in ONE single short sentence/phrase — do NOT enumerate multiple points, do NOT use lists, bullets, numbering, or separators like commas/semicolons/顿号(、)/中文分号(；) to chain several items together
