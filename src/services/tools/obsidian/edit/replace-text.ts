@@ -674,7 +674,37 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            if (!Array.isArray(rawReplacements) || rawReplacements.length === 0) {
+            // LLMs sometimes incorrectly double-serialise complex nested arrays
+            // (e.g. `replacements: "[{...}, ...]"` instead of a native JSON
+            // array).  If we receive a string, try to JSON.parse it so the
+            // call can still succeed.
+            let replacements: unknown[];
+            if (typeof rawReplacements === "string") {
+                try {
+                    const parsed = JSON.parse(rawReplacements) as unknown;
+                    if (!Array.isArray(parsed)) {
+                        return {
+                            success: false,
+                            type: "text",
+                            content:
+                                "`replacements` arrived as a JSON string but did not parse as an array. " +
+                                "Pass a non-empty array of replacement objects.",
+                        };
+                    }
+                    replacements = parsed;
+                } catch {
+                    return {
+                        success: false,
+                        type: "text",
+                        content:
+                            "`replacements` must be a non-empty array, but received a string that is not valid JSON.",
+                    };
+                }
+            } else {
+                replacements = rawReplacements as unknown[];
+            }
+
+            if (!Array.isArray(replacements) || replacements.length === 0) {
                 return {
                     success: false,
                     type: "text",
@@ -707,8 +737,8 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
 
             // Validate every entry up-front so we never partially apply.
             const normalised: NormalisedEntry[] = [];
-            for (let i = 0; i < rawReplacements.length; i++) {
-                const result = normaliseReplacement(rawReplacements[i], i);
+            for (let i = 0; i < replacements.length; i++) {
+                const result = normaliseReplacement(replacements[i], i);
                 if (typeof result === "string") {
                     return { success: false, type: "text", content: result };
                 }
