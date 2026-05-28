@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.1
+
+### What's new
+
+- **Tag tools split into add / remove / set** — The single `edit_files_tags` tool is now three focused tools: `add_files_tags`, `remove_files_tags`, and `set_files_tags`. Each does one thing well, reducing ambiguity when the model wants to tweak tags without replacing the whole list.
+- **Display names in file reference chips** — File chips in the chat now show a display name (the note title) alongside the path, making them easier to scan at a glance.
+- **Pending checkpoint badge** — The session switcher button now shows a badge when the current session has un-reviewed checkpoints, so you won't miss a pending edit review.
+- **Artifact promotion for oversized sub-agent results** — When a sub-agent returns text too large to inline in the conversation, it is automatically promoted to the artifact store for persistent access across reloads.
+- **Handoff keys enforced** — Sub-agent handoff now requires explicit key–value pairs rather than freeform prose, preventing the model from burying structured data in natural-language descriptions.
+- **Image generation onboarding tip** — A new tip surfaces when an image-generation profile is configured and the active note has no images.
+
+### Refinements
+
+- **Settings restructured** — The MCP section is renamed to **Tools** and now hosts both MCP servers and the web upload toggle. Tool-related settings that were scattered across other sections are consolidated here. The skill modal is extracted into its own dedicated component.
+- **Web fetcher streamlined** — The `web_fetch` tool now returns a cleaner single-page view with inline links instead of a multi-section dump.
+- **Edit history polish** — Template preview is now available in the edit history view, and the overall layout is simplified for easier scanning.
+- **Session status relocated** — The "Compressing context…" label now lives in the model's thinking row instead of the header, reducing visual noise.
+
+### Fixes
+
+- **Session title language** — Auto-generated titles no longer default to English when the conversation is in another language. The title prompt now enforces the same language as the user's messages.
+- **Title generation timing** — Titles are now generated after the first user message rather than mid-stream, avoiding early guesses based on incomplete context.
+- **Insights button hidden during streaming** — The **Extract insights** button no longer appears while the assistant is still generating a reply, preventing accidental clicks on stale context.
+- **File reference chip icon** — The "add file reference" chip now uses a bracket icon (`[]`) instead of the previous ambiguous symbol.
+- **`replace` operation aliases** — The `start` / `end` parameter names are now accepted as aliases in `edit_lines`, so the model's natural tendency to use these terms no longer causes failures.
+
+---
+
 ## 1.3.0
 
 ### What's new
