@@ -2,10 +2,8 @@ import { Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { isActiveImageGenConfigured } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
+import { IMAGE_GEN_SECTION_ID } from '../../../settings/section-ids';
 import type { TipDefinition } from '../types';
-
-/** Anchor id of the Image section in the plugin settings tab. */
-const IMAGE_GEN_SECTION_ID = 'settings.imageGenSection';
 
 /**
  * Onboarding tip: guide the user to set up an image generation provider

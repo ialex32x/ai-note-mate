@@ -1,15 +1,8 @@
 import { Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
+import { EMBEDDING_SECTION_ID } from '../../../settings/section-ids';
 import type { TipContext, TipDefinition } from '../types';
-
-/**
- * Anchor id of the Embedding section in the plugin settings tab. Must
- * match the section's `titleKey` (see EmbeddingSettingsSection).
- * Hard-coded rather than imported from the section to keep the tip
- * layer free of UI-layer dependencies.
- */
-const EMBEDDING_SECTION_ID = 'settings.embeddingSection';
 
 /**
  * True when embedding-based tool filtering can already kick in for the

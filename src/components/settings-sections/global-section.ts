@@ -12,13 +12,7 @@ import {
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { openPluginSettings } from "../../utils/open-plugin-settings";
-
-/** Section anchor id for the Profile (Text Generation) section. */
-const PROFILE_SECTION_ID = 'settings.profileSection';
-/** Section anchor id for the Embedding section. */
-const EMBEDDING_SECTION_ID = 'settings.embeddingSection';
-/** Section anchor id for the Image Gen section. */
-const IMAGE_GEN_SECTION_ID = 'settings.imageGenSection';
+import { PROFILE_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID } from "../../settings/section-ids";
 
 export class GlobalSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.globalSection';

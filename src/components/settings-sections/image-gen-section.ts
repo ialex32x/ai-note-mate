@@ -11,9 +11,10 @@ import {
 	createTextField,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
+import { IMAGE_GEN_SECTION_ID } from "../../settings/section-ids";
 
 export class ImageGenSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.imageGenSection';
+	readonly titleKey = IMAGE_GEN_SECTION_ID;
 
 	private editingImageGenId: string | null = null;
 

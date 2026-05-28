@@ -2,10 +2,8 @@ import { Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { isActiveProfileConfigured } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
+import { PROFILE_SECTION_ID } from '../../../settings/section-ids';
 import type { TipContext, TipDefinition } from '../types';
-
-/** Anchor id of the Profile section in the plugin settings tab. */
-const PROFILE_SECTION_ID = 'settings.profileSection';
 
 function isProfileUsable(ctx: TipContext): boolean {
     return isActiveProfileConfigured(ctx.plugin.app, ctx.plugin.settings);

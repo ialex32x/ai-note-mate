@@ -18,6 +18,7 @@ import {
 	markSettingAdvanced,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
+import { TOOLS_SECTION_ID } from "../../settings/section-ids";
 
 /**
  * Label / description i18n keys for each capability in the tools settings UI.
@@ -83,7 +84,7 @@ function applyStatusToTabDot(dot: HTMLElement, state: MCPServerState | undefined
 }
 
 export class ToolsSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.toolsSection';
+	readonly titleKey = TOOLS_SECTION_ID;
 
 	/** ID of the server currently being edited in the tab bar. */
 	private editingServerId: string | null = null;

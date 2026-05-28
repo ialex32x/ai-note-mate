@@ -14,9 +14,10 @@ import {
 	createToggleField,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
+import { EMBEDDING_SECTION_ID } from "../../settings/section-ids";
 
 export class EmbeddingSettingsSection implements SettingsSection {
-	readonly titleKey = 'settings.embeddingSection';
+	readonly titleKey = EMBEDDING_SECTION_ID;
 
 	private editingEmbeddingId: string | null = null;
 

@@ -3,16 +3,13 @@ import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
 import { getActiveProfile } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
+import { PROFILE_SECTION_ID, IMAGE_GEN_SECTION_ID } from '../../../settings/section-ids';
 import type NoteAssistantPlugin from 'main';
 
 export interface ProfileSelectorHandle {
     /** Remove settings-change subscription. Called from SessionView.onClose. */
     dispose(): void;
 }
-
-/** Anchor ids of the settings sections the section-header gear icons jump to. */
-const PROFILE_SECTION_ID = 'settings.profileSection';
-const IMAGE_GEN_SECTION_ID = 'settings.imageGenSection';
 
 /**
  * Append a small gear button to a section header inside the profile

@@ -2,10 +2,8 @@ import { Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { hasMcpServersConfigured } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
+import { TOOLS_SECTION_ID } from '../../../settings/section-ids';
 import type { TipDefinition } from '../types';
-
-/** Anchor id of the Tools section in the plugin settings tab. */
-const TOOLS_SECTION_ID = 'settings.toolsSection';
 
 /**
  * Onboarding tip: guide the user to add MCP servers so external tools
