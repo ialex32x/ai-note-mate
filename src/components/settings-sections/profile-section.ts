@@ -9,7 +9,7 @@ import {
 	type ThinkingLevel,
 } from "../../services/llm-provider";
 import { createDefaultProfile, generateId } from "../../settings/defaults";
-import type { ProviderProfile } from "../../settings/types";
+import type { TextGenConfig } from "../../settings/types";
 import {
 	createSettingsGroupHeading,
 	createApiKeyField,
@@ -197,7 +197,7 @@ export class ProfileSettingsSection implements SettingsSection {
 			},
 			addTooltip: t('settings.addProfile'),
 			onDuplicate: async () => {
-				const newProfile: ProviderProfile = {
+				const newProfile: TextGenConfig = {
 					...editingProfile,
 					id: generateId(),
 					name: `${editingProfile.name} (copy)`,
@@ -279,7 +279,7 @@ export class ProfileSettingsSection implements SettingsSection {
 
 	private renderProfileEditor(
 		container: HTMLElement,
-		profile: ProviderProfile,
+		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
 		refreshDropdown: () => void,
 	): void {
@@ -458,7 +458,7 @@ export class ProfileSettingsSection implements SettingsSection {
 
 	private renderOpenAIProfileFields(
 		container: HTMLElement,
-		profile: ProviderProfile,
+		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
 		refreshDropdown: () => void,
 	): void {
@@ -496,7 +496,7 @@ export class ProfileSettingsSection implements SettingsSection {
 
 	private renderGeminiProfileFields(
 		container: HTMLElement,
-		profile: ProviderProfile,
+		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
 		refreshDropdown: () => void,
 	): void {
@@ -526,7 +526,7 @@ export class ProfileSettingsSection implements SettingsSection {
 	 */
 	private renderModelField(
 		container: HTMLElement,
-		profile: ProviderProfile,
+		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
 		refreshDropdown: () => void,
 		modelPlaceholder?: string,
@@ -556,6 +556,6 @@ export class ProfileSettingsSection implements SettingsSection {
 }
 
 /** Build a display label for a profile (name + provider/model). */
-function getProfileLabel(p: ProviderProfile): string {
+function getProfileLabel(p: TextGenConfig): string {
 	return `${p.name} (${p.provider === 'gemini' ? 'Gemini' : p.model})`;
 }

@@ -6,7 +6,7 @@ import type {
 	EmbeddingConfig,
 	ImageGenConfig,
 	NoteAssistantPluginSettings,
-	ProviderProfile,
+	TextGenConfig,
 	UploadConfig,
 } from "./types";
 
@@ -31,7 +31,7 @@ export function hasMcpServersConfigured(settings: NoteAssistantPluginSettings): 
 }
 
 /** Helper: get the currently active profile from settings (with fallback) */
-export function getActiveProfile(settings: NoteAssistantPluginSettings): ProviderProfile {
+export function getActiveProfile(settings: NoteAssistantPluginSettings): TextGenConfig {
 	const profile = settings.profiles.find(p => p.id === settings.activeProfileId);
 	if (profile) return profile;
 	// Fallback to the first profile
@@ -40,7 +40,7 @@ export function getActiveProfile(settings: NoteAssistantPluginSettings): Provide
 	return createDefaultProfile();
 }
 
-export function getSummarizerProfile(settings: NoteAssistantPluginSettings): ProviderProfile {
+export function getSummarizerProfile(settings: NoteAssistantPluginSettings): TextGenConfig {
 	const profile = settings.profiles.find(p => p.id === settings.summarizerProfileId);
 	if (profile) return profile;
 	// Fallback to the first profile
@@ -50,7 +50,7 @@ export function getSummarizerProfile(settings: NoteAssistantPluginSettings): Pro
 }
 
 /** Profile dedicated to insight extraction, when configured. */
-export function getInsightsProfile(settings: NoteAssistantPluginSettings): ProviderProfile {
+export function getInsightsProfile(settings: NoteAssistantPluginSettings): TextGenConfig {
 	const profile = settings.profiles.find(p => p.id === settings.insightsProfileId);
 	if (profile) return profile;
 	if (settings.profiles.length > 0) return settings.profiles[0]!;

@@ -8,7 +8,7 @@ export const DefaultGeminiImageModel = "gemini-3-pro-image-preview";
 // Provider Profile
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface ProviderProfile {
+export interface TextGenConfig {
 	/** Unique ID (auto-generated) */
 	id: string;
 	/** Display name for this profile */
@@ -140,7 +140,7 @@ export interface UploadConfig {
 
 export interface NoteAssistantPluginSettings {
 	/** Saved provider profiles */
-	profiles: ProviderProfile[];
+	profiles: TextGenConfig[];
 	/** ID of the currently active profile */
 	activeProfileId: string;
 	/** ID of the current profile used as context summarizer (usually the one with lower token cost) */

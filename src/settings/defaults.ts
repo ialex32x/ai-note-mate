@@ -3,7 +3,7 @@ import type {
 	EmbeddingConfig,
 	ImageGenConfig,
 	NoteAssistantPluginSettings,
-	ProviderProfile,
+	TextGenConfig,
 	UploadConfig,
 } from "./types";
 import { ALL_TOOL_CAPABILITIES } from "../services/llm-provider";
@@ -109,7 +109,7 @@ export function generateId(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-export function createDefaultProfile(): ProviderProfile {
+export function createDefaultProfile(): TextGenConfig {
 	return {
 		id: generateId(),
 		name: 'DeepSeek',

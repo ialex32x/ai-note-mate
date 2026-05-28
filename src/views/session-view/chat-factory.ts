@@ -2,7 +2,7 @@ import type NoteAssistantPlugin from 'main';
 import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type ToolFilterOptions } from '../../services/chat-stream';
 import { AgentOrchestrator } from '../../services/agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../../settings';
-import type { ProviderProfile } from '../../settings/types';
+import type { TextGenConfig } from '../../settings/types';
 import {
     DEFAULT_TOOL_FILTER_TOP_K,
     DEFAULT_SKILL_FILTER_TOP_K,
@@ -34,7 +34,7 @@ import { resolveSecret } from 'utils/secret-helper';
 
 function createModelConfigFromProfile(
     plugin: NoteAssistantPlugin,
-    profile: ProviderProfile,
+    profile: TextGenConfig,
 ): MinimalModelConfig | undefined {
     const apiKey = resolveSecret(plugin.app, profile.apiKey);
     if (!apiKey) return undefined;
