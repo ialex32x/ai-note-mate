@@ -1,6 +1,7 @@
-import { setIcon } from 'obsidian';
+import { setIcon, setTooltip } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
+import { copyToClipboard } from '../../utils/clipboard';
 
 /**
  * Sub-agent presentation helpers.
@@ -273,11 +274,34 @@ function renderDelegateInputsCollapsible(
     } catch {
         json = '<unrenderable handoff seed>';
     }
-    const body = wrapper.createEl('pre', {
+
+    const codeWrap = wrapper.createEl('div', {
+        cls: 'session-bubble__delegate-inputs-code-wrap',
+    });
+    const body = codeWrap.createEl('pre', {
         cls: previouslyExpanded
             ? 'session-bubble__delegate-inputs-body session-bubble__delegate-inputs-body--expanded'
             : 'session-bubble__delegate-inputs-body',
         text: json,
+    });
+
+    // Copy button (same visual treatment as tool-call copy buttons)
+    const copyBtn = codeWrap.createEl('button', {
+        cls: 'session-bubble__tool-section-copy-btn',
+        attr: { type: 'button', 'aria-label': t('view.copyHandoffArgs') },
+    });
+    setIcon(copyBtn, 'copy');
+    setTooltip(copyBtn, t('view.copyHandoffArgs'));
+    const handleCopy = async (): Promise<void> => {
+        const ok = await copyToClipboard(json, { showNotice: false });
+        if (!ok) return;
+        setIcon(copyBtn, 'check');
+        window.setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
+    };
+    copyBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        void handleCopy();
     });
 
     const toggle = () => {

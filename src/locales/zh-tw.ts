@@ -53,6 +53,7 @@ export const zhTW: Record<string, string> = {
 	'view.remove': '移除',
 	'view.copyToolArgs': '複製參數',
 	'view.copyToolResult': '複製結果',
+	'view.copyHandoffArgs': '複製參數',
 	'view.continueAfterError': '繼續',
 	'view.copied': '已複製到剪貼簿',
 	'view.openInBrowser': '在瀏覽器中開啟',

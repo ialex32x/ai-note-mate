@@ -645,6 +645,17 @@
     display: block;
 }
 
+// Wrapper for the JSON code block — enables the absolute-positioned copy
+// button in the top-right corner (same pattern as .session-bubble__tool-code-wrap).
+.session-bubble__delegate-inputs-code-wrap {
+    position: relative;
+
+    &:hover .session-bubble__tool-section-copy-btn,
+    .session-bubble__tool-section-copy-btn:focus-visible {
+        opacity: 1;
+    }
+}
+
 // Override Obsidian's markdown preview styles
 .session-bubble__content {
     .markdown-preview-view,

@@ -53,6 +53,7 @@ export const en: Record<string, string> = {
 	'view.remove': 'Remove',
 	'view.copyToolArgs': 'Copy arguments',
 	'view.copyToolResult': 'Copy result',
+	'view.copyHandoffArgs': 'Copy arguments',
 	'view.continueAfterError': 'Continue',
 	'view.copied': 'Copied to clipboard',
 	'view.openInBrowser': 'Open in browser',
