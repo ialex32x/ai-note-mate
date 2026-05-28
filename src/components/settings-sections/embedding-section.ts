@@ -1,4 +1,3 @@
-import { DropdownComponent, Setting } from "obsidian";
 import { t } from "../../i18n";
 import type { EmbeddingProviderType } from "../../services/providers";
 import {
@@ -13,8 +12,6 @@ import {
 	createTabBar,
 	createTextField,
 	createToggleField,
-	refreshDropdownOptions,
-	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -26,7 +23,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin, refreshSection, containerEl } = this.ctx;
+		const { plugin, refreshAll, refreshSection } = this.ctx;
 		const embeddingConfigs = plugin.settings.embeddingConfigs;
 
 		// Embedding enabled toggle. Marked experimental at the master switch
@@ -98,27 +95,6 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		// a threshold and re-running the tester gives immediate
 		// feedback on the new value's effect.
 
-		// ── Active embedding selector ──
-		let activeEmbeddingDropdown: DropdownComponent;
-		{
-			new Setting(container)
-				.setName(t('settings.embeddingConfig'))
-				.setDesc(t('settings.embeddingConfigDesc'))
-				.addDropdown((dropdown: DropdownComponent) => {
-					activeEmbeddingDropdown = dropdown;
-					for (const c of embeddingConfigs) {
-						dropdown.addOption(c.id, c.name || 'Unnamed');
-					}
-					dropdown.setValue(plugin.settings.activeEmbeddingId);
-					dropdown.onChange(async (value: string) => {
-						plugin.settings.activeEmbeddingId = value;
-						await plugin.saveSettings();
-						refreshSection(this);
-						scrollActiveTabIntoView(containerEl, '.oap-embedding-tabs .oap-profile-tabs__scroll');
-					});
-				});
-		}
-
 		// ── Embedding tab bar ──
 		if (embeddingConfigs.length > 0) {
 			const editingId = this.getEditingEmbeddingId();
@@ -167,18 +143,12 @@ export class EmbeddingSettingsSection implements SettingsSection {
 				disableDelete: embeddingConfigs.length <= 1,
 			});
 
-			// Helper: refresh active embedding dropdown
-			const refreshActiveEmbeddingDropdown = () => {
-				if (activeEmbeddingDropdown == null) return;
-				refreshDropdownOptions(activeEmbeddingDropdown, embeddingConfigs);
-			};
-
 			// ── Embedding config editor ──
 			this.renderEmbeddingEditor(
 				container,
 				editingEmbedding,
 				tabBarResult.refreshTabLabel,
-				refreshActiveEmbeddingDropdown,
+				() => refreshAll(),
 			);
 		}
 	}

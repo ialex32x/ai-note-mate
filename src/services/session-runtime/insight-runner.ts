@@ -24,7 +24,8 @@ import type { SessionRuntime } from './session-runtime';
  * Silent on missing insights profile / disabled feature / too-short reply —
  * the auto path never surfaces Notices to the user. The manual path
  * ({@link extractInsightsForMessage}) is responsible for visible
- * feedback when it can't proceed.
+ * feedback when it can't proceed. When `insightsProfileId` is empty,
+ * insight extraction is disabled.
  */
 export async function maybeExtractInsightsAfterFinish(
     plugin: NoteAssistantPlugin,
@@ -50,8 +51,8 @@ export async function maybeExtractInsightsAfterFinish(
  * Manual extraction path: called from the per-bubble "Extract insights"
  * action. Unlike {@link maybeExtractInsightsAfterFinish} this bypasses
  * the `insightExtractionEnabled` toggle and the minimum reply length —
- * it is an explicit user gesture and should always proceed when there
- * is an insights profile (or summarizer fallback) to call.
+ * it is an explicit user gesture and should always proceed when an
+ * insights profile is configured.
  *
  * Caller (the view) is responsible for surfacing the "no profile"
  * Notice when {@link createInsightsConfig} returns undefined. This

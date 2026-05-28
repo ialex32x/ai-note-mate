@@ -1,4 +1,4 @@
-import { DropdownComponent, Setting } from "obsidian";
+import { Setting } from "obsidian";
 import { t } from "../../i18n";
 import type { LLMProviderType } from "../../services/providers";
 import { createLLMProvider } from "../../services/providers";
@@ -18,10 +18,9 @@ import {
 	createTabBar,
 	createTextField,
 	createToggleField,
-	refreshDropdownOptions,
-	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
+import { getProfileLabel } from "./global-section";
 import { resolveSecret } from "../../utils/secret-helper";
 
 export class ProfileSettingsSection implements SettingsSection {
@@ -32,7 +31,7 @@ export class ProfileSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin, refreshSection, containerEl } = this.ctx;
+		const { plugin, refreshAll, refreshSection } = this.ctx;
 		const profiles = plugin.settings.profiles;
 
 		// Determine which profile is being edited
@@ -42,77 +41,9 @@ export class ProfileSettingsSection implements SettingsSection {
 			this.editingProfileId = editingProfile.id;
 		}
 
-		// ── Active profile selector ──
-		let activeProfileDropdown: DropdownComponent;
-		{
-			new Setting(container)
-				.setName(t('settings.profile'))
-				.setDesc(t('settings.profileDesc'))
-				.addDropdown((dropdown: DropdownComponent) => {
-					activeProfileDropdown = dropdown;
-					for (const p of profiles) {
-						dropdown.addOption(p.id, getProfileLabel(p));
-					}
-					dropdown.setValue(plugin.settings.activeProfileId);
-					dropdown.onChange(async (value: string) => {
-						plugin.settings.activeProfileId = value;
-						await plugin.saveSettings();
-						refreshSection(this);
-						scrollActiveTabIntoView(containerEl, '.oap-profile-tabs__scroll');
-					});
-				});
-		}
-
-		// ── Summarizer profile selector (shares profile list, kept together with active selector) ──
-		let summarizerDropdown: DropdownComponent;
-		{
-			new Setting(container)
-				.setName(t('settings.summarizer'))
-				.setDesc(t('settings.summarizerDesc'))
-				.addDropdown((dropdown: DropdownComponent) => {
-					summarizerDropdown = dropdown;
-					for (const p of profiles) {
-						dropdown.addOption(p.id, getProfileLabel(p));
-					}
-					const summarizerId = plugin.settings.summarizerProfileId
-						&& profiles.some(p => p.id === plugin.settings.summarizerProfileId)
-						? plugin.settings.summarizerProfileId
-						: plugin.settings.activeProfileId;
-					dropdown.setValue(summarizerId);
-					dropdown.onChange(async (value: string) => {
-						plugin.settings.summarizerProfileId = value;
-						await plugin.saveSettings();
-					});
-				});
-		}
-
 		createSettingsGroupHeading(container, {
 			name: t('settings.followUpSection'),
 		});
-
-		// ── Insights profile selector (below summarizer; empty = same as summarizer) ──
-		let insightsDropdown: DropdownComponent;
-		{
-			new Setting(container)
-				.setName(t('settings.insightsProfile'))
-				.setDesc(t('settings.insightsProfileDesc'))
-				.addDropdown((dropdown: DropdownComponent) => {
-					insightsDropdown = dropdown;
-					dropdown.addOption('', t('settings.insightsProfileSameAsSummarizer'));
-					for (const p of profiles) {
-						dropdown.addOption(p.id, getProfileLabel(p));
-					}
-					const dedicatedId = plugin.settings.insightsProfileId;
-					const value = dedicatedId && profiles.some(p => p.id === dedicatedId)
-						? dedicatedId
-						: '';
-					dropdown.setValue(value);
-					dropdown.onChange(async (value: string) => {
-						plugin.settings.insightsProfileId = value;
-						await plugin.saveSettings();
-					});
-				});
-		}
 
 		createToggleField({
 			container,
@@ -231,37 +162,12 @@ export class ProfileSettingsSection implements SettingsSection {
 			disableDelete: profiles.length <= 1,
 		});
 
-		// Helper: refresh profile-list dropdowns in-place (active + summarizer + insights)
-		const refreshProfileDropdowns = () => {
-			if (activeProfileDropdown != null) {
-				refreshDropdownOptions(activeProfileDropdown, profiles, getProfileLabel);
-			}
-			if (summarizerDropdown != null) {
-				refreshDropdownOptions(summarizerDropdown, profiles, getProfileLabel);
-			}
-			if (insightsDropdown != null) {
-				const dedicatedId = plugin.settings.insightsProfileId;
-				const value = dedicatedId && profiles.some(p => p.id === dedicatedId)
-					? dedicatedId
-					: '';
-				const selectEl = insightsDropdown.selectEl;
-				selectEl.empty();
-				const sameOpt = selectEl.createEl('option', { text: t('settings.insightsProfileSameAsSummarizer') });
-				sameOpt.value = '';
-				for (const p of profiles) {
-					const opt = selectEl.createEl('option', { text: getProfileLabel(p) });
-					opt.value = p.id;
-				}
-				insightsDropdown.setValue(value);
-			}
-		};
-
 		// ── Profile editor fields ──
 		this.renderProfileEditor(
 			container,
 			editingProfile,
 			tabBarResult.refreshTabLabel,
-			refreshProfileDropdowns,
+			() => refreshAll(),
 		);
 	}
 
@@ -553,9 +459,4 @@ export class ProfileSettingsSection implements SettingsSection {
 			},
 		});
 	}
-}
-
-/** Build a display label for a profile (name + provider/model). */
-function getProfileLabel(p: TextGenConfig): string {
-	return `${p.name} (${p.provider === 'gemini' ? 'Gemini' : p.model})`;
 }

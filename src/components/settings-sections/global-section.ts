@@ -1,14 +1,24 @@
-import { Notice, Setting } from "obsidian";
+import { DropdownComponent, Notice, Setting } from "obsidian";
 import { t } from "../../i18n";
+import type { TextGenConfig } from "../../settings/types";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
 import { TemplatePreviewModal } from "../../modals/template-preview-modal";
 import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
+	markSettingExperimental,
 	markSettingRequiresSessionRestart,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
+import { openPluginSettings } from "../../utils/open-plugin-settings";
+
+/** Section anchor id for the Profile (Text Generation) section. */
+const PROFILE_SECTION_ID = 'settings.profileSection';
+/** Section anchor id for the Embedding section. */
+const EMBEDDING_SECTION_ID = 'settings.embeddingSection';
+/** Section anchor id for the Image Gen section. */
+const IMAGE_GEN_SECTION_ID = 'settings.imageGenSection';
 
 export class GlobalSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.globalSection';
@@ -44,6 +54,17 @@ export class GlobalSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
+
+		// ── Active config selectors ─────────────────────────────────
+		// These selectors determine which profile/config is actively used
+		// across the plugin. They are placed in General so users can see
+		// the key active choices at a glance without scrolling.
+		this.renderActiveProfileSelector(container);
+		this.renderSummarizerSelector(container);
+		this.renderInsightsProfileSelector(container);
+		this.renderActiveEmbeddingSelector(container);
+		this.renderActiveImageGenSelector(container);
+		this.renderActiveUploadSelector(container);
 
 		// Reset usage tips (action-only row, not a real config value).
 		// Clearing `knownTipIds` makes every previously-dismissed/run tip
@@ -175,4 +196,168 @@ export class GlobalSettingsSection implements SettingsSection {
 
 		markSettingRequiresSessionRestart(setting);
 	}
+
+	// ── Active config selectors ─────────────────────────────────────
+
+	/**
+	 * Add a jump-to-section button to a Setting row.
+	 * Clicking it opens the plugin settings and scrolls to the
+	 * specified section (defaults to Profile).
+	 */
+	private addJumpToSectionButton(setting: Setting, sectionId: string = PROFILE_SECTION_ID): void {
+		const { app } = this.ctx;
+		setting.addExtraButton(btn => {
+			btn.setIcon('external-link');
+			btn.setTooltip(t('settings.goToProfileSection'));
+			btn.onClick(() => {
+				openPluginSettings(app, this.ctx.plugin.manifest.id, sectionId);
+			});
+		});
+	}
+
+	private renderActiveProfileSelector(container: HTMLElement): void {
+		const { plugin, refreshAll } = this.ctx;
+		const profiles = plugin.settings.profiles;
+
+		const setting = new Setting(container)
+			.setName(t('settings.profile'))
+			.setDesc(t('settings.profileDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const p of profiles) {
+					dropdown.addOption(p.id, getProfileLabel(p));
+				}
+				dropdown.setValue(plugin.settings.activeProfileId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.activeProfileId = value;
+					await plugin.saveSettings();
+					refreshAll();
+				});
+			});
+		this.addJumpToSectionButton(setting);
+	}
+
+	private renderSummarizerSelector(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+		const profiles = plugin.settings.profiles;
+
+		const setting = new Setting(container)
+			.setName(t('settings.summarizer'))
+			.setDesc(t('settings.summarizerDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const p of profiles) {
+					dropdown.addOption(p.id, getProfileLabel(p));
+				}
+				const summarizerId = plugin.settings.summarizerProfileId
+					&& profiles.some(p => p.id === plugin.settings.summarizerProfileId)
+					? plugin.settings.summarizerProfileId
+					: plugin.settings.activeProfileId;
+				dropdown.setValue(summarizerId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.summarizerProfileId = value;
+					await plugin.saveSettings();
+				});
+			});
+		this.addJumpToSectionButton(setting);
+	}
+
+	private renderInsightsProfileSelector(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+		const profiles = plugin.settings.profiles;
+
+		const setting = new Setting(container)
+			.setName(t('settings.insightsProfile'))
+			.setDesc(t('settings.insightsProfileDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const p of profiles) {
+					dropdown.addOption(p.id, getProfileLabel(p));
+				}
+				const insightsId = plugin.settings.insightsProfileId
+					&& profiles.some(p => p.id === plugin.settings.insightsProfileId)
+					? plugin.settings.insightsProfileId
+					: plugin.settings.activeProfileId;
+				dropdown.setValue(insightsId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.insightsProfileId = value;
+					await plugin.saveSettings();
+				});
+			});
+		this.addJumpToSectionButton(setting);
+	}
+
+	private renderActiveEmbeddingSelector(container: HTMLElement): void {
+		const { plugin, refreshAll } = this.ctx;
+		const embeddingConfigs = plugin.settings.embeddingConfigs;
+
+		const setting = new Setting(container)
+			.setName(t('settings.embeddingConfig'))
+			.setDesc(t('settings.embeddingConfigDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const c of embeddingConfigs) {
+					dropdown.addOption(c.id, c.name || 'Unnamed');
+				}
+				dropdown.setValue(plugin.settings.activeEmbeddingId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.activeEmbeddingId = value;
+					await plugin.saveSettings();
+					refreshAll();
+				});
+			});
+		this.addJumpToSectionButton(setting, EMBEDDING_SECTION_ID);
+	}
+
+	private renderActiveImageGenSelector(container: HTMLElement): void {
+		const { plugin, refreshAll } = this.ctx;
+		const imageGenConfigs = plugin.settings.imageGenConfigs;
+
+		const setting = new Setting(container)
+			.setName(t('settings.imageGenConfig'))
+			.setDesc(t('settings.imageGenConfigDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const c of imageGenConfigs) {
+					dropdown.addOption(c.id, c.name || 'Unnamed');
+				}
+				dropdown.setValue(plugin.settings.activeImageGenId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.activeImageGenId = value;
+					await plugin.saveSettings();
+					refreshAll();
+				});
+			});
+		this.addJumpToSectionButton(setting, IMAGE_GEN_SECTION_ID);
+	}
+
+	private renderActiveUploadSelector(container: HTMLElement): void {
+		const { plugin, refreshAll } = this.ctx;
+		const uploadConfigs = plugin.settings.uploadConfigs;
+
+		const setting = new Setting(container)
+			.setName(t('settings.uploadConfig'))
+			.setDesc(t('settings.uploadConfigDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const c of uploadConfigs) {
+					dropdown.addOption(c.id, c.name || 'Unnamed');
+				}
+				dropdown.setValue(plugin.settings.activeUploadId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.activeUploadId = value;
+					await plugin.saveSettings();
+					refreshAll();
+				});
+			});
+
+		// Mark as experimental (always shown).
+		markSettingExperimental(setting);
+
+		// Advanced: show badge when advanced settings are visible, hide otherwise.
+		if (isAdvancedSettingsVisible()) {
+			markSettingAdvanced(setting);
+		} else {
+			setting.settingEl.addClass('oap-setting--advanced-collapsed');
+		}
+	}
+}
+
+/** Build a display label for a profile (name + provider/model). */
+export function getProfileLabel(p: TextGenConfig): string {
+	return `${p.name} (${p.provider === 'gemini' ? 'Gemini' : p.model})`;
 }

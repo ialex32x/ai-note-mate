@@ -379,9 +379,9 @@ export interface NoteAssistantPluginSettings {
 	// ── Conversation insight extraction (knowledge-nugget preview) ──────────
 	/**
 	 * Master switch: after each assistant reply, run a one-shot extractor
-	 * (using {@link insightsProfileId} or, when empty, the summarizer
-	 * profile) to surface candidate knowledge nuggets as a read-only card
-	 * at the tail of the conversation.
+	 * (using {@link insightsProfileId}) to surface candidate knowledge
+	 * nuggets as a read-only card at the tail of the conversation.
+	 * When `insightsProfileId` is empty, insight extraction is disabled.
 	 */
 	insightExtractionEnabled: boolean;
 	/**

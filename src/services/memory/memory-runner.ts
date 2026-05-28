@@ -37,9 +37,9 @@ export async function maybeExtractMemoriesAfterFinish(
     if (!isMemoryConfigured(plugin)) return;
     if (!settings.memoryAutoExtract) return;
 
-    // Reuse the insights profile (or its summarizer fallback) because
-    // both features want a cheap structured-output model and threading
-    // a separate "memory profile" through every UI would be overkill.
+    // Reuse the insights profile because both features want a cheap
+    // structured-output model and threading a separate "memory profile"
+    // through every UI would be overkill.
     const modelConfig = createInsightsConfig(plugin);
     if (!modelConfig) return;
 

@@ -57,7 +57,7 @@ export function createSummarizerConfig(plugin: NoteAssistantPlugin): MinimalMode
 
 /**
  * Resolve the model config used for insight extraction.
- * When `insightsProfileId` is empty, falls back to {@link createSummarizerConfig}.
+ * When `insightsProfileId` is empty, insight extraction is disabled.
  */
 export function createInsightsConfig(plugin: NoteAssistantPlugin): MinimalModelConfig | undefined {
     const settings = plugin.settings;
@@ -65,7 +65,7 @@ export function createInsightsConfig(plugin: NoteAssistantPlugin): MinimalModelC
     if (dedicatedId && settings.profiles.some(p => p.id === dedicatedId)) {
         return createModelConfigFromProfile(plugin, getInsightsProfile(settings));
     }
-    return createSummarizerConfig(plugin);
+    return undefined;
 }
 
 /** Resolve the embedding model config from settings (if any). */

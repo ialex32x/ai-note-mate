@@ -1,4 +1,3 @@
-import { DropdownComponent, Setting } from "obsidian";
 import { t } from "../../i18n";
 import { listImageGenModels } from "../../services/image-gen";
 import { createDefaultImageGenConfig } from "../../settings/defaults";
@@ -10,8 +9,6 @@ import {
 	createModelFieldWithSelector,
 	createTabBar,
 	createTextField,
-	refreshDropdownOptions,
-	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -23,27 +20,8 @@ export class ImageGenSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin, refreshSection, containerEl } = this.ctx;
+		const { plugin, refreshAll, refreshSection } = this.ctx;
 		const imageGenConfigs = plugin.settings.imageGenConfigs;
-
-		// ── Active image gen selector ──
-		let activeImageGenDropdown: DropdownComponent;
-		new Setting(container)
-			.setName(t('settings.imageGenConfig'))
-			.setDesc(t('settings.imageGenConfigDesc'))
-			.addDropdown((dropdown: DropdownComponent) => {
-				activeImageGenDropdown = dropdown;
-				for (const c of imageGenConfigs) {
-					dropdown.addOption(c.id, c.name || 'Unnamed');
-				}
-				dropdown.setValue(plugin.settings.activeImageGenId);
-				dropdown.onChange(async (value: string) => {
-					plugin.settings.activeImageGenId = value;
-					await plugin.saveSettings();
-					refreshSection(this);
-					scrollActiveTabIntoView(containerEl, '.oap-image-tabs .oap-profile-tabs__scroll');
-				});
-			});
 
 		// ── Image Gen tab bar ──
 		if (imageGenConfigs.length > 0) {
@@ -93,18 +71,12 @@ export class ImageGenSettingsSection implements SettingsSection {
 				disableDelete: imageGenConfigs.length <= 1,
 			});
 
-			// Helper: refresh active image gen dropdown
-			const refreshActiveImageGenDropdown = () => {
-				if (activeImageGenDropdown == null) return;
-				refreshDropdownOptions(activeImageGenDropdown, imageGenConfigs);
-			};
-
 			// ── Image Gen config editor ──
 			this.renderImageGenEditor(
 				container,
 				editingImageGen,
 				tabBarResult.refreshTabLabel,
-				refreshActiveImageGenDropdown,
+				() => refreshAll(),
 			);
 		}
 	}

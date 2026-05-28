@@ -81,9 +81,8 @@ export function createProfileSelector(
         profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('view.profiles') });
         appendSectionSettingsAction(profilesHeader, plugin, dropdownManager, PROFILE_SECTION_ID);
 
-        // Effective insights extractor id: explicit dedicated profile when set
-        // and valid, otherwise the summarizer (matches createInsightsConfig
-        // fallback in chat-factory.ts).
+        // Effective insights extractor id: dedicated profile when set
+        // and valid, otherwise the summarizer.
         const dedicatedInsightsId = current.insightsProfileId;
         const effectiveInsightsId =
             dedicatedInsightsId && current.profiles.some(pr => pr.id === dedicatedInsightsId)

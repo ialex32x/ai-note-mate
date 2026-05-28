@@ -1,4 +1,4 @@
-import { DropdownComponent, SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
+import { SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { MCPManager } from "../../services/mcp/mcp-manager";
 import type { MCPServerConfig, MCPServerState, MCPToolConfig } from "../../services/mcp/mcp-types";
@@ -16,8 +16,6 @@ import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
-	refreshDropdownOptions,
-	scrollActiveTabIntoView,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 
@@ -309,31 +307,12 @@ export class ToolsSettingsSection implements SettingsSection {
 	// ─────────────────────────────────────────────────────────────────────
 
 	private renderUploadConfig(container: HTMLElement): void {
-		const { plugin, refreshSection, containerEl } = this.ctx;
+		const { plugin, refreshAll, refreshSection } = this.ctx;
 		const uploadConfigs = plugin.settings.uploadConfigs;
 
 		createSettingsGroupHeading(container, {
 			name: t('settings.uploadConfig'),
 		});
-
-		// ── Active upload selector ──
-		let activeUploadDropdown: DropdownComponent;
-		new Setting(container)
-			.setName(t('settings.uploadConfig'))
-			.setDesc(t('settings.uploadConfigDesc'))
-			.addDropdown((dropdown: DropdownComponent) => {
-				activeUploadDropdown = dropdown;
-				for (const c of uploadConfigs) {
-					dropdown.addOption(c.id, c.name || 'Unnamed');
-				}
-				dropdown.setValue(plugin.settings.activeUploadId);
-				dropdown.onChange(async (value: string) => {
-					plugin.settings.activeUploadId = value;
-					await plugin.saveSettings();
-					refreshSection(this);
-					scrollActiveTabIntoView(containerEl, '.oap-upload-tabs .oap-profile-tabs__scroll');
-				});
-			});
 
 		// ── Upload tab bar (always visible, even with 0 configs) ──
 		const editingId = this.getEditingUploadId();
@@ -384,18 +363,13 @@ export class ToolsSettingsSection implements SettingsSection {
 			disableDelete: !editingUpload || uploadConfigs.length <= 1,
 		});
 
-		const refreshActiveUploadDropdown = () => {
-			if (activeUploadDropdown == null) return;
-			refreshDropdownOptions(activeUploadDropdown, uploadConfigs);
-		};
-
 		// Editor (only when a config exists)
 		if (editingUpload) {
 			this.renderUploadEditor(
 				container,
 				editingUpload,
 				tabBarResult.refreshTabLabel,
-				refreshActiveUploadDropdown,
+				() => refreshAll(),
 			);
 		}
 	}
