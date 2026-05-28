@@ -133,10 +133,6 @@ export const ko: Record<string, string> = {
 	'view.contextSummarizing': '컨텍스트 압축 중…',
 	'view.contextEmergencyShrink': '컨텍스트 예산 초과: 이번 턴의 새 도구 결과 일부가 잘렸습니다. 프로필에서 압축 임곗값을 높이거나 컨텍스트가 더 큰 모델로 전환하세요.',
 
-	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentReplySummary': '답변 (클릭하여 펼치기)',
-	'view.toggleSubAgentReply': '하위 에이전트 답변 토글',
-
 	// ── Settings ──────────────────────────────────────────
 	'settings.baseUrl': '기본 URL',
 	'settings.baseUrlDesc': 'API의 기본 URL을 입력하세요',

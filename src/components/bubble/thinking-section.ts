@@ -1,21 +1,15 @@
 import { t } from '../../i18n';
+import { createCollapsible, COLLAPSIBLE_CLASSES } from '../../utils/collapsible';
+import { createCopyButton } from '../../utils/copy-button';
 
 /**
  * Render the collapsible "thinking" section for an assistant message.
  *
- * Assistant models often emit a distinct reasoning stream (either
- * inline-delimited or separate from the final answer) while they work on
- * the user's query. We surface that stream in a de-emphasised collapsible
- * block above the actual reply, so the user can verify the model's
- * reasoning when helpful without it dominating the bubble visually.
- *
- * The section is intentionally self-contained:
- *  - Click/keyboard toggle with its own local `expanded` state — no need
- *    to thread callbacks back into the renderer for such a simple widget.
- *  - Streaming indicator (`--streaming` class + "Thinking…" summary) is
- *    driven by the `thinkingComplete` flag passed by the caller, which is
- *    computed from both the explicit `thinkingComplete` marker and the
- *    outer `streaming` state.
+ * Uses the unified `createCollapsible` utility so the visual treatment
+ * (arrow toggle, keyboard support, expand/collapse animation) is
+ * identical to every other collapsible in the plugin. The body wraps
+ * the thinking text in a scrollable container with a hover-reveal copy
+ * button — the same pattern used by `renderCollapsibleCodeBlock`.
  *
  * @param bubble Parent element (the enclosing bubble) to append into.
  * @param thinkingContent The reasoning text to display in the body.
@@ -31,46 +25,33 @@ export function renderThinkingSection(
     thinkingComplete: boolean,
     startExpanded = false,
 ): void {
-    const wrapper = bubble.createEl('div', {
-        cls: thinkingComplete
-            ? 'session-bubble__thinking'
-            : 'session-bubble__thinking session-bubble__thinking--streaming',
-    });
-
     const summaryText = thinkingComplete ? t('view.thinkingDone') : t('view.thinkingInProgress');
-    const arrow = startExpanded ? '▾' : '▸';
 
-    const header = wrapper.createEl('span', {
-        cls: startExpanded
-            ? 'session-bubble__thinking-header session-bubble__thinking-header--expanded'
-            : 'session-bubble__thinking-header',
-        attr: { 'aria-label': t('view.toggleThinking'), role: 'button', tabindex: '0' },
+    const collapsible = createCollapsible(bubble, {
+        summary: summaryText,
+        initiallyExpanded: startExpanded,
+        ariaLabel: t('view.toggleThinking'),
     });
-    header.createEl('span', { cls: 'session-bubble__thinking-arrow', text: arrow });
-    header.appendText(' ');
-    header.createEl('span', { cls: 'session-bubble__thinking-summary', text: summaryText });
 
-    const body = wrapper.createEl('div', {
-        cls: startExpanded
-            ? 'session-bubble__thinking-body session-bubble__thinking-body--expanded'
-            : 'session-bubble__thinking-body',
-    });
-    if (thinkingContent) {
-        body.setText(thinkingContent);
+    // Think content gets the inline variant (styled body area)
+    collapsible.wrapper.addClass('collapsible-block--inline');
+    collapsible.wrapper.addClass('collapsible-block--spaced-bottom');
+
+    // Streaming pulse when thinking is still in progress
+    if (!thinkingComplete) {
+        collapsible.wrapper.addClass('collapsible-block--streaming');
     }
 
-    let expanded = startExpanded;
-    const toggle = () => {
-        expanded = !expanded;
-        body.toggleClass('session-bubble__thinking-body--expanded', expanded);
-        header.toggleClass('session-bubble__thinking-header--expanded', expanded);
-        header.querySelector('.session-bubble__thinking-arrow')!.setText(expanded ? '▾' : '▸');
-    };
-    header.addEventListener('click', toggle);
-    header.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle();
-        }
-    });
+    if (thinkingContent) {
+        // Wrap content in the same code-wrap pattern for hover-reveal copy button
+        const contentWrap = collapsible.body.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+        contentWrap.createEl('div', { cls: COLLAPSIBLE_CLASSES.TEXT_CONTENT, text: thinkingContent });
+
+        const copyBtn = createCopyButton(
+            t('common.copy'),
+            () => thinkingContent,
+            COLLAPSIBLE_CLASSES.COPY_BTN,
+        );
+        contentWrap.appendChild(copyBtn);
+    }
 }

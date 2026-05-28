@@ -10,7 +10,6 @@ import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from '../bubble/bubble-context';
 import {
     renderSubAgentBadge,
-    wrapInSubAgentCollapsible,
     renderDelegateTaskBubble,
     shouldShowRoleLabel,
 } from '../bubble/sub-agent';
@@ -273,16 +272,16 @@ export class BubbleRenderer extends Component {
 
         // Update thinking section if present
         if (msg.thinkingContent) {
-            const thinkingWrapper = bubble.querySelector('.session-bubble__thinking');
+            const thinkingWrapper = bubble.querySelector('.collapsible-block--inline');
             if (thinkingWrapper instanceof HTMLElement) {
                 // Update existing thinking section body text
-                const body = thinkingWrapper.querySelector('.session-bubble__thinking-body');
+                const body = thinkingWrapper.querySelector(':scope > .collapsible-block__body');
                 if (body instanceof HTMLElement) body.setText(msg.thinkingContent);
 
                 // Update streaming state
                 const thinkingComplete = msg.thinkingComplete === true || msg.streaming === false;
-                thinkingWrapper.toggleClass('session-bubble__thinking--streaming', !thinkingComplete);
-                const summary = thinkingWrapper.querySelector('.session-bubble__thinking-summary');
+                thinkingWrapper.toggleClass('collapsible-block--streaming', !thinkingComplete);
+                const summary = thinkingWrapper.querySelector(':scope > .collapsible-block__header .collapsible-block__summary');
                 if (summary instanceof HTMLElement) summary.setText(thinkingComplete ? t('view.thinkingDone') : t('view.thinkingInProgress'));
             } else {
                 // Thinking section appeared for the first time — insert before content
@@ -387,14 +386,6 @@ export class BubbleRenderer extends Component {
         if (msg.role === 'tool_call') {
             renderToolCallContentImpl(this.ctx, contentEl, msg, wasToolDetailExpanded, pendingConfirmations);
         } else if (msg.role === 'assistant') {
-            // Sub-agent reply: always wrap the content in a collapsible section,
-            // default collapsed (both during streaming and after completion),
-            // since the main agent's final answer typically summarises this reply.
-            // Empty-content case is already filtered out earlier in renderInto.
-            if (msg.subAgent) {
-                wrapInSubAgentCollapsible(bubble, contentEl);
-            }
-
             if (msg.streaming) {
                 // Streaming: use throttled controller with markdown sanitization
                 const controller = this.getOrCreateController(msg.id);

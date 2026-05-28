@@ -1,8 +1,9 @@
-import { setIcon, setTooltip } from 'obsidian';
+import { setIcon } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { prettifyIfJson } from '../../utils/json-format';
-import { copyToClipboard } from '../../utils/clipboard';
+import { createCopyButton } from '../../utils/copy-button';
+import { COLLAPSIBLE_CLASSES } from '../../utils/collapsible';
 import type { BubbleContext } from './bubble-context';
 
 /**
@@ -140,57 +141,35 @@ function populateToolDetailBody(detailBody: HTMLElement, msg: ChatMessage): void
     if (msg.toolCallMeta) {
         const argsWrapper = detailBody.createEl('div', { cls: 'session-bubble__tool-section' });
         argsWrapper.createEl('span', {
-            cls: 'session-bubble__tool-section-label',
+            cls: 'collapsible-block__section-label',
             text: 'Arguments',
         });
-        const argsCode = argsWrapper.createEl('div', { cls: 'session-bubble__tool-code-wrap' });
-        const argsPre = argsCode.createEl('pre', { cls: 'session-bubble__tool-code' });
+        const argsCode = argsWrapper.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+        const argsPre = argsCode.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE });
         argsPre.setText(JSON.stringify(msg.toolCallMeta.toolArgs, null, 2));
-        renderCopyOverlay(argsCode, t('view.copyToolArgs'), () => {
+        const argsCopyBtn = createCopyButton(t('view.copyToolArgs'), () => {
             const args = msg.toolCallMeta?.toolArgs;
             return args === undefined ? '' : JSON.stringify(args, null, 2);
-        });
+        }, COLLAPSIBLE_CLASSES.COPY_BTN);
+        argsCode.appendChild(argsCopyBtn);
     }
 
     if (msg.toolCallResult) {
         const resultWrapper = detailBody.createEl('div', { cls: 'session-bubble__tool-section' });
         resultWrapper.createEl('span', {
-            cls: 'session-bubble__tool-section-label',
+            cls: 'collapsible-block__section-label',
             text: 'Result',
         });
-        const resultCode = resultWrapper.createEl('div', { cls: 'session-bubble__tool-code-wrap' });
-        const resultPre = resultCode.createEl('pre', { cls: 'session-bubble__tool-code' });
+        const resultCode = resultWrapper.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+        const resultPre = resultCode.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE });
         const resultText = msg.toolCallResult.result;
         resultPre.setText(resultText.length > 2000 ? resultText.slice(0, 2000) + '\n... (truncated)' : resultText);
-        renderCopyOverlay(resultCode, t('view.copyToolResult'), () => {
+        const resultCopyBtn = createCopyButton(t('view.copyToolResult'), () => {
             const raw = msg.toolCallResult?.result ?? '';
             return prettifyIfJson(raw);
-        });
+        }, COLLAPSIBLE_CLASSES.COPY_BTN);
+        resultCode.appendChild(resultCopyBtn);
     }
-}
-
-function renderCopyOverlay(
-    parent: HTMLElement,
-    copyAriaLabel: string,
-    getCopyText: () => string,
-): void {
-    const copyBtn = parent.createEl('button', {
-        cls: 'session-bubble__tool-section-copy-btn',
-        attr: { type: 'button', 'aria-label': copyAriaLabel },
-    });
-    setIcon(copyBtn, 'copy');
-    setTooltip(copyBtn, copyAriaLabel);
-    const handleCopy = async (): Promise<void> => {
-        const ok = await copyToClipboard(getCopyText(), { showNotice: false });
-        if (!ok) return;
-        setIcon(copyBtn, 'check');
-        window.setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
-    };
-    copyBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        void handleCopy();
-    });
 }
 
 function renderToolConfirmPending(

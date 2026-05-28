@@ -72,16 +72,12 @@
     min-width: 80px;
 }
 
-// Tool call collapsible detail
+// Tool call header row (tool-specific — not part of the unified collapsible)
 .session-bubble__tool-header {
     display: flex;
     align-items: center;
     gap: @spacing-sm;
     line-height: 1.5;
-
-    &--clickable {
-        cursor: pointer;
-    }
 
     &--clickable {
         cursor: pointer;
@@ -121,15 +117,20 @@
     color: @text-error;
 }
 
+// Tool call detail body + code sections — now use unified
+// .collapsible-block classes for code-wrap / code / copy-btn.
+// The tool-header / tool-arrow / tool-label / tool-status remain
+// tool-call-specific (they carry tool metadata beyond just toggle).
+
 .session-bubble__tool-detail-body {
     display: none;
     margin-top: 6px;
     border-top: 1px solid @bg-modifier-border;
     padding-top: 6px;
-}
 
-.session-bubble__tool-detail-body--expanded {
-    display: block;
+    &--expanded {
+        display: block;
+    }
 }
 
 .session-bubble__tool-section {
@@ -140,152 +141,10 @@
     }
 }
 
-.session-bubble__tool-section-label {
-    display: block;
-    font-size: 0.75em;
-    font-weight: 600;
-    color: @text-faint;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: @spacing-xs;
-}
-
-.session-bubble__tool-code-wrap {
-    position: relative;
-
-    &:hover .session-bubble__tool-section-copy-btn,
-    .session-bubble__tool-section-copy-btn:focus-visible {
-        opacity: 1;
-    }
-}
-
-.session-bubble__tool-section-copy-btn {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    min-width: 22px;
-    min-height: 22px;
-    padding: 0;
-    border: 1px solid @bg-modifier-border;
-    border-radius: @radius-sm;
-    background: @bg-primary;
-    color: @text-secondary;
-    cursor: pointer;
-    box-shadow: none;
-    opacity: 0;
-    transition: opacity @duration-normal, background @duration-normal, color @duration-normal;
-    z-index: 1;
-
-    &:hover {
-        background: @bg-modifier-hover;
-        color: @text-primary;
-    }
-
-    &:focus-visible {
-        outline: none;
-        box-shadow: 0 0 0 2px color-mix(in srgb, @text-accent 20%, transparent);
-    }
-
-    svg {
-        .icon-size(13px);
-    }
-}
-
-// Touch / coarse-pointer devices have no reliable hover state, so keep
-// the button visible (just dimmed) to remain reachable on mobile.
-@media (hover: none) {
-    .session-bubble__tool-section-copy-btn {
-        opacity: 0.75;
-    }
-}
-
-.session-bubble__tool-code {
-    margin: 0;
-    padding: @spacing-sm 6px;
-    border-radius: @radius-sm;
-    background: @bg-modifier-hover;
-    font-size: 0.78em;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
-    overflow-x: auto;
-    max-height: 300px;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    color: @text-secondary;
-}
-
-// Thinking section in assistant bubbles
-.session-bubble__thinking {
-    margin-bottom: @spacing-sm;
-}
-
-.session-bubble__thinking--streaming .session-bubble__thinking-summary {
-    animation: thinking-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes thinking-pulse {
-    0%, 100% { opacity: 0.5; }
-    50% { opacity: 1; }
-}
-
-.session-bubble__thinking-header {
-    display: inline-flex;
-    align-items: center;
-    gap: @spacing-sm;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: @text-faint;
-    font-size: 0.78em;
-    line-height: 1.6;
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-
-    &:hover {
-        color: @text-secondary;
-    }
-
-    &:focus-visible {
-        color: @text-secondary;
-        text-decoration: underline;
-    }
-}
-
-.session-bubble__thinking-arrow {
-    font-size: 0.9em;
-    flex-shrink: 0;
-}
-
-.session-bubble__thinking-summary {
-    font-style: italic;
-}
-
-.session-bubble__thinking-body {
-    display: none;
-    max-height: 200px;
-    overflow-y: auto;
-    padding: 6px @spacing-md;
-    margin-top: @spacing-sm;
-    border-radius: @radius-sm;
-    background: @bg-modifier-hover;
-    font-size: 0.78em;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: @text-faint;
-    scrollbar-width: thin;
-}
-
-.session-bubble__thinking-body--expanded {
-    display: block;
-}
+// ── Thinking section (collapsible) ─────────────────────
+// Now rendered via createCollapsible() using the unified
+// .collapsible-block CSS classes defined below. The `--streaming`
+// variant applies a pulse animation to the summary text.
 
 // Bubble file references (user messages)
 .session-bubble__refs {
@@ -517,144 +376,17 @@
 }
 
 // ── Sub-agent final assistant reply (collapsible) ───────
-// The sub-agent's final assistant reply is wrapped in a collapsible
-// section; it defaults to collapsed (both during streaming and after
-// completion) because its content typically overlaps with the main
-// agent's summary reply. An empty-content bubble is hidden entirely.
+// Now rendered via createCollapsible() using the unified
+// .collapsible-block CSS classes defined below.
 
+// Utility: hide empty sub-agent bubbles entirely
 .session-bubble--hidden {
     display: none !important;
 }
 
-.session-bubble__subagent-reply {
-    margin-top: @spacing-sm;
-}
-
-.session-bubble__subagent-reply-header {
-    display: inline-flex;
-    align-items: center;
-    gap: @spacing-sm;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: @text-faint;
-    font-size: 0.85em;
-    line-height: 1.6;
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-
-    &:hover {
-        color: @text-secondary;
-    }
-
-    &:focus-visible {
-        color: @text-secondary;
-        text-decoration: underline;
-    }
-}
-
-.session-bubble__subagent-reply-arrow {
-    font-size: 0.9em;
-    flex-shrink: 0;
-}
-
-.session-bubble__subagent-reply-summary {
-    font-style: italic;
-}
-
-// Body (reuses .session-bubble__content class, so all markdown rendering
-// targeting that class still works). Hide by default, show when expanded.
-.session-bubble__subagent-reply-body {
-    display: none;
-    margin-top: @spacing-sm;
-}
-
-.session-bubble__subagent-reply-body--expanded {
-    display: block;
-}
-
 // ── delegate_task `inputs` panel (collapsible) ──────────
-// Structured `inputs` passed to delegate_task are rendered as a
-// collapsible JSON block beneath the task text. Visually mirrors the
-// sub-agent reply collapsible (same header / arrow / italic summary)
-// so multiple collapsibles in one bubble feel consistent. Defaults to
-// collapsed because `inputs` is supplementary; the task prose is the
-// primary information.
-
-.session-bubble__delegate-inputs {
-    margin-top: @spacing-sm;
-}
-
-.session-bubble__delegate-inputs-header {
-    display: inline-flex;
-    align-items: center;
-    gap: @spacing-sm;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: @text-faint;
-    font-size: 0.85em;
-    line-height: 1.6;
-    cursor: pointer;
-    user-select: none;
-    outline: none;
-
-    &:hover {
-        color: @text-secondary;
-    }
-
-    &:focus-visible {
-        color: @text-secondary;
-        text-decoration: underline;
-    }
-}
-
-.session-bubble__delegate-inputs-arrow {
-    font-size: 0.9em;
-    flex-shrink: 0;
-}
-
-.session-bubble__delegate-inputs-summary {
-    font-size: 0.75em;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-
-// Body: pretty-printed JSON. Monospaced + scrollable on overflow so a
-// large `inputs.source` array doesn't blow out the bubble width. Sized
-// down slightly to keep it visually subordinate to the main task text.
-.session-bubble__delegate-inputs-body {
-    display: none;
-    margin: @spacing-sm 0 0 0;
-    padding: @spacing-sm;
-    background: var(--background-secondary);
-    border-radius: 4px;
-    font-family: var(--font-monospace, monospace);
-    font-size: 0.8em;
-    line-height: 1.4;
-    color: @text-secondary;
-    white-space: pre;
-    overflow-x: auto;
-    max-height: 320px;
-    overflow-y: auto;
-}
-
-.session-bubble__delegate-inputs-body--expanded {
-    display: block;
-}
-
-// Wrapper for the JSON code block — enables the absolute-positioned copy
-// button in the top-right corner (same pattern as .session-bubble__tool-code-wrap).
-.session-bubble__delegate-inputs-code-wrap {
-    position: relative;
-
-    &:hover .session-bubble__tool-section-copy-btn,
-    .session-bubble__tool-section-copy-btn:focus-visible {
-        opacity: 1;
-    }
-}
+// Now rendered via createCollapsible() / renderCollapsibleCodeBlock()
+// using the unified .collapsible-block CSS classes defined below.
 
 // Override Obsidian's markdown preview styles
 .session-bubble__content {
@@ -725,4 +457,197 @@
 
 .session-bubble__subagent-badge--code {
     color: var(--color-green, @text-accent);
+}
+
+// ── Unified collapsible block ──────────────────────────
+// Shared by: thinking sections, sub-agent replies, delegate inputs,
+// and tool-call code sections. All are produced by createCollapsible()
+// / renderCollapsibleCodeBlock() in src/utils/collapsible.ts and
+// src/components/bubble/collapsible-code-block.ts.
+
+.collapsible-block {
+    // ── Header ─────────────────────────────────────────
+
+    &__header {
+        display: inline-flex;
+        align-items: center;
+        gap: @spacing-sm;
+        padding: 0;
+        border: none;
+        background: transparent;
+        color: @text-faint;
+        font-size: 0.85em;
+        line-height: 1.6;
+        cursor: pointer;
+        user-select: none;
+        outline: none;
+
+        &:hover {
+            color: @text-secondary;
+        }
+
+        &:focus-visible {
+            color: @text-secondary;
+            text-decoration: underline;
+        }
+    }
+
+    &__arrow {
+        font-size: 0.9em;
+        flex-shrink: 0;
+    }
+
+    &__summary {
+        font-style: italic;
+    }
+
+    // ── Body ───────────────────────────────────────────
+
+    &__body {
+        display: none;
+
+        &--expanded {
+            display: block;
+        }
+    }
+
+    // ── Code block ─────────────────────────────────────
+
+    &__code-wrap {
+        position: relative;
+        margin-bottom: @spacing-sm;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
+
+        &:hover .collapsible-block__copy-btn,
+        .collapsible-block__copy-btn:focus-visible {
+            opacity: 1;
+        }
+    }
+
+    &__code {
+        margin: 0;
+        padding: @spacing-sm 6px;
+        border-radius: @radius-sm;
+        background: @bg-modifier-hover;
+        font-family: var(--font-monospace, monospace);
+        font-size: 0.78em;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        word-break: break-word;
+        overflow-x: auto;
+        max-height: 300px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        color: @text-secondary;
+    }
+
+    // ── Copy button ────────────────────────────────────
+
+    &__copy-btn {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        min-height: 22px;
+        padding: 0;
+        border: 1px solid @bg-modifier-border;
+        border-radius: @radius-sm;
+        background: @bg-primary;
+        color: @text-secondary;
+        cursor: pointer;
+        box-shadow: none;
+        opacity: 0;
+        transition: opacity @duration-normal, background @duration-normal, color @duration-normal;
+        z-index: 1;
+
+        &:hover {
+            background: @bg-modifier-hover;
+            color: @text-primary;
+        }
+
+        &:focus-visible {
+            outline: none;
+            box-shadow: 0 0 0 2px color-mix(in srgb, @text-accent 20%, transparent);
+        }
+
+        svg {
+            .icon-size(13px);
+        }
+    }
+
+    // ── Variants ───────────────────────────────────────
+
+    // Inline body (thinking section): wrapper with background only;
+    // text styling + scroll moved to __text-content so the copy button
+    // (absolutely positioned inside __code-wrap) stays pinned.
+    &--inline &__body {
+        margin-top: @spacing-sm;
+        border-radius: @radius-sm;
+        background: @bg-modifier-hover;
+    }
+
+    // Scrollable text content inside thinking sections (non-monospace)
+    &__text-content {
+        padding: 6px @spacing-md;
+        font-size: 0.78em;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: @text-faint;
+        max-height: 200px;
+        overflow-y: auto;
+        scrollbar-width: thin;
+    }
+
+    // Code body (delegate inputs, tool detail): separator line
+    &--code &__body {
+        margin-top: 6px;
+        border-top: 1px solid @bg-modifier-border;
+        padding-top: 6px;
+    }
+
+    // Streaming state: pulse the summary text
+    &--streaming &__summary {
+        animation: collapsible-block-pulse 1.5s ease-in-out infinite;
+    }
+
+    // Spacing variants — callers add these to position the block in context
+    &--spaced-top {
+        margin-top: @spacing-sm;
+    }
+
+    &--spaced-bottom {
+        margin-bottom: @spacing-sm;
+    }
+
+    // Section label inside code bodies (e.g. "Arguments", "Result")
+    &__section-label {
+        display: block;
+        font-size: 0.75em;
+        font-weight: 600;
+        color: @text-faint;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: @spacing-xs;
+    }
+}
+
+@keyframes collapsible-block-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 1; }
+}
+
+// Touch devices: copy button always visible (no hover state)
+@media (hover: none) {
+    .collapsible-block__copy-btn {
+        opacity: 0.75;
+    }
 }

@@ -133,10 +133,6 @@ export const ja: Record<string, string> = {
 	'view.contextSummarizing': 'コンテキストを圧縮中…',
 	'view.contextEmergencyShrink': 'コンテキスト予算超過：今ターンの新規ツール結果の一部が切り詰められました。プロファイルで圧縮しきい値を上げるか、より大きなコンテキストのモデルに切り替えてください。',
 
-	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentReplySummary': '回答（クリックして展開）',
-	'view.toggleSubAgentReply': 'サブエージェントの回答を切り替え',
-
 	// ── Settings ──────────────────────────────────────────
 	'settings.baseUrl': 'ベース URL',
 	'settings.baseUrlDesc': 'API のベース URL を入力してください',

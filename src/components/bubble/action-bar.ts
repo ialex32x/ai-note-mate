@@ -1,7 +1,7 @@
 import { setIcon, setTooltip } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
-import { copyToClipboard } from '../../utils/clipboard';
+import { createCopyButton } from '../../utils/copy-button';
 import type { BubbleContext } from './bubble-context';
 import { SpeechController } from './speech-controller';
 
@@ -56,13 +56,9 @@ export function renderActionBar(
     const { abortedMessageIds, speechController, onExtractInsights } = opts;
     const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
 
-    // Copy button
-    const copyBtn = actions.createEl('button', {
-        cls: 'session-icon-btn session-bubble__action-btn',
-        attr: { 'aria-label': t('common.copy') },
-    });
-    setIcon(copyBtn, 'copy');
-    copyBtn.addEventListener('click', () => void onCopy(copyBtn, msg.content));
+    // Copy button — uses unified createCopyButton for consistent flash-feedback
+    const copyBtn = createCopyButton(t('common.copy'), () => msg.content, 'session-icon-btn session-bubble__action-btn');
+    actions.appendChild(copyBtn);
 
     // Speak button group
     if (SpeechController.isSupported()) {
@@ -96,22 +92,4 @@ export function renderActionBar(
             text: t('view.responseStopped'),
         });
     }
-}
-
-/**
- * Write the bubble's content to the clipboard and flash a check-mark on
- * the copy button as confirmation. The original `copy` icon is restored
- * after a short delay so a subsequent copy still reads as a fresh action.
- *
- * No success Notice is shown — the icon flip is the feedback. Failures
- * are logged by `copyToClipboard` and swallowed so we don't tear down the
- * bubble if clipboard access is denied.
- */
-async function onCopy(copyBtn: HTMLButtonElement, content: string): Promise<void> {
-    const ok = await copyToClipboard(content, { showNotice: false });
-    if (!ok) return;
-    setIcon(copyBtn, 'check');
-    window.setTimeout(() => {
-        setIcon(copyBtn, 'copy');
-    }, 1500);
 }

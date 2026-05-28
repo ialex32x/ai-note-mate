@@ -133,9 +133,6 @@ export const zhCN: Record<string, string> = {
 	'view.contextSummarizing': '正在压缩上下文…',
 	'view.contextEmergencyShrink': '上下文预算超限：本轮部分新返回的工具结果被截断。请在配置方案中提高压缩阈值, 或切换至上下文更大的模型。',
 
-	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentReplySummary': '回复（点击展开）',
-	'view.toggleSubAgentReply': '切换子代理回复显示',
 	// ── Settings ──────────────────────────────────────────
 	'settings.baseUrl': '接口地址',
 	'settings.baseUrlDesc': '输入 API 的基础 URL',

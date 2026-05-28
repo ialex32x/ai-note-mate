@@ -1,16 +1,15 @@
-import { setIcon, setTooltip } from 'obsidian';
+import { setIcon } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
-import { copyToClipboard } from '../../utils/clipboard';
+import { renderCollapsibleCodeBlock } from './collapsible-code-block';
 
 /**
  * Sub-agent presentation helpers.
  *
  * Sub-agent bubbles (and the `delegate_task` handoff bubble produced by the
  * main agent) share the same visual vocabulary: a colored badge with an
- * icon + human-readable label, plus an optional collapsible wrapper around
- * the reply body. This module centralises that vocabulary so the bubble
- * renderer and the delegate-task bubble stay in lockstep.
+ * icon + human-readable label. This module centralises that vocabulary so
+ * the bubble renderer and the delegate-task bubble stay in lockstep.
  *
  * The functions here are intentionally framework-free: no `BubbleContext`,
  * no renderer state — just DOM mutation driven by the agent name. That
@@ -69,81 +68,6 @@ export function renderSubAgentBadge(parent: HTMLElement, agentName: string): voi
 }
 
 /**
- * Wrap a sub-agent's final assistant reply in a collapsible section.
- *
- * Default state:
- *   - First render (no previous expanded marker on bubble): collapsed
- *   - Re-render (user had manually expanded): preserve that state via the
- *     `data-sub-agent-reply-expanded` attribute on the outer bubble element
- *
- * The pre-created `contentEl` is moved inside the collapsible body rather
- * than being recreated, so upstream markdown rendering (which targets
- * `contentEl` directly) still works — only its parent changes.
- */
-export function wrapInSubAgentCollapsible(
-    bubble: HTMLElement,
-    contentEl: HTMLElement,
-): void {
-    // Preserve the user's manual toggle across re-renders within the same
-    // DOM bubble (the caller has already emptied the bubble before calling
-    // render, so we check for a data attribute that survives).
-    const previouslyExpanded = bubble.dataset['subAgentReplyExpanded'] === '1';
-
-    const wrapper = createEl('div', {
-        cls: previouslyExpanded
-            ? 'session-bubble__subagent-reply session-bubble__subagent-reply--expanded'
-            : 'session-bubble__subagent-reply',
-    });
-
-    const header = wrapper.createEl('span', {
-        cls: previouslyExpanded
-            ? 'session-bubble__subagent-reply-header session-bubble__subagent-reply-header--expanded'
-            : 'session-bubble__subagent-reply-header',
-        attr: {
-            'aria-label': t('view.toggleSubAgentReply'),
-            role: 'button',
-            tabindex: '0',
-        },
-    });
-    const arrow = previouslyExpanded ? '▾' : '▸';
-    header.createEl('span', { cls: 'session-bubble__subagent-reply-arrow', text: arrow });
-    header.appendText(' ');
-    header.createEl('span', {
-        cls: 'session-bubble__subagent-reply-summary',
-        text: t('view.subAgentReplySummary'),
-    });
-
-    // Replace the pre-created contentEl with a body wrapper that contains it.
-    contentEl.addClass('session-bubble__subagent-reply-body');
-    if (previouslyExpanded) {
-        contentEl.addClass('session-bubble__subagent-reply-body--expanded');
-    }
-    // Move contentEl into the wrapper (it was created on `bubble` by the caller).
-    bubble.insertBefore(wrapper, contentEl);
-    wrapper.appendChild(contentEl);
-
-    const toggle = () => {
-        const expanded = !header.hasClass('session-bubble__subagent-reply-header--expanded');
-        wrapper.toggleClass('session-bubble__subagent-reply--expanded', expanded);
-        header.toggleClass('session-bubble__subagent-reply-header--expanded', expanded);
-        contentEl.toggleClass('session-bubble__subagent-reply-body--expanded', expanded);
-        header.querySelector('.session-bubble__subagent-reply-arrow')!.setText(expanded ? '▾' : '▸');
-        if (expanded) {
-            bubble.dataset['subAgentReplyExpanded'] = '1';
-        } else {
-            delete bubble.dataset['subAgentReplyExpanded'];
-        }
-    };
-    header.addEventListener('click', toggle);
-    header.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle();
-        }
-    });
-}
-
-/**
  * Render a `delegate_task` tool-call as a plain conversational bubble.
  *
  * Visual treatment: target sub-agent badge + the task text as bubble
@@ -183,11 +107,6 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
     }
 
     // Handoff seed: only render when we actually have a non-empty plain object.
-    // - undefined / null → nothing to show
-    // - non-object (string, array, etc.) → defensive skip; the orchestrator
-    //   already rejects these before dispatch, so reaching this branch
-    //   means a stale persisted message; rendering would just be confusing
-    // - empty object `{}` → a "0 keys" toggle adds noise without value
     if (isNonEmptyPlainObject(handoffSeed)) {
         renderDelegateInputsCollapsible(bubble, handoffSeed);
     }
@@ -200,10 +119,6 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
  * Type guard for "the kind of value we want to render as a JSON
  * handoff-seed block": a non-null, non-array object with at least
  * one own key.
- *
- * Mirrors (loosely) `buildInitialStore`'s validation so the UI only
- * renders shapes the orchestrator would also accept; arrays / class
- * instances are skipped silently rather than rendered as malformed JSON.
  */
 function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
     if (v === null || v === undefined) return false;
@@ -213,24 +128,15 @@ function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Render the collapsible block that shows the handoff seed (the
- * `delegate_task` `handoff` arg — historically named `inputs` then
- * `exchange`, hence the legacy CSS classes / dataset keys kept here
- * unchanged for the sake of any user-side custom CSS targeting them).
+ * Render the collapsible block that shows the handoff seed.
  *
- * Reuses the visual vocabulary of `wrapInSubAgentCollapsible` (same arrow
- * + summary + body classes) so the two collapsibles look consistent in a
- * single bubble. The persisted-expand state is keyed independently
- * (`data-delegate-inputs-expanded`) so toggling one does not affect the
- * other.
+ * Now uses the unified `renderCollapsibleCodeBlock` component — same
+ * arrow toggle, keyboard support, and copy button as every other
+ * collapsible code block in the plugin.
  *
- * The body is rendered as a `<pre>` of pretty-printed JSON, NOT through
- * the markdown pipeline:
- *   - the seed is structured data; monospaced JSON is the most accurate
- *     visual encoding (preserves whitespace, quotes, key/value alignment).
- *   - Going through markdown would re-interpret strings (auto-links,
- *     headings starting with `#`, etc.), which would lie about what the
- *     sub-agent actually received.
+ * The persisted-expand state is keyed independently
+ * (`data-delegate-inputs-expanded`) so toggling one collapsible does not
+ * affect the other.
  */
 function renderDelegateInputsCollapsible(
     bubble: HTMLElement,
@@ -238,36 +144,6 @@ function renderDelegateInputsCollapsible(
 ): void {
     const previouslyExpanded = bubble.dataset['delegateInputsExpanded'] === '1';
 
-    const wrapper = bubble.createEl('div', {
-        cls: previouslyExpanded
-            ? 'session-bubble__delegate-inputs session-bubble__delegate-inputs--expanded'
-            : 'session-bubble__delegate-inputs',
-    });
-
-    const header = wrapper.createEl('span', {
-        cls: previouslyExpanded
-            ? 'session-bubble__delegate-inputs-header session-bubble__delegate-inputs-header--expanded'
-            : 'session-bubble__delegate-inputs-header',
-        attr: {
-            role: 'button',
-            tabindex: '0',
-        },
-    });
-    header.createEl('span', {
-        cls: 'session-bubble__delegate-inputs-arrow',
-        text: previouslyExpanded ? '▾' : '▸',
-    });
-    header.appendText(' ');
-    header.createEl('span', {
-        cls: 'session-bubble__delegate-inputs-summary',
-        text: 'Arguments',
-    });
-
-    // Pretty-print body. Wrapped in `try` because while the orchestrator
-    // already validated serializability before dispatch, persisted
-    // messages from older sessions might (in theory) contain shapes
-    // that JSON.stringify can't handle. Fall back to a short error
-    // marker rather than crashing the whole bubble render.
     let json: string;
     try {
         json = JSON.stringify(seed, null, 2);
@@ -275,52 +151,15 @@ function renderDelegateInputsCollapsible(
         json = '<unrenderable handoff seed>';
     }
 
-    const codeWrap = wrapper.createEl('div', {
-        cls: 'session-bubble__delegate-inputs-code-wrap',
-    });
-    const body = codeWrap.createEl('pre', {
-        cls: previouslyExpanded
-            ? 'session-bubble__delegate-inputs-body session-bubble__delegate-inputs-body--expanded'
-            : 'session-bubble__delegate-inputs-body',
-        text: json,
-    });
-
-    // Copy button (same visual treatment as tool-call copy buttons)
-    const copyBtn = codeWrap.createEl('button', {
-        cls: 'session-bubble__tool-section-copy-btn',
-        attr: { type: 'button', 'aria-label': t('view.copyHandoffArgs') },
-    });
-    setIcon(copyBtn, 'copy');
-    setTooltip(copyBtn, t('view.copyHandoffArgs'));
-    const handleCopy = async (): Promise<void> => {
-        const ok = await copyToClipboard(json, { showNotice: false });
-        if (!ok) return;
-        setIcon(copyBtn, 'check');
-        window.setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
-    };
-    copyBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        e.preventDefault();
-        void handleCopy();
+    const collapsible = renderCollapsibleCodeBlock(bubble, {
+        label: 'Arguments',
+        code: json,
+        initiallyExpanded: previouslyExpanded,
+        persistKey: 'delegate-inputs',
+        persistHost: bubble,
+        copyLabel: t('view.copyHandoffArgs'),
     });
 
-    const toggle = () => {
-        const expanded = !header.hasClass('session-bubble__delegate-inputs-header--expanded');
-        wrapper.toggleClass('session-bubble__delegate-inputs--expanded', expanded);
-        header.toggleClass('session-bubble__delegate-inputs-header--expanded', expanded);
-        body.toggleClass('session-bubble__delegate-inputs-body--expanded', expanded);
-        header.querySelector('.session-bubble__delegate-inputs-arrow')!.setText(expanded ? '▾' : '▸');
-        if (expanded) {
-            bubble.dataset['delegateInputsExpanded'] = '1';
-        } else {
-            delete bubble.dataset['delegateInputsExpanded'];
-        }
-    };
-    header.addEventListener('click', toggle);
-    header.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            toggle();
-        }
-    });
+    // Mirror the old margin-top on the wrapper
+    collapsible.wrapper.addClass('collapsible-block--spaced-top');
 }

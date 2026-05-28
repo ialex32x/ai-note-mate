@@ -1667,8 +1667,8 @@ export class SessionView extends ItemView {
 
     private updateBubbleContent(bubble: HTMLElement, msg: ChatMessage) {
         // Preserve expanded states
-        const thinkingBody = bubble.querySelector('.session-bubble__thinking-body');
-        const wasThinkingExpanded = thinkingBody?.classList.contains('session-bubble__thinking-body--expanded') ?? false;
+        const thinkingBody = bubble.querySelector('.collapsible-block--inline .collapsible-block__body');
+        const wasThinkingExpanded = thinkingBody?.classList.contains('collapsible-block__body--expanded') ?? false;
         const toolDetailBody = bubble.querySelector('.session-bubble__tool-detail-body');
         const wasToolDetailExpanded = toolDetailBody?.classList.contains('session-bubble__tool-detail-body--expanded') ?? false;
 

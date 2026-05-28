@@ -133,10 +133,6 @@ export const zhTW: Record<string, string> = {
 	'view.contextSummarizing': '正在壓縮上下文…',
 	'view.contextEmergencyShrink': '上下文預算超限：本輪部分新返回的工具結果被截斷。請在配置方案中提高壓縮閾值, 或切換至上下文更大的模型。',
 
-	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentReplySummary': '回覆（點擊展開）',
-	'view.toggleSubAgentReply': '切換子代理回覆顯示',
-
 	// ── Settings ──────────────────────────────────────────
 	'settings.baseUrl': '介面地址',
 	'settings.baseUrlDesc': '輸入 API 的基礎 URL',

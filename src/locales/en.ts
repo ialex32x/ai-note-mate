@@ -133,10 +133,6 @@ export const en: Record<string, string> = {
 	'view.contextSummarizing': 'Compressing context…',
 	'view.contextEmergencyShrink': 'Context budget exceeded: some recent tool results were truncated this turn. Raise the compression threshold in your profile, or switch to a larger-context model.',
 
-	// ── Sub-agent ────────────────────────────────────────
-	'view.subAgentReplySummary': 'Reply (click to expand)',
-	'view.toggleSubAgentReply': 'Toggle sub-agent reply',
-
 	// ── Settings ──────────────────────────────────────────
 	'settings.baseUrl': 'Base URL',
 	'settings.baseUrlDesc': 'Enter the base URL for the API',
