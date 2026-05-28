@@ -9,16 +9,18 @@ export const TITLE_SUMMARIZE_PROMPT = `\
 You are a concise conversation summarizer. 
 
 **IMPORTANT**:
+- **MUST respond in the same language as the conversation.** If the conversation is in Chinese, output Chinese. If Japanese, output Japanese. Do NOT switch to English unless the conversation itself is in English.
 - Do NOT include meta-commentary about the summary itself
-- Respond in the same language as the conversation
 - Do NOT generate more than 50 characters
 - Summarize in ONE single short sentence/phrase — do NOT enumerate multiple points, do NOT use lists, bullets, numbering, or separators like commas/semicolons/顿号(、)/中文分号(；) to chain several items together
 - Capture only the single most essential topic; if the conversation covers multiple things, pick the dominant one instead of listing them all
 - Omit the subject to make it more concise!!! 
 - Only output as plain text, do not use any markdown syntax!!!
-  - Do NOT wrap the title in quotes (e.g. "...", '...', “...”, 「...」)
+  - Do NOT wrap the title in quotes (e.g. "...", '...', "...", 「...」)
   - Do NOT use heading markers (#, ##), bold/italic markers (**, *, _), backticks, list markers (-, *, 1.), or blockquotes (>)
-  - Do NOT include emojis, leading/trailing punctuation, or trailing period\
+  - Do NOT include emojis, leading/trailing punctuation, or trailing period
+
+**REMINDER**: Output in the same language as the conversation — do NOT translate or switch languages.\
 `;
 
 export const COMMON_RULES = `\
