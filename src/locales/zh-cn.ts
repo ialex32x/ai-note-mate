@@ -24,7 +24,7 @@ export const zhCN: Record<string, string> = {
 	'view.editMessage': '编辑消息',
 	'view.editWhileStreamingBlocked': '回复生成中，无法编辑。',
 	'view.editMessageConfirmTitle': '编辑此消息？',
-	'view.editMessageConfirmMessage': '编辑将回退对话至此位置，所有后续待处理检查点将被丢弃，库内文件将从快照恢复。',
+	'view.editMessageConfirmMessage': '编辑将回退对话至此位置，所有后续待处理检查点将被丢弃，库内文件将从快照恢复。此消息之后的消息也会被删除，且无法恢复。',
 	'view.messageEdited': '消息已回填到输入框。',
 	'view.sessionBusy': '该会话的 AI 仍在响应中',
 	'view.sessionStatusUnloaded': '未加载（仅历史记录）',

@@ -24,7 +24,7 @@ export const ja: Record<string, string> = {
 	'view.editMessage': 'メッセージを編集',
 	'view.editWhileStreamingBlocked': '返信のストリーミング中は編集できません。',
 	'view.editMessageConfirmTitle': 'このメッセージを編集しますか？',
-	'view.editMessageConfirmMessage': '編集すると会話がこの時点まで戻され、後続の保留中チェックポイントは全て破棄され、保存済みスナップショットからVault内ファイルが復元されます。',
+	'view.editMessageConfirmMessage': '編集すると会話がこの時点まで戻され、後続の保留中チェックポイントは全て破棄され、保存済みスナップショットからVault内ファイルが復元されます。このメッセージ以降のメッセージも削除され、復元できません。',
 	'view.messageEdited': 'メッセージを入力欄に戻しました。',
 	'view.sessionBusy': 'このセッションでAIがまだ応答中です',
 	'view.sessionStatusUnloaded': '未読み込み（履歴のみ）',

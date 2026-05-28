@@ -24,7 +24,7 @@ export const ko: Record<string, string> = {
 	'view.editMessage': '메시지 편집',
 	'view.editWhileStreamingBlocked': '응답이 스트리밍 중이라 편집할 수 없습니다.',
 	'view.editMessageConfirmTitle': '이 메시지를 편집할까요?',
-	'view.editMessageConfirmMessage': '편집하면 대화가 이 지점으로 되돌려지며, 모든 후속 대기 중 체크포인트가 취소되고 저장된 스냅샷에서 볼트 파일이 복원됩니다.',
+	'view.editMessageConfirmMessage': '편집하면 대화가 이 지점으로 되돌려지며, 모든 후속 대기 중 체크포인트가 취소되고 저장된 스냅샷에서 볼트 파일이 복원됩니다. 이 메시지 이후의 메시지도 삭제되며 복구할 수 없습니다.',
 	'view.messageEdited': '메시지를 입력창으로 되돌렸습니다.',
 	'view.sessionBusy': '이 세션에서 AI가 아직 응답 중입니다',
 	'view.sessionStatusUnloaded': '로드되지 않음(기록 전용)',

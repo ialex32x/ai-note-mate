@@ -24,7 +24,7 @@ export const en: Record<string, string> = {
 	'view.editMessage': 'Edit message',
 	'view.editWhileStreamingBlocked': 'Cannot edit while a reply is streaming.',
 	'view.editMessageConfirmTitle': 'Edit this message?',
-	'view.editMessageConfirmMessage': 'Editing will roll back the conversation to this point. All subsequent checkpoints will be discarded and vault files restored from snapshots.',
+	'view.editMessageConfirmMessage': 'Editing will roll back the conversation to this point. All subsequent checkpoints will be discarded and vault files restored from snapshots. Messages after this one will also be deleted and cannot be recovered.',
 	'view.messageEdited': 'Message restored to input.',
 	'view.sessionBusy': 'AI is still responding in this session',
 	'view.sessionStatusUnloaded': 'Not loaded (history only)',

@@ -24,7 +24,7 @@ export const zhTW: Record<string, string> = {
 	'view.editMessage': '編輯訊息',
 	'view.editWhileStreamingBlocked': '回覆生成中，無法編輯。',
 	'view.editMessageConfirmTitle': '編輯此訊息？',
-	'view.editMessageConfirmMessage': '編輯將退回對話至此位置，所有後續待處理檢查點將被捨棄，儲存庫內檔案將從快照還原。',
+	'view.editMessageConfirmMessage': '編輯將退回對話至此位置，所有後續待處理檢查點將被捨棄，儲存庫內檔案將從快照還原。此訊息之後的訊息也會被刪除，且無法恢復。',
 	'view.messageEdited': '訊息已回填至輸入框。',
 	'view.sessionBusy': '該對話的 AI 仍在回覆中',
 	'view.sessionStatusUnloaded': '未載入（僅歷史紀錄）',

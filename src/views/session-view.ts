@@ -1020,20 +1020,20 @@ export class SessionView extends ItemView {
             cp => cp.status === 'pending' && truncatedIds.has(cp.anchorMessageId),
         );
 
-        // ── Confirm if checkpoints would be discarded ───────────────
-        if (affectedPending.length > 0) {
-            const confirmed = await new CheckpointActionConfirmModal(
-                this.app,
-                t('view.editMessageConfirmTitle'),
-                t('view.editMessageConfirmMessage'),
-                t('view.editMessage'),
-                'discard',
-            ).waitForResult();
-            if (!confirmed) return;
+        // ── Confirm before editing ──────────────────────────────────
+        const confirmed = await new CheckpointActionConfirmModal(
+            this.app,
+            t('view.editMessageConfirmTitle'),
+            t('view.editMessageConfirmMessage'),
+            t('view.editMessage'),
+            'discard',
+        ).waitForResult();
+        if (!confirmed) return;
 
-            // Discard every affected checkpoint, earliest first so the
-            // cascade rule (discard(id) → also discards all later pending)
-            // handles the rest naturally.
+        // Discard affected checkpoints if any, earliest first so the
+        // cascade rule (discard(id) → also discards all later pending)
+        // handles the rest naturally.
+        if (affectedPending.length > 0) {
             const [earliest] = affectedPending;
             if (earliest) await store.discard(earliest.id);
         }
