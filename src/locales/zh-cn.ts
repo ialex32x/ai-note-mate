@@ -115,6 +115,10 @@ export const zhCN: Record<string, string> = {
 	'view.sendToNewSession': '发送到新 AI 会话',
 	'view.inputHasDraftNotice': 'AI 输入框已有内容,请先发送或清空后再执行此操作。',
 	'view.promptFilledNotice': '已填入 AI 会话输入框,请切换过去查看并继续操作。',
+	'view.acceptAllPendingCheckpoints': '接受全部待处理检查点',
+	'view.allPendingCheckpointsAccepted': '已接受所有会话中的 {count} 个检查点。',
+	'view.noPendingCheckpointsToAccept': '没有待处理的检查点。',
+
 	'view.deleteHistorySessions': '删除历史会话',
 	'view.deleteHistorySessionsConfirmTitle': '删除历史会话',
 	'view.deleteHistorySessionsConfirmMessage': '这将删除除当前会话外的 {count} 个历史会话。此操作无法撤销。',
@@ -201,6 +205,7 @@ export const zhCN: Record<string, string> = {
 	'settings.resetTipsDesc': '重新启用之前已忽略或已完成的提示，让它们再次出现在输入工具栏的提示气泡中。',
 	'settings.resetTipsBtn': '重置',
 	'settings.resetTipsDone': '使用提示已恢复。',
+	'settings.customMenuGroup': '自定义菜单',
 	'settings.showAdvanced': '显示进阶设置',
 	'settings.showAdvancedDesc': '开启后显示进阶参数；如不确定用法，请勿随意修改。',
 	'settings.builtinWebSearch': '内置网络搜索工具',
@@ -385,7 +390,6 @@ export const zhCN: Record<string, string> = {
 	'settings.memoryCount': '已存储 {count} 条记忆',
 
 	// ── Customize ──────────────────────────────────────────
-	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': '菜单笔记路径',
 	'settings.customizeMenuNotePathDesc': '定义自定义右键菜单项的 Markdown 笔记的库内相对路径。一级标题选择菜单表面（Files → 文件菜单，Editor → 编辑器菜单）；每个二级标题是一个菜单标签，其正文内容为提示词模板。默认仅对 Markdown（.md）笔记显示；在 H2 标题末尾追加 `[.png, .jpg]` 可限定其它文件类型。引用行（"> ..."）视为注释，会被过滤。',
 	'settings.customizeMenuNotePathPlaceholder': '例如 MENU.md',

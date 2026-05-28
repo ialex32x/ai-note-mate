@@ -50,6 +50,9 @@ export class GlobalSettingsSection implements SettingsSection {
 		// is disabled when the list is already empty so the row keeps
 		// the "what does it do" affordance even before any tip is run.
 		this.renderResetTipsRow(container);
+
+		// ── Custom menu group ──────────────────────────────────────
+		this.renderCustomMenuGroup(container);
 	}
 
 	private renderResetTipsRow(container: HTMLElement): void {
@@ -85,6 +88,105 @@ export class GlobalSettingsSection implements SettingsSection {
 			markSettingAdvanced(setting);
 		} else {
 			setting.settingEl.addClass('oap-setting--advanced-collapsed');
+		}
+	}
+
+	private renderCustomMenuGroup(container: HTMLElement): void {
+		const { plugin, refreshSection } = this.ctx;
+
+		// Group heading
+		container.createEl('h3', { text: t('settings.customMenuGroup') });
+
+		const fileExists = plugin.customMenuService.findFile() !== null;
+
+		// ── Note path + helpers ──────────────────────────────────────
+		const pathSetting = new Setting(container)
+			.setName(t('settings.customizeMenuNotePath'))
+			.setDesc(t('settings.customizeMenuNotePathDesc'))
+			.addText(text => {
+				text.setPlaceholder(t('settings.customizeMenuNotePathPlaceholder'));
+				text.setValue(plugin.settings.customMenuNotePath);
+				text.onChange(async (value) => {
+					plugin.settings.customMenuNotePath = value.trim();
+					await plugin.saveSettings();
+					void plugin.customMenuService.refresh();
+				});
+			});
+
+		pathSetting.addExtraButton(btn => {
+			btn.setIcon('file-plus-2');
+			btn.setTooltip(
+				fileExists
+					? t('settings.customizeOpenNote')
+					: t('settings.customizeCreateDefault'),
+			);
+			btn.onClick(async () => {
+				const existing = plugin.customMenuService.findFile();
+				if (existing) {
+					await plugin.app.workspace.openLinkText(existing.path, '', true);
+					return;
+				}
+				try {
+					const file = await plugin.customMenuService.ensureFile();
+					new Notice(t('settings.customizeCreated', { path: file.path }));
+					refreshSection(this);
+				} catch (err) {
+					new Notice(
+						err instanceof Error ? err.message : String(err),
+					);
+				}
+			});
+		});
+
+		// ── Default template preview ─────────────────────────────────
+		this.renderTemplatePreview(container);
+
+		// ── Variable reference ───────────────────────────────────────
+		this.renderVariableReference(container);
+	}
+
+	/** Read-only preview of the localized default MENU.md template. */
+	private renderTemplatePreview(container: HTMLElement): void {
+		container.createEl('h4', {
+			text: t('settings.customizeTemplatePreviewHeading'),
+		});
+		container.createEl('p', {
+			cls: 'setting-item-description',
+			text: t('settings.customizeTemplatePreviewDesc'),
+		});
+
+		const wrap = container.createEl('div', { cls: 'oap-customize-template-preview' });
+		wrap.createEl('pre', {
+			cls: 'oap-customize-template-preview__code',
+			text: t('settings.customizeMenuDefaultTemplate'),
+		});
+	}
+
+	/**
+	 * Render a short reference table explaining the available template
+	 * variables. Kept minimal so it doesn't overwhelm the settings panel;
+	 * the full default template is shown in the preview block above.
+	 */
+	private renderVariableReference(container: HTMLElement): void {
+		container.createEl('h4', {
+			text: t('settings.customizeVariablesHeading'),
+		});
+
+		const vars: Array<{ placeholder: string; descKey: string }> = [
+			{ placeholder: '[icon]', descKey: 'settings.customizeVarIcon' },
+			{ placeholder: '[.ext, …]', descKey: 'settings.customizeVarFileExtensions' },
+			{ placeholder: '{{filepath}}', descKey: 'settings.customizeVarFilepath' },
+			{ placeholder: '{{selection}}', descKey: 'settings.customizeVarSelection' },
+			{ placeholder: '{{blockquote}}', descKey: 'settings.customizeVarBlockquote' },
+		];
+
+		const table = container.createEl('table', {
+			cls: 'oap-customize-variables-table',
+		});
+		for (const v of vars) {
+			const row = table.createEl('tr');
+			row.createEl('td', { cls: 'oap-customize-var-name' }).setText(v.placeholder);
+			row.createEl('td', { cls: 'oap-customize-var-desc' }).setText(t(v.descKey));
 		}
 	}
 

@@ -71,6 +71,13 @@ export interface SessionNavigatorDeps {
      * to whichever session is now active.
      */
     onActiveSessionDeleted: () => Promise<void>;
+    /**
+     * Called when the user clicks "Accept all pending checkpoints" in
+     * the more-actions dropdown. The view iterates all warm session
+     * runtimes and accepts every still-pending checkpoint, releasing
+     * their file locks and snapshots.
+     */
+    onAcceptAllPendingCheckpoints: () => Promise<void>;
 }
 
 /**
@@ -151,6 +158,25 @@ export class SessionNavigator {
 
         const moreActionsDropdown = sessionBtnGroup.createEl('div', {
             cls: 'session-dropdown-menu session-dropdown-menu--toolbar',
+        });
+
+        // Accept all pending checkpoints across all sessions
+        const acceptCheckpointsItem = moreActionsDropdown.createEl('div', {
+            cls: 'session-dropdown-item',
+        });
+        const acceptIcon = acceptCheckpointsItem.createEl('span', {
+            cls: 'session-dropdown-item__icon',
+        });
+        setIcon(acceptIcon, 'check-check');
+        acceptCheckpointsItem.createEl('span', { text: t('view.acceptAllPendingCheckpoints') });
+        acceptCheckpointsItem.addEventListener('click', () => {
+            this.deps.dropdownManager.closeActive();
+            void this.deps.onAcceptAllPendingCheckpoints();
+        });
+
+        // Divider separator
+        moreActionsDropdown.createEl('hr', {
+            cls: 'session-dropdown-menu__divider',
         });
 
         const deleteHistoryItem = moreActionsDropdown.createEl('div', {

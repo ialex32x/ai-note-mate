@@ -115,6 +115,10 @@ export const ja: Record<string, string> = {
 	'view.sendToNewSession': '新しいAIセッションに送信',
 	'view.inputHasDraftNotice': 'AI 入力欄に既に内容があります。送信または消去してから再度実行してください。',
 	'view.promptFilledNotice': 'プロンプトを AI セッション入力欄に入力しました。セッションに切り替えて確認・送信してください。',
+	'view.acceptAllPendingCheckpoints': '保留中チェックポイントをすべて承認',
+	'view.allPendingCheckpointsAccepted': 'すべてのセッションで {count} 件のチェックポイントを承認しました。',
+	'view.noPendingCheckpointsToAccept': '承認待ちのチェックポイントはありません。',
+
 	'view.deleteHistorySessions': '履歴セッションを削除',
 	'view.deleteHistorySessionsConfirmTitle': '履歴セッションの削除',
 	'view.deleteHistorySessionsConfirmMessage': '現在のセッションを除く {count} 個の履歴セッションを削除します。この操作は元に戻せません。',
@@ -202,6 +206,7 @@ export const ja: Record<string, string> = {
 	'settings.resetTipsDesc': '以前に閉じた、または実行したヒントを再度有効化し、入力ツールバーのヒント表示に再び現れるようにします。',
 	'settings.resetTipsBtn': 'リセット',
 	'settings.resetTipsDone': '使い方のヒントを復元しました。',
+	'settings.customMenuGroup': 'カスタムメニュー',
 	'settings.showAdvanced': '上級設定を表示',
 	'settings.showAdvancedDesc': '有効にすると、効果を理解している場合にのみ変更すべき上級者向けパラメータが表示されます。',
 	'settings.builtinWebSearch': '組み込みのウェブ検索ツール',
@@ -386,7 +391,6 @@ export const ja: Record<string, string> = {
 	'settings.memoryCount': '{count} 件の記憶を保存',
 
 	// ── Customize ──────────────────────────────────────────
-	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': 'メニューノートのパス',
 	'settings.customizeMenuNotePathDesc': 'カスタム右クリックメニュー項目を定義する Markdown ノートのボールト相対パス。H1 見出しでメニュー面を選択（Files → ファイルメニュー、Editor → エディターメニュー）。各 H2 見出しはメニューラベルで、その本文がプロンプトテンプレートです。既定では Markdown（.md）ノートのみに表示。H2 末尾に `[.png, .jpg]` を付けると他の拡張子に限定できます。引用行（"> ..."）はコメントとして扱われ、削除されます。',
 	'settings.customizeMenuNotePathPlaceholder': '例: MENU.md',

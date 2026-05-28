@@ -115,6 +115,10 @@ export const zhTW: Record<string, string> = {
 	'view.sendToNewSession': '傳送到新 AI 對話',
 	'view.inputHasDraftNotice': 'AI 輸入框已有內容,請先發送或清空後再執行此操作。',
 	'view.promptFilledNotice': '已填入 AI 對話輸入框,請切換過去查看並繼續操作。',
+	'view.acceptAllPendingCheckpoints': '接受全部待處理檢查點',
+	'view.allPendingCheckpointsAccepted': '已接受所有對話中的 {count} 個檢查點。',
+	'view.noPendingCheckpointsToAccept': '沒有待處理的檢查點。',
+
 	'view.deleteHistorySessions': '刪除歷史對話',
 	'view.deleteHistorySessionsConfirmTitle': '刪除歷史對話',
 	'view.deleteHistorySessionsConfirmMessage': '這將刪除除目前對話外的 {count} 個歷史對話。此操作無法復原。',
@@ -202,6 +206,7 @@ export const zhTW: Record<string, string> = {
 	'settings.resetTipsDesc': '重新啟用之前已忽略或已完成的提示，讓它們再次出現在輸入工具列的提示氣泡中。',
 	'settings.resetTipsBtn': '重置',
 	'settings.resetTipsDone': '使用提示已恢復。',
+	'settings.customMenuGroup': '自訂選單',
 	'settings.showAdvanced': '顯示進階設定',
 	'settings.showAdvancedDesc': '開啟後顯示進階參數；若不確定用法，請勿隨意修改。',
 	'settings.builtinWebSearch': '內建網路搜尋工具',
@@ -386,7 +391,6 @@ export const zhTW: Record<string, string> = {
 	'settings.memoryCount': '已儲存 {count} 條記憶',
 
 	// ── Customize ──────────────────────────────────────────
-	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': '選單筆記路徑',
 	'settings.customizeMenuNotePathDesc': '定義自訂右鍵選單項目的 Markdown 筆記的庫內相對路徑。一級標題選擇選單表面（Files → 檔案選單，Editor → 編輯器選單）；每個二級標題是一個選單標籤，其正文內容為提示詞模板。預設僅對 Markdown（.md）筆記顯示；在 H2 標題末尾追加 `[.png, .jpg]` 可限定其它檔案類型。引用行（"> ..."）視為註解，會被過濾。',
 	'settings.customizeMenuNotePathPlaceholder': '例如 MENU.md',

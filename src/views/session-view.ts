@@ -510,6 +510,26 @@ export class SessionView extends ItemView {
                     this.clearViewDOM();
                     await this.bindActiveSessionRuntime();
                 },
+                onAcceptAllPendingCheckpoints: async () => {
+                    const sessions = this.sessionManager.getAllSessions();
+                    let acceptedCount = 0;
+
+                    for (const s of sessions) {
+                        const rt = this.plugin.runtimePool.get(s.id);
+                        if (rt && rt.checkpointStore.hasPending) {
+                            const countBefore = rt.checkpointStore.pendingCount;
+                            await rt.checkpointStore.acceptAllPending();
+                            acceptedCount += countBefore;
+                        }
+                    }
+
+                    if (acceptedCount > 0) {
+                        new Notice(t('view.allPendingCheckpointsAccepted', { count: acceptedCount }));
+                        this.sessionNavigator.updatePendingBadge();
+                    } else {
+                        new Notice(t('view.noPendingCheckpointsToAccept'));
+                    }
+                },
             });
             this.sessionNavigator.mount(leftGroup);
 

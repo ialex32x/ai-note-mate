@@ -4,7 +4,6 @@ import { t } from "../i18n";
 import { createSettingsSection, setAdvancedSettingsVisible } from "../components/settings-components";
 import { SectionAnchorNav } from "../components/settings-anchor-nav";
 import {
-	CustomizeSettingsSection,
 	EmbeddingSettingsSection,
 	GlobalSettingsSection,
 	ImageGenSettingsSection,
@@ -50,7 +49,6 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			new ToolsSettingsSection(ctx),
 			new SkillSettingsSection(ctx),
 			new MemorySettingsSection(ctx),
-			new CustomizeSettingsSection(ctx),
 		];
 	}
 

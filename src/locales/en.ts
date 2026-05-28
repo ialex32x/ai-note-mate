@@ -115,6 +115,10 @@ export const en: Record<string, string> = {
 	'view.sendToNewSession': 'Send to New AI Session',
 	'view.inputHasDraftNotice': 'The AI input box already contains text. Send or clear it before triggering this action.',
 	'view.promptFilledNotice': 'Prompt added to the AI session input. Switch to the session to review and send.',
+	'view.acceptAllPendingCheckpoints': 'Accept all pending checkpoints',
+	'view.allPendingCheckpointsAccepted': '{count} checkpoint(s) accepted across all sessions.',
+	'view.noPendingCheckpointsToAccept': 'No pending checkpoints to accept.',
+
 	'view.deleteHistorySessions': 'Delete history sessions',
 	'view.deleteHistorySessionsConfirmTitle': 'Delete History Sessions',
 	'view.deleteHistorySessionsConfirmMessage': 'This will delete {count} history sessions other than the current one. This action cannot be undone.',
@@ -202,6 +206,7 @@ export const en: Record<string, string> = {
 	'settings.resetTipsDesc': 'Re-enable previously dismissed or completed tips so they appear again in the input toolbar popover.',
 	'settings.resetTipsBtn': 'Reset',
 	'settings.resetTipsDone': 'Usage tips restored.',
+	'settings.customMenuGroup': 'Custom Menu',
 	'settings.showAdvanced': 'Show advanced',
 	'settings.showAdvancedDesc': 'When enabled, shows advanced parameters that should only be changed if you understand their effect.',
 	'settings.builtinWebSearch': 'Built-in web search tool',
@@ -386,7 +391,6 @@ export const en: Record<string, string> = {
 	'settings.memoryCount': '{count} memories stored',
 
 	// ── Customize ──────────────────────────────────────────
-	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': 'Menu note path',
 	'settings.customizeMenuNotePathDesc': 'Vault-relative path of the markdown note that defines custom right-click menu items. H1 headings select a surface (Files → file-menu, Editor → editor-menu); each H2 heading is a menu label whose body is the prompt template. By default, items appear for markdown notes only; append `[.png, .jpg]` to an H2 title to target other file types. Blockquote lines ("> ...") are treated as comments and stripped.',
 	'settings.customizeMenuNotePathPlaceholder': 'e.g. MENU.md',

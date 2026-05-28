@@ -115,6 +115,10 @@ export const ko: Record<string, string> = {
 	'view.sendToNewSession': '새 AI 세션으로 전송',
 	'view.inputHasDraftNotice': 'AI 입력란에 이미 내용이 있습니다. 먼저 보내거나 비운 후 다시 시도하세요.',
 	'view.promptFilledNotice': '프롬프트를 AI 세션 입력란에 입력했습니다. 세션으로 전환하여 확인 후 진행하세요.',
+	'view.acceptAllPendingCheckpoints': '보류 중인 체크포인트 모두 수락',
+	'view.allPendingCheckpointsAccepted': '모든 세션에서 {count}개의 체크포인트를 수락했습니다.',
+	'view.noPendingCheckpointsToAccept': '보류 중인 체크포인트가 없습니다.',
+
 	'view.deleteHistorySessions': '히스토리 세션 삭제',
 	'view.deleteHistorySessionsConfirmTitle': '히스토리 세션 삭제',
 	'view.deleteHistorySessionsConfirmMessage': '현재 세션을 제외한 {count}개의 히스토리 세션을 삭제합니다. 이 작업은 되돌릴 수 없습니다.',
@@ -202,6 +206,7 @@ export const ko: Record<string, string> = {
 	'settings.resetTipsDesc': '이전에 닫았거나 실행한 팁을 다시 활성화해, 입력 툴바의 팁 팝오버에 다시 나타나도록 합니다.',
 	'settings.resetTipsBtn': '초기화',
 	'settings.resetTipsDone': '사용 팁을 복원했습니다.',
+	'settings.customMenuGroup': '사용자 정의 메뉴',
 	'settings.showAdvanced': '고급 설정 표시',
 	'settings.showAdvancedDesc': '활성화하면 플러그인 동작을 이해한 경우에만 변경해야 하는 고급 매개변수가 표시됩니다.',
 	'settings.builtinWebSearch': '내장 웹 검색 도구',
@@ -386,7 +391,6 @@ export const ko: Record<string, string> = {
 	'settings.memoryCount': '{count}개의 기억 저장됨',
 
 	// ── Customize ──────────────────────────────────────────
-	'settings.customize': 'Customize',
 	'settings.customizeMenuNotePath': '메뉴 노트 경로',
 	'settings.customizeMenuNotePathDesc': '사용자 정의 우클릭 메뉴 항목을 정의하는 Markdown 노트의 보관함 상대 경로. H1 제목으로 메뉴 표면을 선택합니다（Files → 파일 메뉴, Editor → 편집기 메뉴）. 각 H2 제목은 메뉴 레이블이며, 그 본문이 프롬프트 템플릿입니다. 기본적으로 Markdown（.md） 노트에만 표시됩니다. H2 끝에 `[.png, .jpg]`를 붙이면 다른 확장자로 제한할 수 있습니다. 인용 줄（"> ..."）은 주석으로 처리되어 제거됩니다.',
 	'settings.customizeMenuNotePathPlaceholder': '예: MENU.md',
