@@ -8,22 +8,44 @@ import { SpeechController } from './speech-controller';
 /**
  * Render a minimal action bar for a user message bubble.
  *
- * Provides Copy and (optionally) Branch-from-here actions — the two
+ * Provides Copy, Edit and (optionally) Branch-from-here actions — the
  * operations that were previously exposed only via right-click context menu.
  * The bar uses the same hover-driven reveal pattern as the assistant
  * action bar: hidden until the bubble is hovered.
  *
  * @param bubble    The user bubble element to append the action bar into.
- * @param msg       The user message whose content is used for copy/branch.
+ * @param msg       The user message whose content is used for copy/edit/branch.
  * @param onBranch  Optional callback invoked when "Branch from here" is
+ *                  clicked. When omitted the button is not rendered.
+ * @param onEdit    Optional callback invoked when "Edit message" is
  *                  clicked. When omitted the button is not rendered.
  */
 export function renderUserActionBar(
     bubble: HTMLElement,
     msg: ChatMessage,
     onBranch?: (msg: ChatMessage) => void,
+    onEdit?: (msg: ChatMessage) => void,
 ): void {
     const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
+
+    // Edit button — restores this message to the input and rolls back
+    // the conversation to before this point
+    if (onEdit) {
+        const editBtn = actions.createEl('button', {
+            cls: 'session-icon-btn session-bubble__action-btn',
+            attr: {
+                'aria-label': t('view.editMessage'),
+                type: 'button',
+            },
+        });
+        setIcon(editBtn, 'pencil');
+        setTooltip(editBtn, t('view.editMessage'));
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            onEdit(msg);
+        });
+    }
 
     // Copy button — reuses createCopyButton for consistent flash-feedback
     const copyBtn = createCopyButton(

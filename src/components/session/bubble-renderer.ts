@@ -104,6 +104,14 @@ export class BubbleRenderer extends Component {
          * flow. When omitted, the menu item is not shown.
          */
         private onBranchFromMessage?: (msg: ChatMessage) => void,
+        /**
+         * Optional callback fired when the user selects "Edit message"
+         * on a user message bubble. The host (session view) should roll
+         * back the conversation to before this message, discard any
+         * affected checkpoints, and restore the message content to the
+         * input box. When omitted, the button is not rendered.
+         */
+        private onEditFromMessage?: (msg: ChatMessage) => void,
     ) {
         super();
         this.ctx = {
@@ -416,13 +424,14 @@ export class BubbleRenderer extends Component {
             }
         } else if (msg.role === 'user') {
             renderUserContent(this.ctx, contentEl, msg.content);
-            // Render inline action bar (Copy + Branch) — replaces the
+            // Render inline action bar (Edit + Copy + Branch) — replaces the
             // previous right-click context menu so the same actions are
             // discoverable on hover without a secondary gesture.
             renderUserActionBar(
                 bubble,
                 msg,
                 this.onBranchFromMessage,
+                this.onEditFromMessage,
             );
             // Move the user action bar outside the bubble border so it
             // sits below the bubble rather than inside its padded area,

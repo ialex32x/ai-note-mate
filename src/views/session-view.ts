@@ -20,6 +20,7 @@ import NoteAssistantPlugin from 'main';
 import { t } from '../i18n';
 import { SessionManager } from '../session-manager';
 import { SessionSearchModal, SessionSearchResult } from '../modals/session-search-modal';
+import { CheckpointActionConfirmModal } from '../modals/checkpoint-action-confirm-modal';
 import {
     DropdownManager,
     BubbleRenderer,
@@ -44,6 +45,7 @@ import {
     createIssueTracerButton, type IssueTracerButtonHandle,
 } from '../components/session/toolbar';
 import type { TipSessionViewAdapter } from '../services/tips';
+import type { TokenUsage } from '../services/llm-provider';
 import { CMInput } from '../components/cm-input';
 import {
     ScrollController,
@@ -619,6 +621,7 @@ export class SessionView extends ItemView {
                 // cleaned up naturally when the view is detached.
                 this.containerEl,
                 (msg) => { void this.handleBranchFromMessage(msg); },
+                (msg) => { void this.handleEditMessage(msg); },
             );
             this.addChild(this.bubbleRenderer);
 
@@ -971,6 +974,98 @@ export class SessionView extends ItemView {
         } finally {
             this.isSwitchingSession = false;
         }
+    }
+
+    /**
+     * Roll back the conversation to before the given user message,
+     * discarding any affected checkpoints, and restore the message
+     * content to the input box for re-editing.
+     *
+     * Unlike branching, this operates in-place — the current session
+     * is truncated rather than forked.
+     */
+    private async handleEditMessage(msg: ChatMessage): Promise<void> {
+        if (msg.role !== 'user') return;
+        if (this.isStreaming) {
+            new Notice(t('view.editWhileStreamingBlocked'));
+            return;
+        }
+        if (!this.guardSwitchSession()) return;
+        if (!this.runtime) return;
+
+        const chat = this.runtime.chat;
+        const messages = chat.messages;
+        const anchorIdx = messages.findIndex(m => m.id === msg.id);
+        if (anchorIdx < 0) return;
+
+        // ── Check for affected checkpoints ──────────────────────────
+        // Build a set of message IDs that will be truncated (from the
+        // target message onwards). Any pending checkpoint whose anchor
+        // falls into this set must be discarded.
+        const truncatedIds = new Set<string>();
+        for (let i = anchorIdx; i < messages.length; i++) {
+            const m = messages[i];
+            if (m) truncatedIds.add(m.id);
+        }
+
+        const store = this.runtime.checkpointStore;
+        const checkpoints = store.checkpoints;
+        const affectedPending = checkpoints.filter(
+            cp => cp.status === 'pending' && truncatedIds.has(cp.anchorMessageId),
+        );
+
+        // ── Confirm if checkpoints would be discarded ───────────────
+        if (affectedPending.length > 0) {
+            const confirmed = await new CheckpointActionConfirmModal(
+                this.app,
+                t('view.editMessageConfirmTitle'),
+                t('view.editMessageConfirmMessage'),
+                t('view.editMessage'),
+                'discard',
+            ).waitForResult();
+            if (!confirmed) return;
+
+            // Discard every affected checkpoint, earliest first so the
+            // cascade rule (discard(id) → also discards all later pending)
+            // handles the rest naturally.
+            const [earliest] = affectedPending;
+            if (earliest) await store.discard(earliest.id);
+        }
+
+        // ── Truncate messages before the anchor ─────────────────────
+        const prefix = messages.slice(0, anchorIdx).map(m => ({
+            ...m,
+            streaming: false,
+        }));
+
+        const currentTokenUsage: TokenUsage = {
+            promptTokens: 0,
+            completionTokens: 0,
+            totalTokens: 0,
+        };
+
+        // Restore the chat agent to the truncated state
+        chat.restoreState(prefix, currentTokenUsage);
+
+        // Persist the truncated state via SessionManager
+        await this.sessionManager.saveSession(
+            this.runtime.sessionId,
+            prefix,
+            currentTokenUsage,
+        );
+
+        // ── Rebuild the view DOM ────────────────────────────────────
+        this.clearViewDOM();
+        // The runtime is still the same instance; we just truncated its
+        // chat messages. Replay the UI from the new (truncated) state.
+        await this.replayRuntimeUI(this.runtime, { fromCache: true });
+
+        // ── Restore the message content to the input ────────────────
+        this.cmInput.setContent(msg.content);
+        this.cmInput.focus();
+        this.draftController?.scheduleSave();
+
+        new Notice(t('view.messageEdited'));
     }
 
     private async handleNewChat() {
