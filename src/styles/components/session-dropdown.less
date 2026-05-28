@@ -253,6 +253,17 @@
     color: @text-primary;
 }
 
+// On touch/mobile devices (no hover), always show the delete button.
+@media (hover: none) {
+    // Increase specificity to match the selector used for items, ensuring
+    // the rule applies to the delete button inside both plain and active items.
+    .session-dropdown__item .session-dropdown__item-delete,
+    .session-dropdown__item:hover .session-dropdown__item-delete {
+        opacity: 1;
+        color: @text-secondary;
+    }
+}
+
 .session-dropdown__item--deleting {
     animation: session-dropdown-item-delete 0.2s ease-out forwards;
 }
