@@ -89,7 +89,7 @@ export const en: Record<string, string> = {
 	'view.extractInsights': 'Extract insights from this reply',
 	'view.insightExtractionUnavailable': 'Configure an insights profile (or a context summarizer as fallback) in settings before extracting insights.',
 	'view.permissions': 'Permissions',
-	'view.profile': 'Profile',
+	'view.profile': 'Text Generation',
 	'view.profileSummarizerBadge': 'Used as context summarizer',
 	'view.profileInsightsBadge': 'Used as insights extractor',
 	'view.permissionsAll': 'All',

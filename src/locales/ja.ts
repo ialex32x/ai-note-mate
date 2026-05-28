@@ -89,7 +89,7 @@ export const ja: Record<string, string> = {
 	'view.extractInsights': 'この返信からインサイトを抽出',
 	'view.insightExtractionUnavailable': 'インサイトを抽出する前に、設定でインサイト用プロファイル（またはフォールバック用の要約器）を構成してください。',
 	'view.permissions': '権限',
-	'view.profile': 'プロファイル',
+	'view.profile': 'テキスト生成',
 	'view.profileSummarizerBadge': 'コンテキスト要約器として使用中',
 	'view.profileInsightsBadge': 'インサイト抽出器として使用中',
 	'view.permissionsAll': '全て',

@@ -89,7 +89,7 @@ export const zhTW: Record<string, string> = {
 	'view.extractInsights': '從此回覆萃取見解',
 	'view.insightExtractionUnavailable': '萃取見解前，請先於設定中配置見解方案（或配置摘要器作為回退）。',
 	'view.permissions': '權限',
-	'view.profile': '設定檔',
+	'view.profile': '文本生成',
 	'view.profileSummarizerBadge': '目前用作上下文摘要器',
 	'view.profileInsightsBadge': '目前用作見解萃取器',
 	'view.permissionsAll': '全部',

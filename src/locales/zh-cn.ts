@@ -89,7 +89,7 @@ export const zhCN: Record<string, string> = {
 	'view.extractInsights': '从该回复提炼见解',
 	'view.insightExtractionUnavailable': '提炼见解前，请先在设置中配置见解方案（或配置摘要器作为回退）。',
 	'view.permissions': '权限',
-	'view.profile': '方案',
+	'view.profile': '文本生成',
 	'view.profileSummarizerBadge': '当前用作上下文摘要器',
 	'view.profileInsightsBadge': '当前用作见解提炼器',
 	'view.permissionsAll': '全部',

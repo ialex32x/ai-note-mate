@@ -89,7 +89,7 @@ export const ko: Record<string, string> = {
 	'view.extractInsights': '이 응답에서 인사이트 추출',
 	'view.insightExtractionUnavailable': '인사이트를 추출하기 전에 설정에서 인사이트 프로필(또는 대체용 요약기)을 구성하세요.',
 	'view.permissions': '권한',
-	'view.profile': '프로필',
+	'view.profile': '텍스트 생성',
 	'view.profileSummarizerBadge': '컨텍스트 요약기로 사용 중',
 	'view.profileInsightsBadge': '인사이트 추출기로 사용 중',
 	'view.permissionsAll': '전체',
