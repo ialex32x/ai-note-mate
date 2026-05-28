@@ -22,10 +22,10 @@ import {
 import type { SectionContext, SettingsSection } from "./types";
 import { getProfileLabel } from "./global-section";
 import { resolveSecret } from "../../utils/secret-helper";
-import { PROFILE_SECTION_ID } from "../../settings/section-ids";
+import { TEXT_GEN_SECTION_ID } from "../../settings/section-ids";
 
 export class ProfileSettingsSection implements SettingsSection {
-	readonly titleKey = PROFILE_SECTION_ID;
+	readonly titleKey = TEXT_GEN_SECTION_ID;
 
 	private editingProfileId: string | null = null;
 

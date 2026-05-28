@@ -12,7 +12,7 @@ import {
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { openPluginSettings } from "../../utils/open-plugin-settings";
-import { PROFILE_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID } from "../../settings/section-ids";
+import { TEXT_GEN_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID } from "../../settings/section-ids";
 
 export class GlobalSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.globalSection';
@@ -198,7 +198,7 @@ export class GlobalSettingsSection implements SettingsSection {
 	 * Clicking it opens the plugin settings and scrolls to the
 	 * specified section (defaults to Profile).
 	 */
-	private addJumpToSectionButton(setting: Setting, sectionId: string = PROFILE_SECTION_ID): void {
+	private addJumpToSectionButton(setting: Setting, sectionId: string = TEXT_GEN_SECTION_ID): void {
 		const { app } = this.ctx;
 		setting.addExtraButton(btn => {
 			btn.setIcon('external-link');

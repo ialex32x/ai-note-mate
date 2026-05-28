@@ -2,10 +2,10 @@ import { Notice } from 'obsidian';
 import { t } from '../../../i18n';
 import { isActiveProfileConfigured } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
-import { PROFILE_SECTION_ID } from '../../../settings/section-ids';
+import { TEXT_GEN_SECTION_ID } from '../../../settings/section-ids';
 import type { TipContext, TipDefinition } from '../types';
 
-function isProfileUsable(ctx: TipContext): boolean {
+function isTextGenAvailable(ctx: TipContext): boolean {
     return isActiveProfileConfigured(ctx.plugin.app, ctx.plugin.settings);
 }
 
@@ -14,20 +14,20 @@ function isProfileUsable(ctx: TipContext): boolean {
  * the active Profile. "Try it" opens Settings → Profile with no confirmation
  * step — the action is harmless and self-explanatory.
  */
-export const configureProfileTip: TipDefinition = {
-    id: 'configure-profile',
-    titleKey: 'tips.configureProfile.title',
-    bodyKey: 'tips.configureProfile.body',
-    available: (ctx) => !isProfileUsable(ctx),
-    disqualified: (ctx) => isProfileUsable(ctx),
+export const configureTextGenTip: TipDefinition = {
+    id: 'configure-text-gen',
+    titleKey: 'tips.configureTextGen.title',
+    bodyKey: 'tips.configureTextGen.body',
+    available: (ctx) => !isTextGenAvailable(ctx),
+    disqualified: (ctx) => isTextGenAvailable(ctx),
     execute: async (ctx) => {
         const ok = openPluginSettings(
             ctx.plugin.app,
             ctx.plugin.manifest.id,
-            PROFILE_SECTION_ID,
+            TEXT_GEN_SECTION_ID,
         );
         if (!ok) {
-            new Notice(t('tips.configureProfile.openFailed'));
+            new Notice(t('tips.configureTextGen.openFailed'));
         }
     },
 };

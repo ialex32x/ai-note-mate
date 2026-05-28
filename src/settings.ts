@@ -17,7 +17,7 @@ export {
 	getSummarizerProfile,
 	getInsightsProfile,
 	getActiveUploadConfig,
-	isActiveProfileConfigured,
+	isActiveTextGenConfigured as isActiveProfileConfigured,
 	isActiveImageGenConfigured,
 	hasMcpServersConfigured,
 } from "./settings/helpers";

@@ -14,7 +14,7 @@ import type {
  * True when the active profile has non-empty `baseUrl`, `model`, and a
  * resolvable API key (including values stored in Obsidian secret storage).
  */
-export function isActiveProfileConfigured(
+export function isActiveTextGenConfigured(
 	app: App,
 	settings: NoteAssistantPluginSettings,
 ): boolean {

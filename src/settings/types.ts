@@ -139,8 +139,6 @@ export interface UploadConfig {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface NoteAssistantPluginSettings {
-	/** Saved provider profiles */
-	profiles: TextGenConfig[];
 	/** ID of the currently active profile */
 	activeProfileId: string;
 	/** ID of the current profile used as context summarizer (usually the one with lower token cost) */
@@ -150,6 +148,13 @@ export interface NoteAssistantPluginSettings {
 	 * "same as summarizer" ({@link summarizerProfileId}).
 	 */
 	insightsProfileId: string;
+	/** ID of the currently active image generation config */
+	activeImageGenId: string;
+	/** ID of the currently active embedding config */
+	activeEmbeddingId: string;
+
+	/** Saved provider profiles */
+	profiles: TextGenConfig[];
 
 	// ── Global settings (not per-profile) ───────────────────────────────────
 	systemPrompt: string;
@@ -195,8 +200,6 @@ export interface NoteAssistantPluginSettings {
 	showAdvanced: boolean;
 	/** Image generation configs array. If empty, image generation is disabled. */
 	imageGenConfigs: ImageGenConfig[];
-	/** ID of the currently active image generation config */
-	activeImageGenId: string;
 	/**
 	 * Whether tools with `requiresConfirmation` need explicit user approval.
 	 * "auto" = always auto-approve (default), "always" = always ask for confirmation.
@@ -221,8 +224,6 @@ export interface NoteAssistantPluginSettings {
 	embeddingEnabled: boolean;
 	/** Embedding configs array. If empty, embedding is disabled. */
 	embeddingConfigs: EmbeddingConfig[];
-	/** ID of the currently active embedding config */
-	activeEmbeddingId: string;
 	/**
 	 * Maximum number of on-demand tools surfaced to the model after
 	 * the retriever (BM25, fused with embedding cosine via RRF when
@@ -379,9 +380,9 @@ export interface NoteAssistantPluginSettings {
 	// ── Conversation insight extraction (knowledge-nugget preview) ──────────
 	/**
 	 * Master switch: after each assistant reply, run a one-shot extractor
-	 * (using {@link insightsProfileId}) to surface candidate knowledge
-	 * nuggets as a read-only card at the tail of the conversation.
-	 * When `insightsProfileId` is empty, insight extraction is disabled.
+	 * (using {@link insightsProfileId} or, when empty, the summarizer
+	 * profile) to surface candidate knowledge nuggets as a read-only card
+	 * at the tail of the conversation.
 	 */
 	insightExtractionEnabled: boolean;
 	/**

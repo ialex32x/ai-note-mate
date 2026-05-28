@@ -12,7 +12,7 @@
  */
 
 /** Anchor id of the Profile (Text Generation) section. */
-export const PROFILE_SECTION_ID = 'settings.profileSection';
+export const TEXT_GEN_SECTION_ID = 'settings.textGenSection';
 
 /** Anchor id of the Embedding section. */
 export const EMBEDDING_SECTION_ID = 'settings.embeddingSection';

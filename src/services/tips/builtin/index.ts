@@ -1,5 +1,5 @@
 import type { TipDefinition } from '../types';
-import { configureProfileTip } from './configure-profile';
+import { configureTextGenTip } from './configure-text-gen';
 import { configureImageGenTip } from './configure-image-gen';
 import { fileRefTriggerTip } from './file-ref-trigger';
 import { createFirstSkillTip } from './create-first-skill';
@@ -16,7 +16,7 @@ import { seedMemoryNoteTip } from './seed-memory-note';
  * Profile setup is listed first so new users see it before feature tips.
  */
 export const BUILTIN_TIPS: readonly TipDefinition[] = [
-    configureProfileTip,
+    configureTextGenTip,
     configureImageGenTip,
     noteIllustrationTip,
     fileRefTriggerTip,

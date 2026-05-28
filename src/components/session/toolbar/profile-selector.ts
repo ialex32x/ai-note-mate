@@ -3,7 +3,7 @@ import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
 import { getActiveProfile } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
-import { PROFILE_SECTION_ID, IMAGE_GEN_SECTION_ID } from '../../../settings/section-ids';
+import { TEXT_GEN_SECTION_ID, IMAGE_GEN_SECTION_ID } from '../../../settings/section-ids';
 import type NoteAssistantPlugin from 'main';
 
 export interface ProfileSelectorHandle {
@@ -53,7 +53,7 @@ export function createProfileSelector(
     const { button, textEl } = DropdownManager.createButton({
         parent: profileWrapper,
         cls: 'session-dropdown-btn',
-        ariaLabel: t('settings.profileSection'),
+        ariaLabel: t('settings.textGenSection'),
     });
     const profileBtnEl = button;
     const profileBtnTextEl = textEl;
@@ -75,8 +75,8 @@ export function createProfileSelector(
         const profilesHeader = profileDropdownEl.createEl('div', {
             cls: 'session-dropdown-section-header',
         });
-        profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.profileSection') });
-        appendSectionSettingsAction(profilesHeader, plugin, dropdownManager, PROFILE_SECTION_ID);
+        profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.textGenSection') });
+        appendSectionSettingsAction(profilesHeader, plugin, dropdownManager, TEXT_GEN_SECTION_ID);
 
         // Effective insights extractor id: dedicated profile when set
         // and valid, otherwise the summarizer.
