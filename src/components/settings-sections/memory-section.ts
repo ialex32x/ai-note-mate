@@ -1,6 +1,7 @@
 import { Notice, Setting } from "obsidian";
 import { t } from "../../i18n";
 import {
+	createSettingsGroupHeading,
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
@@ -160,6 +161,10 @@ export class MemorySettingsSection implements SettingsSection {
 		// model's score distribution; surface them only when the user
 		// has explicitly opted into advanced settings to avoid
 		// overwhelming the default panel.
+		createSettingsGroupHeading(container, {
+			name: t('settings.memoryRecallTuning'),
+			advancedOnly: true,
+		});
 		this.renderNumberField({
 			container,
 			name: t('settings.memoryCriticalMaxChars'),

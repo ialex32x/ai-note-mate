@@ -1,6 +1,7 @@
 import { Notice, Setting } from "obsidian";
 import { t } from "../../i18n";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
+import { TemplatePreviewModal } from "../../modals/template-preview-modal";
 import {
 	createToggleField,
 	isAdvancedSettingsVisible,
@@ -51,8 +52,8 @@ export class GlobalSettingsSection implements SettingsSection {
 		// the "what does it do" affordance even before any tip is run.
 		this.renderResetTipsRow(container);
 
-		// ── Custom menu group ──────────────────────────────────────
-		this.renderCustomMenuGroup(container);
+		// ── Custom menu path ─────────────────────────────────────
+		this.renderCustomMenuPathField(container);
 	}
 
 	private renderResetTipsRow(container: HTMLElement): void {
@@ -91,15 +92,11 @@ export class GlobalSettingsSection implements SettingsSection {
 		}
 	}
 
-	private renderCustomMenuGroup(container: HTMLElement): void {
-		const { plugin, refreshSection } = this.ctx;
-
-		// Group heading
-		container.createEl('h3', { text: t('settings.customMenuGroup') });
+	private renderCustomMenuPathField(container: HTMLElement): void {
+		const { app, plugin, refreshSection } = this.ctx;
 
 		const fileExists = plugin.customMenuService.findFile() !== null;
 
-		// ── Note path + helpers ──────────────────────────────────────
 		const pathSetting = new Setting(container)
 			.setName(t('settings.customizeMenuNotePath'))
 			.setDesc(t('settings.customizeMenuNotePathDesc'))
@@ -138,56 +135,13 @@ export class GlobalSettingsSection implements SettingsSection {
 			});
 		});
 
-		// ── Default template preview ─────────────────────────────────
-		this.renderTemplatePreview(container);
-
-		// ── Variable reference ───────────────────────────────────────
-		this.renderVariableReference(container);
-	}
-
-	/** Read-only preview of the localized default MENU.md template. */
-	private renderTemplatePreview(container: HTMLElement): void {
-		container.createEl('h4', {
-			text: t('settings.customizeTemplatePreviewHeading'),
+		pathSetting.addExtraButton(btn => {
+			btn.setIcon('eye');
+			btn.setTooltip(t('settings.customizePreviewTemplate'));
+			btn.onClick(() => {
+				new TemplatePreviewModal(app).open();
+			});
 		});
-		container.createEl('p', {
-			cls: 'setting-item-description',
-			text: t('settings.customizeTemplatePreviewDesc'),
-		});
-
-		const wrap = container.createEl('div', { cls: 'oap-customize-template-preview' });
-		wrap.createEl('pre', {
-			cls: 'oap-customize-template-preview__code',
-			text: t('settings.customizeMenuDefaultTemplate'),
-		});
-	}
-
-	/**
-	 * Render a short reference table explaining the available template
-	 * variables. Kept minimal so it doesn't overwhelm the settings panel;
-	 * the full default template is shown in the preview block above.
-	 */
-	private renderVariableReference(container: HTMLElement): void {
-		container.createEl('h4', {
-			text: t('settings.customizeVariablesHeading'),
-		});
-
-		const vars: Array<{ placeholder: string; descKey: string }> = [
-			{ placeholder: '[icon]', descKey: 'settings.customizeVarIcon' },
-			{ placeholder: '[.ext, …]', descKey: 'settings.customizeVarFileExtensions' },
-			{ placeholder: '{{filepath}}', descKey: 'settings.customizeVarFilepath' },
-			{ placeholder: '{{selection}}', descKey: 'settings.customizeVarSelection' },
-			{ placeholder: '{{blockquote}}', descKey: 'settings.customizeVarBlockquote' },
-		];
-
-		const table = container.createEl('table', {
-			cls: 'oap-customize-variables-table',
-		});
-		for (const v of vars) {
-			const row = table.createEl('tr');
-			row.createEl('td', { cls: 'oap-customize-var-name' }).setText(v.placeholder);
-			row.createEl('td', { cls: 'oap-customize-var-desc' }).setText(t(v.descKey));
-		}
 	}
 
 	private renderSystemPromptField(container: HTMLElement): void {

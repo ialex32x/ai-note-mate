@@ -1104,16 +1104,24 @@
 }
 
 // In-section group dividers (Artifacts, MCP servers, context compression, …).
-// Obsidian's default heading row is easy to miss; accent bar + tinted panel
+// Obsidian's default heading row is easy to miss; a subtle tinted panel
 // separates sub-groups without competing with the section card title (h5).
-.oap-settings-section__body .oap-settings-group-heading {
+//
+// Specificity note: `.setting-item` is included to beat Obsidian's built-in
+// `.setting-item.setting-item-heading` (both 0,2,0 → 0,3,0).  A plain
+// `background-color` / `border` is declared first as a no-color-mix
+// fallback, then overridden with the richer `color-mix()` variant.
+.oap-settings-section__body .setting-item.oap-settings-group-heading {
     margin-top: @spacing-lg;
     margin-bottom: @spacing-md;
     padding: @spacing-md @spacing-lg;
     border-radius: @radius-md;
+
+    border: 1px solid var(--background-modifier-border);
     border: 1px solid ~"color-mix(in srgb, var(--interactive-accent) 22%, var(--background-modifier-border))";
-    border-left: 3px solid var(--interactive-accent);
-    background: ~"color-mix(in srgb, var(--interactive-accent) 7%, var(--background-secondary))";
+
+    background-color: var(--background-secondary);
+    background: ~"color-mix(in srgb, var(--interactive-accent) 8%, var(--background-secondary))";
 
     &:first-child {
         margin-top: 0;
@@ -1239,11 +1247,14 @@
 }
 
 .oap-customize-var-name {
-    width: 120px;
+    max-width: 200px;
+    width: auto;
     font-family: var(--font-monospace);
     font-weight: 600;
     color: @text-accent;
-    white-space: nowrap;
+    cursor: text;
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .oap-customize-var-desc {
@@ -1274,4 +1285,49 @@
     opacity: 0.5;
     user-select: text;
     -webkit-user-select: text;
+}
+
+/* ── Template preview modal ─────────────────────────── */
+// Wider modal so the template code block and variable table
+// have room to breathe. Keep the template preview compact
+// and ensure content stays inside the modal borders.
+.oap-template-preview-modal {
+    width: 560px;
+    max-width: 90vw;
+    max-height: 85vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    .oap-customize-variables-table {
+        width: 100%;
+
+        td {
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+    }
+
+    .oap-customize-var-name {
+        max-width: 200px;
+        width: auto;
+    }
+
+    .oap-customize-template-preview {
+        max-height: 160px;
+        overflow: auto;
+    }
+
+    .oap-customize-template-preview__code {
+        opacity: 0.85;
+        color: var(--text-secondary);
+    }
+
+    .setting-item-description {
+        margin-bottom: @spacing-md;
+    }
+
+    h4 {
+        margin-top: @spacing-lg;
+        margin-bottom: @spacing-sm;
+    }
 }
