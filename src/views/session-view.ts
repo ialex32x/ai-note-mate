@@ -332,11 +332,16 @@ export class SessionView extends ItemView {
                 this.updateSessionTitle();
                 this.maybeShowFollowUpSuggestions();
                 this.updateNewChatBtnState();
+                // Auto-trim at turn boundary: safe because autoFollow is
+                // now true — the MutationObserver from the trim will
+                // scroll to the bottom naturally.
+                this.messageWindow.maybeTrimTail();
                 break;
             case 'abort':
                 this.scroller.restoreAutoFollow();
                 this.hideStreamingLoader();
                 this.handleAbort(ev.msg);
+                this.messageWindow.maybeTrimTail();
                 break;
             case 'usage-update':
                 this.updateSessionStatusDisplay();
@@ -347,6 +352,7 @@ export class SessionView extends ItemView {
                 this.hideStreamingLoader();
                 this.setInputLocked(false);
                 this.appendErrorBubble(ev.err.message);
+                this.messageWindow.maybeTrimTail();
                 break;
             case 'context-summarizing':
                 // The summarizer LLM is about to be called — surface
@@ -1413,6 +1419,9 @@ export class SessionView extends ItemView {
             if (anchor && anchorOffset !== null) {
                 this.scroller.restoreAnchorScroll(anchor, anchorOffset);
             }
+            // Trim oldest rendered bubbles if the window grew past the limit.
+            // Removing from the top preserves the viewport position naturally.
+            this.messageWindow.maybeTrimTail();
         } catch (err) {
             if (!(err instanceof DOMException && err.name === 'AbortError')) {
                 throw err;
@@ -1461,6 +1470,7 @@ export class SessionView extends ItemView {
                 this.scroller.restoreAnchorScroll(anchor, anchorOffset);
             }
             this.messageWindow.updateSentinel();
+            this.messageWindow.maybeTrimTail();
         } catch (err) {
             if (!(err instanceof DOMException && err.name === 'AbortError')) {
                 throw err;

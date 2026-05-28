@@ -16,6 +16,8 @@ export const HISTORY_LOADING = {
     autoLoadThresholdPx: 200,
     /** Enable tail-first windowing when total units reach this count. */
     minUnitsForWindowing: 40,
+    /** Maximum rendered DOM units before auto-trimming the oldest bubbles. */
+    maxRenderedUnits: 200,
 } as const;
 
 export function historyReplayBatchSize(): number {

@@ -77,6 +77,49 @@ export class MessageWindowController {
         return this.renderedStart;
     }
 
+    /** Number of display units currently rendered in the DOM. */
+    get renderedCount(): number {
+        return this.renderedEnd - this.renderedStart;
+    }
+
+    /**
+     * Remove the oldest `count` rendered DOM bubbles from `messagesEl`
+     * and advance `renderedStart` accordingly. Does NOT modify `allUnits`
+     * so trimmed history can be re-rendered later via "load older".
+     * Returns the number of units actually removed.
+     */
+    trimTail(count: number): number {
+        if (count <= 0) return 0;
+
+        const toRemove = Math.min(count, this.renderedCount);
+        if (toRemove <= 0) return 0;
+
+        const anchor = this.getPrependAnchor();
+        let el: ChildNode | null = anchor;
+        let removed = 0;
+
+        while (el && removed < toRemove) {
+            const next = el.nextSibling;
+            el.remove();
+            removed++;
+            el = next;
+        }
+
+        this.renderedStart += removed;
+        this.updateSentinel();
+        return removed;
+    }
+
+    /**
+     * If the number of rendered units exceeds {@link HISTORY_LOADING.maxRenderedUnits},
+     * trim the oldest bubbles to stay within the limit.
+     */
+    maybeTrimTail(): number {
+        const excess = this.renderedCount - HISTORY_LOADING.maxRenderedUnits;
+        if (excess <= 0) return 0;
+        return this.trimTail(excess);
+    }
+
     findUnitIndex(messageId: string): number {
         return findDisplayUnitIndex(this.allUnits, messageId);
     }
@@ -98,6 +141,14 @@ export class MessageWindowController {
     registerAppendedUnit(unit: DisplayUnit): void {
         this.allUnits.push(unit);
         this.renderedEnd = this.allUnits.length;
+        // NOTE: maybeTrimTail() is NOT called here intentionally.
+        // Trimming during active streaming while the user is browsing
+        // history (autoFollow=false) could remove the oldest rendered
+        // bubbles that the user is currently reading.  Instead, the
+        // view layer calls maybeTrimTail() at safe boundary points:
+        // after loadOlderMessages, ensureMessageVisible, and on turn
+        // finish/abort/error — where scroll anchoring or autoFollow
+        // guarantee a correct viewport state.
     }
 
     setLoadingOlder(loading: boolean): void {
