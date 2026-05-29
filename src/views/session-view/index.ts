@@ -22,3 +22,8 @@ export {
 } from './chat-factory';
 export { rebuildSessionDropdown, type SessionDropdownDeps } from './session-dropdown';
 export { SessionNavigator, type SessionNavigatorDeps } from './session-navigator';
+export { BubbleListController, type BubbleListControllerDeps } from './bubble-list-controller';
+export {
+    SessionStatusController,
+    type SessionStatusControllerDeps,
+} from './session-status-controller';
