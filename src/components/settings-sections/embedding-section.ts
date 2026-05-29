@@ -11,7 +11,6 @@ import {
 	createDropdownField,
 	createTabBar,
 	createTextField,
-	createToggleField,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { EMBEDDING_SECTION_ID } from "../../settings/section-ids";
@@ -26,23 +25,6 @@ export class EmbeddingSettingsSection implements SettingsSection {
 	render(container: HTMLElement): void {
 		const { plugin, refreshSection } = this.ctx;
 		const embeddingConfigs = plugin.settings.embeddingConfigs;
-
-		// Embedding enabled toggle. Marked experimental at the master switch
-		// rather than on every sub-setting: this is the single entry point
-		// users see before opting in, so the flask badge here is enough to
-		// communicate the status of the entire embedding subsystem (active
-		// config selection, tool-filter knobs, etc.).
-		createToggleField({
-			container,
-			name: t('settings.embeddingEnabled'),
-			desc: t('settings.embeddingEnabledDesc'),
-			value: plugin.settings.embeddingEnabled,
-			onChange: async (value) => {
-				plugin.settings.embeddingEnabled = value;
-				await plugin.saveSettings();
-			},
-			experimental: true,
-		});
 
 		// ── Tool retriever tuning (global, applies whenever the on-demand
 		//    tool retriever runs — BM25-only when embedding is unconfigured,

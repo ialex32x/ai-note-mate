@@ -258,8 +258,8 @@ export const en: Record<string, string> = {
 
 	// ── Embedding ───────────────────────────────────────────
 	'settings.embeddingSection': 'Embedding',
-	'settings.embeddingEnabled': 'Enable Embedding',
-	'settings.embeddingEnabledDesc': 'When enabled, AI can use embedding service for semantic search and similarity matching.',
+	'settings.embeddingNone': 'None',
+	'settings.embeddingNoneDesc': 'No embedding service; tools and skills ranked by BM25 keyword matching only.',
 	'settings.embeddingConfig': 'Embedding',
 	'settings.embeddingConfigDesc': 'Select a saved embedding configuration.',
 	'settings.addEmbeddingConfig': 'Add config',

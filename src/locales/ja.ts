@@ -258,8 +258,8 @@ export const ja: Record<string, string> = {
 
 	// ── Embedding ───────────────────────────────────────────
 	'settings.embeddingSection': '埋め込み',
-	'settings.embeddingEnabled': '埋め込みを有効化',
-	'settings.embeddingEnabledDesc': '有効にすると、AIは埋め込みサービスを使用して意味検索と類似度マッチングを行えます。',
+	'settings.embeddingNone': 'なし',
+	'settings.embeddingNoneDesc': '埋め込みサービスを使用しません。ツールとスキルはBM25キーワードマッチングのみでランク付けされます。',
 	'settings.embeddingConfig': '埋め込み',
 	'settings.embeddingConfigDesc': '保存済みの埋め込み設定を選択してください。',
 	'settings.addEmbeddingConfig': '設定追加',

@@ -258,8 +258,8 @@ export const zhTW: Record<string, string> = {
 
 	// ── Embedding ───────────────────────────────────────────
 	'settings.embeddingSection': '嵌入',
-	'settings.embeddingEnabled': '啟用嵌入',
-	'settings.embeddingEnabledDesc': '啟用後，AI 可以使用嵌入服務進行語意搜尋和相似度比對。',
+	'settings.embeddingNone': '無',
+	'settings.embeddingNoneDesc': '不使用嵌入服務；工具和技能僅透過 BM25 關鍵字匹配排序。',
 	'settings.embeddingConfig': '嵌入',
 	'settings.embeddingConfigDesc': '選擇已儲存的嵌入配置。',
 	'settings.addEmbeddingConfig': '新增配置',

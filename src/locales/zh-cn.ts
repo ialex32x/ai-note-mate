@@ -258,8 +258,8 @@ export const zhCN: Record<string, string> = {
 
 	// ── Embedding ───────────────────────────────────────────
 	'settings.embeddingSection': '嵌入',
-	'settings.embeddingEnabled': '启用嵌入',
-	'settings.embeddingEnabledDesc': '启用后，AI 可以使用嵌入服务进行语义搜索和相似度匹配。',
+	'settings.embeddingNone': '无',
+	'settings.embeddingNoneDesc': '不使用嵌入服务；工具和技能仅通过 BM25 关键词匹配排序。',
 	'settings.embeddingConfig': '嵌入',
 	'settings.embeddingConfigDesc': '选择已保存的嵌入配置。',
 	'settings.addEmbeddingConfig': '添加配置',

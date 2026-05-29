@@ -286,6 +286,7 @@ export class GlobalSettingsSection implements SettingsSection {
 			.setName(t('settings.embeddingConfig'))
 			.setDesc(t('settings.embeddingConfigDesc'))
 			.addDropdown((dropdown: DropdownComponent) => {
+				dropdown.addOption('', t('settings.embeddingNone'));
 				for (const c of embeddingConfigs) {
 					dropdown.addOption(c.id, c.name || 'Unnamed');
 				}

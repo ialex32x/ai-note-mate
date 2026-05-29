@@ -86,7 +86,7 @@ export function isActiveImageGenConfigured(
 
 /** Helper: get the currently active embedding config from settings (may be null) */
 export function getActiveEmbeddingConfig(settings: NoteAssistantPluginSettings): EmbeddingConfig | null {
-	if (!settings.embeddingEnabled) return null;
+	if (!settings.activeEmbeddingId) return null;
 	if (settings.embeddingConfigs.length === 0) return null;
 	const config = settings.embeddingConfigs.find(c => c.id === settings.activeEmbeddingId);
 	if (config) return config;

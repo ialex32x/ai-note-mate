@@ -448,14 +448,16 @@ export default class NoteAssistantPlugin extends Plugin {
 			this.settings.insightsProfileId = '';
 		}
 
-		// Ensure at least one embedding config exists (cannot delete the last one)
+		// Ensure at least one embedding config exists (UI needs a tab to show).
 		if (this.settings.embeddingConfigs.length === 0) {
 			const defaultEmbedding = createDefaultEmbeddingConfig();
 			this.settings.embeddingConfigs.push(defaultEmbedding);
-			this.settings.activeEmbeddingId = defaultEmbedding.id;
-		} else if (!this.settings.embeddingConfigs.find(c => c.id === this.settings.activeEmbeddingId)) {
-			// Ensure activeEmbeddingId points to a valid config
-			this.settings.activeEmbeddingId = this.settings.embeddingConfigs[0]!.id;
+		}
+		// Validate activeEmbeddingId: if it points to a non-existent config,
+		// fall back to empty (None). Empty means embedding is disabled.
+		if (this.settings.activeEmbeddingId
+			&& !this.settings.embeddingConfigs.find(c => c.id === this.settings.activeEmbeddingId)) {
+			this.settings.activeEmbeddingId = '';
 		}
 
 		// Ensure at least one image gen config exists (cannot delete the last one)

@@ -2311,14 +2311,13 @@ export class SessionView extends ItemView {
      *   - For Gemini, only `apiKey` is required (`baseUrl` is ignored).
      *   - For OpenAI-compatible providers, both `baseUrl` and `apiKey`.
      *
-     * Note: `getActiveEmbeddingConfig()` already returns `null` when the
-     * feature is disabled in settings, so we can't rely on it alone to tell
-     * disabled apart from unconfigured — we read `embeddingEnabled` directly.
+     * When no active config is selected ("None" in the global dropdown,
+     * i.e. `activeEmbeddingId` is empty), the feature is treated as
+     * disabled.
      */
     private computeEmbeddingPanelInfo(): EmbeddingPanelInfo {
         const settings = this.plugin.settings;
-        const enabled = settings.embeddingEnabled;
-        if (!enabled) {
+        if (!settings.activeEmbeddingId) {
             return { enabled: false, configured: false };
         }
         const config = getActiveEmbeddingConfig(settings);

@@ -185,7 +185,6 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	uploadConfigs: [],
 	activeUploadId: '',
 	skillSearchPaths: [],
-	embeddingEnabled: false,
 	embeddingConfigs: [],
 	activeEmbeddingId: '',
 	toolFilterTopK: DEFAULT_TOOL_FILTER_TOP_K,

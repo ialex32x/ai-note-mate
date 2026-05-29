@@ -6,14 +6,14 @@ import type { TipContext, TipDefinition } from '../types';
 
 /**
  * True when embedding-based tool filtering can already kick in for the
- * user's next turn: the feature is enabled AND the active config has a
- * non-empty API key. Treat any "not yet usable" state (disabled, or no
- * key) as eligible for the tip — those are the users who would
+ * user's next turn: an active embedding config is selected AND it has a
+ * non-empty API key. Treat any "not yet usable" state (no active config,
+ * or no key) as eligible for the tip — those are the users who would
  * benefit most from the explanation.
  */
 function isEmbeddingFilterUsable(ctx: TipContext): boolean {
     const s = ctx.plugin.settings;
-    if (!s.embeddingEnabled) return false;
+    if (!s.activeEmbeddingId) return false;
     if (s.embeddingConfigs.length === 0) return false;
     const active = s.embeddingConfigs.find(c => c.id === s.activeEmbeddingId)
         ?? s.embeddingConfigs[0]!;

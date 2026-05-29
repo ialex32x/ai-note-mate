@@ -12,14 +12,13 @@ import { humanizeIdentifier } from '../../utils/humanize';
  * combines static configuration (settings) with the runtime
  * {@link EmbedderStatus} so the UI can show a single, user-meaningful value:
  *
- * - `disabled`     — the user turned the feature off in settings.
- * - `unconfigured` — the feature is enabled, but the active config is missing
- *                    (no active config, or a required field such as
- *                    `baseUrl` / `apiKey` is empty).
+ * - `disabled`     — no active embedding config selected ("None" in settings).
+ * - `unconfigured` — a config is selected, but required credentials such as
+ *                    `baseUrl` / `apiKey` are empty.
  * - everything else — fall through to the runtime embedder status.
  */
 export interface EmbeddingPanelInfo {
-    /** `true` when `embeddingEnabled` is on in plugin settings. */
+    /** `true` when an active embedding config is selected in settings. */
     enabled: boolean;
     /**
      * `true` when the active embedding config exists and has all required

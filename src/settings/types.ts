@@ -220,9 +220,7 @@ export interface NoteAssistantPluginSettings {
 	skillSearchPaths: string[];
 
 	// ── Embedding ───────────────────────────────────────────────────────────
-	/** Whether embedding service is enabled */
-	embeddingEnabled: boolean;
-	/** Embedding configs array. If empty, embedding is disabled. */
+	/** Embedding configs array. Empty when no configs have been added. */
 	embeddingConfigs: EmbeddingConfig[];
 	/**
 	 * Maximum number of on-demand tools surfaced to the model after

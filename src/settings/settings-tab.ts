@@ -200,6 +200,10 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			if (profileIds.has(firstVal)) {
 				this.rebuildSelect(select, settings.profiles, savedValue, profileIds,
 					p => getProfileLabel(p));
+			} else if (firstVal === '' && select.options.length > 1 && embeddingIds.has(select.options[1]!.value)) {
+				// Embedding dropdown: first option is "None" (value=''),
+				// second option is the first actual embedding config.
+				this.rebuildEmbeddingSelect(select, settings.embeddingConfigs, savedValue, embeddingIds);
 			} else if (embeddingIds.has(firstVal)) {
 				this.rebuildSelect(select, settings.embeddingConfigs, savedValue, embeddingIds,
 					c => c.name || 'Unnamed');
@@ -232,6 +236,35 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			select.appendChild(opt);
 		}
 		if (validIds.has(savedValue)) {
+			select.value = savedValue;
+		} else if (items.length > 0) {
+			select.value = items[0]!.id;
+		}
+	}
+
+	/**
+	 * Rebuild the embedding config dropdown, preserving the "None" option.
+	 */
+	private rebuildEmbeddingSelect<T extends { id: string }>(
+		select: HTMLSelectElement,
+		items: T[],
+		savedValue: string,
+		validIds: Set<string>,
+	): void {
+		select.innerHTML = '';
+		// "None" option first
+		const noneOpt = activeDocument.createElement('option');
+		noneOpt.value = '';
+		noneOpt.textContent = t('settings.embeddingNone');
+		select.appendChild(noneOpt);
+		// Config options
+		for (const item of items) {
+			const opt = activeDocument.createElement('option');
+			opt.value = item.id;
+			opt.textContent = item['name' as keyof T] as unknown as string || 'Unnamed';
+			select.appendChild(opt);
+		}
+		if (savedValue === '' || validIds.has(savedValue)) {
 			select.value = savedValue;
 		} else if (items.length > 0) {
 			select.value = items[0]!.id;

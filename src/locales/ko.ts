@@ -258,8 +258,8 @@ export const ko: Record<string, string> = {
 
 	// ── Embedding ───────────────────────────────────────────
 	'settings.embeddingSection': '임베딩',
-	'settings.embeddingEnabled': '임베딩 활성화',
-	'settings.embeddingEnabledDesc': '활성화하면 AI가 임베딩 서비스를 사용하여 의미 검색 및 유사도 매칭을 수행할 수 있습니다.',
+	'settings.embeddingNone': '없음',
+	'settings.embeddingNoneDesc': '임베딩 서비스를 사용하지 않습니다. 도구와 스킬은 BM25 키워드 매칭만으로 순위가 매겨집니다.',
 	'settings.embeddingConfig': '임베딩',
 	'settings.embeddingConfigDesc': '저장된 임베딩 설정을 선택하세요.',
 	'settings.addEmbeddingConfig': '설정 추가',
