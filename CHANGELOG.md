@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.3.2
+
+### What's new
+
+- **Embedding provider dropdown** — The embedding toggle is now a dropdown that includes a **None** option, making it clearer when embeddings are disabled and what provider is active.
+- **Hover action bar on user messages** — Edit and delete actions now appear as a hover bar on your own messages, replacing the old right-click context menu for a quicker, more discoverable experience.
+- **Edit message** — Click the pencil icon on any user message to edit its text and re-send, fixing typos or adjusting your prompt without copy-paste gymnastics.
+- **Auto-trim oldest bubbles** — When a conversation grows long, the oldest rendered message bubbles are automatically trimmed to keep the UI responsive. Scroll history and all data are preserved—only the DOM is pruned.
+- **Copy button on delegate inputs** — Handoff payloads in delegate task bubbles now show a copy button, so you can grab structured data with one click.
+- **Accept all checkpoints** — A new button in the checkpoint toolbar accepts every pending edit checkpoint at once, saving clicks when reviewing a batch of edits you trust.
+- **Config selectors moved to General** — Text Generation and Image generation profile pickers now live under **Settings → Note Mate → General**, putting your most-used controls on the first settings page.
+- **Custom menu path moved to General** — The MENU.md file path setting is also now under **Settings → Note Mate → General** instead of the old Customize section.
+
+### Refinements
+
+- **"Text Generation" everywhere** — What was previously called "Profile" or "Provider Profile" is now consistently labelled **Text Generation** across settings, dropdowns, and internal APIs (`TextGenConfig`). The i18n keys are consolidated so translations stay in sync.
+- **Settings restructured** — Template preview is now in a modal instead of an inline panel, section IDs are centralized, and the settings tab layout is reordered for a smoother navigation flow.
+- **Shared UI utilities** — Collapsible sections and copy buttons are extracted into reusable components, reducing duplicated code across the session view, checkpoints, and other panels.
+- **Targeted settings refresh** — The settings panel now responds to a focused `onProfilesChanged` callback instead of a broad `refreshAll`, so profile list changes don't trigger unnecessary full re-renders.
+
+### Fixes
+
+- **Touch device delete** — The delete button on message bubbles is now always shown on touch devices where hover isn't available, so you can remove messages on mobile.
+- **Message editing guard** — Editing a user message now always opens the edit input first, instead of sometimes re-sending immediately on click.
+- **Double-serialised replacements** — An edge case where the edit history could incorrectly nest `replacements` arrays on reload is now handled gracefully.
+
+---
+
 ## 1.3.1
 
 ### What's new
