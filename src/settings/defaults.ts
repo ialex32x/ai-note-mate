@@ -169,6 +169,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	insightsProfileId: '',
 	systemPrompt: '',
 	imageDownloadDir: 'Attachments',
+	saveAsNoteDir: '',
 	builtinWebSearchEnabled: true,
 	builtinWebFetchEnabled: true,
 	builtinRSSFetchEnabled: true,

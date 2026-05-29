@@ -1,5 +1,9 @@
-import { App, Notice, TFile } from 'obsidian';
+import { Notice, TFile, TFolder, normalizePath } from 'obsidian';
 import type { ChatMessage } from './chat-stream';
+import type NoteAssistantPlugin from '../main';
+import { joinPath } from '../utils/path-helper';
+import { CheckpointActionConfirmModal } from '../modals/checkpoint-action-confirm-modal';
+import { t } from '../i18n';
 
 /**
  * Serialize session messages to Markdown for export.
@@ -27,41 +31,76 @@ export function sessionToMarkdown(messages: ChatMessage[]): string {
 }
 
 /**
- * Full export flow: serialize, prompt user for destination via SaveFileModal,
- * write file to vault, open it in a new tab, and show notices.
+ * Full export flow: serialize the session to Markdown and write it to the
+ * vault under the user-configured `saveAsNoteDir`.
  *
- * Extracted from SessionView.doExport.
+ * Behaviour:
+ *   - If `saveAsNoteDir` is empty/whitespace, surface a Notice prompting
+ *     the user to configure it in Settings → General; nothing is written.
+ *   - If the configured directory does not yet exist, ask the user to
+ *     confirm before we create it on the fly. `Vault.createFolder()`
+ *     accepts nested paths (Obsidian creates each missing segment), so
+ *     we don't need to walk the tree manually.
+ *   - The output file is timestamped (`session-YYYY-MM-DD.md`); if the
+ *     same name already exists in the target dir, we overwrite — same
+ *     "single click → done" semantics the Save-as-note button has had
+ *     before, just without a picker UI.
+ *   - On success, open the file in the active tab (no new pane) and
+ *     surface a Notice. Failures surface an error Notice.
  */
-export async function exportSessionToVault(app: App, messages: ChatMessage[]): Promise<void> {
-    const content = sessionToMarkdown(messages);
+export async function exportSessionToVault(
+    plugin: NoteAssistantPlugin,
+    messages: ChatMessage[],
+): Promise<void> {
+    const app = plugin.app;
+    const rawDir = plugin.settings.saveAsNoteDir?.trim() ?? '';
+    if (!rawDir) {
+        new Notice(t('view.exportNoDirConfigured'));
+        return;
+    }
 
+    const dir = normalizePath(rawDir);
     const filename = `session-${new Date().toISOString().slice(0, 10)}.md`;
-    const suggestedFolder = app.workspace.getActiveFile()?.parent ?? undefined;
+    const filePath = joinPath(dir, filename);
 
-    const { SaveFileModal } = await import('../modals/save-file-modal');
-    const modal = new SaveFileModal(app, filename, suggestedFolder);
-    const result = await modal.waitForResult();
-    if (!result) return;
+    // Verify the configured directory exists. `getAbstractFileByPath`
+    // returns the same instance Obsidian tracks internally — comparing
+    // against TFolder rejects "name collides with an existing file".
+    const existingDir = app.vault.getAbstractFileByPath(dir);
+    if (existingDir && !(existingDir instanceof TFolder)) {
+        new Notice(t('view.exportDirIsFile', { path: dir }));
+        return;
+    }
 
-    const { folder, filename: chosenName } = result;
-    const filePath = folder.path === '/' ? chosenName : `${folder.path}/${chosenName}`;
+    if (!existingDir) {
+        const confirmed = await new CheckpointActionConfirmModal(
+            app,
+            t('view.exportCreateDirTitle'),
+            t('view.exportCreateDirMessage', { path: dir }),
+            t('view.exportCreateDirConfirm'),
+            'accept',
+        ).waitForResult();
+        if (!confirmed) return;
+    }
 
+    const content = sessionToMarkdown(messages);
     try {
-        const existing = app.vault.getAbstractFileByPath(filePath);
-        if (existing instanceof TFile) {
-            await app.vault.modify(existing, content);
+        if (!existingDir) {
+            await app.vault.createFolder(dir);
+        }
+        const existingFile = app.vault.getAbstractFileByPath(filePath);
+        if (existingFile instanceof TFile) {
+            await app.vault.modify(existingFile, content);
         } else {
             await app.vault.create(filePath, content);
         }
-        const file = app.vault.getAbstractFileByPath(filePath);
-        if (file instanceof TFile) {
-            // Follow Obsidian's standard behaviour: click replaces the
-            // active tab, Cmd/Ctrl+click opens a new tab.
-            void app.workspace.openLinkText(filePath, '', false);
-        }
-        new Notice('Session exported successfully');
+        // Open in the active tab — same behaviour as before the picker
+        // was removed (Cmd/Ctrl+click in the originating menu still
+        // gets a new tab via Obsidian's default link routing).
+        void app.workspace.openLinkText(filePath, '', false);
+        new Notice(t('view.exportSucceeded', { path: filePath }));
     } catch (err) {
         console.error('Export failed:', err);
-        new Notice('Export failed' + String(err));
+        new Notice(t('view.exportFailed', { error: String(err) }));
     }
 }

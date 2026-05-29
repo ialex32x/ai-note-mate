@@ -5,6 +5,7 @@ export const zhTW: Record<string, string> = {
 	'common.model': '模型',
 	'common.apiKey': 'API 金鑰',
 	'common.copy': '複製',
+	'common.save': '儲存',
 
 	// ── View ──────────────────────────────────────────────
 	'view.name': 'AI 對話',
@@ -36,8 +37,13 @@ export const zhTW: Record<string, string> = {
 	'view.deleteSession': '刪除對話',
 	'view.sessionDeleted': '對話已刪除。',
 	'view.exportSession': '儲存為筆記',
-	'view.exportFilename': '檔案名稱',
-	'view.export': '匯出',
+	'view.exportNoDirConfigured': '請先在 設定 → Note Mate → 一般 中設定「儲存為筆記目錄」。',
+	'view.exportDirIsFile': '無法儲存：「{path}」 已存在但為檔案，不是資料夾。',
+	'view.exportCreateDirTitle': '建立資料夾？',
+	'view.exportCreateDirMessage': '資料夾 「{path}」 尚不存在。是否建立並將會話儲存到該位置？',
+	'view.exportCreateDirConfirm': '建立並儲存',
+	'view.exportSucceeded': '會話已儲存至 {path}',
+	'view.exportFailed': '儲存失敗：{error}',
 	'view.addFileRef': '新增檔案引用',
 	'view.inputPlaceholder': '輸入訊息… (Enter 傳送, Shift+Enter 換行)',
 	'view.send': '傳送',
@@ -167,13 +173,13 @@ export const zhTW: Record<string, string> = {
 	'settings.setAsActive': '設為目前',
 	'settings.imageGenEmpty': '尚未配置圖片生成。新增一個以啟用圖片生成功能。',
 	'settings.textGenSection': 'LLM',
-	'settings.geminiApiKeyDesc': '輸入你的 Google Gemini API 金鑰。',
-	'settings.geminiModelDesc': '輸入要使用的 Gemini 模型（如 gemini-2.5-flash）。',
 	'settings.profileName': '設定檔名稱',
 	'settings.profileNameDesc': '為此配置起一個顯示名稱。',
 	'settings.deleteProfile': '刪除設定檔',
 	'settings.deleteProfileDesc': '刪除此設定檔。至少保留一個設定檔。',
 	'settings.globalSection': '一般',
+	'settings.geminiApiKeyDesc': '輸入你的 Google Gemini API 金鑰。',
+	'settings.geminiModelDesc': '輸入要使用的 Gemini 模型（如 gemini-2.5-flash）。',
 	'settings.maxTokens': '最大 Token 數',
 	'settings.maxTokensDesc': '每個對話的 Token 預算上限，用於介面顯示。設為 0 表示不限制。',
 	'settings.thinkingLevel': '思考強度',
@@ -389,6 +395,11 @@ export const zhTW: Record<string, string> = {
 	'settings.memoriesEmpty': '暫無儲存的記憶。',
 	'settings.memoryCount': '已儲存 {count} 條記憶',
 
+	// ── Save as note ───────────────────────────────────────
+	'settings.saveAsNoteDir': '儲存為筆記目錄',
+	'settings.saveAsNoteDirDesc': '「儲存為筆記」操作將會話內容寫入此庫內相對目錄。留空則停用該操作。如目錄尚不存在，會在確認提示後依需建立。',
+	'settings.saveAsNoteDirPlaceholder': '例如 AI Sessions',
+
 	// ── Customize ──────────────────────────────────────────
 	'settings.customizeMenuNotePath': '選單筆記路徑',
 	'settings.customizeMenuNotePathDesc': '定義自訂右鍵選單項目的 Markdown 筆記的庫內相對路徑。一級標題選擇選單表面（Files → 檔案選單，Editor → 編輯器選單）；每個二級標題是一個選單標籤，其正文內容為提示詞模板。預設僅對 Markdown（.md）筆記顯示；在 H2 標題末尾追加 `[.png, .jpg]` 可限定其它檔案類型。引用行（"> ..."）視為註解，會被過濾。',
@@ -496,21 +507,6 @@ export const zhTW: Record<string, string> = {
 	'search.status': '找到 {count} 條結果（已搜尋 {searched} 個對話）',
 	'search.loadingMore': '（正在載入 {count} 個對話…）',
 	'search.loadedOnDemand': '新載入',
-
-	// ── Save file modal ──────────────────────────────────
-	'save.directories': '目錄',
-	'save.files': '檔案',
-	'save.location': '位置',
-	'save.newFolder': '+ 新建資料夾',
-	'save.newFolderPlaceholder': '資料夾名稱',
-	'save.fileName': '檔案名稱',
-	'save.overwriteWarning': '該檔案已存在，儲存將覆蓋原有內容。',
-	'save.save': '儲存',
-	'save.overwrite': '覆蓋',
-	'save.vaultRoot': 'Vault 根目錄',
-	'save.noFiles': '（空資料夾）',
-	'save.folderExists': '資料夾已存在',
-	'save.noFilename': '請輸入檔案名稱',
 
 	// ── Session restart required indicator ────────────────
 	'settings.sessionRestartRequired': '切換至新對話後生效',

@@ -72,6 +72,9 @@ export class GlobalSettingsSection implements SettingsSection {
 		// ── Custom menu path ─────────────────────────────────────
 		this.renderCustomMenuPathField(container);
 
+		// ── Save-as-note directory ───────────────────────────────
+		this.renderSaveAsNoteDirField(container);
+
 		// ── Follow-up & insight extraction ───────────────────────
 		// Placed at the end of General because these toggles tune
 		// post-reply behaviour (insight cards / next-step chips) and
@@ -230,6 +233,22 @@ export class GlobalSettingsSection implements SettingsSection {
 			btn.onClick(() => {
 				new TemplatePreviewModal(app).open();
 			});
+		});
+	}
+
+	private renderSaveAsNoteDirField(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+
+		createTextField({
+			container,
+			name: t('settings.saveAsNoteDir'),
+			desc: t('settings.saveAsNoteDirDesc'),
+			placeholder: t('settings.saveAsNoteDirPlaceholder'),
+			value: plugin.settings.saveAsNoteDir,
+			onChange: async (value) => {
+				plugin.settings.saveAsNoteDir = value.trim();
+				await plugin.saveSettings();
+			},
 		});
 	}
 

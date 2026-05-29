@@ -59,7 +59,7 @@ export class SystemPromptModal extends Modal {
 
 		const saveBtn = btnRow.createEl('button', {
 			cls: 'system-prompt-modal__btn system-prompt-modal__btn--save',
-			text: t('save.save'),
+			text: t('common.save'),
 		});
 		saveBtn.addEventListener('click', () => this.handleSave());
 

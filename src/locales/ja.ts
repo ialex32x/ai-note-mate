@@ -5,6 +5,7 @@ export const ja: Record<string, string> = {
 	'common.model': 'モデル',
 	'common.apiKey': 'API キー',
 	'common.copy': 'コピー',
+	'common.save': '保存',
 
 	// ── View ──────────────────────────────────────────────
 	'view.name': 'AI セッション',
@@ -36,8 +37,13 @@ export const ja: Record<string, string> = {
 	'view.deleteSession': 'セッションを削除',
 	'view.sessionDeleted': 'セッションが削除されました。',
 	'view.exportSession': 'ノートとして保存',
-	'view.exportFilename': 'ファイル名',
-	'view.export': 'エクスポート',
+	'view.exportNoDirConfigured': 'まず 設定 → Note Mate → 一般 で「ノートとして保存するディレクトリ」を設定してください。',
+	'view.exportDirIsFile': '保存できません：「{path}」は存在しますが、ファイルでありフォルダではありません。',
+	'view.exportCreateDirTitle': 'フォルダを作成しますか？',
+	'view.exportCreateDirMessage': 'フォルダ 「{path}」 はまだ存在しません。作成してセッションをそこに保存しますか？',
+	'view.exportCreateDirConfirm': '作成して保存',
+	'view.exportSucceeded': 'セッションを {path} に保存しました',
+	'view.exportFailed': '保存に失敗しました：{error}',
 	'view.addFileRef': 'ファイル参照を追加',
 	'view.inputPlaceholder': 'メッセージを入力… (Enter で送信、Shift+Enter で改行)',
 	'view.send': '送信',
@@ -167,13 +173,13 @@ export const ja: Record<string, string> = {
 	'settings.setAsActive': '有効にする',
 	'settings.imageGenEmpty': '画像生成が設定されていません。追加して画像生成を有効にしてください。',
 	'settings.textGenSection': 'LLM',
-	'settings.geminiApiKeyDesc': 'Google Gemini API キーを入力してください。',
-	'settings.geminiModelDesc': '使用する Gemini モデルを入力してください（例: gemini-2.5-flash）。',
 	'settings.profileName': 'プロファイル名',
 	'settings.profileNameDesc': 'この構成の表示名を入力してください。',
 	'settings.deleteProfile': 'プロファイル削除',
 	'settings.deleteProfileDesc': 'このプロファイルを削除します。最低1つのプロファイルが必要です。',
 	'settings.globalSection': '一般',
+	'settings.geminiApiKeyDesc': 'Google Gemini API キーを入力してください。',
+	'settings.geminiModelDesc': '使用する Gemini モデルを入力してください（例: gemini-2.5-flash）。',
 	'settings.maxTokens': '最大トークン数',
 	'settings.maxTokensDesc': 'セッションごとのトークン予算上限（表示用）。0 で無制限。',
 	'settings.thinkingLevel': '思考の深さ',
@@ -390,6 +396,12 @@ export const ja: Record<string, string> = {
 	'settings.memoryCount': '{count} 件の記憶を保存',
 
 	// ── Customize ──────────────────────────────────────────
+	// ── Save as note ───────────────────────────────────────
+	'settings.saveAsNoteDir': 'ノートとして保存するディレクトリ',
+	'settings.saveAsNoteDirDesc': '「ノートとして保存」操作がエクスポートしたセッションを書き込むボールト相対フォルダ。空欄の場合この操作は無効になります。フォルダが存在しない場合は確認の後、必要に応じて作成されます。',
+	'settings.saveAsNoteDirPlaceholder': '例: AI Sessions',
+
+	// ── Customize ──────────────────────────────────────────
 	'settings.customizeMenuNotePath': 'メニューノートのパス',
 	'settings.customizeMenuNotePathDesc': 'カスタム右クリックメニュー項目を定義する Markdown ノートのボールト相対パス。H1 見出しでメニュー面を選択（Files → ファイルメニュー、Editor → エディターメニュー）。各 H2 見出しはメニューラベルで、その本文がプロンプトテンプレートです。既定では Markdown（.md）ノートのみに表示。H2 末尾に `[.png, .jpg]` を付けると他の拡張子に限定できます。引用行（"> ..."）はコメントとして扱われ、削除されます。',
 	'settings.customizeMenuNotePathPlaceholder': '例: MENU.md',
@@ -496,21 +508,6 @@ export const ja: Record<string, string> = {
 	'search.status': '{count}件の結果（{searched}件のセッションを検索）',
 	'search.loadingMore': '（{count}件のセッションを読み込み中…）',
 	'search.loadedOnDemand': '新規読み込み',
-
-	// ── Save file modal ──────────────────────────────────
-	'save.directories': 'ディレクトリ',
-	'save.files': 'ファイル',
-	'save.location': '場所',
-	'save.newFolder': '+ 新規フォルダ',
-	'save.newFolderPlaceholder': 'フォルダ名',
-	'save.fileName': 'ファイル名',
-	'save.overwriteWarning': 'このファイルは既に存在します。上書きされます。',
-	'save.save': '保存',
-	'save.overwrite': '上書き',
-	'save.vaultRoot': 'Vault ルート',
-	'save.noFiles': '（空のフォルダ）',
-	'save.folderExists': 'フォルダは既に存在します',
-	'save.noFilename': 'ファイル名を入力してください',
 
 	// ── Session restart required indicator ────────────────
 	'settings.sessionRestartRequired': '新しいセッションに切り替えると有効になります',

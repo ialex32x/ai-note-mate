@@ -159,6 +159,18 @@ export interface NoteAssistantPluginSettings {
 	// ── Global settings (not per-profile) ───────────────────────────────────
 	systemPrompt: string;
 	imageDownloadDir: string;
+	/**
+	 * Vault-relative directory where the "Save as note" action writes the
+	 * exported session markdown. Empty string means the feature is
+	 * unconfigured — invoking the action surfaces a Notice nudging the
+	 * user to set this in Settings → General.
+	 *
+	 * The directory is created on demand (after a confirmation prompt the
+	 * first time the configured path doesn't exist yet). Vault.create()
+	 * does not auto-create parent folders, so we bridge that with an
+	 * explicit createFolder() call before write.
+	 */
+	saveAsNoteDir: string;
 
 	builtinWebSearchEnabled: boolean;
 	builtinWebFetchEnabled: boolean;

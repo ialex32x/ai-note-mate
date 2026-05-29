@@ -2385,6 +2385,6 @@ export class SessionView extends ItemView {
             new Notice('No messages to export');
             return;
         }
-        void exportSessionToVault(this.app, messages);
+        void exportSessionToVault(this.plugin, messages);
     }
 }

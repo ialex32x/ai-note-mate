@@ -5,6 +5,7 @@ export const zhCN: Record<string, string> = {
 	'common.model': '模型',
 	'common.apiKey': 'API 密钥',
 	'common.copy': '复制',
+	'common.save': '保存',
 
 	// ── View ──────────────────────────────────────────────
 	'view.name': 'AI 会话',
@@ -36,8 +37,13 @@ export const zhCN: Record<string, string> = {
 	'view.deleteSession': '删除会话',
 	'view.sessionDeleted': '会话已删除。',
 	'view.exportSession': '保存为笔记',
-	'view.exportFilename': '文件名',
-	'view.export': '导出',
+	'view.exportNoDirConfigured': '请先在 设置 → Note Mate → 通用 中配置“保存为笔记目录”。',
+	'view.exportDirIsFile': '无法保存：“{path}” 已存在但是文件，不是文件夹。',
+	'view.exportCreateDirTitle': '创建文件夹？',
+	'view.exportCreateDirMessage': '文件夹 “{path}” 尚不存在。是否创建并将会话保存到该位置？',
+	'view.exportCreateDirConfirm': '创建并保存',
+	'view.exportSucceeded': '会话已保存到 {path}',
+	'view.exportFailed': '保存失败：{error}',
 	'view.addFileRef': '添加文件引用',
 	'view.inputPlaceholder': '输入消息…',
 	'view.send': '发送',
@@ -389,6 +395,11 @@ export const zhCN: Record<string, string> = {
 	'settings.memoriesEmpty': '暂无存储的记忆。',
 	'settings.memoryCount': '已存储 {count} 条记忆',
 
+	// ── Save as note ───────────────────────────────────────
+	'settings.saveAsNoteDir': '保存为笔记目录',
+	'settings.saveAsNoteDirDesc': '“保存为笔记”操作将会话内容写入此库内相对目录。留空则禁用该操作。如果目录尚不存在，会在确认提示后按需创建。',
+	'settings.saveAsNoteDirPlaceholder': '例如 AI Sessions',
+
 	// ── Customize ──────────────────────────────────────────
 	'settings.customizeMenuNotePath': '菜单笔记路径',
 	'settings.customizeMenuNotePathDesc': '定义自定义右键菜单项的 Markdown 笔记的库内相对路径。一级标题选择菜单表面（Files → 文件菜单，Editor → 编辑器菜单）；每个二级标题是一个菜单标签，其正文内容为提示词模板。默认仅对 Markdown（.md）笔记显示；在 H2 标题末尾追加 `[.png, .jpg]` 可限定其它文件类型。引用行（"> ..."）视为注释，会被过滤。',
@@ -496,21 +507,6 @@ export const zhCN: Record<string, string> = {
 	'search.status': '找到 {count} 条结果（已搜索 {searched} 个会话）',
 	'search.loadingMore': '（正在加载 {count} 个会话…）',
 	'search.loadedOnDemand': '新加载',
-
-	// ── Save file modal ──────────────────────────────────
-	'save.directories': '目录',
-	'save.files': '文件',
-	'save.location': '位置',
-	'save.newFolder': '新建文件夹',
-	'save.newFolderPlaceholder': '文件夹名称',
-	'save.fileName': '文件名',
-	'save.overwriteWarning': '该文件已存在，保存将覆盖原有内容。',
-	'save.save': '保存',
-	'save.overwrite': '覆盖',
-	'save.vaultRoot': 'Vault 根目录',
-	'save.noFiles': '（空文件夹）',
-	'save.folderExists': '文件夹已存在',
-	'save.noFilename': '请输入文件名',
 
 	// ── Session restart required indicator ────────────────
 	'settings.sessionRestartRequired': '切换至新会话后生效',

@@ -5,6 +5,7 @@ export const ko: Record<string, string> = {
 	'common.model': '모델',
 	'common.apiKey': 'API 키',
 	'common.copy': '복사',
+	'common.save': '저장',
 
 	// ── View ──────────────────────────────────────────────
 	'view.name': 'AI 세션',
@@ -36,8 +37,13 @@ export const ko: Record<string, string> = {
 	'view.deleteSession': '세션 삭제',
 	'view.sessionDeleted': '세션이 삭제되었습니다.',
 	'view.exportSession': '노트로 저장',
-	'view.exportFilename': '파일 이름',
-	'view.export': '내보내기',
+	'view.exportNoDirConfigured': '먼저 설정 → Note Mate → 일반에서 "노트로 저장 디렉토리"를 설정하세요.',
+	'view.exportDirIsFile': '저장할 수 없습니다: "{path}"는 존재하지만 폴더가 아닌 파일입니다.',
+	'view.exportCreateDirTitle': '폴더를 만드시겠습니까?',
+	'view.exportCreateDirMessage': '폴더 "{path}"가 아직 존재하지 않습니다. 만들어서 세션을 그곳에 저장하시겠습니까?',
+	'view.exportCreateDirConfirm': '만들고 저장',
+	'view.exportSucceeded': '세션이 {path}에 저장되었습니다',
+	'view.exportFailed': '저장 실패: {error}',
 	'view.addFileRef': '파일 참조 추가',
 	'view.inputPlaceholder': '메시지 입력… (Enter로 전송, Shift+Enter로 줄바꿈)',
 	'view.send': '전송',
@@ -167,13 +173,13 @@ export const ko: Record<string, string> = {
 	'settings.setAsActive': '활성으로 설정',
 	'settings.imageGenEmpty': '이미지 생성이 설정되지 않았습니다. 추가하여 이미지 생성을 활성화하세요.',
 	'settings.textGenSection': 'LLM',
-	'settings.geminiApiKeyDesc': 'Google Gemini API 키를 입력하세요.',
-	'settings.geminiModelDesc': '사용할 Gemini 모델을 입력하세요 (예: gemini-2.5-flash).',
 	'settings.profileName': '프로필 이름',
 	'settings.profileNameDesc': '이 구성의 표시 이름을 입력하세요.',
 	'settings.deleteProfile': '프로필 삭제',
 	'settings.deleteProfileDesc': '이 프로필을 삭제합니다. 최소 1개의 프로필이 필요합니다.',
 	'settings.globalSection': '일반',
+	'settings.geminiApiKeyDesc': 'Google Gemini API 키를 입력하세요.',
+	'settings.geminiModelDesc': '사용할 Gemini 모델을 입력하세요 (예: gemini-2.5-flash).',
 	'settings.maxTokens': '최대 토큰 수',
 	'settings.maxTokensDesc': '세션당 토큰 예산 상한 (표시용). 0이면 무제한.',
 	'settings.thinkingLevel': '사고 강도',
@@ -390,6 +396,12 @@ export const ko: Record<string, string> = {
 	'settings.memoryCount': '{count}개의 기억 저장됨',
 
 	// ── Customize ──────────────────────────────────────────
+	// ── Save as note ───────────────────────────────────────
+	'settings.saveAsNoteDir': '노트로 저장 디렉토리',
+	'settings.saveAsNoteDirDesc': '"노트로 저장" 동작이 내보낸 세션을 기록하는 보관함 상대 폴더입니다. 비워두면 이 동작이 비활성화됩니다. 폴더가 없으면 확인 후 필요할 때 생성됩니다.',
+	'settings.saveAsNoteDirPlaceholder': '예: AI Sessions',
+
+	// ── Customize ──────────────────────────────────────────
 	'settings.customizeMenuNotePath': '메뉴 노트 경로',
 	'settings.customizeMenuNotePathDesc': '사용자 정의 우클릭 메뉴 항목을 정의하는 Markdown 노트의 보관함 상대 경로. H1 제목으로 메뉴 표면을 선택합니다（Files → 파일 메뉴, Editor → 편집기 메뉴）. 각 H2 제목은 메뉴 레이블이며, 그 본문이 프롬프트 템플릿입니다. 기본적으로 Markdown（.md） 노트에만 표시됩니다. H2 끝에 `[.png, .jpg]`를 붙이면 다른 확장자로 제한할 수 있습니다. 인용 줄（"> ..."）은 주석으로 처리되어 제거됩니다.',
 	'settings.customizeMenuNotePathPlaceholder': '예: MENU.md',
@@ -496,21 +508,6 @@ export const ko: Record<string, string> = {
 	'search.status': '{count}개 결과 ({searched}개 세션 검색)',
 	'search.loadingMore': '({count}개 세션 로딩 중…)',
 	'search.loadedOnDemand': '새로 로드됨',
-
-	// ── Save file modal ──────────────────────────────────
-	'save.directories': '디렉토리',
-	'save.files': '파일',
-	'save.location': '위치',
-	'save.newFolder': '+ 새 폴더',
-	'save.newFolderPlaceholder': '폴더 이름',
-	'save.fileName': '파일 이름',
-	'save.overwriteWarning': '이 파일은 이미 존재합니다. 덮어쓰기됩니다.',
-	'save.save': '저장',
-	'save.overwrite': '덮어쓰기',
-	'save.vaultRoot': 'Vault 루트',
-	'save.noFiles': '（빈 폴더）',
-	'save.folderExists': '폴더가 이미 존재합니다',
-	'save.noFilename': '파일 이름을 입력하세요',
 
 	// ── Session restart required indicator ────────────────
 	'settings.sessionRestartRequired': '새 세션으로 전환한 후 적용됩니다',

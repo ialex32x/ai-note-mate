@@ -5,6 +5,7 @@ export const en: Record<string, string> = {
 	'common.model': 'Model',
 	'common.apiKey': 'API Key',
 	'common.copy': 'Copy',
+	'common.save': 'Save',
 
 	// ── View ──────────────────────────────────────────────
 	'view.name': 'AI Session',
@@ -36,8 +37,13 @@ export const en: Record<string, string> = {
 	'view.deleteSession': 'Delete session',
 	'view.sessionDeleted': 'Session deleted.',
 	'view.exportSession': 'Save as Note',
-	'view.exportFilename': 'Filename',
-	'view.export': 'Export',
+	'view.exportNoDirConfigured': 'Configure a "Save as note directory" in Settings → Note Mate → General first.',
+	'view.exportDirIsFile': 'Cannot save: "{path}" exists but is a file, not a folder.',
+	'view.exportCreateDirTitle': 'Create folder?',
+	'view.exportCreateDirMessage': 'The folder "{path}" does not exist yet. Create it and save the session there?',
+	'view.exportCreateDirConfirm': 'Create and save',
+	'view.exportSucceeded': 'Session saved to {path}',
+	'view.exportFailed': 'Save failed: {error}',
 	'view.addFileRef': 'Add file reference',
 	'view.inputPlaceholder': 'Type a message…',
 	'view.send': 'Send',
@@ -389,6 +395,11 @@ export const en: Record<string, string> = {
 	'settings.memoriesEmpty': 'No memories stored yet.',
 	'settings.memoryCount': '{count} memories stored',
 
+	// ── Save as note ───────────────────────────────────────
+	'settings.saveAsNoteDir': 'Save as note directory',
+	'settings.saveAsNoteDirDesc': 'Vault-relative folder where the "Save as note" action writes exported sessions. Leave empty to disable the action. Missing folders are created on demand after a confirmation prompt.',
+	'settings.saveAsNoteDirPlaceholder': 'e.g. AI Sessions',
+
 	// ── Customize ──────────────────────────────────────────
 	'settings.customizeMenuNotePath': 'Menu note path',
 	'settings.customizeMenuNotePathDesc': 'Vault-relative path of the markdown note that defines custom right-click menu items. H1 headings select a surface (Files → file-menu, Editor → editor-menu); each H2 heading is a menu label whose body is the prompt template. By default, items appear for markdown notes only; append `[.png, .jpg]` to an H2 title to target other file types. Blockquote lines ("> ...") are treated as comments and stripped.',
@@ -496,21 +507,6 @@ Polish the following text for clarity and conciseness, keeping the original tone
 	'search.status': 'Found {count} results (searched {searched} sessions)',
 	'search.loadingMore': '(loading {count} more sessions…)',
 	'search.loadedOnDemand': 'Newly loaded',
-
-	// ── Save file modal ──────────────────────────────────
-	'save.directories': 'Directories',
-	'save.files': 'Files',
-	'save.location': 'Location',
-	'save.newFolder': 'New Folder',
-	'save.newFolderPlaceholder': 'Folder name',
-	'save.fileName': 'File name',
-	'save.overwriteWarning': 'This file already exists and will be overwritten.',
-	'save.save': 'Save',
-	'save.overwrite': 'Overwrite',
-	'save.vaultRoot': 'Vault Root',
-	'save.noFiles': '(empty folder)',
-	'save.folderExists': 'Folder already exists',
-	'save.noFilename': 'Please enter a filename',
 
 	// ── Session restart required indicator ────────────────
 	'settings.sessionRestartRequired': 'Takes effect after switching to a new session',
