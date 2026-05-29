@@ -23,7 +23,7 @@ import { getProfileLabel } from "./global-section";
 import { resolveSecret } from "../../utils/secret-helper";
 import { TEXT_GEN_SECTION_ID } from "../../settings/section-ids";
 
-export class ProfileSettingsSection implements SettingsSection {
+export class TextGenSettingsSection implements SettingsSection {
 	readonly titleKey = TEXT_GEN_SECTION_ID;
 
 	private editingProfileId: string | null = null;
