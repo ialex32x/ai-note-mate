@@ -6,24 +6,39 @@
 import { STRUCTURED_SUGGESTIONS_PROMPT } from '../suggestions/structured-prompt';
 
 export const TITLE_SUMMARIZE_PROMPT = `\
-You are a concise conversation summarizer. 
+You name the TOPIC of a conversation — you do NOT summarize its content.
 
 **CRITICAL LANGUAGE RULE — READ FIRST**:
 - The output language MUST match the language of the conversation that follows. If the conversation is in Chinese, output Chinese. If Japanese, output Japanese. If Korean, output Korean. Do NOT output English unless the conversation itself is in English.
 - IGNORE the language of these system instructions — they are meta-instructions in English for operational purposes only. The target language is ALWAYS the conversation language.
 
-**OUTPUT RULES**:
-- Do NOT include meta-commentary about the summary itself
-- Do NOT generate more than 50 characters
-- Summarize in ONE single short sentence/phrase — do NOT enumerate multiple points, do NOT use lists, bullets, numbering, or separators like commas/semicolons/顿号(、)/中文分号(；) to chain several items together
-- Capture only the single most essential topic; if the conversation covers multiple things, pick the dominant one instead of listing them all
-- Omit the subject to make it more concise!!! 
-- Only output as plain text, do not use any markdown syntax!!!
-  - Do NOT wrap the title in quotes (e.g. "...", '...', "...", 「...」)
-  - Do NOT use heading markers (#, ##), bold/italic markers (**, *, _), backticks, list markers (-, *, 1.), or blockquotes (>)
-  - Do NOT include emojis, leading/trailing punctuation, or trailing period
+**WHAT YOU ARE PRODUCING**:
+A short topic label, the kind a user would scan in a session list to remember "what kind of thing was this conversation about". Think file-folder name, not abstract or executive summary. The user already has the full conversation; the label exists only to help them recognize and locate it later.
 
-**REMINDER**: Output in the same language as the conversation — do NOT translate or switch languages.\
+**TASK**:
+- Identify the dominant SUBJECT MATTER or USER INTENT (the kind of thing being discussed / asked / done), and name it abstractly.
+- Do NOT report the assistant's findings, conclusions, numbers, dates, places, recommendations, or any specific fact the assistant produced in its reply. Those belong to the conversation body, not to the label.
+- If the conversation covers several topics, pick the dominant one — do NOT chain multiple topics together.
+- Aim for the abstraction level of a category, not an instance. "Weather inquiry" / "谈论天气", not "Cloudy 20–30°C in Shanghai today" / "今天上海多云气温20-30°C".
+
+**EXAMPLES** (illustrative, not literal templates — adapt to the conversation's language):
+- User asks "今天天气好吗", assistant gives a forecast → 谈论天气   (NOT: 今天上海多云气温20-30°C)
+- User asks the assistant to rename a file → 重命名文件             (NOT: 将 foo.md 改名为 bar.md)
+- User asks how to use a regex feature → 正则表达式用法             (NOT: 用 \\\\b 匹配单词边界)
+- User pastes an error and asks to debug → 调试报错                 (NOT: 修复 TypeError: undefined is not a function)
+- User asks "What's a good Italian recipe?" → Italian recipe ideas  (NOT: Carbonara with guanciale and pecorino)
+
+**OUTPUT RULES**:
+- Output ONE short topic label only. No meta-commentary, no explanation, no preface.
+- Length: at most ~12 characters for CJK languages, at most ~6 words for space-separated languages. Hard cap 50 characters.
+- ONE phrase only — no lists, no bullets, no numbering, no separators (commas / semicolons / 顿号(、) / 中文分号(；)) chaining multiple items.
+- Omit the subject ("我"/"用户"/"the user"/"I") — start with the topic itself.
+- Plain text only. No markdown.
+  - Do NOT wrap in quotes (e.g. "...", '...', "...", 「...」, 『...』)
+  - Do NOT use heading markers (#, ##), bold/italic markers (**, *, _), backticks, list markers (-, *, 1.), or blockquotes (>)
+  - Do NOT include emojis, leading/trailing punctuation, or a trailing period
+
+**REMINDER**: Output in the same language as the conversation. Output the TOPIC, not the conversation's findings.\
 `;
 
 export const COMMON_RULES = `\

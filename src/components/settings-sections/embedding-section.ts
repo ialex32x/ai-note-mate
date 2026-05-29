@@ -1,10 +1,6 @@
 import { t } from "../../i18n";
 import type { EmbeddingProviderType } from "../../services/providers";
-import {
-	createDefaultEmbeddingConfig,
-	DEFAULT_TOOL_FILTER_TOP_K,
-	DEFAULT_SUB_AGENT_FILTER_TOP_K,
-} from "../../settings/defaults";
+import { createDefaultEmbeddingConfig } from "../../settings/defaults";
 import type { EmbeddingConfig } from "../../settings/types";
 import {
 	createApiKeyField,
@@ -26,52 +22,12 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		const { plugin, refreshSection } = this.ctx;
 		const embeddingConfigs = plugin.settings.embeddingConfigs;
 
-		// ── Tool retriever tuning (global, applies whenever the on-demand
-		//    tool retriever runs — BM25-only when embedding is unconfigured,
-		//    hybrid BM25 + cosine via RRF when embedding is configured).
-		//    Bounds are validated at the use-site (ChatStream._getBestMatchedTools)
-		//    so we don't need range UI here beyond a sensible placeholder.
-		createTextField({
-			container,
-			name: t('settings.toolFilterTopK'),
-			desc: t('settings.toolFilterTopKDesc'),
-			placeholder: String(DEFAULT_TOOL_FILTER_TOP_K),
-			value: String(plugin.settings.toolFilterTopK),
-			advanced: true,
-			onChange: async (value) => {
-				const num = parseInt(value, 10);
-				plugin.settings.toolFilterTopK =
-					isNaN(num) ? DEFAULT_TOOL_FILTER_TOP_K
-					: Math.max(1, Math.min(30, num));
-				await plugin.saveSettings();
-			},
-		});
-
-		// ── Sub-agent retriever tuning (multi-agent mode only —
-		//    in single-agent mode the orchestrator is never instantiated
-		//    so the setting is a no-op). Same hybrid BM25 + embedding
-		//    retriever as the tool filter, scoped to picking which
-		//    sub-agents land in the per-turn DELEGATION block and the
-		//    `delegate_task` enum. Lower values = bigger token savings
-		//    on casual turns; sticky-on-history union'ing inside the
-		//    orchestrator means a once-used sub-agent never silently
-		//    disappears mid-conversation regardless of this cap.
-		createTextField({
-			container,
-			name: t('settings.subAgentFilterTopK'),
-			desc: t('settings.subAgentFilterTopKDesc'),
-			placeholder: String(DEFAULT_SUB_AGENT_FILTER_TOP_K),
-			value: String(plugin.settings.subAgentFilterTopK),
-			advanced: true,
-			onChange: async (value) => {
-				const num = parseInt(value, 10);
-				plugin.settings.subAgentFilterTopK =
-					isNaN(num) ? DEFAULT_SUB_AGENT_FILTER_TOP_K
-					: Math.max(1, Math.min(8, num));
-				await plugin.saveSettings();
-			},
-		});
-
+		// Tool / sub-agent retriever top-K knobs live in the Tools section
+		// since they cap how many tools and sub-agents reach the model on
+		// each turn (the retrievers themselves run hybrid BM25 + cosine when
+		// an embedding is configured, BM25-only otherwise — but the cap
+		// belongs with tool surface tuning, not embedding configuration).
+		//
 		// Skill-specific embedding knobs (filter threshold / topK /
 		// strong-hint floor / auto-inject floor) live in the Skills
 		// section so they sit alongside the trigger tester — adjusting

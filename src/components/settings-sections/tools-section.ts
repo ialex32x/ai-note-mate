@@ -5,7 +5,11 @@ import type { MCPServerConfig, MCPServerState, MCPToolConfig } from "../../servi
 import { copyToClipboard } from "../../utils/clipboard";
 import { RegenerateSlugConfirmModal } from "../../modals/regenerate-slug-confirm-modal";
 import { ALL_TOOL_CAPABILITIES, type ToolCapability } from "../../services/llm-provider";
-import { createDefaultUploadConfig } from "../../settings/defaults";
+import {
+	createDefaultUploadConfig,
+	DEFAULT_TOOL_FILTER_TOP_K,
+	DEFAULT_SUB_AGENT_FILTER_TOP_K,
+} from "../../settings/defaults";
 import type { UploadConfig, UploadProviderType } from "../../settings/types";
 import {
 	createApiKeyField,
@@ -438,9 +442,60 @@ export class ToolsSettingsSection implements SettingsSection {
 	// Main render
 	// ─────────────────────────────────────────────────────────────────────
 
+	/**
+	 * Tool / sub-agent retriever top-K knobs.
+	 *
+	 * These two settings live at the top of the Tools section because they
+	 * directly cap how many tools (and how many sub-agents in multi-agent
+	 * mode) reach the model on each turn. The retrievers are hybrid
+	 * BM25 + cosine when an embedding is configured, BM25-only otherwise —
+	 * but the upper-bound cap applies in either case, so the controls
+	 * belong with tool surface tuning rather than embedding configuration.
+	 *
+	 * Bounds are enforced at the use-site (ChatStream._getBestMatchedTools
+	 * and the orchestrator) so the UI just clamps to a sensible range here.
+	 */
+	private renderRetrieverTopK(container: HTMLElement): void {
+		const { plugin } = this.ctx;
+
+		createTextField({
+			container,
+			name: t('settings.toolFilterTopK'),
+			desc: t('settings.toolFilterTopKDesc'),
+			placeholder: String(DEFAULT_TOOL_FILTER_TOP_K),
+			value: String(plugin.settings.toolFilterTopK),
+			advanced: true,
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.toolFilterTopK =
+					isNaN(num) ? DEFAULT_TOOL_FILTER_TOP_K
+					: Math.max(1, Math.min(30, num));
+				await plugin.saveSettings();
+			},
+		});
+
+		createTextField({
+			container,
+			name: t('settings.subAgentFilterTopK'),
+			desc: t('settings.subAgentFilterTopKDesc'),
+			placeholder: String(DEFAULT_SUB_AGENT_FILTER_TOP_K),
+			value: String(plugin.settings.subAgentFilterTopK),
+			advanced: true,
+			onChange: async (value) => {
+				const num = parseInt(value, 10);
+				plugin.settings.subAgentFilterTopK =
+					isNaN(num) ? DEFAULT_SUB_AGENT_FILTER_TOP_K
+					: Math.max(1, Math.min(8, num));
+				await plugin.saveSettings();
+			},
+		});
+	}
+
 	render(container: HTMLElement): void {
 		const { plugin, refreshSection } = this.ctx;
 		const mcpServers = plugin.settings.mcpServers;
+
+		this.renderRetrieverTopK(container);
 
 		this.renderBuiltinToolToggles(container);
 

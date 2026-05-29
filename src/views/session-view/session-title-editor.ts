@@ -1,7 +1,7 @@
 import { setTooltip } from 'obsidian';
 import { t } from '../../i18n';
 import type { SessionManager } from '../../session-manager';
-import { summarizeConversation } from '../../services/context-reducer';
+import { summarizeConversationToTitle } from '../../services/context-reducer';
 import { TITLE_SUMMARIZE_PROMPT } from '../../services/prompts/session-prompts';
 import type { MinimalModelConfig } from '../../services/llm-provider';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
@@ -134,13 +134,11 @@ export async function maybeGenerateSessionTitle(
 
     try {
         const summarySource = session.messages.filter(msg => msg.role === 'user' || msg.role === 'assistant');
-        const generatedTitle = await summarizeConversation(
+        const generatedTitle = await summarizeConversationToTitle(
             summarizerConfig,
             { content: TITLE_SUMMARIZE_PROMPT },
             summarySource,
-            1,
             signal,
-            true, // skipTrailingUserInstruction: fold instruction into system prompt
         );
         if (!generatedTitle) return;
         // Strip any markdown formatting the model may have emitted

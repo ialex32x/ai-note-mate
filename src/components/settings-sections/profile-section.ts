@@ -17,7 +17,6 @@ import {
 	createModelFieldWithSelector,
 	createTabBar,
 	createTextField,
-	createToggleField,
 } from "../settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { getProfileLabel } from "./global-section";
@@ -41,68 +40,6 @@ export class ProfileSettingsSection implements SettingsSection {
 		if (editingProfile) {
 			this.editingProfileId = editingProfile.id;
 		}
-
-		createSettingsGroupHeading(container, {
-			name: t('settings.followUpSection'),
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.insightExtraction'),
-			desc: t('settings.insightExtractionDesc'),
-			value: plugin.settings.insightExtractionEnabled,
-			onChange: async (value) => {
-				plugin.settings.insightExtractionEnabled = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		createTextField({
-			container,
-			name: t('settings.insightExtractionMinReplyChars'),
-			desc: t('settings.insightExtractionMinReplyCharsDesc'),
-			placeholder: '400',
-			value: String(plugin.settings.insightExtractionMinReplyChars),
-			onChange: async (value) => {
-				const num = parseInt(value, 10);
-				plugin.settings.insightExtractionMinReplyChars =
-					isNaN(num) || num < 0 ? 0 : num;
-				await plugin.saveSettings();
-			},
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestions'),
-			desc: t('settings.followUpSuggestionsDesc'),
-			value: plugin.settings.followUpSuggestionsEnabled,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsEnabled = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestionsStructured'),
-			desc: t('settings.followUpSuggestionsStructuredDesc'),
-			value: plugin.settings.followUpSuggestionsStructured,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsStructured = value;
-				await plugin.saveSettings();
-			},
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestionsAutoSend'),
-			desc: t('settings.followUpSuggestionsAutoSendDesc'),
-			value: plugin.settings.followUpSuggestionsAutoSend,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsAutoSend = value;
-				await plugin.saveSettings();
-			},
-		});
 
 		// ── Tab bar ──
 		const tabBarResult = createTabBar({
