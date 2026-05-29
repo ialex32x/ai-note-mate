@@ -8,7 +8,7 @@ import {
 	GlobalSettingsSection,
 	ImageGenSettingsSection,
 	MemorySettingsSection,
-	ProfileSettingsSection,
+	TextGenSettingsSection,
 	SectionContext,
 	SettingsSection,
 	SkillSettingsSection,
@@ -45,7 +45,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		// Order here defines the display order of sections in the tab
 		this.sections = [
 			new GlobalSettingsSection(ctx),
-			new ProfileSettingsSection(ctx),
+			new TextGenSettingsSection(ctx),
 			new EmbeddingSettingsSection(ctx),
 			new ImageGenSettingsSection(ctx),
 			new ToolsSettingsSection(ctx),
