@@ -22,6 +22,13 @@ export interface SectionContext {
 	readonly refreshSection: (section: SettingsSection) => void;
 	/** The root container element of the settings tab. */
 	readonly containerEl: HTMLElement;
+	/**
+	 * Called when the profiles list changes — additions, removals, or
+	 * label-affecting edits (name, model). Listeners should rebuild any
+	 * profile-aware UI (e.g. global section dropdowns) in-place without
+	 * triggering a full settings-tab rebuild.
+	 */
+	readonly onProfilesChanged?: () => void;
 }
 
 /**

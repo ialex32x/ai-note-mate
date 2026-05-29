@@ -226,6 +226,30 @@
     &.is-loading svg {
         animation: oap-spin 0.8s linear infinite;
     }
+
+    // When the button carries a badge, make it a positioned container
+    // so the badge can sit at the top-right corner.
+    &--has-badge {
+        position: relative;
+    }
+}
+
+// Small numeric badge on header action buttons (e.g. skill count)
+.oap-settings-header-action-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: 7px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
 }
 
 @keyframes oap-spin {

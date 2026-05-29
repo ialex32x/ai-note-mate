@@ -24,7 +24,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin, refreshAll, refreshSection } = this.ctx;
+		const { plugin, refreshSection } = this.ctx;
 		const embeddingConfigs = plugin.settings.embeddingConfigs;
 
 		// Embedding enabled toggle. Marked experimental at the master switch
@@ -126,6 +126,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 					plugin.settings.activeEmbeddingId = newConfig.id;
 					this.editingEmbeddingId = newConfig.id;
 					await plugin.saveSettings();
+					this.ctx.onProfilesChanged?.();
 					refreshSection(this);
 				},
 				addTooltip: t('settings.addEmbeddingConfig'),
@@ -138,6 +139,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 					}
 					this.editingEmbeddingId = embeddingConfigs[0]!.id;
 					await plugin.saveSettings();
+					this.ctx.onProfilesChanged?.();
 					refreshSection(this);
 				},
 				deleteTooltip: t('settings.deleteEmbeddingConfigDesc'),
@@ -149,7 +151,6 @@ export class EmbeddingSettingsSection implements SettingsSection {
 				container,
 				editingEmbedding,
 				tabBarResult.refreshTabLabel,
-				() => refreshAll(),
 			);
 		}
 	}
@@ -170,7 +171,6 @@ export class EmbeddingSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		config: EmbeddingConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 	): void {
 		const { app, plugin, refreshSection } = this.ctx;
 
@@ -184,7 +184,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 				config.name = value || 'Unnamed';
 				await plugin.saveSettings();
 				refreshTabLabel(config.id, config.name, config.name);
-				refreshDropdown();
+				this.ctx.onProfilesChanged?.();
 			},
 		});
 

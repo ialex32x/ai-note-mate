@@ -14,6 +14,7 @@ import {
 	SkillSettingsSection,
 	ToolsSettingsSection,
 } from "../components/settings-sections";
+import { getProfileLabel } from "../components/settings-sections/global-section";
 
 export class NoteAssistantSettingTab extends PluginSettingTab {
 	plugin: NoteAssistantPlugin;
@@ -38,6 +39,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			containerEl: this.containerEl,
 			refreshAll: () => this.display(),
 			refreshSection: (section) => this.refreshSection(section),
+			onProfilesChanged: () => this.rebuildGlobalProfileDropdowns(),
 		};
 
 		// Order here defines the display order of sections in the tab
@@ -158,6 +160,81 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		if (headerActions && section.renderHeaderActions) {
 			headerActions.empty();
 			section.renderHeaderActions(headerActions);
+		}
+	}
+
+	/**
+	 * Rebuild all config-related dropdowns in the Global section in-place.
+	 *
+	 * Handles every {@code <select>} in the Global section body whose
+	 * options map to profile / embedding / image-gen / upload config IDs.
+	 * Preserves the currently-selected value when it still exists;
+	 * otherwise falls back to the first item of that list.
+	 *
+	 * Triggered by {@link SectionContext.onProfilesChanged} whenever any
+	 * config list is mutated (add / delete / duplicate) or a config label
+	 * changes (name / model edit).
+	 */
+	private rebuildGlobalProfileDropdowns(): void {
+		const globalSectionIdx = this.sections.findIndex(
+			s => s instanceof GlobalSettingsSection,
+		);
+		if (globalSectionIdx < 0) return;
+		const body = this.sectionBodies[globalSectionIdx];
+		if (!body) return;
+
+		const { settings } = this.plugin;
+		const profileIds = new Set(settings.profiles.map(p => p.id));
+		const embeddingIds = new Set(settings.embeddingConfigs.map(c => c.id));
+		const imageGenIds = new Set(settings.imageGenConfigs.map(c => c.id));
+		const uploadIds = new Set(settings.uploadConfigs.map(c => c.id));
+
+		const selects = body.querySelectorAll<HTMLSelectElement>('select');
+		for (const select of Array.from(selects)) {
+			const firstOpt = select.options[0];
+			if (!firstOpt) continue;
+
+			const savedValue = select.value;
+			const firstVal = firstOpt.value;
+
+			if (profileIds.has(firstVal)) {
+				this.rebuildSelect(select, settings.profiles, savedValue, profileIds,
+					p => getProfileLabel(p));
+			} else if (embeddingIds.has(firstVal)) {
+				this.rebuildSelect(select, settings.embeddingConfigs, savedValue, embeddingIds,
+					c => c.name || 'Unnamed');
+			} else if (imageGenIds.has(firstVal)) {
+				this.rebuildSelect(select, settings.imageGenConfigs, savedValue, imageGenIds,
+					c => c.name || 'Unnamed');
+			} else if (uploadIds.has(firstVal)) {
+				this.rebuildSelect(select, settings.uploadConfigs, savedValue, uploadIds,
+					c => c.name || 'Unnamed');
+			}
+		}
+	}
+
+	/**
+	 * Rebuild a single {@code <select>} element's option list from a
+	 * config array, then restore or fallback the selection.
+	 */
+	private rebuildSelect<T extends { id: string }>(
+		select: HTMLSelectElement,
+		items: T[],
+		savedValue: string,
+		validIds: Set<string>,
+		labelFn: (item: T) => string,
+	): void {
+		select.innerHTML = '';
+		for (const item of items) {
+			const opt = activeDocument.createElement('option');
+			opt.value = item.id;
+			opt.textContent = labelFn(item);
+			select.appendChild(opt);
+		}
+		if (validIds.has(savedValue)) {
+			select.value = savedValue;
+		} else if (items.length > 0) {
+			select.value = items[0]!.id;
 		}
 	}
 }

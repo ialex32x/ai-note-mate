@@ -21,6 +21,25 @@ export class SkillSettingsSection implements SettingsSection {
 
 	renderHeaderActions(container: HTMLElement): void {
 		const { plugin, refreshSection } = this.ctx;
+
+		// Show details button (only when skills are loaded)
+		const loadedSkills = plugin.skillManager.getSkills();
+		if (loadedSkills.length > 0) {
+			const detailsBtn = container.createEl('button', {
+				cls: 'clickable-icon oap-settings-header-action-btn oap-settings-header-action-btn--has-badge',
+			});
+			setIcon(detailsBtn, 'list');
+			setTooltip(detailsBtn, t('settings.skillShowDetails'));
+			// Count badge
+			detailsBtn.createEl('span', {
+				cls: 'oap-settings-header-action-badge',
+				text: loadedSkills.length > 99 ? '99+' : String(loadedSkills.length),
+			});
+			detailsBtn.addEventListener('click', () => {
+				new SkillDetailsModal(plugin.app, loadedSkills).open();
+			});
+		}
+
 		const reloadBtn = container.createEl('button', {
 			cls: 'clickable-icon oap-settings-header-action-btn',
 		});
@@ -133,24 +152,9 @@ export class SkillSettingsSection implements SettingsSection {
 			}
 		});
 
-		// Show loaded skills count with a "Show details" button
+		// Show matching tuning + trigger tester when skills are loaded
 		const loadedSkills = plugin.skillManager.getSkills();
 		if (loadedSkills.length > 0) {
-			const statusRow = container.createEl('div', {
-				cls: 'oap-settings-status-row',
-			});
-			statusRow.createEl('span', {
-				cls: 'oap-settings-status',
-				text: t('settings.skillsLoaded', { count: loadedSkills.length }),
-			});
-			const detailsBtn = statusRow.createEl('button', {
-				cls: 'oap-settings-details-btn',
-				text: t('settings.skillShowDetails'),
-			});
-			detailsBtn.addEventListener('click', () => {
-				new SkillDetailsModal(plugin.app, loadedSkills).open();
-			});
-
 			// ── Matching tuning + trigger tester ──
 			//
 			// All four threshold knobs sit immediately above the trigger

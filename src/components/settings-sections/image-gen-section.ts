@@ -21,7 +21,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin, refreshAll, refreshSection } = this.ctx;
+		const { plugin, refreshSection } = this.ctx;
 		const imageGenConfigs = plugin.settings.imageGenConfigs;
 
 		// ── Image Gen tab bar ──
@@ -54,6 +54,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 					plugin.settings.activeImageGenId = newConfig.id;
 					this.editingImageGenId = newConfig.id;
 					await plugin.saveSettings();
+					this.ctx.onProfilesChanged?.();
 					refreshSection(this);
 				},
 				addTooltip: t('settings.addImageGenConfig'),
@@ -66,6 +67,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 					}
 					this.editingImageGenId = imageGenConfigs[0]!.id;
 					await plugin.saveSettings();
+					this.ctx.onProfilesChanged?.();
 					refreshSection(this);
 				},
 				deleteTooltip: t('settings.deleteImageGenConfigDesc'),
@@ -77,7 +79,6 @@ export class ImageGenSettingsSection implements SettingsSection {
 				container,
 				editingImageGen,
 				tabBarResult.refreshTabLabel,
-				() => refreshAll(),
 			);
 		}
 	}
@@ -98,7 +99,6 @@ export class ImageGenSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		config: ImageGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 	): void {
 		const { app, plugin, refreshSection } = this.ctx;
 
@@ -112,7 +112,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 				config.name = value || 'Unnamed';
 				await plugin.saveSettings();
 				refreshTabLabel(config.id, config.name, config.name);
-				refreshDropdown();
+				this.ctx.onProfilesChanged?.();
 			},
 		});
 

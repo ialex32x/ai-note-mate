@@ -308,7 +308,7 @@ export class ToolsSettingsSection implements SettingsSection {
 	// ─────────────────────────────────────────────────────────────────────
 
 	private renderUploadConfig(container: HTMLElement): void {
-		const { plugin, refreshAll, refreshSection } = this.ctx;
+		const { plugin, refreshSection } = this.ctx;
 		const uploadConfigs = plugin.settings.uploadConfigs;
 
 		createSettingsGroupHeading(container, {
@@ -346,6 +346,7 @@ export class ToolsSettingsSection implements SettingsSection {
 				plugin.settings.activeUploadId = newConfig.id;
 				this.editingUploadId = newConfig.id;
 				await plugin.saveSettings();
+				this.ctx.onProfilesChanged?.();
 				refreshSection(this);
 			},
 			addTooltip: t('settings.addUploadConfig'),
@@ -358,6 +359,7 @@ export class ToolsSettingsSection implements SettingsSection {
 				}
 				this.editingUploadId = uploadConfigs[0]!.id;
 				await plugin.saveSettings();
+				this.ctx.onProfilesChanged?.();
 				refreshSection(this);
 			} : undefined,
 			deleteTooltip: t('settings.deleteUploadConfigDesc'),
@@ -370,7 +372,6 @@ export class ToolsSettingsSection implements SettingsSection {
 				container,
 				editingUpload,
 				tabBarResult.refreshTabLabel,
-				() => refreshAll(),
 			);
 		}
 	}
@@ -390,7 +391,6 @@ export class ToolsSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		config: UploadConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 	): void {
 		const { app, plugin } = this.ctx;
 
@@ -403,7 +403,7 @@ export class ToolsSettingsSection implements SettingsSection {
 				config.name = value || 'Unnamed';
 				await plugin.saveSettings();
 				refreshTabLabel(config.id, config.name, config.name);
-				refreshDropdown();
+				this.ctx.onProfilesChanged?.();
 			},
 		});
 

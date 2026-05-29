@@ -32,7 +32,7 @@ export class ProfileSettingsSection implements SettingsSection {
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
-		const { plugin, refreshAll, refreshSection } = this.ctx;
+		const { plugin, refreshSection } = this.ctx;
 		const profiles = plugin.settings.profiles;
 
 		// Determine which profile is being edited
@@ -125,6 +125,7 @@ export class ProfileSettingsSection implements SettingsSection {
 				profiles.push(newProfile);
 				this.editingProfileId = newProfile.id;
 				await plugin.saveSettings();
+				this.ctx.onProfilesChanged?.();
 				refreshSection(this);
 			},
 			addTooltip: t('settings.addProfile'),
@@ -139,6 +140,7 @@ export class ProfileSettingsSection implements SettingsSection {
 				profiles.push(newProfile);
 				this.editingProfileId = newProfile.id;
 				await plugin.saveSettings();
+				this.ctx.onProfilesChanged?.();
 				refreshSection(this);
 			},
 			duplicateTooltip: t('settings.duplicateProfile'),
@@ -157,6 +159,7 @@ export class ProfileSettingsSection implements SettingsSection {
 				}
 				this.editingProfileId = profiles[0]!.id;
 				await plugin.saveSettings();
+				this.ctx.onProfilesChanged?.();
 				refreshSection(this);
 			},
 			deleteTooltip: t('settings.deleteProfileDesc'),
@@ -168,7 +171,6 @@ export class ProfileSettingsSection implements SettingsSection {
 			container,
 			editingProfile,
 			tabBarResult.refreshTabLabel,
-			() => refreshAll(),
 		);
 	}
 
@@ -188,7 +190,6 @@ export class ProfileSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 	): void {
 		const { plugin, refreshSection } = this.ctx;
 
@@ -219,15 +220,15 @@ export class ProfileSettingsSection implements SettingsSection {
 				profile.name = value || 'Unnamed';
 				await plugin.saveSettings();
 				refreshTabLabel(profile.id, profile.name, getProfileLabel(profile));
-				refreshDropdown();
+				this.ctx.onProfilesChanged?.();
 			},
 		});
 
 		// ── Provider-specific fields ──
 		if (profile.provider === 'openai') {
-			this.renderOpenAIProfileFields(container, profile, refreshTabLabel, refreshDropdown);
+			this.renderOpenAIProfileFields(container, profile, refreshTabLabel);
 		} else if (profile.provider === 'gemini') {
-			this.renderGeminiProfileFields(container, profile, refreshTabLabel, refreshDropdown);
+			this.renderGeminiProfileFields(container, profile, refreshTabLabel);
 		}
 
 		// Modality capabilities (image / audio / video / pdf)
@@ -367,7 +368,6 @@ export class ProfileSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 	): void {
 		const { app, plugin } = this.ctx;
 
@@ -385,7 +385,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		});
 
 		// Model (with refresh and select from list)
-		this.renderModelField(container, profile, refreshTabLabel, refreshDropdown);
+		this.renderModelField(container, profile, refreshTabLabel);
 
 		// API Key
 		createApiKeyField({
@@ -405,7 +405,6 @@ export class ProfileSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 	): void {
 		const { app, plugin } = this.ctx;
 
@@ -423,7 +422,7 @@ export class ProfileSettingsSection implements SettingsSection {
 		});
 
 		// Model (with refresh and select from list)
-		this.renderModelField(container, profile, refreshTabLabel, refreshDropdown, 'gemini-2.5-flash');
+		this.renderModelField(container, profile, refreshTabLabel, 'gemini-2.5-flash');
 	}
 
 	/**
@@ -435,7 +434,6 @@ export class ProfileSettingsSection implements SettingsSection {
 		container: HTMLElement,
 		profile: TextGenConfig,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-		refreshDropdown: () => void,
 		modelPlaceholder?: string,
 	): void {
 		const { app, plugin } = this.ctx;
@@ -456,7 +454,7 @@ export class ProfileSettingsSection implements SettingsSection {
 				profile.model = value;
 				await plugin.saveSettings();
 				refreshTabLabel(profile.id, profile.name, getProfileLabel(profile));
-				refreshDropdown();
+				this.ctx.onProfilesChanged?.();
 			},
 		});
 	}
