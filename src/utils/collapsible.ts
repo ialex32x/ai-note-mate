@@ -41,6 +41,14 @@ export interface CollapsibleConfig {
      * When omitted, falls back to `summary`.
      */
     ariaLabel?: string;
+    /**
+     * Override class for the summary `<span>`. Defaults to
+     * `collapsible-block__summary` (which renders italic). Callers that
+     * need a non-italic / monospace label (e.g. tool-call headers showing
+     * a tool identifier) can supply their own class here without having
+     * to wrap or post-process the DOM.
+     */
+    summaryClass?: string;
 }
 
 export interface CollapsibleHandle {
@@ -87,6 +95,7 @@ export function createCollapsible(
         persistKey,
         persistHost,
         ariaLabel,
+        summaryClass = CLASS_SUMMARY,
     } = config;
 
     const host = persistHost ?? parent; // default persist target
@@ -115,7 +124,7 @@ export function createCollapsible(
         text: startExpanded ? '▾' : '▸',
     });
     header.appendText(' ');
-    header.createEl('span', { cls: CLASS_SUMMARY, text: summary });
+    header.createEl('span', { cls: summaryClass, text: summary });
 
     const body = wrapper.createEl('div', {
         cls: startExpanded

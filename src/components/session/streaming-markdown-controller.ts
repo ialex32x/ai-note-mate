@@ -41,6 +41,46 @@ const LARGE_CONTENT_INTERVAL = 400;
 const DORENDER_SLOW_LOG_THRESHOLD_MS = 50;
 
 /**
+ * Optional preprocessor applied to the raw content right before the
+ * **final** render in {@link StreamingMarkdownController.finalize} (and
+ * also exposed via {@link renderFinalMarkdown}). Lets callers strip
+ * machine-only blocks (e.g. `<!--suggestions-->`) without coupling the
+ * controller to feature-specific code.
+ *
+ * Intentionally *not* applied during streaming renders — the sanitizer
+ * pipeline already keeps unclosed markup safe, and re-running a strip
+ * pass on every throttled tick would just add cost.
+ */
+export type FinalContentPreprocessor = (content: string) => string;
+
+/**
+ * Render fully-formed markdown into `contentEl` using the obsidian
+ * renderer, optionally stripping machine-only blocks first and firing
+ * an after-render hook (e.g. to attach context menus).
+ *
+ * Shared between {@link StreamingMarkdownController.finalize} and
+ * non-streaming history renders so both paths apply the same
+ * preprocessing + post-render hooks. Keeping it as a free function
+ * avoids forcing every caller through a controller instance for what
+ * is essentially a one-shot render.
+ */
+export async function renderFinalMarkdown(
+    app: App,
+    component: Component,
+    contentEl: HTMLElement,
+    content: string,
+    options: {
+        preprocess?: FinalContentPreprocessor;
+        afterRender?: (contentEl: HTMLElement) => void;
+    } = {}
+): Promise<void> {
+    const cleaned = options.preprocess ? options.preprocess(content) : content;
+    contentEl.empty();
+    await MarkdownRenderer.render(app, cleaned, contentEl, '', component);
+    options.afterRender?.(contentEl);
+}
+
+/**
  * Controls the rendering of streaming markdown content with:
  * 1. **Throttling** — enforces a minimum interval between renders.
  * 2. **Async mutex** — prevents concurrent MarkdownRenderer.render() calls.
@@ -52,6 +92,12 @@ const DORENDER_SLOW_LOG_THRESHOLD_MS = 50;
  * - Call `finalize()` when streaming is complete — this renders the raw,
  *   un-sanitized content for a pixel-perfect final result.
  * - Call `dispose()` when the controller is no longer needed.
+ *
+ * Lifecycle invariants:
+ * - Once `finalize()` has been called, subsequent `update()` calls are
+ *   ignored (the controller has already committed its terminal state).
+ * - `dispose()` is permanent. `update()` and `finalize()` are no-ops
+ *   afterwards.
  */
 export class StreamingMarkdownController {
     /** The most recent content received via update(). */
@@ -71,6 +117,17 @@ export class StreamingMarkdownController {
 
     /** True while a MarkdownRenderer.render() call is in-flight. */
     private isRendering = false;
+
+    /**
+     * True from the moment {@link finalize} starts until it resolves.
+     * Streaming `update()` calls that arrive during this window are
+     * silently ignored — finalize has already committed the terminal
+     * content and any further mutation would race against its render.
+     *
+     * Stays true after finalize resolves so late updates remain no-ops
+     * even before the host disposes the controller.
+     */
+    private finalizing = false;
 
     /** Set to true once dispose() has been called. */
     private disposed = false;
@@ -101,9 +158,12 @@ export class StreamingMarkdownController {
     /**
      * Feed new streaming content.  The controller will schedule a throttled
      * render with markdown sanitization applied.
+     *
+     * No-op once {@link finalize} has started or {@link dispose} has run —
+     * see the class-level lifecycle invariants.
      */
     update(contentEl: HTMLElement, content: string): void {
-        if (this.disposed) return;
+        if (this.disposed || this.finalizing) return;
         this.contentEl = contentEl;
         this.latestContent = content;
         // Skip rendering when content is empty (e.g. during thinking phase
@@ -116,9 +176,23 @@ export class StreamingMarkdownController {
     /**
      * Perform the final render with the complete, un-sanitized content.
      * Waits for any in-flight render to finish first.
+     *
+     * @param contentEl - Target element (usually the same one passed to update())
+     * @param content - The complete content to render
+     * @param preprocess - Optional preprocessor applied before rendering;
+     *   typically used to strip machine-only blocks like `<!--suggestions-->`.
+     *   Streaming renders never run this — sanitization is enough mid-flight.
      */
-    async finalize(contentEl: HTMLElement, content: string): Promise<void> {
+    async finalize(
+        contentEl: HTMLElement,
+        content: string,
+        preprocess?: FinalContentPreprocessor
+    ): Promise<void> {
         if (this.disposed) return;
+
+        // Lock out any racing update() calls before we await — once finalize
+        // is in flight the terminal content is committed.
+        this.finalizing = true;
 
         // Cancel any pending throttle timer
         this.clearPendingTimer();
@@ -128,26 +202,14 @@ export class StreamingMarkdownController {
             await this.waitForRenderComplete();
         }
 
-        // Final render — no sanitization, raw content
-        contentEl.empty();
-        await MarkdownRenderer.render(this.app, content, contentEl, '', this.component);
-        this.onAfterRender?.(contentEl);
+        // Final render — no streaming sanitization, optional preprocess pass.
+        await renderFinalMarkdown(this.app, this.component, contentEl, content, {
+            preprocess,
+            afterRender: this.onAfterRender ?? undefined,
+        });
 
         this.latestContent = content;
         this.lastRenderedContent = content;
-    }
-
-    /**
-     * Cancel any pending render and reset state.
-     * Does NOT dispose the controller — it can be reused.
-     */
-    cancel(): void {
-        this.clearPendingTimer();
-        this.latestContent = '';
-        this.lastRenderedContent = '';
-        this.lastRenderedSanitized = '';
-        this.lastRenderTime = 0;
-        this.contentEl = null;
     }
 
     /**

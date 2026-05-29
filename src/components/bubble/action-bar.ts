@@ -6,6 +6,83 @@ import type { BubbleContext } from './bubble-context';
 import { SpeechController } from './speech-controller';
 
 /**
+ * Default class string applied to every assistant / user action-bar
+ * icon button. Kept as a constant rather than inlined so the action-bar
+ * helpers and any external callers (error bubble, future bubble variants)
+ * can opt in to the same baseline visual without copy-pasting the class
+ * list — and so a single edit here updates every action button at once.
+ */
+const ICON_ACTION_BTN_CLS = 'session-icon-btn session-bubble__action-btn';
+
+/** Options for {@link addIconAction}. */
+export interface IconActionOptions {
+    /** Lucide icon name (e.g. 'pencil', 'git-branch'). */
+    icon: string;
+    /** Localised label used as both `aria-label` and tooltip. */
+    label: string;
+    /** Click handler. The event is already `stopPropagation()`'d for you. */
+    onClick: (e: MouseEvent) => void;
+    /**
+     * Override the default icon-button class. Used by callers (e.g. the
+     * error bubble) that need a different button family than the standard
+     * assistant / user action bar.
+     */
+    cls?: string;
+    /**
+     * Extra class(es) appended after `cls`. Useful for adding modifier
+     * classes such as `session-bubble__action-btn--primary` without having
+     * to repeat the base class list.
+     */
+    extraCls?: string;
+}
+
+/**
+ * Append a single icon action button to an actions row.
+ *
+ * Centralises the otherwise-repeated `createEl + setIcon + setTooltip +
+ * addEventListener` ritual used by every action-bar variant in the project
+ * (user, assistant, error bubble). Returns the element so callers can
+ * keep a reference for later detachment (the error bubble's continue
+ * button leans on this).
+ */
+export function addIconAction(
+    actions: HTMLElement,
+    opts: IconActionOptions,
+): HTMLButtonElement {
+    const cls = opts.cls ?? ICON_ACTION_BTN_CLS;
+    const finalCls = opts.extraCls ? `${cls} ${opts.extraCls}` : cls;
+    const btn = actions.createEl('button', {
+        cls: finalCls,
+        attr: {
+            'aria-label': opts.label,
+            type: 'button',
+        },
+    });
+    setIcon(btn, opts.icon);
+    setTooltip(btn, opts.label);
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        opts.onClick(e);
+    });
+    return btn;
+}
+
+/**
+ * Create the standard `<div class="session-bubble__actions">` container
+ * inside a bubble. Extracted so action-bar variants share a single
+ * source of truth for the container class — keeps the CSS hover-reveal
+ * selector working uniformly.
+ */
+export function createActionsContainer(bubble: HTMLElement): HTMLElement {
+    return bubble.createEl('div', { cls: 'session-bubble__actions' });
+}
+
+/** Class shared by all default icon-action buttons; exported for callers
+ *  that need it on a non-button element (e.g. when creating a copy button
+ *  via {@link createCopyButton}, which builds its own element). */
+export const ACTION_BTN_CLS = ICON_ACTION_BTN_CLS;
+
+/**
  * Render a minimal action bar for a user message bubble.
  *
  * Provides Copy, Edit and (optionally) Branch-from-here actions — the
@@ -26,24 +103,18 @@ export function renderUserActionBar(
     onBranch?: (msg: ChatMessage) => void,
     onEdit?: (msg: ChatMessage) => void,
 ): void {
-    const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
+    const actions = createActionsContainer(bubble);
 
     // Edit button — restores this message to the input and rolls back
     // the conversation to before this point
     if (onEdit) {
-        const editBtn = actions.createEl('button', {
-            cls: 'session-icon-btn session-bubble__action-btn',
-            attr: {
-                'aria-label': t('view.editMessage'),
-                type: 'button',
+        addIconAction(actions, {
+            icon: 'pencil',
+            label: t('view.editMessage'),
+            onClick: (e) => {
+                e.preventDefault();
+                onEdit(msg);
             },
-        });
-        setIcon(editBtn, 'pencil');
-        setTooltip(editBtn, t('view.editMessage'));
-        editBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            onEdit(msg);
         });
     }
 
@@ -51,25 +122,19 @@ export function renderUserActionBar(
     const copyBtn = createCopyButton(
         t('common.copy'),
         () => msg.content,
-        'session-icon-btn session-bubble__action-btn',
+        ACTION_BTN_CLS,
     );
     actions.appendChild(copyBtn);
 
     // Branch button — only shown when the host has wired a branch handler
     if (onBranch) {
-        const branchBtn = actions.createEl('button', {
-            cls: 'session-icon-btn session-bubble__action-btn',
-            attr: {
-                'aria-label': t('view.branchFromHere'),
-                type: 'button',
+        addIconAction(actions, {
+            icon: 'git-branch',
+            label: t('view.branchFromHere'),
+            onClick: (e) => {
+                e.preventDefault();
+                onBranch(msg);
             },
-        });
-        setIcon(branchBtn, 'git-branch');
-        setTooltip(branchBtn, t('view.branchFromHere'));
-        branchBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            onBranch(msg);
         });
     }
 }
@@ -123,10 +188,10 @@ export function renderActionBar(
     opts: ActionBarOptions
 ): void {
     const { abortedMessageIds, speechController, onExtractInsights } = opts;
-    const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
+    const actions = createActionsContainer(bubble);
 
     // Copy button — uses unified createCopyButton for consistent flash-feedback
-    const copyBtn = createCopyButton(t('common.copy'), () => msg.content, 'session-icon-btn session-bubble__action-btn');
+    const copyBtn = createCopyButton(t('common.copy'), () => msg.content, ACTION_BTN_CLS);
     actions.appendChild(copyBtn);
 
     // Speak button group
@@ -140,17 +205,10 @@ export function renderActionBar(
     // stay consistent with the rest of the action bar and remain
     // tap-friendly on mobile.
     if (onExtractInsights && !abortedMessageIds.has(msg.id) && !opts.isBusy) {
-        const insightBtn = actions.createEl('button', {
-            cls: 'session-icon-btn session-bubble__action-btn',
-            attr: {
-                'aria-label': t('view.extractInsights'),
-                type: 'button',
-            },
-        });
-        setIcon(insightBtn, 'lightbulb');
-        setTooltip(insightBtn, t('view.extractInsights'));
-        insightBtn.addEventListener('click', () => {
-            onExtractInsights(msg);
+        addIconAction(actions, {
+            icon: 'lightbulb',
+            label: t('view.extractInsights'),
+            onClick: () => onExtractInsights(msg),
         });
     }
 

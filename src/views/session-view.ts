@@ -51,7 +51,7 @@ import {
     ScrollController,
     StreamingLoader,
     showInitializationError,
-    appendErrorBubble,
+    ErrorBubbleTracker,
     updateSessionTitle as renderSessionTitle,
     handleTitleClick,
     maybeGenerateSessionTitle,
@@ -144,14 +144,15 @@ export class SessionView extends ItemView {
     private abortedMessageIds: Set<string> = new Set();
 
     /**
-     * Singleton reference to the inline "continue" button on the *current*
-     * tail error bubble, when one exists. Invariant: at most one such
-     * button is alive at any time, and it lives only on the conversation
-     * tail. Anything that pushes new content past that error tail
-     * (a new chat bubble, a fresh error replacing it, a session switch)
-     * must call {@link clearLastErrorContinueBtn} before mutating the DOM.
+     * Tracks the inline "continue" button on the conversation-tail error
+     * bubble. The tracker enforces "only the latest tail error carries
+     * a continue button" — anything that pushes new content past that
+     * tail (a new chat bubble, a fresh error replacing it, a session
+     * switch) must call `errorBubbles.clearContinueBtn()` before
+     * mutating the DOM. Constructed lazily in `buildMessageArea` once
+     * `messagesEl` and `streamingLoader` exist.
      */
-    private lastErrorContinueBtn: HTMLElement | null = null;
+    private errorBubbles!: ErrorBubbleTracker;
 
     // ── Draft input debounce ────────────────────────────────────────────────
     private draftController!: DraftInputController;
@@ -351,7 +352,7 @@ export class SessionView extends ItemView {
                 this.scroller.restoreAutoFollow();
                 this.hideStreamingLoader();
                 this.setInputLocked(false);
-                this.appendErrorBubble(ev.err.message);
+                this.errorBubbles.append(ev.err.message);
                 this.messageWindow.maybeTrimTail();
                 break;
             case 'context-summarizing':
@@ -444,25 +445,7 @@ export class SessionView extends ItemView {
         root.empty();
         root.addClass('session-view');
 
-        // Mobile keyboard handling with VirtualKeyboard API
-        if (Platform.isMobile && 'virtualKeyboard' in navigator) {
-            // W3C VirtualKeyboard API — not yet in lib.dom.d.ts. Narrow locally
-            // instead of `as any` so the only untyped surface is the cast itself.
-            interface VirtualKeyboard extends EventTarget {
-                overlaysContent: boolean;
-                boundingRect: DOMRectReadOnly;
-            }
-            const vk = (navigator as Navigator & { virtualKeyboard: VirtualKeyboard }).virtualKeyboard;
-            vk.overlaysContent = true;
-            const updatePadding = () => {
-                const height = vk.boundingRect.height;
-                root.style.paddingBottom = `${height}px`;
-            };
-            vk.addEventListener('geometrychange', updatePadding);
-            this.register(() => {
-                vk.removeEventListener('geometrychange', updatePadding);
-            });
-        }
+        this.installMobileKeyboardPadding(root);
 
         // Load cached sessions from disk
         await this.sessionManager.loadFromCache();
@@ -473,399 +456,483 @@ export class SessionView extends ItemView {
                 speechSynthesis.getVoices();
             }
 
-            // ── Toolbar (top) ────────────────────────────────────────────────────
-            const toolbar = root.createEl('div', { cls: 'session-toolbar' });
-
-            // Left group: session switcher button + token usage
-            const leftGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--left' });
-
-            // Session switcher button with dropdown and more actions
-            this.sessionNavigator = new SessionNavigator({
-                app: this.app,
-                sessionManager: this.sessionManager,
-                dropdownManager: this.dropdownManager,
-                isStreaming: () => this.isStreaming,
-                getSessionStatus: (id) => {
-                    const rt = this.plugin.runtimePool.get(id);
-                    if (!rt) return 'unloaded';
-                    if (rt.pendingConfirmations.size > 0) return 'awaitingConfirm';
-                    if (rt.isBusy) return 'busy';
-                    return 'idle';
-                },
-                getSessionPendingCheckpoints: (id) => {
-                    // Pending-checkpoint state is runtime-only (the
-                    // CheckpointStore lives on the SessionRuntime). Sessions
-                    // without a warm runtime in the pool are guaranteed
-                    // to have zero pending — they were either never
-                    // loaded this session, or were released back to the
-                    // pool only after every checkpoint was resolved
-                    // (release() refuses to evict runtimes whose store
-                    // still has pending checkpoints).
-                    const rt = this.plugin.runtimePool.get(id);
-                    return rt?.checkpointStore.pendingCount ?? 0;
-                },
-                evictRuntime: (id) => this.plugin.runtimePool.evict(id),
-                clearActiveDraftTimer: () => this.draftController.clearTimer(),
-                onSwitchSession: (id) => { void this.handleSwitchSession(id); },
-                onActiveSessionDeleted: async () => {
-                    // The active session's runtime was already evicted
-                    // by SessionNavigator (via plugin.runtimePool.evict);
-                    // we just need to detach our listener (no-op since
-                    // the runtime is gone) and rebind to whichever
-                    // session SessionManager auto-selected.
-                    this.detachRuntime = undefined;
-                    this.runtime = undefined;
-                    this.clearViewDOM();
-                    await this.bindActiveSessionRuntime();
-                },
-                onAcceptAllPendingCheckpoints: async () => {
-                    const sessions = this.sessionManager.getAllSessions();
-                    let acceptedCount = 0;
-
-                    for (const s of sessions) {
-                        const rt = this.plugin.runtimePool.get(s.id);
-                        if (rt && rt.checkpointStore.hasPending) {
-                            const countBefore = rt.checkpointStore.pendingCount;
-                            await rt.checkpointStore.acceptAllPending();
-                            acceptedCount += countBefore;
-                        }
-                    }
-
-                    if (acceptedCount > 0) {
-                        new Notice(t('view.allPendingCheckpointsAccepted', { count: acceptedCount }));
-                        this.sessionNavigator.updatePendingBadge();
-                    } else {
-                        new Notice(t('view.noPendingCheckpointsToAccept'));
-                    }
-                },
-            });
-            this.sessionNavigator.mount(leftGroup);
-
-            // Center group: session title
-            const centerGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--center' });
-            this.sessionTitleEl = centerGroup.createEl('span', { cls: 'session-toolbar__title' });
-            this.sessionTitleEl.addEventListener('click', () => this.handleTitleClick(centerGroup));
-
-            // Right group: new chat button with dropdown
-            const rightGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--right' });
-
-            // Toolbar buttons - New Chat button with dropdown
-            const newChatBtnGroup = rightGroup.createEl('span', {
-                cls: 'session-toolbar__btn-group',
-            });
-
-            const newChatBtn = newChatBtnGroup.createEl('button', {
-                cls: 'session-toolbar__btn session-toolbar__btn--primary',
-                attr: { 'aria-label': t('view.newChat') },
-            });
-            setIcon(newChatBtn, 'file-plus');
-            newChatBtn.addEventListener('click', () => void this.handleNewChat());
-            this.newChatBtn = newChatBtn;
-
-            // More actions dropdown button
-            const moreActionsBtn = newChatBtnGroup.createEl('button', {
-                cls: 'session-toolbar__btn session-toolbar__btn--dropdown',
-                attr: { 'aria-label': t('view.moreActions') },
-            });
-            setIcon(moreActionsBtn, 'chevron-down');
-
-            const moreActionsDropdown = newChatBtnGroup.createEl('div', {
-                cls: 'session-dropdown-menu session-dropdown-menu--toolbar-right',
-            });
-
-            const searchItem = moreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
-            const searchIcon = searchItem.createEl('span', { cls: 'session-dropdown-item__icon' });
-            setIcon(searchIcon, 'search');
-            searchItem.createEl('span', { text: t('search.title') });
-            searchItem.addEventListener('click', () => {
-                this.dropdownManager.closeActive();
-                void this.openSessionSearch();
-            });
-
-            const saveAsNoteItem = moreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
-            const saveIcon = saveAsNoteItem.createEl('span', { cls: 'session-dropdown-item__icon' });
-            setIcon(saveIcon, 'download');
-            saveAsNoteItem.createEl('span', { text: t('view.exportSession') });
-            saveAsNoteItem.addEventListener('click', () => {
-                this.dropdownManager.closeActive();
-                this.exportSession();
-            });
-
-            this.dropdownManager.registerToggle({
-                wrapper: newChatBtnGroup,
-                button: moreActionsBtn,
-                dropdown: moreActionsDropdown,
-                onOpen: () => {
-                    // DropdownManager automatically closes other active dropdowns
-                },
-            });
-
-            this.updateNewChatBtnState();
-
-            // ── Message list ─────────────────────────────────────────────────────
-            const messagesWrapper = root.createEl('div', { cls: 'session-messages-wrapper' });
-            this.messagesEl = messagesWrapper.createEl('div', { cls: 'session-messages' });
-
-            this.historyLoadingOverlay = new SessionLoadingOverlay(messagesWrapper);
-            this.historyLoadingOverlay.mount();
-            this.messageWindow = new MessageWindowController(this.messagesEl);
-
-            // Create the singleton trailing loader as the last child of
-            // messagesEl. It stays in the DOM for the view's lifetime; we
-            // toggle its visibility via `session-streaming-loader--hidden`
-            // and move it back to the tail after any bubble append.
-            this.streamingLoader = new StreamingLoader(this.messagesEl);
-            this.streamingLoader.mount();
-
-            // Initialize BubbleRenderer with messagesEl
-            this.bubbleRenderer = new BubbleRenderer(
-                this.app,
-                () => this.maybeScrollToBottom(),
-                (msg) => { void this.handleExtractInsights(msg); },
-                // Mount floating (fixed-positioned) dropdowns inside this view's
-                // container so they don't leak onto document.body and are
-                // cleaned up naturally when the view is detached.
-                this.containerEl,
-                (msg) => { void this.handleBranchFromMessage(msg); },
-                (msg) => { void this.handleEditMessage(msg); },
-            );
-            this.addChild(this.bubbleRenderer);
-
-            // Initialize follow-up suggestion bar (mounted on messagesEl on demand)
-            this.followUpBar = new FollowUpBar(this.messagesEl, (action) => {
-                this.handleFollowUpPick(action);
-            });
-
-            // Conversation-insight preview card. The card is purely a
-            // renderer; SessionRuntime owns the extraction state machine
-            // and persistence. Deepen is a UI gesture (send/fill input)
-            // and stays in the view.
-            this.insightCard = new InsightCard(
-                this.messagesEl,
-                this.app,
-                (insight) => this.handleInsightDeepen(insight),
-            );
-
-            // Scroll-to-bottom button
-            this.scrollToBottomBtn = messagesWrapper.createEl('button', {
-                cls: 'session-scroll-to-bottom-btn',
-                attr: { 'aria-label': 'Scroll to latest' },
-            });
-            this.scroller = new ScrollController(
-                this.messagesEl,
-                this.scrollToBottomBtn,
-                () => this.isStreaming,
-            );
-            this.scroller.attach();
-            this.scroller.setNearTopCallback(() => {
-                if (this.messageWindow.shouldAutoLoadOlder(this.messagesEl.scrollTop)) {
-                    void this.loadOlderMessages();
-                }
-            });
-
-            // ── TODO panel (docked just above the input container) ──────────────
-            //
-            // Lives below the message list and above the compose
-            // card so it is always within thumb / cursor reach. The
-            // panel collapses to a single-line header by default and
-            // expands UPWARD (list rendered above the header) when
-            // clicked — same ergonomic as a mobile bottom sheet, so
-            // the user never has to scroll to the top of the chat to
-            // see what the LLM is working on next.
-            const todoPanelHost = root.createEl('div', { cls: 'session-todo-panel-host' });
-            this.todoPanel = new TodoPanel(todoPanelHost);
-
-            // ── Input container ───────────────────────────────────────────────────────
-            const inputContainer = root.createEl('div', { cls: 'session-input-container' });
-
-            // Checkpoint list control — full-width row docked to the top of the
-            // compose card (dropdown opens as a sheet from the top edge).
-            const checkpointRow = inputContainer.createEl('div', { cls: 'session-checkpoint-row' });
-            this.checkpointSelector = createCheckpointSelector(checkpointRow, this.dropdownManager, {
-                app: this.app,
-                onGotoMessage: (messageId) => { void this.scrollToMessage(messageId); },
-            });
-
-            // Input area with CodeMirror 6 editor
-            const inputRow = inputContainer.createEl('div', { cls: 'session-input-row' });
-            const cmContainer = inputRow.createEl('div', { cls: 'session-cm-input' });
-            this.cmInput = new CMInput(cmContainer, {
-                app: this.app,
-                placeholder: t('view.inputPlaceholder'),
-                onEnter: () => {
-                    if (this.plugin.settings.enterToSend) {
-                        void this.handleSend();
-                        return true;
-                    }
-                    return false;
-                },
-                onFileRefClick: (path: string) => {
-                    // Open file on click
-                    const file = this.app.vault.getAbstractFileByPath(path);
-                    if (file instanceof TFile) {
-                        void this.app.workspace.getLeaf().openFile(file);
-                    }
-                },
-                onChange: () => {
-                    this.draftController.scheduleSave();
-                    // Live-sync the "Refine prompt" affordance: it only
-                    // makes sense to offer the action when there's
-                    // actual draft text to refine. Cheap to recompute
-                    // on every keystroke; the button just toggles its
-                    // `disabled` attribute.
-                    this.updateOptimizeBtnAvailability();
-                    // Note: the follow-up suggestion bar and insight preview card
-                    // are intentionally kept visible while the user is editing.
-                    // They will be dismissed in `appendBubble` the moment a new
-                    // user message is actually sent, so the user can still
-                    // reference / pick suggestions while drafting.
-                },
-            });
-            this.draftController = new DraftInputController(
-                this.sessionManager,
-                () => this.cmInput.getContent(),
-                (v) => this.cmInput.setContent(v),
-            );
-
-            // ── Thinking level selector ───────────────────────────────────────────
-            const thinkingRow = inputContainer.createEl('div', { cls: 'session-thinking-row' });
-
-            // ── Add file reference button (mirrors typing `[[`) ────────────────────
-            const addFileRefBtn = thinkingRow.createEl('button', {
-                cls: 'session-thinking-row__icon-btn',
-                attr: { 'aria-label': t('view.addFileRef') },
-            });
-            setIcon(addFileRefBtn, 'brackets');
-            setTooltip(addFileRefBtn, t('view.addFileRef'));
-            addFileRefBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.cmInput.triggerFileRefSuggest();
-            });
-
-            // ── Profile selector (using DropdownManager) ───────────────────────────
-            this.profileSelector = createProfileSelector(thinkingRow, this.plugin, this.dropdownManager);
-
-            // ── Issue tracer button (mounted before Tips so Tips stays last) ──
-            // The wrapper hides itself via CSS when zero issues are recorded,
-            // so it costs no real estate during healthy sessions.
-            this.issueTracerButton = createIssueTracerButton(thinkingRow, this.app);
-
-            // ── Tips button (last in the row so existing controls keep their position) ──
-            this.tipsButton = createTipsButton(
-                thinkingRow,
-                this.plugin,
-                this.buildTipSessionViewAdapter(),
-                this.dropdownManager,
-            );
-
-            // ── Right-aligned button group ────────────────────────────────────
-            // Holds buttons that should sit on the right edge of the toolbar.
-            // Pushed right via `margin-left: auto` on the group itself, so the
-            // left-aligned controls above keep their natural packing order.
-            // Order inside the group: session status → context ring → refine prompt → send.
-            const thinkingRowRight = thinkingRow.createEl('div', {
-                cls: 'session-thinking-row__right',
-            });
-
-            // ── Session status indicator ───────────────────────────────────────
-            // Primary metric: compact token usage badge that also opens a
-            // detailed panel on click. Placed first in the right toolbar so
-            // the eye-flow is "status → context ring → refine → send".
-            this.sessionStatusEl = thinkingRowRight.createEl('div', {
-                cls: 'session-toolbar__status',
-            });
-            this.sessionStatusMainEl = this.sessionStatusEl.createEl('div', {
-                cls: 'session-toolbar__status-main',
-                attr: {
-                    role: 'button',
-                    tabindex: '0',
-                },
-            });
-            setTooltip(this.sessionStatusMainEl, t('status.ariaLabel'));
-            // Note: `session-dropdown-menu` MUST be the first class so that
-            // DropdownManager derives the `--open` toggle class from it.
-            this.sessionStatusPanelEl = this.sessionStatusEl.createEl('div', {
-                cls: 'session-dropdown-menu session-dropdown-menu--toolbar-up-right session-status-panel',
-            });
-            this.dropdownManager.registerToggle({
-                wrapper: this.sessionStatusEl,
-                button: this.sessionStatusMainEl,
-                dropdown: this.sessionStatusPanelEl,
-                onOpen: () => {
-                    if (this.chat) {
-                        const profile = getActiveProfile(this.plugin.settings);
-                        const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
-                        SessionStatusDisplay.renderPanel(
-                            this.sessionStatusPanelEl,
-                            this.chat,
-                            max,
-                            this.plugin.mcpManager,
-                            this.computeEmbeddingPanelInfo(),
-                            this.runtime?.artifactStore.stats() ?? null,
-                        );
-                    } else {
-                        this.sessionStatusPanelEl.empty();
-                    }
-                },
-            });
-            this.updateSessionStatusDisplay();
-
-            // ── Context-window usage ring ──────────────────────────────────────
-            // Percentage ring showing how much of the context window the most
-            // recent API call consumed. Lives to the right of session status
-            // so the eye-flow is "check status/usage → optimize prompt → send".
-            this.contextRingEl = thinkingRowRight.createEl('span', {
-                cls: 'session-context-ring-host',
-            });
-
-            // ── Refine-prompt button ──────────────────────────────────────────
-            // Calls the summarizer-tier LLM to rewrite the current draft for
-            // clarity / AI-friendliness. Lives one slot to the left of the
-            // send button so the natural eye-flow is "tweak → send".
-            // Only enabled when (a) the draft is non-empty and (b) the
-            // session is not currently streaming.
-            this.optimizeBtn = thinkingRowRight.createEl('button', {
-                cls: 'session-thinking-row__icon-btn session-optimize-btn',
-                attr: { 'aria-label': t('view.optimizePrompt') },
-            });
-            setIcon(this.optimizeBtn, 'wand-sparkles');
-            setTooltip(this.optimizeBtn, t('view.optimizePrompt'));
-            this.optimizeBtn.disabled = true;
-            this.optimizeBtn.addEventListener('click', () => void this.handleOptimizePrompt());
-
-            this.sendBtn = thinkingRowRight.createEl('button', {
-                cls: 'session-thinking-row__icon-btn session-send-btn',
-                attr: { 'aria-label': t('view.sendMessage') },
-            });
-            setIcon(this.sendBtn, 'send');
-            setTooltip(this.sendBtn, t('view.send'));
-            this.sendBtn.addEventListener('click', () => void this.handleSend());
-
-            // Reflect live MCP connection state in the session-status panel
-            // while it is open. The panel is also refreshed on demand from
-            // `updateSessionStatusDisplay()`; this listener covers state
-            // transitions that happen independently of token-usage updates.
-            this.onMcpStateChangedForStatusPanel = () => {
-                if (!this.chat) return;
-                if (!this.dropdownManager.isActive(this.sessionStatusEl)) return;
-                const profile = getActiveProfile(this.plugin.settings);
-                const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
-                SessionStatusDisplay.renderPanel(
-                    this.sessionStatusPanelEl,
-                    this.chat,
-                    max,
-                    this.plugin.mcpManager,
-                    this.computeEmbeddingPanelInfo(),
-                    this.runtime?.artifactStore.stats() ?? null,
-                );
-            };
-            this.plugin.mcpManager?.onChange(this.onMcpStateChangedForStatusPanel);
+            this.buildToolbar(root);
+            this.buildMessageArea(root);
+            this.buildInputArea(root);
 
             // ── Restore session UI from cache ────────────────────────────────
             await this.bindActiveSessionRuntime();
         } catch (error) {
             showInitializationError(this.contentEl, error, () => { void this.onOpen(); });
         }
+    }
+
+    /**
+     * Apply the W3C VirtualKeyboard API workaround on mobile so a
+     * focused input doesn't get covered by the on-screen keyboard.
+     * No-op on desktop or where the API isn't available.
+     */
+    private installMobileKeyboardPadding(root: HTMLElement): void {
+        if (!Platform.isMobile || !('virtualKeyboard' in navigator)) return;
+        // W3C VirtualKeyboard API — not yet in lib.dom.d.ts. Narrow locally
+        // instead of `as any` so the only untyped surface is the cast itself.
+        interface VirtualKeyboard extends EventTarget {
+            overlaysContent: boolean;
+            boundingRect: DOMRectReadOnly;
+        }
+        const vk = (navigator as Navigator & { virtualKeyboard: VirtualKeyboard }).virtualKeyboard;
+        vk.overlaysContent = true;
+        const updatePadding = () => {
+            const height = vk.boundingRect.height;
+            root.style.paddingBottom = `${height}px`;
+        };
+        vk.addEventListener('geometrychange', updatePadding);
+        this.register(() => {
+            vk.removeEventListener('geometrychange', updatePadding);
+        });
+    }
+
+    /**
+     * Build the top toolbar: session switcher (left), session title
+     * (center), and the new-chat / more-actions group (right).
+     *
+     * Sets `this.sessionNavigator`, `this.sessionTitleEl`, `this.newChatBtn`.
+     */
+    private buildToolbar(root: HTMLElement): void {
+        const toolbar = root.createEl('div', { cls: 'session-toolbar' });
+
+        // Left group: session switcher button + token usage
+        const leftGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--left' });
+
+        // Session switcher button with dropdown and more actions
+        this.sessionNavigator = new SessionNavigator({
+            app: this.app,
+            sessionManager: this.sessionManager,
+            dropdownManager: this.dropdownManager,
+            isStreaming: () => this.isStreaming,
+            getSessionStatus: (id) => {
+                const rt = this.plugin.runtimePool.get(id);
+                if (!rt) return 'unloaded';
+                if (rt.pendingConfirmations.size > 0) return 'awaitingConfirm';
+                if (rt.isBusy) return 'busy';
+                return 'idle';
+            },
+            getSessionPendingCheckpoints: (id) => {
+                // Pending-checkpoint state is runtime-only (the
+                // CheckpointStore lives on the SessionRuntime). Sessions
+                // without a warm runtime in the pool are guaranteed
+                // to have zero pending — they were either never
+                // loaded this session, or were released back to the
+                // pool only after every checkpoint was resolved
+                // (release() refuses to evict runtimes whose store
+                // still has pending checkpoints).
+                const rt = this.plugin.runtimePool.get(id);
+                return rt?.checkpointStore.pendingCount ?? 0;
+            },
+            evictRuntime: (id) => this.plugin.runtimePool.evict(id),
+            clearActiveDraftTimer: () => this.draftController.clearTimer(),
+            onSwitchSession: (id) => { void this.handleSwitchSession(id); },
+            onActiveSessionDeleted: async () => {
+                // The active session's runtime was already evicted
+                // by SessionNavigator (via plugin.runtimePool.evict);
+                // we just need to detach our listener (no-op since
+                // the runtime is gone) and rebind to whichever
+                // session SessionManager auto-selected.
+                this.detachRuntime = undefined;
+                this.runtime = undefined;
+                this.clearViewDOM();
+                await this.bindActiveSessionRuntime();
+            },
+            onAcceptAllPendingCheckpoints: async () => {
+                const sessions = this.sessionManager.getAllSessions();
+                let acceptedCount = 0;
+
+                for (const s of sessions) {
+                    const rt = this.plugin.runtimePool.get(s.id);
+                    if (rt && rt.checkpointStore.hasPending) {
+                        const countBefore = rt.checkpointStore.pendingCount;
+                        await rt.checkpointStore.acceptAllPending();
+                        acceptedCount += countBefore;
+                    }
+                }
+
+                if (acceptedCount > 0) {
+                    new Notice(t('view.allPendingCheckpointsAccepted', { count: acceptedCount }));
+                    this.sessionNavigator.updatePendingBadge();
+                } else {
+                    new Notice(t('view.noPendingCheckpointsToAccept'));
+                }
+            },
+        });
+        this.sessionNavigator.mount(leftGroup);
+
+        // Center group: session title
+        const centerGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--center' });
+        this.sessionTitleEl = centerGroup.createEl('span', { cls: 'session-toolbar__title' });
+        this.sessionTitleEl.addEventListener('click', () => this.handleTitleClick(centerGroup));
+
+        // Right group: new chat button with dropdown
+        const rightGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--right' });
+
+        // Toolbar buttons - New Chat button with dropdown
+        const newChatBtnGroup = rightGroup.createEl('span', {
+            cls: 'session-toolbar__btn-group',
+        });
+
+        const newChatBtn = newChatBtnGroup.createEl('button', {
+            cls: 'session-toolbar__btn session-toolbar__btn--primary',
+            attr: { 'aria-label': t('view.newChat') },
+        });
+        setIcon(newChatBtn, 'file-plus');
+        newChatBtn.addEventListener('click', () => void this.handleNewChat());
+        this.newChatBtn = newChatBtn;
+
+        // More actions dropdown button
+        const moreActionsBtn = newChatBtnGroup.createEl('button', {
+            cls: 'session-toolbar__btn session-toolbar__btn--dropdown',
+            attr: { 'aria-label': t('view.moreActions') },
+        });
+        setIcon(moreActionsBtn, 'chevron-down');
+
+        const moreActionsDropdown = newChatBtnGroup.createEl('div', {
+            cls: 'session-dropdown-menu session-dropdown-menu--toolbar-right',
+        });
+
+        const searchItem = moreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
+        const searchIcon = searchItem.createEl('span', { cls: 'session-dropdown-item__icon' });
+        setIcon(searchIcon, 'search');
+        searchItem.createEl('span', { text: t('search.title') });
+        searchItem.addEventListener('click', () => {
+            this.dropdownManager.closeActive();
+            void this.openSessionSearch();
+        });
+
+        const saveAsNoteItem = moreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
+        const saveIcon = saveAsNoteItem.createEl('span', { cls: 'session-dropdown-item__icon' });
+        setIcon(saveIcon, 'download');
+        saveAsNoteItem.createEl('span', { text: t('view.exportSession') });
+        saveAsNoteItem.addEventListener('click', () => {
+            this.dropdownManager.closeActive();
+            this.exportSession();
+        });
+
+        this.dropdownManager.registerToggle({
+            wrapper: newChatBtnGroup,
+            button: moreActionsBtn,
+            dropdown: moreActionsDropdown,
+            onOpen: () => {
+                // DropdownManager automatically closes other active dropdowns
+            },
+        });
+
+        this.updateNewChatBtnState();
+    }
+
+    /**
+     * Build the message-list area: messages container, history loading
+     * overlay, message-window controller, streaming loader, bubble
+     * renderer, follow-up bar, insight card, and the scroll-to-bottom
+     * button (with its scroll controller).
+     *
+     * Sets `this.messagesEl`, `this.historyLoadingOverlay`,
+     * `this.messageWindow`, `this.streamingLoader`, `this.bubbleRenderer`,
+     * `this.followUpBar`, `this.insightCard`, `this.scrollToBottomBtn`,
+     * `this.scroller`.
+     */
+    private buildMessageArea(root: HTMLElement): void {
+        const messagesWrapper = root.createEl('div', { cls: 'session-messages-wrapper' });
+        this.messagesEl = messagesWrapper.createEl('div', { cls: 'session-messages' });
+
+        this.historyLoadingOverlay = new SessionLoadingOverlay(messagesWrapper);
+        this.historyLoadingOverlay.mount();
+        this.messageWindow = new MessageWindowController(this.messagesEl);
+
+        // Create the singleton trailing loader as the last child of
+        // messagesEl. It stays in the DOM for the view's lifetime; we
+        // toggle its visibility via `session-streaming-loader--hidden`
+        // and move it back to the tail after any bubble append.
+        this.streamingLoader = new StreamingLoader(this.messagesEl);
+        this.streamingLoader.mount();
+
+        // Initialize BubbleRenderer with messagesEl
+        this.bubbleRenderer = new BubbleRenderer(
+            this.app,
+            () => this.maybeScrollToBottom(),
+            (msg) => { void this.handleExtractInsights(msg); },
+            // Mount floating (fixed-positioned) dropdowns inside this view's
+            // container so they don't leak onto document.body and are
+            // cleaned up naturally when the view is detached.
+            this.containerEl,
+            (msg) => { void this.handleBranchFromMessage(msg); },
+            (msg) => { void this.handleEditMessage(msg); },
+        );
+        this.addChild(this.bubbleRenderer);
+
+        // Initialize follow-up suggestion bar (mounted on messagesEl on demand)
+        this.followUpBar = new FollowUpBar(this.messagesEl, (action) => {
+            this.handleFollowUpPick(action);
+        });
+
+        // Conversation-insight preview card. The card is purely a
+        // renderer; SessionRuntime owns the extraction state machine
+        // and persistence. Deepen is a UI gesture (send/fill input)
+        // and stays in the view.
+        this.insightCard = new InsightCard(
+            this.messagesEl,
+            this.app,
+            (insight) => this.handleInsightDeepen(insight),
+        );
+
+        // Scroll-to-bottom button
+        this.scrollToBottomBtn = messagesWrapper.createEl('button', {
+            cls: 'session-scroll-to-bottom-btn',
+            attr: { 'aria-label': 'Scroll to latest' },
+        });
+        this.scroller = new ScrollController(
+            this.messagesEl,
+            this.scrollToBottomBtn,
+            () => this.isStreaming,
+        );
+        this.scroller.attach();
+        this.scroller.setNearTopCallback(() => {
+            if (this.messageWindow.shouldAutoLoadOlder(this.messagesEl.scrollTop)) {
+                void this.loadOlderMessages();
+            }
+        });
+
+        // Tail-error continue-button tracker. Wired here because it
+        // needs both `messagesEl` (mount target) and `streamingLoader`
+        // (re-pin after each append). The continue handler resends a
+        // user prompt to resume the interrupted turn — guarded against
+        // a racing concurrent stream from another view attached to the
+        // same runtime.
+        this.errorBubbles = new ErrorBubbleTracker({
+            messagesEl: this.messagesEl,
+            pinStreamingLoaderToEnd: () => this.streamingLoader.pinToEnd(),
+            maybeScrollToBottom: () => this.maybeScrollToBottom(),
+            onContinue: () => {
+                if (this.isStreaming) return;
+                // No need to manually clear the button here: sendPrompt
+                // delivers the user message via onUserMessage →
+                // appendBubble, which clears the singleton as part of
+                // its normal "new tail" handling.
+                void this.sendPrompt(t('view.continueAfterError'));
+            },
+        });
+    }
+
+    /**
+     * Build the docked input area: TODO panel, checkpoint row,
+     * CodeMirror compose card, and the thinking row (file-ref, profile,
+     * issue tracer, tips, session-status panel, context ring, refine
+     * prompt, send). Also wires the MCP state listener that refreshes
+     * the session-status panel while it is open.
+     *
+     * Sets `this.todoPanel`, `this.checkpointSelector`, `this.cmInput`,
+     * `this.draftController`, `this.profileSelector`,
+     * `this.issueTracerButton`, `this.tipsButton`, `this.sessionStatusEl`,
+     * `this.sessionStatusMainEl`, `this.sessionStatusPanelEl`,
+     * `this.contextRingEl`, `this.optimizeBtn`, `this.sendBtn`,
+     * `this.onMcpStateChangedForStatusPanel`.
+     */
+    private buildInputArea(root: HTMLElement): void {
+        // ── TODO panel (docked just above the input container) ──────────────
+        //
+        // Lives below the message list and above the compose
+        // card so it is always within thumb / cursor reach. The
+        // panel collapses to a single-line header by default and
+        // expands UPWARD (list rendered above the header) when
+        // clicked — same ergonomic as a mobile bottom sheet, so
+        // the user never has to scroll to the top of the chat to
+        // see what the LLM is working on next.
+        const todoPanelHost = root.createEl('div', { cls: 'session-todo-panel-host' });
+        this.todoPanel = new TodoPanel(todoPanelHost);
+
+        // ── Input container ───────────────────────────────────────────────────────
+        const inputContainer = root.createEl('div', { cls: 'session-input-container' });
+
+        // Checkpoint list control — full-width row docked to the top of the
+        // compose card (dropdown opens as a sheet from the top edge).
+        const checkpointRow = inputContainer.createEl('div', { cls: 'session-checkpoint-row' });
+        this.checkpointSelector = createCheckpointSelector(checkpointRow, this.dropdownManager, {
+            app: this.app,
+            onGotoMessage: (messageId) => { void this.scrollToMessage(messageId); },
+        });
+
+        // Input area with CodeMirror 6 editor
+        const inputRow = inputContainer.createEl('div', { cls: 'session-input-row' });
+        const cmContainer = inputRow.createEl('div', { cls: 'session-cm-input' });
+        this.cmInput = new CMInput(cmContainer, {
+            app: this.app,
+            placeholder: t('view.inputPlaceholder'),
+            onEnter: () => {
+                if (this.plugin.settings.enterToSend) {
+                    void this.handleSend();
+                    return true;
+                }
+                return false;
+            },
+            onFileRefClick: (path: string) => {
+                // Open file on click
+                const file = this.app.vault.getAbstractFileByPath(path);
+                if (file instanceof TFile) {
+                    void this.app.workspace.getLeaf().openFile(file);
+                }
+            },
+            onChange: () => {
+                this.draftController.scheduleSave();
+                // Live-sync the "Refine prompt" affordance: it only
+                // makes sense to offer the action when there's
+                // actual draft text to refine. Cheap to recompute
+                // on every keystroke; the button just toggles its
+                // `disabled` attribute.
+                this.updateOptimizeBtnAvailability();
+                // Note: the follow-up suggestion bar and insight preview card
+                // are intentionally kept visible while the user is editing.
+                // They will be dismissed in `appendBubble` the moment a new
+                // user message is actually sent, so the user can still
+                // reference / pick suggestions while drafting.
+            },
+        });
+        this.draftController = new DraftInputController(
+            this.sessionManager,
+            () => this.cmInput.getContent(),
+            (v) => this.cmInput.setContent(v),
+        );
+
+        // ── Thinking level selector ───────────────────────────────────────────
+        const thinkingRow = inputContainer.createEl('div', { cls: 'session-thinking-row' });
+
+        // ── Add file reference button (mirrors typing `[[`) ────────────────────
+        const addFileRefBtn = thinkingRow.createEl('button', {
+            cls: 'session-thinking-row__icon-btn',
+            attr: { 'aria-label': t('view.addFileRef') },
+        });
+        setIcon(addFileRefBtn, 'brackets');
+        setTooltip(addFileRefBtn, t('view.addFileRef'));
+        addFileRefBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.cmInput.triggerFileRefSuggest();
+        });
+
+        // ── Profile selector (using DropdownManager) ───────────────────────────
+        this.profileSelector = createProfileSelector(thinkingRow, this.plugin, this.dropdownManager);
+
+        // ── Issue tracer button (mounted before Tips so Tips stays last) ──
+        // The wrapper hides itself via CSS when zero issues are recorded,
+        // so it costs no real estate during healthy sessions.
+        this.issueTracerButton = createIssueTracerButton(thinkingRow, this.app);
+
+        // ── Tips button (last in the row so existing controls keep their position) ──
+        this.tipsButton = createTipsButton(
+            thinkingRow,
+            this.plugin,
+            this.buildTipSessionViewAdapter(),
+            this.dropdownManager,
+        );
+
+        // ── Right-aligned button group ────────────────────────────────────
+        // Holds buttons that should sit on the right edge of the toolbar.
+        // Pushed right via `margin-left: auto` on the group itself, so the
+        // left-aligned controls above keep their natural packing order.
+        // Order inside the group: session status → context ring → refine prompt → send.
+        const thinkingRowRight = thinkingRow.createEl('div', {
+            cls: 'session-thinking-row__right',
+        });
+
+        // ── Session status indicator ───────────────────────────────────────
+        // Primary metric: compact token usage badge that also opens a
+        // detailed panel on click. Placed first in the right toolbar so
+        // the eye-flow is "status → context ring → refine → send".
+        this.sessionStatusEl = thinkingRowRight.createEl('div', {
+            cls: 'session-toolbar__status',
+        });
+        this.sessionStatusMainEl = this.sessionStatusEl.createEl('div', {
+            cls: 'session-toolbar__status-main',
+            attr: {
+                role: 'button',
+                tabindex: '0',
+            },
+        });
+        setTooltip(this.sessionStatusMainEl, t('status.ariaLabel'));
+        // Note: `session-dropdown-menu` MUST be the first class so that
+        // DropdownManager derives the `--open` toggle class from it.
+        this.sessionStatusPanelEl = this.sessionStatusEl.createEl('div', {
+            cls: 'session-dropdown-menu session-dropdown-menu--toolbar-up-right session-status-panel',
+        });
+        this.dropdownManager.registerToggle({
+            wrapper: this.sessionStatusEl,
+            button: this.sessionStatusMainEl,
+            dropdown: this.sessionStatusPanelEl,
+            onOpen: () => {
+                if (this.chat) {
+                    const profile = getActiveProfile(this.plugin.settings);
+                    const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
+                    SessionStatusDisplay.renderPanel(
+                        this.sessionStatusPanelEl,
+                        this.chat,
+                        max,
+                        this.plugin.mcpManager,
+                        this.computeEmbeddingPanelInfo(),
+                        this.runtime?.artifactStore.stats() ?? null,
+                    );
+                } else {
+                    this.sessionStatusPanelEl.empty();
+                }
+            },
+        });
+        this.updateSessionStatusDisplay();
+
+        // ── Context-window usage ring ──────────────────────────────────────
+        // Percentage ring showing how much of the context window the most
+        // recent API call consumed. Lives to the right of session status
+        // so the eye-flow is "check status/usage → optimize prompt → send".
+        this.contextRingEl = thinkingRowRight.createEl('span', {
+            cls: 'session-context-ring-host',
+        });
+
+        // ── Refine-prompt button ──────────────────────────────────────────
+        // Calls the summarizer-tier LLM to rewrite the current draft for
+        // clarity / AI-friendliness. Lives one slot to the left of the
+        // send button so the natural eye-flow is "tweak → send".
+        // Only enabled when (a) the draft is non-empty and (b) the
+        // session is not currently streaming.
+        this.optimizeBtn = thinkingRowRight.createEl('button', {
+            cls: 'session-thinking-row__icon-btn session-optimize-btn',
+            attr: { 'aria-label': t('view.optimizePrompt') },
+        });
+        setIcon(this.optimizeBtn, 'wand-sparkles');
+        setTooltip(this.optimizeBtn, t('view.optimizePrompt'));
+        this.optimizeBtn.disabled = true;
+        this.optimizeBtn.addEventListener('click', () => void this.handleOptimizePrompt());
+
+        this.sendBtn = thinkingRowRight.createEl('button', {
+            cls: 'session-thinking-row__icon-btn session-send-btn',
+            attr: { 'aria-label': t('view.sendMessage') },
+        });
+        setIcon(this.sendBtn, 'send');
+        setTooltip(this.sendBtn, t('view.send'));
+        this.sendBtn.addEventListener('click', () => void this.handleSend());
+
+        // Reflect live MCP connection state in the session-status panel
+        // while it is open. The panel is also refreshed on demand from
+        // `updateSessionStatusDisplay()`; this listener covers state
+        // transitions that happen independently of token-usage updates.
+        this.onMcpStateChangedForStatusPanel = () => {
+            if (!this.chat) return;
+            if (!this.dropdownManager.isActive(this.sessionStatusEl)) return;
+            const profile = getActiveProfile(this.plugin.settings);
+            const max = profile.maxTokens > 0 ? profile.maxTokens : inferModelContextWindow(profile.model);
+            SessionStatusDisplay.renderPanel(
+                this.sessionStatusPanelEl,
+                this.chat,
+                max,
+                this.plugin.mcpManager,
+                this.computeEmbeddingPanelInfo(),
+                this.runtime?.artifactStore.stats() ?? null,
+            );
+        };
+        this.plugin.mcpManager?.onChange(this.onMcpStateChangedForStatusPanel);
     }
 
     async onClose() {
@@ -899,7 +966,7 @@ export class SessionView extends ItemView {
         this.messageBubbles.clear();
         // Drop the dangling continue-button reference too — the DOM is
         // about to be torn down by the parent ItemView.
-        this.lastErrorContinueBtn = null;
+        this.errorBubbles?.forgetContinueBtn();
         // Drop the singleton streaming loader reference; its DOM node is
         // inside contentEl which will be torn down by the parent ItemView.
         this.streamingLoader?.dispose();
@@ -1222,7 +1289,7 @@ export class SessionView extends ItemView {
         this.abortedMessageIds.clear();
         // The DOM node is already gone via messagesEl.empty(); just drop
         // the dangling reference so the next session starts clean.
-        this.lastErrorContinueBtn = null;
+        this.errorBubbles?.forgetContinueBtn();
 
         this.cmInput.clear();
         this.scrollToBottomBtn.hide();
@@ -1743,7 +1810,7 @@ export class SessionView extends ItemView {
         // A new chat bubble means the conversation has moved past the
         // last error tail (if any), so the inline "continue" affordance
         // is no longer applicable to that historical error.
-        this.clearLastErrorContinueBtn();
+        this.errorBubbles.clearContinueBtn();
 
         let statusCls = '';
         if (msg.role === 'tool_call' && msg.toolCallResult) {
@@ -1774,8 +1841,8 @@ export class SessionView extends ItemView {
         // Preserve expanded states
         const thinkingBody = bubble.querySelector('.collapsible-block--inline .collapsible-block__body');
         const wasThinkingExpanded = thinkingBody?.classList.contains('collapsible-block__body--expanded') ?? false;
-        const toolDetailBody = bubble.querySelector('.session-bubble__tool-detail-body');
-        const wasToolDetailExpanded = toolDetailBody?.classList.contains('session-bubble__tool-detail-body--expanded') ?? false;
+        const toolDetailBody = bubble.querySelector('.collapsible-block--tool .collapsible-block__body');
+        const wasToolDetailExpanded = toolDetailBody?.classList.contains('collapsible-block__body--expanded') ?? false;
 
         // Same auto-follow snapshot rationale as appendBubble: a single
         // re-render can grow the bubble by hundreds of pixels (e.g. a
@@ -2329,48 +2396,6 @@ export class SessionView extends ItemView {
         const needsBaseUrl = config.type !== 'gemini';
         const configured = apiKey.length > 0 && (!needsBaseUrl || baseUrl.length > 0);
         return { enabled: true, configured };
-    }
-
-    private appendErrorBubble(message: string) {
-        // A new error bubble becomes the new conversation tail; the
-        // previous tail's continue button (if any) must be removed
-        // BEFORE we render the next bubble so the invariant "only the
-        // tail error carries a continue button" holds even briefly.
-        this.clearLastErrorContinueBtn();
-
-        const { continueBtn } = appendErrorBubble(message, {
-            messagesEl: this.messagesEl,
-            pinStreamingLoaderToEnd: () => this.streamingLoader.pinToEnd(),
-            maybeScrollToBottom: () => this.maybeScrollToBottom(),
-            onContinue: () => {
-                // Defensive: errors transition the runtime to idle, so
-                // this should normally be safe; but if a fresh turn was
-                // somehow kicked off in between (e.g. from another view
-                // attached to the same runtime), bail rather than have
-                // chat.prompt() throw "already streaming".
-                if (this.isStreaming) return;
-                // No need to manually clear the button here: sendPrompt
-                // delivers the user message via onUserMessage →
-                // appendBubble, which clears the singleton as part of
-                // its normal "new tail" handling.
-                void this.sendPrompt(t('view.continueAfterError'));
-            },
-        });
-
-        this.lastErrorContinueBtn = continueBtn;
-    }
-
-    /**
-     * Detach the inline "continue" button from the previous tail error
-     * bubble, if any. Idempotent. The error bubble itself is preserved
-     * (it stays in history); only the action button is removed since the
-     * conversation has moved past the error.
-     */
-    private clearLastErrorContinueBtn(): void {
-        if (this.lastErrorContinueBtn) {
-            this.lastErrorContinueBtn.remove();
-            this.lastErrorContinueBtn = null;
-        }
     }
 
     // ── Export session ──────────────────────────────────────────────────────

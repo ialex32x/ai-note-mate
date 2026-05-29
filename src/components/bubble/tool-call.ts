@@ -3,8 +3,9 @@ import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { prettifyIfJson } from '../../utils/json-format';
 import { createCopyButton } from '../../utils/copy-button';
-import { COLLAPSIBLE_CLASSES } from '../../utils/collapsible';
+import { createCollapsible, COLLAPSIBLE_CLASSES } from '../../utils/collapsible';
 import type { BubbleContext } from './bubble-context';
+import { openAnchoredDropdown, type AnchoredDropdownHandle } from './anchored-dropdown';
 
 /**
  * Render the body of a tool-call bubble.
@@ -37,28 +38,16 @@ export function renderToolCallContent(
     wasToolDetailExpanded: boolean,
     pendingConfirmations: Map<string, (approved: boolean) => void>,
 ): void {
-    const headerRow = contentEl.createEl('div', {
-        cls: 'session-bubble__tool-header',
-    });
+    const hasDetail = !!(msg.toolCallMeta || msg.toolCallResult);
+    const labelText = msg.streaming ? `${msg.content}  …` : msg.content;
 
-    const arrow = wasToolDetailExpanded ? '▾' : '▸';
-    const arrowSpan = headerRow.createEl('span', {
-        cls: 'session-bubble__tool-arrow',
-        text: arrow,
-    });
-
-    headerRow.createEl('span', {
-        cls: 'session-bubble__tool-label',
-        text: msg.streaming ? `${msg.content}  …` : msg.content,
-    });
-
-    if (msg.toolCallResult) {
-        const statusIcon =
-            msg.toolCallResult.status === 'error' ? '✕' :
-            msg.toolCallResult.status === 'warning' ? '⚠' :
-            '✓';
-        const statusCls = `session-bubble__tool-status session-bubble__tool-status--${msg.toolCallResult.status}`;
-        headerRow.createEl('span', { cls: statusCls, text: statusIcon });
+    if (!hasDetail) {
+        // Header without a body — mimic the collapsible header layout but
+        // without the arrow / click handler so the user isn't invited to
+        // expand an empty detail.
+        renderToolHeaderStatic(contentEl, msg, labelText);
+    } else {
+        renderToolDetail(contentEl, msg, labelText, wasToolDetailExpanded);
     }
 
     if (msg.confirmationState === 'pending' && msg.streaming) {
@@ -66,110 +55,135 @@ export function renderToolCallContent(
     } else if (msg.confirmationState === 'allowed' || msg.confirmationState === 'rejected') {
         renderToolConfirmBadge(contentEl, msg.confirmationState);
     }
-
-    if (msg.toolCallMeta || msg.toolCallResult) {
-        if (wasToolDetailExpanded) {
-            renderToolDetail(contentEl, msg, true, arrowSpan, headerRow);
-        } else {
-            renderToolDetailLazy(contentEl, msg, arrowSpan, headerRow);
-        }
-    }
 }
 
+/**
+ * Render a non-collapsible tool header (used while the tool call has neither
+ * args metadata nor a result yet — e.g. mid-stream before the first chunk).
+ *
+ * Wraps in a `.collapsible-block.collapsible-block--tool` so the same
+ * header styling rules apply as the collapsible variant; just omits the
+ * arrow + body + click handler since there's nothing to expand.
+ */
+function renderToolHeaderStatic(
+    contentEl: HTMLElement,
+    msg: ChatMessage,
+    labelText: string,
+): void {
+    const wrapper = contentEl.createEl('div', {
+        cls: 'collapsible-block collapsible-block--tool collapsible-block--tool-static',
+    });
+    const header = wrapper.createEl('span', { cls: 'collapsible-block__header' });
+    header.createEl('span', {
+        cls: 'collapsible-block--tool__label',
+        text: labelText,
+    });
+    appendToolStatusIcon(header, msg);
+}
+
+/**
+ * Render the collapsible detail section (Arguments + Result) for a tool call.
+ * Detail body content is built lazily on first expand to keep large tool
+ * outputs out of the DOM until the user actually opens them.
+ */
 function renderToolDetail(
     contentEl: HTMLElement,
     msg: ChatMessage,
+    labelText: string,
     wasToolDetailExpanded: boolean,
-    arrowSpan: HTMLElement,
-    headerRow: HTMLElement,
 ): void {
-    const detailBody = contentEl.createEl('div', {
-        cls: wasToolDetailExpanded
-            ? 'session-bubble__tool-detail-body session-bubble__tool-detail-body--expanded'
-            : 'session-bubble__tool-detail-body',
+    const collapsible = createCollapsible(contentEl, {
+        summary: labelText,
+        initiallyExpanded: wasToolDetailExpanded,
+        ariaLabel: 'Toggle tool call detail',
+        // Use a tool-specific summary class so the label isn't italicised
+        // (the default `collapsible-block__summary` is italic; tool names
+        // need to read as code-like identifiers).
+        summaryClass: 'collapsible-block--tool__label',
     });
 
-    populateToolDetailBody(detailBody, msg);
+    // Tool-call collapsible carries its own header / body styling overrides
+    // (regular weight + status-icon slot, separator above the body).
+    collapsible.wrapper.addClass('collapsible-block--tool');
+    collapsible.wrapper.addClass('collapsible-block--code');
 
-    let toolDetailExpanded = wasToolDetailExpanded;
-    const toggleToolDetail = () => {
-        toolDetailExpanded = !toolDetailExpanded;
-        detailBody.toggleClass('session-bubble__tool-detail-body--expanded', toolDetailExpanded);
-        arrowSpan.setText(toolDetailExpanded ? '▾' : '▸');
-        headerRow.toggleClass('session-bubble__tool-header--expanded', toolDetailExpanded);
+    // Append status icon to the header (after the summary slot).
+    appendToolStatusIcon(collapsible.header, msg);
+
+    // Lazy populate: only build args/result DOM the first time the user
+    // expands the detail, and reuse it on subsequent toggles.
+    let bodyPopulated = false;
+    const ensureBody = () => {
+        if (bodyPopulated) return;
+        bodyPopulated = true;
+        populateToolDetailBody(collapsible.body, msg);
     };
-    headerRow.addEventListener('click', toggleToolDetail);
-    headerRow.addClass('session-bubble__tool-header--clickable');
     if (wasToolDetailExpanded) {
-        headerRow.addClass('session-bubble__tool-header--expanded');
+        ensureBody();
     }
+    collapsible.header.addEventListener('click', ensureBody);
+    collapsible.header.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') ensureBody();
+    });
 }
 
-/** Lazy detail: args/result DOM is created on first expand. */
-function renderToolDetailLazy(
-    contentEl: HTMLElement,
-    msg: ChatMessage,
-    arrowSpan: HTMLElement,
-    headerRow: HTMLElement,
-): void {
-    let detailBody: HTMLElement | null = null;
-    let toolDetailExpanded = false;
-
-    const ensureDetail = (): HTMLElement => {
-        if (!detailBody) {
-            detailBody = contentEl.createEl('div', {
-                cls: 'session-bubble__tool-detail-body',
-            });
-            populateToolDetailBody(detailBody, msg);
-        }
-        return detailBody;
-    };
-
-    const toggleToolDetail = () => {
-        toolDetailExpanded = !toolDetailExpanded;
-        const body = ensureDetail();
-        body.toggleClass('session-bubble__tool-detail-body--expanded', toolDetailExpanded);
-        arrowSpan.setText(toolDetailExpanded ? '▾' : '▸');
-        headerRow.toggleClass('session-bubble__tool-header--expanded', toolDetailExpanded);
-    };
-
-    headerRow.addEventListener('click', toggleToolDetail);
-    headerRow.addClass('session-bubble__tool-header--clickable');
+/** Append the success / warning / error glyph to a tool header element. */
+function appendToolStatusIcon(headerEl: HTMLElement, msg: ChatMessage): void {
+    if (!msg.toolCallResult) return;
+    const statusIcon =
+        msg.toolCallResult.status === 'error' ? '✕' :
+        msg.toolCallResult.status === 'warning' ? '⚠' :
+        '✓';
+    headerEl.createEl('span', {
+        cls: `collapsible-block--tool__status collapsible-block--tool__status--${msg.toolCallResult.status}`,
+        text: statusIcon,
+    });
 }
 
 function populateToolDetailBody(detailBody: HTMLElement, msg: ChatMessage): void {
     if (msg.toolCallMeta) {
-        const argsWrapper = detailBody.createEl('div', { cls: 'session-bubble__tool-section' });
-        argsWrapper.createEl('span', {
-            cls: 'collapsible-block__section-label',
-            text: 'Arguments',
-        });
-        const argsCode = argsWrapper.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
-        const argsPre = argsCode.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE });
-        argsPre.setText(JSON.stringify(msg.toolCallMeta.toolArgs, null, 2));
-        const argsCopyBtn = createCopyButton(t('view.copyToolArgs'), () => {
+        renderToolDetailSection(detailBody, 'Arguments', () => {
+            return JSON.stringify(msg.toolCallMeta?.toolArgs ?? null, null, 2);
+        }, t('view.copyToolArgs'), () => {
             const args = msg.toolCallMeta?.toolArgs;
             return args === undefined ? '' : JSON.stringify(args, null, 2);
-        }, COLLAPSIBLE_CLASSES.COPY_BTN);
-        argsCode.appendChild(argsCopyBtn);
+        });
     }
 
     if (msg.toolCallResult) {
-        const resultWrapper = detailBody.createEl('div', { cls: 'session-bubble__tool-section' });
-        resultWrapper.createEl('span', {
-            cls: 'collapsible-block__section-label',
-            text: 'Result',
+        renderToolDetailSection(detailBody, 'Result', () => {
+            const text = msg.toolCallResult?.result ?? '';
+            return text.length > 2000 ? text.slice(0, 2000) + '\n... (truncated)' : text;
+        }, t('view.copyToolResult'), () => {
+            return prettifyIfJson(msg.toolCallResult?.result ?? '');
         });
-        const resultCode = resultWrapper.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
-        const resultPre = resultCode.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE });
-        const resultText = msg.toolCallResult.result;
-        resultPre.setText(resultText.length > 2000 ? resultText.slice(0, 2000) + '\n... (truncated)' : resultText);
-        const resultCopyBtn = createCopyButton(t('view.copyToolResult'), () => {
-            const raw = msg.toolCallResult?.result ?? '';
-            return prettifyIfJson(raw);
-        }, COLLAPSIBLE_CLASSES.COPY_BTN);
-        resultCode.appendChild(resultCopyBtn);
     }
+}
+
+/**
+ * Single shared "labelled code section" pattern used for both Arguments
+ * and Result panels in the tool detail body. The pattern is: a small
+ * uppercase label, a code-wrap with a `<pre>` containing the displayed
+ * text, and a hover-reveal copy button that returns the full (possibly
+ * untruncated, possibly prettified) text from the message.
+ */
+function renderToolDetailSection(
+    detailBody: HTMLElement,
+    label: string,
+    getDisplayText: () => string,
+    copyTooltip: string,
+    getCopyText: () => string,
+): void {
+    const wrapper = detailBody.createEl('div', { cls: 'collapsible-block__section' });
+    wrapper.createEl('span', {
+        cls: 'collapsible-block__section-label',
+        text: label,
+    });
+    const codeWrap = wrapper.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+    const codePre = codeWrap.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE });
+    codePre.setText(getDisplayText());
+    const copyBtn = createCopyButton(copyTooltip, getCopyText, COLLAPSIBLE_CLASSES.COPY_BTN);
+    codeWrap.appendChild(copyBtn);
 }
 
 function renderToolConfirmPending(
@@ -178,9 +192,6 @@ function renderToolConfirmPending(
     messageId: string,
     pendingConfirmations: Map<string, (approved: boolean) => void>,
 ): void {
-    const layer = ctx.getFloatingLayer();
-    layer.querySelector(`[data-confirm-msg-id="${messageId}"]`)?.remove();
-
     const confirmRow = container.createEl('div', { cls: 'session-bubble__tool-confirm' });
 
     const allowBtn = confirmRow.createEl('button', {
@@ -196,27 +207,11 @@ function renderToolConfirmPending(
     });
     setIcon(arrowBtn, 'chevron-down');
 
-    const dropdown = layer.createEl('div', {
-        cls: 'session-dropdown-menu session-dropdown-menu--anchored session-bubble__tool-confirm-dropdown',
-        attr: { 'data-confirm-msg-id': messageId },
-    });
-    dropdown.hide();
-
-    const rejectItem = dropdown.createEl('div', {
-        cls: 'session-dropdown-item session-bubble__tool-confirm-dropdown-item',
-        text: t('view.toolConfirmReject'),
-    });
-
-    let dropdownOpen = false;
-    const closeDropdown = () => {
-        dropdown.hide();
-        dropdownOpen = false;
-    };
+    let dropdown: AnchoredDropdownHandle | null = null;
 
     const finalize = (approved: boolean) => {
-        closeDropdown();
-        dropdown.remove();
-        (outsideClickDoc ?? activeDocument).removeEventListener('click', outsideClickHandler);
+        dropdown?.close();
+        dropdown = null;
         const resolve = pendingConfirmations.get(messageId);
         if (resolve) {
             pendingConfirmations.delete(messageId);
@@ -224,19 +219,7 @@ function renderToolConfirmPending(
         }
         arrowWrap.remove();
         confirmRow.empty();
-        if (approved) {
-            confirmRow.createEl('span', {
-                cls: 'session-bubble__tool-confirm-btn session-bubble__tool-confirm-btn--result session-bubble__tool-confirm-btn--allowed',
-                text: t('view.toolConfirmAllowed'),
-            });
-        } else {
-            const badge = confirmRow.createEl('span', {
-                cls: 'session-bubble__tool-confirm-btn session-bubble__tool-confirm-btn--result session-bubble__tool-confirm-btn--rejected',
-            });
-            const icon = badge.createEl('span', { cls: 'session-bubble__tool-confirm-reject-icon' });
-            setIcon(icon, 'alert-triangle');
-            badge.createEl('span', { text: t('view.toolConfirmRejected') });
-        }
+        renderToolConfirmResult(confirmRow, approved ? 'allowed' : 'rejected');
     };
 
     allowBtn.addEventListener('click', (e) => {
@@ -246,37 +229,45 @@ function renderToolConfirmPending(
 
     arrowBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (dropdownOpen) {
-            closeDropdown();
-        } else {
-            const rect = arrowBtn.getBoundingClientRect();
-            const layerRect = layer.getBoundingClientRect();
-            dropdown.style.top = `${rect.bottom - layerRect.top + 4}px`;
-            dropdown.style.left = `${rect.left - layerRect.left}px`;
-            dropdown.show();
-            dropdownOpen = true;
+        if (dropdown) {
+            dropdown.close();
+            dropdown = null;
+            return;
         }
-    });
-
-    rejectItem.addEventListener('click', (e) => {
-        e.stopPropagation();
-        finalize(false);
-    });
-
-    const outsideClickHandler = (ev: MouseEvent) => {
-        if (!arrowWrap.contains(ev.target as Node) && !dropdown.contains(ev.target as Node)) {
-            closeDropdown();
-        }
-    };
-    let outsideClickDoc: Document | null = null;
-    window.requestAnimationFrame(() => {
-        outsideClickDoc = activeDocument;
-        outsideClickDoc.addEventListener('click', outsideClickHandler);
+        dropdown = openAnchoredDropdown(ctx, {
+            anchor: arrowBtn,
+            placement: 'below',
+            cls: 'session-bubble__tool-confirm-dropdown',
+            attr: { 'data-confirm-msg-id': messageId },
+            insideRegions: [arrowWrap],
+            onClose: () => { dropdown = null; },
+            build: (menu, close) => {
+                const rejectItem = menu.createEl('div', {
+                    cls: 'session-dropdown-item session-bubble__tool-confirm-dropdown-item',
+                    text: t('view.toolConfirmReject'),
+                });
+                rejectItem.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    close();
+                    finalize(false);
+                });
+            },
+        });
     });
 }
 
 function renderToolConfirmBadge(container: HTMLElement, state: 'allowed' | 'rejected'): void {
     const confirmRow = container.createEl('div', { cls: 'session-bubble__tool-confirm' });
+    renderToolConfirmResult(confirmRow, state);
+}
+
+/**
+ * Render the "已批准 / 已拒绝" result chip into an existing confirm row.
+ * Shared between {@link renderToolConfirmBadge} (replay path, drawn on
+ * historical messages) and the inline `finalize` path inside
+ * {@link renderToolConfirmPending} once the user makes a decision.
+ */
+function renderToolConfirmResult(confirmRow: HTMLElement, state: 'allowed' | 'rejected'): void {
     if (state === 'allowed') {
         confirmRow.createEl('span', {
             cls: 'session-bubble__tool-confirm-btn session-bubble__tool-confirm-btn--result session-bubble__tool-confirm-btn--allowed',

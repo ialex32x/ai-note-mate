@@ -1,6 +1,7 @@
 import { getLanguage, setIcon } from 'obsidian';
 import { t } from '../../i18n';
 import type { BubbleContext } from './bubble-context';
+import { openAnchoredDropdown, type AnchoredDropdownHandle } from './anchored-dropdown';
 
 const SPEAK_ICON_NAME = 'volume-2' as const;
 const STOP_ICON_NAME = 'square' as const;
@@ -78,9 +79,7 @@ export class SpeechController {
         // Lazily created on first open; torn down on close to avoid
         // leaking detached dropdowns into the host element across bubble
         // re-renders.
-        let voiceDropdown: HTMLElement | null = null;
-        let outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
-        let outsideClickDoc: Document | null = null;
+        let dropdown: AnchoredDropdownHandle | null = null;
         let voicesChangedHandler: (() => void) | null = null;
 
         // Walk up to the enclosing bubble so we can pin the action bar
@@ -97,12 +96,11 @@ export class SpeechController {
             return null;
         };
 
-        const populateVoiceDropdown = (): boolean => {
-            if (!voiceDropdown) return false;
-            voiceDropdown.empty();
+        const populateVoiceDropdown = (menu: HTMLElement, close: () => void): boolean => {
+            menu.empty();
             const voices = speechSynthesis.getVoices();
             if (voices.length === 0) {
-                voiceDropdown.createEl('div', {
+                menu.createEl('div', {
                     cls: 'session-dropdown-item session-bubble__voice-item',
                     text: 'Loading voices…',
                 });
@@ -113,7 +111,7 @@ export class SpeechController {
                 return a.lang.localeCompare(b.lang);
             });
             for (const v of sorted) {
-                const item = voiceDropdown.createEl('div', { cls: 'session-dropdown-item session-bubble__voice-item' });
+                const item = menu.createEl('div', { cls: 'session-dropdown-item session-bubble__voice-item' });
                 const checkSpan = item.createEl('span', { cls: 'session-bubble__voice-item-check' });
                 item.createEl('span', {
                     cls: 'session-bubble__voice-item-label',
@@ -126,101 +124,51 @@ export class SpeechController {
                 item.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.selectedVoiceURI = v.voiceURI;
-                    closeVoiceDropdown();
+                    close();
                 });
             }
             return true;
         };
 
-        const closeVoiceDropdown = () => {
-            if (voicesChangedHandler) {
-                speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
-                voicesChangedHandler = null;
+        voicePickerBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (dropdown) {
+                dropdown.close();
+                dropdown = null;
+                return;
             }
-            if (outsideClickHandler) {
-                (outsideClickDoc ?? activeDocument).removeEventListener('click', outsideClickHandler);
-                outsideClickHandler = null;
-                outsideClickDoc = null;
-            }
-            if (voiceDropdown) {
-                voiceDropdown.remove();
-                voiceDropdown = null;
-            }
-            findBubble()?.removeClass('session-bubble--actions-pinned');
-        };
-
-        const openVoiceDropdown = () => {
-            // Fresh element each open — keeps the floating layer clean
-            // and avoids stale state accumulating across bubble
-            // re-renders. Mounted on the renderer's floating layer (a
-            // positioned child of `dropdownHost`) so absolute coordinates
-            // resolve against a known containing block, immune to
-            // ancestor transform/contain quirks that would hijack
-            // `position: fixed`.
-            const layer = this.ctx.getFloatingLayer();
-            voiceDropdown = layer.createEl('div', {
-                cls: 'session-dropdown-menu session-dropdown-menu--anchored session-bubble__voice-dropdown',
-            });
-
-            const voicesReady = populateVoiceDropdown();
-            if (!voicesReady) {
-                voicesChangedHandler = () => {
-                    if (populateVoiceDropdown() && voicesChangedHandler) {
+            dropdown = openAnchoredDropdown(this.ctx, {
+                anchor: voicePickerBtn,
+                placement: 'above',
+                cls: 'session-bubble__voice-dropdown',
+                insideRegions: [speakGroup],
+                onOpen: () => {
+                    findBubble()?.addClass('session-bubble--actions-pinned');
+                },
+                onClose: () => {
+                    if (voicesChangedHandler) {
                         speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
                         voicesChangedHandler = null;
                     }
-                };
-                speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
-            }
-
-            // Convert the button's viewport rect into coordinates
-            // relative to the floating layer (our positioned ancestor)
-            // so the absolute popup lands in the right place regardless
-            // of ancestor scrolling or transforms.
-            const btnRect = voicePickerBtn.getBoundingClientRect();
-            const layerRect = layer.getBoundingClientRect();
-            voiceDropdown.style.left = `${btnRect.left - layerRect.left}px`;
-            voiceDropdown.style.removeProperty('right');
-            // Position the popup above the button: its `bottom` (in
-            // layer space) sits 4px above the button's top edge.
-            voiceDropdown.style.bottom = `${layerRect.bottom - btnRect.top + 4}px`;
-            voiceDropdown.addClass('session-dropdown-menu--open');
-            findBubble()?.addClass('session-bubble--actions-pinned');
-
-            window.requestAnimationFrame(() => {
-                if (!voiceDropdown) return;
-                // Edge-clamp using viewport coords (the user-visible
-                // window), then translate the corrected x back into
-                // layer space.
-                const rect = voiceDropdown.getBoundingClientRect();
-                if (rect.right > window.innerWidth) {
-                    const clampedViewportLeft = window.innerWidth - rect.width - 8;
-                    voiceDropdown.style.left = `${clampedViewportLeft - layerRect.left}px`;
-                }
+                    findBubble()?.removeClass('session-bubble--actions-pinned');
+                    dropdown = null;
+                },
+                build: (menu, close) => {
+                    const voicesReady = populateVoiceDropdown(menu, close);
+                    if (!voicesReady) {
+                        voicesChangedHandler = () => {
+                            if (!dropdown) return;
+                            if (populateVoiceDropdown(dropdown.menu, close) && voicesChangedHandler) {
+                                speechSynthesis.removeEventListener('voiceschanged', voicesChangedHandler);
+                                voicesChangedHandler = null;
+                                dropdown.reposition();
+                            }
+                        };
+                        speechSynthesis.addEventListener('voiceschanged', voicesChangedHandler);
+                    }
+                },
             });
-
-            outsideClickHandler = (ev: MouseEvent) => {
-                const target = ev.target as Node;
-                if (!speakGroup.contains(target) && !(voiceDropdown && voiceDropdown.contains(target))) {
-                    closeVoiceDropdown();
-                }
-            };
-            outsideClickDoc = activeDocument;
-            outsideClickDoc.addEventListener('click', outsideClickHandler);
-        };
-
-        voicePickerBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (voiceDropdown) {
-                closeVoiceDropdown();
-            } else {
-                openVoiceDropdown();
-            }
         });
-
-        // Ensure cleanup if the owning renderer unloads while a dropdown
-        // is open.
-        this.ctx.register(() => closeVoiceDropdown());
     }
 
     /**

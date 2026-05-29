@@ -72,72 +72,53 @@
     min-width: 80px;
 }
 
-// Tool call header row (tool-specific — not part of the unified collapsible)
-.session-bubble__tool-header {
-    display: flex;
-    align-items: center;
-    gap: @spacing-sm;
-    line-height: 1.5;
+// Tool-call collapsible: visual overrides on top of the shared
+// .collapsible-block layout. The tool variant differs from a "regular"
+// collapsible (thinking section, delegate inputs) in three ways:
+//   1. Header text reads at full-size + primary color rather than the
+//      faint italic summary used elsewhere — tool names are functional
+//      identifiers, not asides.
+//   2. The header carries a status-icon slot (success / warning / error)
+//      after the label.
+//   3. Header layout fills the row so the status icon sits flush right
+//      regardless of label length.
+// The body + code styling reuses the shared `--code` variant defined in
+// the main `.collapsible-block` block below, so detail panels inherit
+// the same separator + code-wrap pattern as delegate inputs.
+.collapsible-block--tool {
+    & > .collapsible-block__header {
+        display: flex;
+        align-items: center;
+        gap: @spacing-sm;
+        font-size: 1em;
+        line-height: 1.5;
+        color: inherit;
 
-    &--clickable {
-        cursor: pointer;
+        &:hover {
+            opacity: 0.85;
+            color: inherit;
+        }
     }
 
-    &:hover {
-        opacity: 0.85;
+    // Static variant (no detail body): suppress the clickable affordances.
+    &.collapsible-block--tool-static > .collapsible-block__header {
+        cursor: default;
+
+        &:hover { opacity: 1; }
     }
-}
 
-.session-bubble__tool-arrow {
-    font-size: 0.85em;
-    flex-shrink: 0;
-    width: 1em;
-    text-align: center;
-}
-
-.session-bubble__tool-label {
-    flex: 1;
-}
-
-.session-bubble__tool-status {
-    font-size: 0.85em;
-    font-weight: 700;
-    flex-shrink: 0;
-}
-
-.session-bubble__tool-status--success {
-    color: @text-success;
-}
-
-.session-bubble__tool-status--warning {
-    color: @text-warning;
-}
-
-.session-bubble__tool-status--error {
-    color: @text-error;
-}
-
-// Tool call detail body + code sections — now use unified
-// .collapsible-block classes for code-wrap / code / copy-btn.
-// The tool-header / tool-arrow / tool-label / tool-status remain
-// tool-call-specific (they carry tool metadata beyond just toggle).
-
-.session-bubble__tool-detail-body {
-    display: none;
-    margin-top: 6px;
-    border-top: 1px solid @bg-modifier-border;
-    padding-top: 6px;
-
-    &--expanded {
-        display: block;
+    &__label {
+        flex: 1;
     }
-}
 
-.session-bubble__tool-section {
-    margin-bottom: @spacing-sm;
+    &__status {
+        font-size: 0.85em;
+        font-weight: 700;
+        flex-shrink: 0;
 
-    &:last-child {
-        margin-bottom: 0;
+        &--success { color: @text-success; }
+        &--warning { color: @text-warning; }
+        &--error   { color: @text-error; }
     }
 }
 
@@ -145,70 +126,6 @@
 // Now rendered via createCollapsible() using the unified
 // .collapsible-block CSS classes defined below. The `--streaming`
 // variant applies a pulse animation to the summary text.
-
-// Bubble file references (user messages)
-.session-bubble__refs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: @spacing-sm;
-    margin-top: 6px;
-}
-
-.session-bubble__ref {
-    display: inline-flex;
-    align-items: center;
-    gap: @spacing-sm;
-    padding: 1px @spacing-md 1px @spacing-lg;
-    border-radius: 12px;
-    background: @bg-modifier-hover;
-    border: 1px solid @bg-modifier-border;
-    cursor: pointer;
-    white-space: nowrap;
-    max-width: 220px;
-    transition: background @duration-fast;
-
-    &:hover {
-        background: var(--interactive-hover);
-    }
-}
-
-.session-bubble__ref--folder {
-    border-color: @text-faint;
-    border-style: dashed;
-}
-
-.session-bubble__ref-icon {
-    flex: 0 0 auto;
-    display: flex;
-    align-items: center;
-    color: @text-secondary;
-    margin-right: @spacing-xs;
-}
-
-.session-bubble__ref-label {
-    font-size: 0.8em;
-    color: @text-primary;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.session-bubble__refs-toggle {
-    display: inline-flex;
-    align-items: center;
-    padding: 1px @spacing-md;
-    border-radius: 12px;
-    border: none;
-    background: transparent;
-    color: @text-secondary;
-    font-size: 0.78em;
-    cursor: pointer;
-    transition: background @duration-fast, color @duration-fast;
-
-    &:hover {
-        background: @bg-modifier-hover;
-        color: @text-primary;
-    }
-}
 
 // Inline file reference in user message bubbles
 .bubble-file-ref {
@@ -626,6 +543,17 @@
 
     &--spaced-bottom {
         margin-bottom: @spacing-sm;
+    }
+
+    // Section wrapper: a labelled code panel inside a collapsible body
+    // (e.g. "Arguments" / "Result" inside a tool-call detail). Stacks
+    // multiple sections with breathing room between them.
+    &__section {
+        margin-bottom: @spacing-sm;
+
+        &:last-child {
+            margin-bottom: 0;
+        }
     }
 
     // Section label inside code bodies (e.g. "Arguments", "Result")

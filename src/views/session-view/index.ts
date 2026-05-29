@@ -4,7 +4,7 @@
 export { ScrollController } from './scroll-controller';
 export { StreamingLoader } from './streaming-loader';
 export { showInitializationError } from './init-error-screen';
-export { appendErrorBubble } from './error-bubble';
+export { appendErrorBubble, ErrorBubbleTracker } from './error-bubble';
 export {
     updateSessionTitle,
     handleTitleClick,

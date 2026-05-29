@@ -1,11 +1,13 @@
 import {
-    MarkdownRenderer,
     App,
     Component,
 } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
-import { StreamingMarkdownController } from './streaming-markdown-controller';
+import {
+    StreamingMarkdownController,
+    renderFinalMarkdown,
+} from './streaming-markdown-controller';
 import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from '../bubble/bubble-context';
 import {
@@ -252,30 +254,63 @@ export class BubbleRenderer extends Component {
         }
 
         // Remove any stale external action bar left from a previous render
-        // before the bubble is rebuilt (applies to sub-agent and user bubbles
-        // whose toolbars live outside the bubble border).
-        if (msg.subAgent || msg.role === 'user') {
-            const oldExternal = bubble.nextElementSibling;
-            if (oldExternal?.classList.contains('session-bubble__actions--external')) {
-                oldExternal.remove();
-            }
-        }
+        // before the bubble is rebuilt (applies to bubbles whose toolbars
+        // live outside the bubble border — see {@link externalizeActionBar}).
+        this.removeStaleExternalActionBar(bubble);
 
         // Clear existing content
         bubble.empty();
 
         this.renderBubbleContent(bubble, msg, options);
+    }
 
-        // For sub-agents, move the action bar outside the bubble border
-        // so the toolbar (copy/speak/insights) sits below the bubble rather
-        // than inside its padded area
-        if (msg.role === 'assistant' && msg.subAgent && msg.content.trim()) {
-            const actionsEl = bubble.querySelector(':scope > .session-bubble__actions');
-            if (actionsEl) {
-                actionsEl.classList.add('session-bubble__actions--external');
-                bubble.insertAdjacentElement('afterend', actionsEl);
-            }
+    /**
+     * Detach a previously-externalised action bar that sits as the bubble's
+     * next sibling. Called before re-rendering so a fresh action bar
+     * doesn't end up duplicated next to a stale one.
+     *
+     * Idempotent and side-effect-free when no external bar is present, so
+     * it's safe to call unconditionally.
+     */
+    private removeStaleExternalActionBar(bubble: HTMLElement): void {
+        const oldExternal = bubble.nextElementSibling;
+        if (oldExternal?.classList.contains('session-bubble__actions--external')) {
+            oldExternal.remove();
         }
+    }
+
+    /**
+     * Determine whether a bubble's action bar should be moved outside the
+     * bubble border (becoming the bubble's next sibling) rather than
+     * sitting inside the bubble's padded area.
+     *
+     * Two cases qualify today:
+     *   - User messages: keeps Edit / Copy / Branch hovering below the
+     *     bubble so they don't crowd the message text.
+     *   - Sub-agent assistant replies (with non-empty content): mirrors
+     *     the user-bubble layout so sub-agent toolbars don't visually
+     *     bury the agent's reply.
+     *
+     * Centralised here so the predicate stays in lockstep with the
+     * `removeStaleExternalActionBar` invariant in `renderInto`.
+     */
+    private shouldExternalizeActionBar(msg: ChatMessage): boolean {
+        if (msg.role === 'user') return true;
+        if (msg.role === 'assistant' && msg.subAgent && msg.content.trim()) return true;
+        return false;
+    }
+
+    /**
+     * Move the bubble's action bar (rendered as a direct child) outside
+     * the bubble border so it appears below the bubble. No-op when the
+     * bubble has no action bar (e.g. sub-agent reply with empty content
+     * has the actions suppressed upstream).
+     */
+    private externalizeActionBar(bubble: HTMLElement): void {
+        const actionsEl = bubble.querySelector(':scope > .session-bubble__actions');
+        if (!actionsEl) return;
+        actionsEl.classList.add('session-bubble__actions--external');
+        bubble.insertAdjacentElement('afterend', actionsEl);
     }
 
     /**
@@ -426,21 +461,14 @@ export class BubbleRenderer extends Component {
             renderUserContent(this.ctx, contentEl, msg.content);
             // Render inline action bar (Edit + Copy + Branch) — replaces the
             // previous right-click context menu so the same actions are
-            // discoverable on hover without a secondary gesture.
+            // discoverable on hover without a secondary gesture. The bar
+            // gets externalised below alongside sub-agent action bars.
             renderUserActionBar(
                 bubble,
                 msg,
                 this.onBranchFromMessage,
                 this.onEditFromMessage,
             );
-            // Move the user action bar outside the bubble border so it
-            // sits below the bubble rather than inside its padded area,
-            // matching the sub-agent toolbar behaviour.
-            const userActionsEl = bubble.querySelector(':scope > .session-bubble__actions');
-            if (userActionsEl) {
-                userActionsEl.classList.add('session-bubble__actions--external');
-                bubble.insertAdjacentElement('afterend', userActionsEl);
-            }
         } else {
             contentEl.setText(msg.content);
         }
@@ -453,6 +481,14 @@ export class BubbleRenderer extends Component {
                 onExtractInsights: this.onExtractInsights,
                 isBusy,
             });
+        }
+
+        // Final pass: move action bars outside the bubble border for the
+        // bubble shapes that want their toolbars to read as a footer rather
+        // than crowd the message body. Centralised here so user and
+        // sub-agent paths share the same externalisation invariant.
+        if (this.shouldExternalizeActionBar(msg)) {
+            this.externalizeActionBar(bubble);
         }
 
         this.onScrollNeeded();
@@ -493,17 +529,19 @@ export class BubbleRenderer extends Component {
     }
 
     /**
-     * Render markdown content (used for non-streaming / final renders).
+     * Render fully-formed markdown content (used for non-streaming / final
+     * renders such as history loads). Shares the same preprocess +
+     * after-render pipeline as {@link StreamingMarkdownController.finalize}
+     * so streaming and non-streaming bubbles end up with identical DOM.
      */
-    private async renderMarkdownContent(contentEl: HTMLElement, markdown: string): Promise<void> {
-        // Strip the machine-readable <!--suggestions ... --> block so that it
-        // never appears in the rendered DOM (even though it's an HTML comment,
-        // keeping it out avoids surprising copy-paste behaviour and keeps
-        // trailing whitespace tidy).
-        const cleaned = stripStructuredBlock(markdown);
-        await MarkdownRenderer.render(this.app, cleaned, contentEl, '', this);
-        attachImageContextMenu(this.ctx, contentEl);
-        attachLinkContextMenu(this.ctx, contentEl);
+    private renderFinalContent(contentEl: HTMLElement, markdown: string): Promise<void> {
+        return renderFinalMarkdown(this.app, this, contentEl, markdown, {
+            preprocess: stripStructuredBlock,
+            afterRender: (el) => {
+                attachImageContextMenu(this.ctx, el);
+                attachLinkContextMenu(this.ctx, el);
+            },
+        });
     }
 
     // ── Streaming controller management ──────────────────────────────────────
@@ -534,7 +572,19 @@ export class BubbleRenderer extends Component {
 
     /**
      * Finalize and clean up the streaming controller for a message.
-     * If no controller exists, falls back to a direct render.
+     * If no controller exists (e.g. loading from history), falls back
+     * to a direct one-shot render.
+     *
+     * Eviction-before-await: the controller is removed from the map
+     * synchronously, before {@link StreamingMarkdownController.finalize}
+     * is awaited. If a stray subsequent render path looks up the same
+     * `messageId` while the finalize promise is still pending, it will
+     * miss and create a fresh controller instead of reusing the one
+     * that has already committed its terminal state. The controller's
+     * own `finalizing` flag would also reject any racing `update()`,
+     * but evicting from the map keeps the scenario from arising in the
+     * first place and means the lookup tree only ever holds
+     * "live streaming" controllers.
      */
     private finalizeStreamingController(
         messageId: string,
@@ -542,25 +592,16 @@ export class BubbleRenderer extends Component {
         content: string
     ): void {
         const controller = this.streamingControllers.get(messageId);
-        if (controller) {
-            void controller.finalize(contentEl, content).then(() => {
-                this.disposeController(messageId);
-            });
-        } else {
-            // No controller (e.g. loading from history) — render directly
-            void this.renderMarkdownContent(contentEl, content);
+        if (!controller) {
+            // No controller (e.g. loading from history) — render directly.
+            void this.renderFinalContent(contentEl, content);
+            return;
         }
-    }
 
-    /**
-     * Dispose a single streaming controller and remove it from the map.
-     */
-    private disposeController(messageId: string): void {
-        const controller = this.streamingControllers.get(messageId);
-        if (controller) {
+        this.streamingControllers.delete(messageId);
+        void controller.finalize(contentEl, content, stripStructuredBlock).then(() => {
             controller.dispose();
-            this.streamingControllers.delete(messageId);
-        }
+        });
     }
 
     /**

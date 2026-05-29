@@ -1,8 +1,21 @@
-import { Menu, setIcon, setTooltip } from 'obsidian';
+import { Menu, setIcon } from 'obsidian';
 import { t } from '../../i18n';
 import { prettifyIfJson } from '../../utils/json-format';
 import { copyToClipboard } from '../../utils/clipboard';
 import { safeSliceHead } from '../../utils/string-safe';
+import { addIconAction, createActionsContainer } from '../../components/bubble/action-bar';
+
+/**
+ * Class string for action buttons inside an error bubble.
+ *
+ * Intentionally narrower than the assistant / user bubble action buttons
+ * (no `session-icon-btn`): error bubbles render inline as a notification
+ * rather than as a hover-revealed toolbar, so they don't need the
+ * `session-icon-btn` baseline (which carries hover-only opacity rules).
+ * Kept alongside the helper invocation so the visual decision is
+ * documented next to the call site.
+ */
+const ERROR_ACTION_BTN_CLS = 'session-bubble__action-btn';
 
 export interface AppendErrorBubbleOptions {
     messagesEl: HTMLElement;
@@ -73,36 +86,29 @@ export function appendErrorBubble(
         text: displayText,
     });
 
-    const actions = bubble.createEl('div', { cls: 'session-bubble__actions' });
+    const actions = createActionsContainer(bubble);
 
     let continueBtn: HTMLElement | null = null;
     if (opts.onContinue) {
         // Rendered before the copy button so the primary recovery
         // affordance reads first in the action row.
         const onContinue = opts.onContinue;
-        continueBtn = actions.createEl('button', {
-            cls: 'session-bubble__action-btn session-bubble__action-btn--primary',
-            attr: { 'aria-label': t('view.continueAfterError') },
-        });
-        setIcon(continueBtn, 'play');
-        setTooltip(continueBtn, t('view.continueAfterError'));
-        continueBtn.addEventListener('click', (ev) => {
-            ev.stopPropagation();
-            onContinue();
+        continueBtn = addIconAction(actions, {
+            icon: 'play',
+            label: t('view.continueAfterError'),
+            cls: ERROR_ACTION_BTN_CLS,
+            extraCls: 'session-bubble__action-btn--primary',
+            onClick: () => onContinue(),
         });
     }
 
-    const copyBtn = actions.createEl('button', {
-        cls: 'session-bubble__action-btn',
-        attr: { 'aria-label': t('common.copy') },
-    });
-    setIcon(copyBtn, 'copy');
-    setTooltip(copyBtn, t('common.copy'));
-    copyBtn.addEventListener('click', (ev) => {
-        ev.stopPropagation();
+    addIconAction(actions, {
+        icon: 'copy',
+        label: t('common.copy'),
+        cls: ERROR_ACTION_BTN_CLS,
         // Always copy the full, untruncated text so the user can paste it
         // into an issue / debugger even if the bubble itself is shortened.
-        void copyErrorToClipboard(fullText);
+        onClick: () => { void copyErrorToClipboard(fullText); },
     });
 
     bubble.addEventListener('contextmenu', (ev: MouseEvent) => {
@@ -130,4 +136,70 @@ export function appendErrorBubble(
 
 export async function copyErrorToClipboard(text: string): Promise<void> {
     await copyToClipboard(text, { logLevel: 'warn' });
+}
+
+/**
+ * Tracker that owns the "only the conversation-tail error bubble carries
+ * an inline `continue` button" invariant on behalf of {@link SessionView}.
+ *
+ * The view used to inline this state as a `lastErrorContinueBtn` field
+ * plus two private methods (`appendErrorBubble`, `clearLastErrorContinueBtn`).
+ * Folding both into a tiny class here keeps the invariant — and the rules
+ * for when it must be re-asserted — in a single file alongside the bubble
+ * renderer that produces the button. The view just calls `append()` /
+ * `clearContinueBtn()` / `forgetContinueBtn()` at the appropriate
+ * lifecycle points.
+ *
+ * The tracker does **not** own the bubble DOM or the message list. It
+ * only remembers the most recent continue-button element so it can be
+ * detached when the conversation tail moves past that error.
+ */
+export class ErrorBubbleTracker {
+    private lastContinueBtn: HTMLElement | null = null;
+
+    constructor(private readonly opts: Omit<AppendErrorBubbleOptions, 'onContinue'> & {
+        /** Optional click handler for the inline continue button. Omit to disable the affordance entirely. */
+        onContinue?: () => void;
+    }) {}
+
+    /**
+     * Append an error bubble. Before adding the new tail bubble, any
+     * previously-tracked continue button is detached so the invariant
+     * "only the latest tail error carries a continue button" is upheld
+     * even momentarily.
+     */
+    append(message: string): void {
+        this.clearContinueBtn();
+        const { continueBtn } = appendErrorBubble(message, {
+            messagesEl: this.opts.messagesEl,
+            pinStreamingLoaderToEnd: this.opts.pinStreamingLoaderToEnd,
+            maybeScrollToBottom: this.opts.maybeScrollToBottom,
+            onContinue: this.opts.onContinue,
+        });
+        this.lastContinueBtn = continueBtn;
+    }
+
+    /**
+     * Detach the inline continue button from the previous tail error
+     * bubble, if any. Idempotent. The error bubble itself is preserved
+     * (it remains in conversation history); only the action button is
+     * removed because the conversation has moved past the error.
+     */
+    clearContinueBtn(): void {
+        if (this.lastContinueBtn) {
+            this.lastContinueBtn.remove();
+            this.lastContinueBtn = null;
+        }
+    }
+
+    /**
+     * Drop the tracked reference without touching the DOM. Used when
+     * the entire message list is about to be torn down (view close,
+     * session switch, full DOM clear) — the parent has already invalidated
+     * or will invalidate the DOM nodes; we just need to forget the
+     * dangling pointer so the next session starts clean.
+     */
+    forgetContinueBtn(): void {
+        this.lastContinueBtn = null;
+    }
 }
