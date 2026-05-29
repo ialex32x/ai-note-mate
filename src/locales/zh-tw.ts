@@ -634,4 +634,22 @@ export const zhTW: Record<string, string> = {
 	'tool.triggers.web_fetch_url':  '抓取網頁, 取得連結, 開啟連結, 取得連結內容, 存取網頁, 讀取連結, 網頁內容, 下載網頁',
 	'tool.triggers.image_search':   '圖片搜尋, 搜尋圖片, 找圖, 找圖片, 搜圖, 圖像搜尋, 搜尋照片',
 	'tool.triggers.generate_image': '生成圖片, 畫圖, 畫一張, AI畫圖, AI繪圖, 圖片生成, 製作圖片, 創作圖片, 出圖, AI作畫',
+
+	// ─── 見解「深入」提示詞 ─────────────────────────────────
+	// 使用者點擊見解卡片的「深入」按鈕時，以使用者身分送出的提示詞。
+	// 文案隨 UI 語言在地化；結尾的說明會額外要求模型使用對話
+	// 當前所用的語言回覆，以便對話語言偏離 UI 語言時也能對齊。
+	'prompt.insightDeepen.intro': '請基於我們對話中萃取出的下列見解，進一步展開，整理成一段更完整、可獨立成篇、可作為單獨筆記保存的內容。',
+	'prompt.insightDeepen.titleLine': '- 標題：{title}',
+	'prompt.insightDeepen.summaryLine': '- 摘要：{summary}',
+	'prompt.insightDeepen.tagsLine': '- 標籤：{tags}',
+	'prompt.insightDeepen.relatedNotesLine': '- 相關筆記：{notes}',
+	'prompt.insightDeepen.toolHint': '如有需要，請呼叫工具補充上下文（例如檢索儲存庫、閱讀相關筆記、查閱外部資料），然後綜合整理這些資訊。',
+	'prompt.insightDeepen.coverageHeader': '在最終回覆中請涵蓋：',
+	'prompt.insightDeepen.coverageBackground': '- 背景以及為何這件事值得關注',
+	'prompt.insightDeepen.coverageDetails': '- 關鍵細節、定義，以及重要的細微之處或取捨權衡',
+	'prompt.insightDeepen.coverageExamples': '- 具體範例或可逐步遵循的操作指引（如適用）',
+	'prompt.insightDeepen.coveragePitfalls': '- 常見的陷阱或需要留意的注意事項',
+	'prompt.insightDeepen.coverageReferences': '- 參考資料 / 資訊來源（如有引用）',
+	'prompt.insightDeepen.outro': '請使用與本次對話其餘部分相同的語言回覆。目標是產出一段成形的、可直接存為筆記的完整內容，而非簡短的後續回答。',
 };

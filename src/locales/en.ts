@@ -636,4 +636,23 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tool.triggers.web_fetch_url':  'fetch url, open url, browse url, fetch page, get webpage, scrape url, download page',
 	'tool.triggers.image_search':   'image search, find images, search pictures, photo search, search photos, find pictures',
 	'tool.triggers.generate_image': 'generate image, create image, make image, ai image, dall-e, draw picture, image generation, ai art',
+
+	// ─── Insight "deepen" prompt ────────────────────────────────
+	// Composed and sent on the user's behalf when they click the
+	// "Deepen" button on an insight card. Localized so the prompt
+	// appears in the UI language; the outro additionally instructs
+	// the model to reply in the conversation's language.
+	'prompt.insightDeepen.intro': 'Please go deeper on the following insight from our conversation and turn it into a more complete, self-contained piece that I could save as a standalone note.',
+	'prompt.insightDeepen.titleLine': '- Title: {title}',
+	'prompt.insightDeepen.summaryLine': '- Summary: {summary}',
+	'prompt.insightDeepen.tagsLine': '- Tags: {tags}',
+	'prompt.insightDeepen.relatedNotesLine': '- Related notes: {notes}',
+	'prompt.insightDeepen.toolHint': 'When useful, call tools to gather additional context (e.g. search the vault, read related notes, fetch external references). Then synthesize the findings.',
+	'prompt.insightDeepen.coverageHeader': 'In your final reply, cover:',
+	'prompt.insightDeepen.coverageBackground': '- Background and why this matters',
+	'prompt.insightDeepen.coverageDetails': '- Key details, definitions, and any important nuances or trade-offs',
+	'prompt.insightDeepen.coverageExamples': '- Concrete examples or step-by-step guidance where applicable',
+	'prompt.insightDeepen.coveragePitfalls': '- Common pitfalls or caveats to watch out for',
+	'prompt.insightDeepen.coverageReferences': '- References / sources you consulted (if any)',
+	'prompt.insightDeepen.outro': 'Reply in the same language as the rest of this conversation. Aim for a polished, note-ready piece — not a brief follow-up answer.',
 };

@@ -637,4 +637,23 @@ export const ko: Record<string, string> = {
 	'tool.triggers.web_fetch_url':  '웹 가져오기, URL 가져오기, 페이지 가져오기, 링크 열기, 웹페이지, 페이지 로드, 웹 다운로드',
 	'tool.triggers.image_search':   '이미지 검색, 사진 검색, 그림 검색, 이미지 찾기, 사진 찾기',
 	'tool.triggers.generate_image': '이미지 생성, 이미지 만들기, AI 이미지, 그림 생성, 일러스트 생성, 그림 그리기, AI 그림',
+
+	// ─── 인사이트 "더 깊이 파고들기" 프롬프트 ───────────────
+	// 인사이트 카드의 "더 깊이 파고들기" 버튼을 누를 때 사용자
+	// 명의로 전송되는 프롬프트입니다. 문구는 UI 언어에 맞춰
+	// 현지화되며, 마지막 지시는 대화 언어로 답변하도록 추가로
+	// 안내합니다(UI 언어와 대화 언어가 다를 때를 대비).
+	'prompt.insightDeepen.intro': '우리의 대화에서 추출된 다음 인사이트를 더 깊이 다루어, 독립된 노트로 저장할 수 있을 만큼 완결성 있는 한 편의 글로 정리해 주세요.',
+	'prompt.insightDeepen.titleLine': '- 제목: {title}',
+	'prompt.insightDeepen.summaryLine': '- 요약: {summary}',
+	'prompt.insightDeepen.tagsLine': '- 태그: {tags}',
+	'prompt.insightDeepen.relatedNotesLine': '- 관련 노트: {notes}',
+	'prompt.insightDeepen.toolHint': '필요하다면 도구를 호출해 추가 맥락을 수집해 주세요(예: 보관소 검색, 관련 노트 읽기, 외부 자료 가져오기). 그런 다음 그 결과를 종합해 정리합니다.',
+	'prompt.insightDeepen.coverageHeader': '최종 답변에는 다음 내용을 포함해 주세요:',
+	'prompt.insightDeepen.coverageBackground': '- 배경, 그리고 왜 이 주제가 중요한지',
+	'prompt.insightDeepen.coverageDetails': '- 핵심 세부 사항과 정의, 놓치기 쉬운 뉘앙스나 트레이드오프',
+	'prompt.insightDeepen.coverageExamples': '- 구체적인 예시 또는 해당하는 경우 단계별 지침',
+	'prompt.insightDeepen.coveragePitfalls': '- 흔한 함정이나 주의할 점',
+	'prompt.insightDeepen.coverageReferences': '- 참고한 자료 / 출처(있다면)',
+	'prompt.insightDeepen.outro': '대화의 나머지 부분과 동일한 언어로 답변해 주세요. 짧은 후속 답변이 아니라, 그대로 노트로 저장할 수 있을 만큼 완성도 있는 한 편의 글을 목표로 하세요.',
 };

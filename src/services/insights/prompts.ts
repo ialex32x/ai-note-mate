@@ -6,6 +6,8 @@
  * not required.
  */
 
+import { t } from '../../i18n';
+
 /**
  * Base system prompt. The `{limit}` placeholder is replaced by the caller;
  * the `{tagSection}` placeholder receives either an empty string (free-form
@@ -95,10 +97,11 @@ export function buildInsightUserPrompt(userMessage: string, assistantMessage: st
  * as a normal user turn (so the model can call tools, stream, etc.) — it
  * therefore needs to read naturally as if the user typed it.
  *
- * Per project decision the prompt body is always English regardless of
- * UI locale; the closing instruction tells the model to reply in the
+ * The prompt body is localized so it appears in the user's UI language;
+ * the closing instruction additionally tells the model to reply in the
  * conversation's language so the resulting note matches what the user
- * sees on screen.
+ * sees on screen even when the conversation language drifts from the
+ * UI locale.
  */
 export function buildInsightDeepenPrompt(input: {
     title: string;
@@ -107,29 +110,33 @@ export function buildInsightDeepenPrompt(input: {
     linkedNotes: string[];
 }): string {
     const lines: string[] = [
-        'Please go deeper on the following insight from our conversation and turn it into a more complete, self-contained piece that I could save as a standalone note.',
+        t('prompt.insightDeepen.intro'),
         '',
-        `- Title: ${input.title}`,
-        `- Summary: ${input.summary}`,
+        t('prompt.insightDeepen.titleLine', { title: input.title }),
+        t('prompt.insightDeepen.summaryLine', { summary: input.summary }),
     ];
     if (input.tags.length > 0) {
-        lines.push(`- Tags: ${input.tags.join(', ')}`);
+        lines.push(t('prompt.insightDeepen.tagsLine', { tags: input.tags.join(', ') }));
     }
     if (input.linkedNotes.length > 0) {
-        lines.push(`- Related notes: ${input.linkedNotes.map((n) => `[[${n}]]`).join(', ')}`);
+        lines.push(
+            t('prompt.insightDeepen.relatedNotesLine', {
+                notes: input.linkedNotes.map((n) => `[[${n}]]`).join(', '),
+            }),
+        );
     }
     lines.push(
         '',
-        'When useful, call tools to gather additional context (e.g. search the vault, read related notes, fetch external references). Then synthesize the findings.',
+        t('prompt.insightDeepen.toolHint'),
         '',
-        'In your final reply, cover:',
-        '- Background and why this matters',
-        '- Key details, definitions, and any important nuances or trade-offs',
-        '- Concrete examples or step-by-step guidance where applicable',
-        '- Common pitfalls or caveats to watch out for',
-        '- References / sources you consulted (if any)',
+        t('prompt.insightDeepen.coverageHeader'),
+        t('prompt.insightDeepen.coverageBackground'),
+        t('prompt.insightDeepen.coverageDetails'),
+        t('prompt.insightDeepen.coverageExamples'),
+        t('prompt.insightDeepen.coveragePitfalls'),
+        t('prompt.insightDeepen.coverageReferences'),
         '',
-        'Reply in the same language as the rest of this conversation. Aim for a polished, note-ready piece — not a brief follow-up answer.',
+        t('prompt.insightDeepen.outro'),
     );
     return lines.join('\n');
 }

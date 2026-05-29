@@ -637,4 +637,23 @@ export const ja: Record<string, string> = {
 	'tool.triggers.web_fetch_url':  'ウェブ取得, URL取得, ページ取得, リンクを開く, ウェブページ, ページを読み込む, ウェブをダウンロード',
 	'tool.triggers.image_search':   '画像検索, 写真検索, 画像を探す, 画像を見つける, 写真を探す',
 	'tool.triggers.generate_image': '画像生成, 画像作成, AI画像, 絵を描く, イラスト生成, 画像を作る, AIイラスト',
+
+	// ─── インサイト「深掘り」プロンプト ────────────────────
+	// インサイトカードの「深掘り」ボタンを押したときに、ユーザーの
+	// 代わりに送信されるプロンプトです。文言は UI 言語にローカライズ
+	// され、末尾の指示では対話で使われている言語で返答するよう
+	// モデルに依頼します（UI 言語と会話言語が異なる場合の整合のため）。
+	'prompt.insightDeepen.intro': '私たちの会話から抽出された次のインサイトについて、さらに掘り下げ、独立したノートとして保存できるような、より完成度が高く自己完結した内容にまとめてください。',
+	'prompt.insightDeepen.titleLine': '- タイトル: {title}',
+	'prompt.insightDeepen.summaryLine': '- 要約: {summary}',
+	'prompt.insightDeepen.tagsLine': '- タグ: {tags}',
+	'prompt.insightDeepen.relatedNotesLine': '- 関連ノート: {notes}',
+	'prompt.insightDeepen.toolHint': '必要に応じてツールを呼び出し、追加のコンテキストを集めてください（ボールトの検索、関連ノートの参照、外部リソースの取得など）。その上で得られた情報を総合してまとめてください。',
+	'prompt.insightDeepen.coverageHeader': '最終的な返答には次の点を含めてください：',
+	'prompt.insightDeepen.coverageBackground': '- 背景と、なぜこのテーマが重要なのか',
+	'prompt.insightDeepen.coverageDetails': '- 重要な詳細・定義、そして見落とせないニュアンスやトレードオフ',
+	'prompt.insightDeepen.coverageExamples': '- 具体例、または該当する場合は段階的な手順',
+	'prompt.insightDeepen.coveragePitfalls': '- よくある落とし穴や注意すべき点',
+	'prompt.insightDeepen.coverageReferences': '- 参照した資料・出典（あれば）',
+	'prompt.insightDeepen.outro': 'この会話の他の部分と同じ言語で返答してください。短いフォローアップではなく、そのままノートとして残せる完成度の高いまとまりを目指してください。',
 };
