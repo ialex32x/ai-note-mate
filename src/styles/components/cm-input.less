@@ -51,49 +51,20 @@
     pointer-events: none;
 }
 
-// File Reference Widget
+// File Reference Widget — CodeMirror inline `@filename` mention.
+// Visual surface comes from the shared `.file-ref-chip*()` mixins
+// (also used by `.bubble-file-ref` in rendered messages); the editor
+// variant adds a trailing `__delete` affordance for inline removal.
 .cm-file-ref {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 1px @spacing-md 1px @spacing-lg;
-    border-radius: 12px;
-    background: @bg-modifier-hover;
-    border: 1px solid @bg-modifier-border;
-    cursor: pointer;
-    white-space: nowrap;
-    vertical-align: baseline;
-    margin: 0 1px;
-    transition: background @duration-fast;
-    // Mobile: defend against ancestor flex/grid contexts (e.g. some
-    // Obsidian mobile styles) trying to stretch the chip to the full
-    // line width, which would also stretch the round delete button.
-    width: max-content;
-    max-width: 100%;
-    box-sizing: border-box;
-    flex: 0 0 auto;
-
-    &:hover {
-        background: var(--interactive-hover);
-    }
+    .file-ref-chip();
 }
 
 .cm-file-ref__icon {
-    display: inline-flex;
-    align-items: center;
-    color: @text-secondary;
-
-    svg {
-        .icon-size(12px);
-    }
+    .file-ref-chip-icon();
 }
 
 .cm-file-ref__name {
-    font-size: 0.88em;
-    color: @text-primary;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 150px;
+    .file-ref-chip-name();
 }
 
 // Delete affordance on file ref chip - always visible for mobile UX.
@@ -111,7 +82,7 @@
     min-width: 14px;
     min-height: 14px;
     margin-left: @spacing-xs;
-    border-radius: 50%;
+    border-radius: @radius-circle;
     background: transparent;
     color: @text-secondary;
     cursor: pointer;
@@ -133,18 +104,8 @@
 
 // Missing file reference state
 .cm-file-ref--missing {
-    .cm-file-ref__icon {
-        color: @text-error;
-    }
-
-    .cm-file-ref__name {
-        color: @text-error;
-        // `text-decoration-color` defaults to `currentColor`, so the
-        // line-through automatically picks up `@text-error` from `color`.
-        // Avoid the CSS3 longhand to silence Obsidian's "partially supported"
-        // browser-feature warning without any visual change.
-        text-decoration: line-through;
-    }
+    .cm-file-ref__icon { .file-ref-chip-icon-missing(); }
+    .cm-file-ref__name { .file-ref-chip-name-missing(); }
 }
 
 // Completion dropdown for file references

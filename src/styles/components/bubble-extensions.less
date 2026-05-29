@@ -127,64 +127,26 @@
 // .collapsible-block CSS classes defined below. The `--streaming`
 // variant applies a pulse animation to the summary text.
 
-// Inline file reference in user message bubbles
+// Inline file reference rendered inside user message bubbles. Visual
+// surface is shared with the CodeMirror input widget (`.cm-file-ref`)
+// via the `.file-ref-chip*()` mixins — the only difference is that
+// rendered bubbles don't carry an inline delete affordance.
 .bubble-file-ref {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    padding: 1px @spacing-md 1px @spacing-lg;
-    border-radius: 12px;
-    background: @bg-modifier-hover;
-    border: 1px solid @bg-modifier-border;
-    cursor: pointer;
-    white-space: nowrap;
-    vertical-align: baseline;
-    margin: 0 1px;
-    transition: background @duration-fast;
-    // Mobile: prevent ancestor flex/grid contexts from stretching the
-    // chip across the full row, which would distort its rounded shape.
-    width: max-content;
-    max-width: 100%;
-    box-sizing: border-box;
-    flex: 0 0 auto;
-
-    &:hover {
-        background: var(--interactive-hover);
-    }
+    .file-ref-chip();
 }
 
 .bubble-file-ref__icon {
-    display: inline-flex;
-    align-items: center;
-    color: @text-secondary;
-
-    svg {
-        .icon-size(12px);
-    }
+    .file-ref-chip-icon();
 }
 
 .bubble-file-ref__name {
-    font-size: 0.88em;
-    color: @text-primary;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 150px;
+    .file-ref-chip-name();
 }
 
 // Missing file reference state
 .bubble-file-ref--missing {
-    .bubble-file-ref__icon {
-        color: @text-error;
-    }
-
-    .bubble-file-ref__name {
-        color: @text-error;
-        // `text-decoration-color` defaults to `currentColor`, so the
-        // line-through automatically picks up `@text-error` from `color`.
-        // Avoid the CSS3 longhand to silence Obsidian's "partially supported"
-        // browser-feature warning without any visual change.
-        text-decoration: line-through;
-    }
+    .bubble-file-ref__icon { .file-ref-chip-icon-missing(); }
+    .bubble-file-ref__name { .file-ref-chip-name-missing(); }
 }
 
 // Trailing "AI is working" loader — a simple `...` placeholder pinned

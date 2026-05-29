@@ -1,3 +1,11 @@
+// Shared LESS mixins.
+//
+// Convention: when authoring a new component, prefer these mixins over
+// re-deriving the same primitives by hand (flex centering, button
+// sizing, text truncation, badge/chip surfaces, …). Existing legacy
+// rules are NOT being mass-rewritten — converge opportunistically when
+// touching neighbouring code.
+
 // Button mixins
 .button-base() {
     display: inline-flex;
@@ -150,5 +158,151 @@
     &:focus-visible {
         outline: 2px solid @text-accent;
         outline-offset: 2px;
+    }
+}
+
+// ── Shared visual primitives ───────────────────────────────────────
+//
+// New components should prefer these mixins over hand-rolling another
+// copy of "red corner badge" / "rounded chip" / "circular X button".
+// They are intentionally property-only (no selectors) so callers can
+// layer their own positioning, colours, and modifiers on top.
+
+// Numeric badge overlaying a 14px toolbar icon. Sized to fit "99+".
+// Caller is responsible for the visibility toggle (display: none/inline-block
+// via a `--visible` modifier) — keeps the mixin policy-free.
+.corner-badge() {
+    position: absolute;
+    top: -2px;
+    right: -4px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: 7px;
+    background: @text-error;
+    color: var(--text-on-accent, #ffffff);
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+// Rounded pill / chip container — used for file refs in the input area
+// and for path entries in settings. Background, border colour and
+// hover state are intentionally left to the caller so each surface can
+// pick its own affordance (clickable vs. static, neutral vs. accent).
+.chip() {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: @spacing-xs @spacing-md @spacing-xs @spacing-lg;
+    border-radius: @radius-pill;
+    border: 1px solid @bg-modifier-border;
+    background: @bg-modifier-hover;
+    transition: background @duration-fast;
+}
+
+// Compact inline file-reference chip — used by both the CodeMirror
+// input widget (`.cm-file-ref`) and message bubbles (`.bubble-file-ref`)
+// to render the same `[icon name]` affordance for `@filename` mentions.
+// Tighter padding than the generic `.chip()` (1px top/bottom vs xs) so
+// it sits flush on a single text line without inflating line-height.
+//
+// Caller still owns the BEM modifier surface (e.g. `--missing` recolours
+// icon + name) and any trailing slots like the inline delete button on
+// the editor widget. Width defences (`max-content` / `flex: 0 0 auto`)
+// ship in the mixin because both call sites need them on mobile.
+.file-ref-chip() {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 1px @spacing-md 1px @spacing-lg;
+    border-radius: @radius-pill;
+    background: @bg-modifier-hover;
+    border: 1px solid @bg-modifier-border;
+    cursor: pointer;
+    white-space: nowrap;
+    vertical-align: baseline;
+    margin: 0 1px;
+    transition: background @duration-fast;
+    // Mobile: defend against ancestor flex/grid contexts (e.g. some
+    // Obsidian mobile styles) trying to stretch the chip to full row
+    // width, which would distort its rounded shape and stretch any
+    // trailing circular delete button into an oval.
+    width: max-content;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+
+    &:hover {
+        background: var(--interactive-hover);
+    }
+}
+
+// Icon slot inside a file-ref chip. Pairs with `.file-ref-chip()`.
+.file-ref-chip-icon() {
+    display: inline-flex;
+    align-items: center;
+    color: @text-secondary;
+
+    svg {
+        .icon-size(12px);
+    }
+}
+
+// Filename slot inside a file-ref chip. Pairs with `.file-ref-chip()`.
+.file-ref-chip-name() {
+    font-size: 0.88em;
+    color: @text-primary;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+// "Missing file" recolour for the icon slot of a file-ref chip.
+// Apply inside the `--missing` modifier next to `.file-ref-chip-name-missing()`.
+.file-ref-chip-icon-missing() {
+    color: @text-error;
+}
+
+// "Missing file" recolour + strike-through for the name slot.
+//
+// `text-decoration-color` defaults to `currentColor`, so the strike
+// automatically picks up `@text-error` from `color`. Avoid the CSS3
+// longhand to silence Obsidian's "partially supported" lint without
+// any visual change.
+.file-ref-chip-name-missing() {
+    color: @text-error;
+    text-decoration: line-through;
+}
+
+// 16×16 circular "X" button that sits at the trailing edge of a chip.
+// Hover flips to the destructive surface. Caller controls layout slot
+// (e.g. `flex: 0 0 auto`) since chips lay their children out differently.
+//
+// Uses `inline-flex` (not the `.flex-center()` mixin's plain `flex`)
+// because the button is a logical inline child of the chip — keeps
+// behaviour identical to the hand-rolled rules this mixin replaced.
+.chip-remove-btn() {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: none;
+    border-radius: @radius-circle;
+    background: transparent;
+    color: @text-secondary;
+    font-size: 0.7em;
+    cursor: pointer;
+    line-height: 1;
+    transition: background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @text-error;
+        color: var(--text-on-accent);
     }
 }

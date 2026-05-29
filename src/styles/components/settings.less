@@ -104,7 +104,7 @@
 .oap-settings-anchor-dot {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: @radius-circle;
     background: @bg-modifier-border;
     flex-shrink: 0;
     // Isolate the dot visually from the baseline (3px background ring).
@@ -561,15 +561,8 @@
 }
 
 .oap-settings-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: @spacing-sm;
-    padding: @spacing-xs @spacing-md @spacing-xs @spacing-lg;
-    border-radius: 12px;
-    background: @bg-modifier-hover;
-    border: 1px solid @bg-modifier-border;
+    .chip();
     max-width: 220px;
-    transition: background @duration-fast;
 }
 
 // Chip with a non-existent directory — warning style
@@ -596,29 +589,12 @@
 }
 
 .oap-settings-chip-remove {
+    .chip-remove-btn();
     flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    padding: 0;
-    border: none;
-    border-radius: 50%;
-    background: transparent;
-    color: @text-secondary;
-    cursor: pointer;
-    line-height: 1;
-    transition: background @duration-fast, color @duration-fast;
 
     svg {
         width: 12px;
         height: 12px;
-    }
-
-    &:hover {
-        background: @text-error;
-        color: var(--text-on-accent);
     }
 }
 
@@ -631,7 +607,7 @@
 .oap-settings-chip-input {
     flex: 1;
     padding: @spacing-sm @spacing-md;
-    border-radius: 12px;
+    border-radius: @radius-pill;
     border: 1px solid @bg-modifier-border;
     background: @bg-secondary;
     color: @text-primary;
@@ -656,7 +632,7 @@
     height: 28px;
     padding: 0;
     border: 1px solid @bg-modifier-border;
-    border-radius: 12px;
+    border-radius: @radius-pill;
     background: @bg-modifier-hover;
     color: @text-secondary;
     cursor: pointer;
@@ -698,7 +674,7 @@
     display: inline-block;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: @radius-circle;
     background: @text-faint;
     flex-shrink: 0;
 }
@@ -983,7 +959,7 @@
     display: inline-block;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: @radius-circle;
     background: @text-accent;
     flex-shrink: 0;
 }

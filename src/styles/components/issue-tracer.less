@@ -24,24 +24,11 @@
 }
 
 // Numeric badge overlaying the bug icon. Sized to fit "99+" without
-// overflowing the 14px svg target.
+// overflowing the 14px svg target. Visual base shared with the
+// session-list pending-checkpoints badge — see `.corner-badge()`.
 .session-issue-tracer__badge {
+    .corner-badge();
     display: none;
-    position: absolute;
-    top: -2px;
-    right: -4px;
-    min-width: 14px;
-    height: 14px;
-    padding: 0 3px;
-    border-radius: 7px;
-    background: @text-error;
-    color: var(--text-on-accent, #ffffff);
-    font-size: 9px;
-    font-weight: 700;
-    line-height: 14px;
-    text-align: center;
-    pointer-events: none;
-    box-sizing: border-box;
 }
 
 .session-issue-tracer__badge--visible {
