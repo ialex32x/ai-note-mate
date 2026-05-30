@@ -82,12 +82,38 @@ export const LARGE_FILE_LINE_THRESHOLD = 200;
 /** Number of preview lines to include when a large file is auto-downgraded. */
 export const PREVIEW_LINE_COUNT = 25;
 
+const LARGE_FILE_READ_ACTION_GUIDANCE =
+    "Use read_section, grep_file, or read_file with start_line/end_line.";
+
+/** Whether `read_file` without a line range will return the full body (vs preview-only downgrade). */
+export function isWholeFileReadAvailable(totalLines: number): boolean {
+    return totalLines <= LARGE_FILE_LINE_THRESHOLD;
+}
+
+/** Proactive hint for `get_metadata` when a whole-file `read_file` would be downgraded. */
+export function buildLargeFileReadGuidance(): string {
+    return (
+        `Exceeds ${LARGE_FILE_LINE_THRESHOLD}-line threshold — read_file without start_line/end_line ` +
+        `returns preview only. ${LARGE_FILE_READ_ACTION_GUIDANCE}`
+    );
+}
+
+/** Extra fields to attach to metadata/read responses for files above {@link LARGE_FILE_LINE_THRESHOLD}. */
+export function largeFileReadHints(totalLines: number): Record<string, unknown> {
+    if (isWholeFileReadAvailable(totalLines)) {
+        return {};
+    }
+    return {
+        whole_file_read_available: false,
+        read_guidance: buildLargeFileReadGuidance(),
+    };
+}
+
 /** Notice attached when a whole-file read is downgraded for a large text file. */
 export function buildLargeFilePreviewNotice(totalLines: number, previewEnd: number): string {
     return (
         `This file is large (${totalLines} lines). Full body omitted — showing first ${previewEnd} lines as preview. ` +
-        `For heading outline use get_metadata; for a section use read_section; to locate text use grep_file; ` +
-        `for specific bytes use read_file with start_line/end_line.`
+        `For heading outline use get_metadata; ${LARGE_FILE_READ_ACTION_GUIDANCE}`
     );
 }
 

@@ -10,7 +10,8 @@ import {
     isMediaFile,
     isNonMediaBinaryFile,
     buildLargeFilePreviewNotice,
-    LARGE_FILE_LINE_THRESHOLD,
+    isWholeFileReadAvailable,
+    largeFileReadHints,
     MAX_PDF_INLINE_BYTES,
     mediaKindFromMime,
     PREVIEW_LINE_COUNT,
@@ -246,7 +247,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 const lines = content.split("\n");
                 const totalLines = lines.length;
 
-                if (totalLines <= LARGE_FILE_LINE_THRESHOLD) {
+                if (isWholeFileReadAvailable(totalLines)) {
                     return {
                         success: true,
                         type: "object",
@@ -545,7 +546,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                     const lines = content.split("\n");
                     const totalLines = lines.length;
 
-                    if (totalLines <= LARGE_FILE_LINE_THRESHOLD) {
+                    if (isWholeFileReadAvailable(totalLines)) {
                         result["content"] = content;
                     } else {
                         // Large file: preview only (heading outline lives in get_metadata)
@@ -583,7 +584,9 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Get parsed frontmatter, structural info (headings / tags / total_lines), and basic file " +
                     "state (mtime / ctime / size) of one or more markdown files — without reading the " +
-                    "full content. For outgoing links use `get_outgoing_links` (resolved target paths " +
+                    "full content. When total_lines exceeds ~200, `whole_file_read_available` is false and " +
+                    "`read_guidance` explains how to read targeted slices — plan read_section / grep_file / " +
+                    "ranged read_file before attempting a whole-file read. For outgoing links use `get_outgoing_links` (resolved target paths " +
                     "with occurrence counts); for incoming links use `get_backlinks`. " +
                     "Primary inspector for notes: use this (not `get_file_state`) when you need " +
                     "structure or batch inspection. For a single non-markdown file where you only need " +
@@ -648,6 +651,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                         mtime: stat.mtime,
                         ctime: stat.ctime,
                         size: stat.size,
+                        ...largeFileReadHints(totalLines),
                     });
                     continue;
                 }
@@ -679,6 +683,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                     mtime: stat.mtime,
                     ctime: stat.ctime,
                     size: stat.size,
+                    ...largeFileReadHints(totalLines),
                 });
             }
 
