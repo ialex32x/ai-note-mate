@@ -290,6 +290,9 @@ export class BubbleRenderer extends Component {
      *   - Sub-agent assistant replies (with non-empty content): mirrors
      *     the user-bubble layout so sub-agent toolbars don't visually
      *     bury the agent's reply.
+     *   - `delegate_task` handoff bubbles (non-empty task): same footer
+     *     treatment as user messages so the copy control doesn't crowd
+     *     the task prose.
      *
      * Centralised here so the predicate stays in lockstep with the
      * `removeStaleExternalActionBar` invariant in `renderInto`.
@@ -297,6 +300,10 @@ export class BubbleRenderer extends Component {
     private shouldExternalizeActionBar(msg: ChatMessage): boolean {
         if (msg.role === 'user') return true;
         if (msg.role === 'assistant' && msg.subAgent && msg.content.trim()) return true;
+        if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
+            const task = msg.toolCallMeta.toolArgs?.['task'];
+            return typeof task === 'string' && task.trim().length > 0;
+        }
         return false;
     }
 
@@ -405,6 +412,9 @@ export class BubbleRenderer extends Component {
         // as a separate bubble instead.
         if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
             renderDelegateTaskBubble(bubble, msg);
+            if (this.shouldExternalizeActionBar(msg)) {
+                this.externalizeActionBar(bubble);
+            }
             this.onScrollNeeded();
             return;
         }

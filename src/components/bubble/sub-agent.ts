@@ -1,6 +1,7 @@
 import { setIcon } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
+import { renderDelegateTaskActionBar } from './action-bar';
 import { renderCollapsibleCodeBlock } from './collapsible-code-block';
 
 /**
@@ -87,6 +88,7 @@ export function renderSubAgentBadge(parent: HTMLElement, agentName: string): voi
  * (`inputs` → `exchange` → `handoff`) still render their seed block.
  */
 export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage): void {
+    bubble.addClass('session-bubble--delegate-task');
     const agentName = (msg.toolCallMeta?.toolArgs?.['agent'] as string | undefined) ?? 'agent';
     const taskText = (msg.toolCallMeta?.toolArgs?.['task'] as string | undefined) ?? '';
     const handoffSeed = msg.toolCallMeta?.toolArgs?.['handoff']
@@ -104,6 +106,7 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
             cls: 'session-bubble__delegate-task-text',
             text: taskText,
         });
+        renderDelegateTaskActionBar(bubble, taskText);
     }
 
     // Handoff seed: only render when we actually have a non-empty plain object.

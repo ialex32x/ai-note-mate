@@ -140,6 +140,17 @@ export function renderUserActionBar(
 }
 
 /**
+ * Minimal action bar for a `delegate_task` handoff bubble (task text only).
+ * Mirrors the copy affordance on user / assistant bubbles; the bar is
+ * externalised below the bubble by {@link BubbleRenderer.externalizeActionBar}.
+ */
+export function renderDelegateTaskActionBar(bubble: HTMLElement, taskText: string): void {
+    const actions = createActionsContainer(bubble);
+    const copyBtn = createCopyButton(t('common.copy'), () => taskText, ACTION_BTN_CLS);
+    actions.appendChild(copyBtn);
+}
+
+/**
  * Options passed alongside the shared {@link BubbleContext} when rendering
  * an assistant action bar.
  *
