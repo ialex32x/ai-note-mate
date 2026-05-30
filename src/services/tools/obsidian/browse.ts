@@ -20,8 +20,10 @@ export function vaultBrowseFolder(plugin: NoteAssistantPlugin): RegisteredTool {
                     "ctime, mtime, and size; folder entries carry only their path. Pass `''` or `'/'` " +
                     "for the vault root. Prefer a SINGLE call with an appropriate `max_depth` (e.g. 2) " +
                     "over walking top-level folders one-at-a-time. Use `entries_type: 'folder'` to map " +
-                    "vault structure without file noise, or `'file'` for files only. For vault-wide " +
-                    "stats (sizes / extension breakdown / recency), call `get_overview` instead.",
+                    "vault structure without file noise, or `'file'` for files only. Response includes " +
+                    "`total` (matching entries within `max_depth`) for pagination alongside `count`, " +
+                    "`skip`, and `has_more`. For vault-wide stats (sizes / extension breakdown / recency), " +
+                    "call `get_overview` instead.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -100,18 +102,26 @@ export function vaultBrowseFolder(plugin: NoteAssistantPlugin): RegisteredTool {
             type UniversalProps = { path: string } & (FolderProps | FileProps);
             const entries: UniversalProps[] = [];
 
-            let hasMore = false;
             let totalScanned = 0;
+            let total = 0;
             let skipped = 0;
 
-            const collect = (f: TFolder, depth: number): boolean => {
+            const visit = (f: TFolder, depth: number): void => {
                 for (const child of f.children) {
                     totalScanned++;
-                    if (child instanceof TFile) {
-                        if (entriesType !== "folder") {
-                            if (skipped < skip) {
-                                skipped++;
-                            } else if (entries.length < limit) {
+
+                    const isFile = child instanceof TFile;
+                    const isFolderChild = child instanceof TFolder;
+                    const matchesType =
+                        (isFile && entriesType !== "folder") ||
+                        (isFolderChild && entriesType !== "file");
+
+                    if (matchesType) {
+                        total++;
+                        if (skipped < skip) {
+                            skipped++;
+                        } else if (entries.length < limit) {
+                            if (isFile) {
                                 entries.push({
                                     path: child.path,
                                     type: "file",
@@ -120,32 +130,21 @@ export function vaultBrowseFolder(plugin: NoteAssistantPlugin): RegisteredTool {
                                     mtime: child.stat.mtime,
                                     size: child.stat.size,
                                 });
-                            }
-                        }
-                    } else if (child instanceof TFolder) {
-                        if (entriesType !== "file") {
-                            if (skipped < skip) {
-                                skipped++;
-                            } else if (entries.length < limit) {
+                            } else {
                                 entries.push({ path: child.path, type: "folder" });
                             }
                         }
-                        // Descend if we still have depth budget. -1 means unlimited.
-                        // Always descend into sub-folders regardless of entries_type,
-                        // so we can find nested folders/files that match the filter.
-                        if (maxDepth === -1 || depth < maxDepth) {
-                            if (!collect(child, depth + 1)) return false;
-                        }
                     }
-                    if (entries.length >= limit && skipped >= skip) {
-                        hasMore = true;
-                        return false;
+
+                    if (isFolderChild && (maxDepth === -1 || depth < maxDepth)) {
+                        visit(child, depth + 1);
                     }
                 }
-                return true;
             };
 
-            collect(folder, 0);
+            visit(folder, 0);
+
+            const hasMore = skip + entries.length < total;
 
             return {
                 success: true,
@@ -154,7 +153,9 @@ export function vaultBrowseFolder(plugin: NoteAssistantPlugin): RegisteredTool {
                     path: folderPath,
                     max_depth: maxDepth,
                     entries_type: entriesType,
+                    total,
                     count: entries.length,
+                    skip,
                     total_scanned: totalScanned,
                     has_more: hasMore,
                     entries,

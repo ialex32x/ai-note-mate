@@ -12,6 +12,7 @@ import {
     buildLargeFilePreviewNotice,
     isWholeFileReadAvailable,
     largeFileReadHints,
+    LARGE_FILE_LINE_THRESHOLD,
     MAX_PDF_INLINE_BYTES,
     mediaKindFromMime,
     PREVIEW_LINE_COUNT,
@@ -139,7 +140,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "For text/markdown files, optionally specify `start_line` / `end_line` (1-based, " +
                     "half-open [start_line, end_line) — `start_line` inclusive, `end_line` exclusive) " +
                     "for a range; omit both to read the whole file. When the file is large " +
-                    "(> ~200 lines) and no range is given, returns line count plus a short preview " +
+                    `(>${LARGE_FILE_LINE_THRESHOLD} lines) and no range is given, returns line count plus a short preview ` +
                     "instead of the full body — use `get_metadata` for heading outline, `read_section` " +
                     "for one section, or re-read with `start_line` / `end_line`. " +
                     "\n\n" +
@@ -500,7 +501,7 @@ export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool 
                 description:
                     "Get info about the file currently focused in the editor. Use when the user refers " +
                     "to 'this file', 'current note', 'the note I'm viewing', etc. Optionally include " +
-                    "its content. When `include_content` is true and the file is large (> ~200 lines), " +
+                    `its content. When \`include_content\` is true and the file is large (> ${LARGE_FILE_LINE_THRESHOLD} lines), ` +
                     "line count plus a short preview is returned instead of the full body — use " +
                     "`get_metadata` for heading outline and `read_file` with `start_line` / `end_line` " +
                     "for specific sections.",
@@ -585,14 +586,17 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "get_metadata",
                 description:
                     "Get parsed frontmatter, structural info (headings / tags / total_lines), and basic file " +
-                    "state (mtime / ctime / size) of one or more markdown files — without reading the " +
-                    "full content. When total_lines exceeds ~200, `whole_file_read_available` is false and " +
+                    "state (mtime / ctime / size) for one or more vault files — without reading the full " +
+                    "content. Accepts any file extension; headings, tags, and frontmatter are populated from " +
+                    "Obsidian's metadata cache and are most meaningful for markdown (`.md`) notes — for other " +
+                    "types you still get total_lines plus timestamps/size. When total_lines exceeds " +
+                    `${LARGE_FILE_LINE_THRESHOLD}, \`whole_file_read_available\` is false and ` +
                     "`read_guidance` explains how to read targeted slices — plan read_section / grep_file / " +
                     "ranged read_file before attempting a whole-file read. For outgoing links use `get_outgoing_links` (resolved target paths " +
                     "with occurrence counts); for incoming links use `get_backlinks`. " +
                     "Primary inspector for notes: use this (not `get_file_state`) when you need " +
-                    "structure or batch inspection. For a single non-markdown file where you only need " +
-                    "timestamps/size with no structure, use `get_file_state` instead. REQUIRED argument shape: " +
+                    "structure or batch inspection. For a single file where you only need timestamps/size " +
+                    "with no structure, use `get_file_state` instead. REQUIRED argument shape: " +
                     "`paths` as a JSON array of strings — even for a single file use {\"paths\": [\"note.md\"]}, " +
                     "not a bare string and not the `path` key. Accepts up to 200 paths per call; batch multiple " +
                     "files in one call instead of repeated single-path calls.",
@@ -604,7 +608,7 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                             items: { type: "string" },
                             minItems: 1,
                             description:
-                                "JSON array of vault-relative markdown paths (1–200). Single file: " +
+                                "JSON array of vault-relative file paths (1–200). Single file: " +
                                 "['Notes/A.md']. Multiple: ['Notes/A.md', 'Notes/B.md']. Never a bare string.",
                         },
                     },
