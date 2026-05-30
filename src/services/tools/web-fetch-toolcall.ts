@@ -16,7 +16,8 @@ import { DEFAULT_WEB_FETCH_HARD_LIMIT, DEFAULT_WEB_FETCH_SOFT_LIMIT } from "../.
 
 export function createWebFetchTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     if (!plugin.settings.builtinWebFetchEnabled) return [];
-    return [webFetch(plugin)];
+    const webSearchAvailable = plugin.settings.builtinWebSearchEnabled;
+    return [webFetch(plugin, webSearchAvailable)];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -88,28 +89,38 @@ function findPriorFetchInCurrentTurn(
  * without that instruction models will happily call us again with
  * minor URL variations.
  */
-function describeExtractionFailure(page: WebPageContent, status: ExtractionStatus): string {
+function describeExtractionFailure(page: WebPageContent, status: ExtractionStatus, webSearchAvailable: boolean): string {
     const base = `Failed to extract content from ${page.url}.`;
+    const searchHint = webSearchAvailable
+        ? `try web_search to find an alternative source, `
+        : '';
     switch (status) {
         case 'http_error':
             return `${base} HTTP ${page.httpStatus ?? '?'} returned by the server. ` +
-                `Do NOT retry this URL — try web_search to find an alternative source, ` +
+                `Do NOT retry this URL — ${searchHint}` +
                 `or tell the user the URL is not reachable.`;
         case 'anti_bot_challenge':
             return `${base} The page returned an anti-bot challenge (e.g. Cloudflare / "Just a moment…"). ` +
-                `This plugin cannot solve such challenges. Do NOT retry this URL — try web_search ` +
+                `This plugin cannot solve such challenges. Do NOT retry this URL — ${searchHint}` +
                 `for the same information elsewhere, or tell the user the page is gated.`;
-        case 'empty':
+        case 'empty': {
+            const staticHint = webSearchAvailable
+                ? `try web_search to find a static / text-based source.`
+                : `look for a static / text-based source.`;
             return `${base} The page was fetched (HTTP ${page.httpStatus ?? 200}) but no readable text was extracted ` +
                 `(${page.totalTextLength ?? 0} characters, below the ${EMPTY_PAGE_THRESHOLD}-char threshold). ` +
                 `This is usually a JavaScript-rendered SPA, a paywall, or a thin landing page. ` +
-                `Do NOT retry this URL — try web_search to find a static / text-based source.`;
+                `Do NOT retry this URL — ${staticHint}`;
+        }
         default:
             return base;
     }
 }
 
-function webFetch(plugin: NoteAssistantPlugin): RegisteredTool {
+function webFetch(plugin: NoteAssistantPlugin, webSearchAvailable: boolean): RegisteredTool {
+    const searchFallback = webSearchAvailable
+        ? `call \`web_search\` to find a different source, or summarize the material you already have.`
+        : `summarize the material you already have or tell the user the URL is not reachable.`;
     return {
         ondemand: true,
 
@@ -124,9 +135,8 @@ function webFetch(plugin: NoteAssistantPlugin): RegisteredTool {
                     "the content of a specific web page or URL. " +
                     "IMPORTANT: this tool cannot execute JavaScript; SPAs, paywalls, and anti-bot pages will " +
                     "fail. When a fetch returns an error or 'no readable content', do NOT retry the same URL " +
-                    "and do NOT iterate through many alternative URLs in a row — call `web_search` to find a " +
-                    "different source, or summarize the material you already have. Repeated calls in one turn " +
-                    "are budgeted and will start to be refused.",
+                    `and do NOT iterate through many alternative URLs in a row — ${searchFallback} ` +
+                    "Repeated calls in one turn are budgeted and will start to be refused.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -181,28 +191,34 @@ function webFetch(plugin: NoteAssistantPlugin): RegisteredTool {
                     return {
                         success: false,
                         type: "text",
-                        content: describeExtractionFailure(entry, entry.extractionStatus),
+                        content: describeExtractionFailure(entry, entry.extractionStatus, webSearchAvailable),
                     };
                 }
                 if (pages.length === 0) {
+                    const noPageHint = webSearchAvailable
+                        ? `try web_search for an alternative source.`
+                        : `report this to the user.`;
                     return {
                         success: false,
                         type: "text",
                         content:
                             `Failed to fetch ${url}: no pages returned. ` +
-                            `Do NOT retry this URL — try web_search for an alternative source.`,
+                            `Do NOT retry this URL — ${noPageHint}`,
                     };
                 }
                 return { success: true, type: "object", content: pages };
             } catch (err) {
                 if (err instanceof DOMException && err.name === 'AbortError') throw err;
                 const msg = err instanceof Error ? err.message : String(err);
+                const catchHint = webSearchAvailable
+                    ? `try web_search for an alternative source.`
+                    : `report this to the user.`;
                 return {
                     success: false,
                     type: "text",
                     content:
                         `Fetch failed: ${msg}. ` +
-                        `Do NOT retry this URL — try web_search for an alternative source.`,
+                        `Do NOT retry this URL — ${catchHint}`,
                 };
             }
         },

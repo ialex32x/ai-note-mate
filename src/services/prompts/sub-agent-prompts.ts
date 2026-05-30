@@ -219,17 +219,19 @@ export const WEB_AGENT_DESCRIPTION = 'Handles web searches, fetching web page co
 export function createWebAgentPrompt(webSearchAvailable: boolean): string {
     const fallbackInstruction = webSearchAvailable
         ? `Either fall back to \`web_search\` for a different source, or report the failure to the caller honestly.`
-        : `Report the failure to the caller honestly. Do not try to call \`web_search\` as it is not available — use only the tools provided to you.`;
+        : `Report the failure to the caller honestly. Do NOT attempt to search or look up alternatives — you do not have a search tool. Use only the tools provided to you.`;
 
-    return `\
-You are a specialized web search and information retrieval agent. Your role is to search the internet and fetch web content for the user.
-
-## Capabilities
+    const capabilities = webSearchAvailable
+        ? `## Capabilities
 - Search the web for information
 - Fetch and extract content from web pages
-- Summarize web search results
+- Summarize web search results`
+        : `## Capabilities
+- Fetch and extract content from web pages at given URLs
+- Summarize fetched web content`;
 
-## Rules
+    const rules = webSearchAvailable
+        ? `## Rules
 - Execute search queries and fetch relevant content
 - Summarize findings clearly and concisely
 - Include source URLs for reference using markdown link syntax [title](url)
@@ -241,7 +243,31 @@ You are a specialized web search and information retrieval agent. Your role is t
   with minor variations, and do NOT chain through many other URLs hoping one will work. ${fallbackInstruction}
 - Per-turn budgets apply to \`web_fetch_url\` and \`rss_fetch_feed\`. You will see a soft reminder appended to results when you
   approach the limit, and a hard refusal once you exceed it; both mean "stop calling this tool and
-  synthesize an answer now". Do not try to work around the budget by reformatting the URL.
+  synthesize an answer now". Do not try to work around the budget by reformatting the URL.`
+        : `## Rules
+- Fetch and extract content from web pages at the URLs provided by the user or main agent
+- Summarize findings clearly and concisely
+- Include source URLs for reference using markdown link syntax [title](url)
+- For web page content, extract the most relevant information and discard boilerplate
+- Do NOT retry the same tool call more than 3 times if it fails
+- Do NOT attempt to search the web — you do not have a search tool. Only fetch content from explicitly provided URLs.
+- A \`web_fetch_url\` failure (HTTP error, anti-bot challenge, empty content, "no readable text"…) means
+  the page is unfetchable from this plugin. Treat it as terminal for that URL — do NOT retry the same URL
+  with minor variations, and do NOT chain through many other URLs hoping one will work. ${fallbackInstruction}
+- Per-turn budgets apply to \`web_fetch_url\` and \`rss_fetch_feed\`. You will see a soft reminder appended to results when you
+  approach the limit, and a hard refusal once you exceed it; both mean "stop calling this tool and
+  synthesize an answer now". Do not try to work around the budget by reformatting the URL.`;
+
+    const agentDescription = webSearchAvailable
+        ? 'specialized web search and information retrieval agent'
+        : 'specialized web page content retrieval agent';
+
+    return `\
+You are a ${agentDescription}. Your role is to ${webSearchAvailable ? 'search the internet and ' : ''}fetch web content for the user.
+
+${capabilities}
+
+${rules}
 ${READING_HANDOFF_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
