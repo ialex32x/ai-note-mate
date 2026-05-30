@@ -78,7 +78,7 @@ export function isNonMediaBinaryFile(file: TFile): boolean {
 // ─────────────────────────────────────────────
 
 /** Line-count threshold above which a full-file read is auto-downgraded to preview only. */
-export const LARGE_FILE_LINE_THRESHOLD = 200;
+export const LARGE_FILE_LINE_THRESHOLD = 500;
 /** Number of preview lines to include when a large file is auto-downgraded. */
 export const PREVIEW_LINE_COUNT = 25;
 
