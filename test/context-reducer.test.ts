@@ -512,3 +512,91 @@ describe('ContextReducer.validateAndSanitizeForLLM (pre-sanitize)', () => {
     });
 });
 
+// ─────────────────────────────────────────────────────────────────────
+// ensureToolSequenceIntegrity — media-interleave robustness (Bug 3)
+// ─────────────────────────────────────────────────────────────────────
+//
+// ChatStream injects a synthetic `user(media)` message right after a
+// media-returning tool_result so the LLM can perceive the bytes. In a
+// multi-toolCall batch the sibling tool_results then sit AFTER that user
+// message. The old end-validation walk broke at the first non-tool_result
+// (the user(media)), reported the siblings as "missing", and truncated the
+// whole turn — the model then re-ran the batch ("走两步就忘"). Same fix as
+// validateAndSanitizeForLLM, applied here too via the shared run-walk helper.
+function ensureIntegrity(messages: HistroyMessage[]): HistroyMessage[] {
+    return (ContextReducer as any).ensureToolSequenceIntegrity(messages);
+}
+
+describe('ContextReducer.ensureToolSequenceIntegrity (media interleave)', () => {
+    it('does NOT truncate a tool batch when a user(media) message sits between siblings', () => {
+        const msgs: HistroyMessage[] = [
+            user('describe the image and list its bytes'),
+            assistantWithToolCalls('', [
+                { id: 'A', name: 'read_image', arguments: '{}' },
+                { id: 'B', name: 'tool_b', arguments: '{}' },
+                { id: 'C', name: 'tool_c', arguments: '{}' },
+            ]),
+            toolResult('A', '{"kind":"image"}'),
+            userMedia('[Image content]'),
+            toolResult('B', 'result B'),
+            toolResult('C', 'result C'),
+            assistant('done'),
+        ];
+
+        const out = ensureIntegrity(msgs);
+
+        // Nothing truncated — every message survives.
+        expect(out).toHaveLength(msgs.length);
+        expect(out[out.length - 1]!.content).toBe('done');
+        const trIds = out.filter(m => m.role === 'tool_result').map(m => (m as any).toolCallId);
+        expect(trIds).toEqual(['A', 'B', 'C']);
+    });
+
+    it('still truncates a genuinely incomplete trailing tool batch (no media)', () => {
+        const msgs: HistroyMessage[] = [
+            user('do A and B'),
+            assistantWithToolCalls('', [
+                { id: 'A', name: 'tool_a', arguments: '{}' },
+                { id: 'B', name: 'tool_b', arguments: '{}' },
+            ]),
+            toolResult('A', 'result A'),
+            // B's result never arrived and nothing follows → genuinely incomplete trailing turn.
+        ];
+
+        const out = ensureIntegrity(msgs);
+
+        // The incomplete trailing assistant(toolCalls) is truncated away.
+        expect(out.map(m => m.role)).toEqual(['user']);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// collapseToolMessagesForSummary — media-interleave robustness (Bug 4)
+// ─────────────────────────────────────────────────────────────────────
+describe('ContextReducer.collapseToolMessagesForSummary (media interleave)', () => {
+    it('collapses tool results that follow an interleaved user(media) message', () => {
+        const msgs: HistroyMessage[] = [
+            user('describe and inspect'),
+            assistantWithToolCalls('', [
+                { id: 'A', name: 'read_image', arguments: '{}' },
+                { id: 'B', name: 'tool_b', arguments: '{}' },
+            ]),
+            toolResult('A', '{"kind":"image"}'),
+            userMedia('[Image content]'),
+            toolResult('B', 'result B from tool b'),
+            assistant('done'),
+        ];
+
+        const out = ContextReducer.collapseToolMessagesForSummary(msgs);
+
+        // Tool B (after the media injection) must be folded into the collapsed
+        // assistant message, not lost from the summarizer input.
+        const collapsed = out.find(
+            m => m.role === 'assistant' && typeof m.content === 'string' && m.content.includes('tool_b'),
+        );
+        expect(collapsed).toBeDefined();
+        expect(collapsed!.content).toContain('result B from tool b');
+        expect(collapsed!.content).toContain('read_image');
+    });
+});
+

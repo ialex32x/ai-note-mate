@@ -795,6 +795,24 @@ function shrinkEnvelopeForPrompt(
 export interface ContextReduceResult<T extends HistoryMessage> {
     messagesToSend: T[];
     newSummary: ConversationSummary | null;
+    /**
+     * Full replacement set for the externally-stored summaries.
+     *
+     * Used by the Level-2+ merge path: when existing summaries are
+     * consolidated into a single higher-level summary, the old summaries
+     * must be **replaced** (not appended), otherwise they keep piling up in
+     * the prompt and in storage forever (see
+     * docs/context-compression-bug-report.md §2, Bug 1).
+     *
+     * Semantics for the caller:
+     *   - non-null  → `summaries = summariesReplacement` (replace wholesale).
+     *   - null/undefined → fall back to the append rule using `newSummary`.
+     *
+     * `newSummary` and `summariesReplacement` are mutually exclusive: the
+     * Level-1 path sets `newSummary` (append), the Level-2+ path sets
+     * `summariesReplacement` (replace) with `newSummary === null`.
+     */
+    summariesReplacement?: ConversationSummary[] | null;
     compressed: boolean;
     /** Index of the last message in rawMessages that is now covered by summaries */
     lastMessageIndex: number;
@@ -1042,11 +1060,17 @@ export class ContextReducer {
                 role: "assistant" as ChatMessageRole,
                 content: s.content,
             }));
-            // All messages fit in window - but if there are existing summaries, context IS compressed
+            // All messages fit in window - but if there are existing summaries, context IS compressed.
+            // Shrink consumed oversized tool_results here too, consistent with the
+            // no-compression and compressed branches (Bug 2): the previous code
+            // sent the raw bodies and relied solely on emergencyShrink. This also
+            // keeps budget-hint caching uniform across all return paths.
             const assembled = [
                 ...systemMessages,
                 ...summaryMessages,
-                ...messagesToSummarize,
+                ...this.ensureToolSequenceIntegrity(
+                    this.shrinkLargeToolResults(messagesToSummarize, artifactStore),
+                ),
             ] as T[];
             const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled);
             const { messages: postEmergencyFitsWindow, shrunk: emergencyShrunkFitsWindow } =
@@ -1070,23 +1094,32 @@ export class ContextReducer {
         const recentMessages = messagesToSummarize.slice(splitIndex);
 
         // ── 7. Calculate the message index for the new summary ─────────────
-        // For Level 1: the new summary covers up to (cutoffIndex + splitIndex)
-        // For Level 2+: the new summary covers all existing summaries
+        // For Level 1: the new summary covers up to (cutoffIndex + splitIndex).
+        // For Level 2+: the merged summary REPLACES the existing Level-1
+        //   summaries, which collectively covered [0, cutoffIndex). It does
+        //   NOT cover the recent raw window (those messages were never fed to
+        //   the summarizer) — so its coverage is exactly `cutoffIndex`. Using
+        //   `nonSystemMessages.length` here was a bug: it claimed the recent
+        //   raw messages as summarized and they were silently lost on the next
+        //   turn (docs/context-compression-bug-report.md §2, Bug 1(d)).
         const newSummaryLastIndex = newSummaryLevel === 1
             ? cutoffIndex + splitIndex
-            : nonSystemMessages.length; // Level 2+ means we're summarizing summaries
+            : cutoffIndex;
 
         // ── 8. Get the message ID of the last summarized message ──────────
-        // For Level 1: last message in oldMessages (before split)
-        // For Level 2+: last existing summary's messageId
+        // For Level 1: last message in oldMessages (before split).
+        // For Level 2+: anchor at the SAME message that defined `cutoffIndex`
+        //   (the existing summary with the greatest coverage), so the merged
+        //   summary's id-anchor stays consistent with its `lastMessageIndex`.
         let lastSummarizedMessageId: string | undefined;
         if (newSummaryLevel === 1) {
             const lastMsg = oldMessages[oldMessages.length - 1];
             lastSummarizedMessageId = lastMsg?.id;
         } else {
-            // For Level 2+, use the last existing summary's messageId
-            const lastSummary = existingSummaries[existingSummaries.length - 1];
-            lastSummarizedMessageId = lastSummary?.messageId;
+            const cutoffAnchorSummary = existingSummaries.reduce(
+                (a, b) => (a.lastMessageIndex >= b.lastMessageIndex ? a : b),
+            );
+            lastSummarizedMessageId = cutoffAnchorSummary?.messageId;
         }
 
         // ── 9. Generate summary via LLM ─────────────────────────────────────
@@ -1146,23 +1179,38 @@ export class ContextReducer {
         };
 
         // ── 11. Build messages to send to LLM ────────────────────────────────
-        // existingSummaries already contain prefix in their content
-        const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
-            role: "assistant" as ChatMessageRole,
-            content: s.content,
-        }));
-
         const latestSummaryMessage: HistoryMessage = {
             role: "assistant",
             content: newSummary.content, // already has prefix
         };
 
-        // Determine what "recent" messages to keep
-        // For Level 1: keep the messages after splitIndex (relative to unsummarizedMessages)
-        // For Level 2+: recentMessages are from summaries, keep all
-        const keptRecentMessages = newSummaryLevel === 1
-            ? recentMessages
-            : recentMessages;
+        // Summary block + recent window differ by level:
+        //
+        //   * Level 1 (append): the existing summaries stay, the new Level-1
+        //     summary is appended after them, and the recent window is the
+        //     messages after the sliding-window split.
+        //
+        //   * Level 2+ (replace): the merged summary REPLACES the existing
+        //     summaries, so we must NOT re-emit them — doing so duplicated the
+        //     same history N times in the prompt and let summaries grow without
+        //     bound (docs/context-compression-bug-report.md §2, Bug 1(b)/(c)).
+        //     The recent raw window (`snappedForBudget`) is preserved here;
+        //     the old code used the empty `recentMessages` slice and dropped
+        //     the entire recent conversation — including the CURRENT user turn
+        //     — from the prompt (Bug 1(a)).
+        let summaryBlock: HistoryMessage[];
+        let keptRecentMessages: HistoryMessage[];
+        if (newSummaryLevel === 1) {
+            const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
+                role: "assistant" as ChatMessageRole,
+                content: s.content,
+            }));
+            summaryBlock = [...summaryMessages, latestSummaryMessage];
+            keptRecentMessages = recentMessages;
+        } else {
+            summaryBlock = [latestSummaryMessage];
+            keptRecentMessages = snappedForBudget;
+        }
 
         // Build archive note: inform LLM about archived messages before summaries
         const archiveNoteMessage: HistoryMessage = {
@@ -1173,8 +1221,7 @@ export class ContextReducer {
         // Ensure tool message sequence integrity in the final messagesToSend
         const finalMessagesToSend = [
             ...systemMessages,
-            ...summaryMessages,
-            latestSummaryMessage as T,
+            ...summaryBlock,
             archiveNoteMessage,
             ...this.ensureToolSequenceIntegrity(
                 this.shrinkLargeToolResults(keptRecentMessages, artifactStore),
@@ -1184,9 +1231,15 @@ export class ContextReducer {
         const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend);
         const { messages: postEmergencyCompressed, shrunk: emergencyShrunkCompressed } =
             ContextReducer.emergencyShrink(sanitizedCompressed, accessoryTokens, threshold, artifactStore, modelContextWindow);
+
+        // Level-1 appends; Level-2+ replaces the whole summary set with the
+        // single merged summary. The two are mutually exclusive — see
+        // `ContextReduceResult.summariesReplacement`.
+        const isReplacement = newSummaryLevel >= 2;
         return {
             messagesToSend: postEmergencyCompressed,
-            newSummary,
+            newSummary: isReplacement ? null : newSummary,
+            summariesReplacement: isReplacement ? [newSummary] : null,
             compressed: true,
             lastMessageIndex: newSummaryLastIndex,
             emergencyShrunk: emergencyShrunkCompressed,
@@ -1557,13 +1610,12 @@ export class ContextReducer {
             // prompt. The model then reads its own tool calls as
             // failed and re-tries the whole batch.
             const gathered = new Map<string, T>();
-            let j = i + 1;
-            while (j < pass1.length && pass1[j]!.role !== "assistant") {
-                if (pass1[j]!.role === "tool_result") {
-                    const tcId = pass1[j]!.toolCallId;
-                    if (tcId) gathered.set(tcId, pass1[j]!);
+            const j = ContextReducer.toolResultRunEnd(pass1, i);
+            for (let k = i + 1; k < j; k++) {
+                if (pass1[k]!.role === "tool_result") {
+                    const tcId = pass1[k]!.toolCallId;
+                    if (tcId) gathered.set(tcId, pass1[k]!);
                 }
-                j++;
             }
 
             const missing = toolCalls.filter((tc) => !gathered.has(tc.id));
@@ -1818,9 +1870,14 @@ export class ContextReducer {
                     collapsedParts.push(msg.content.trim());
                 }
 
+                // Walk the whole tool-result run up to the next assistant,
+                // skipping any interleaved synthetic user(media) message so its
+                // sibling tool_results still make it into the summary (Bug 4).
+                const runEnd = ContextReducer.toolResultRunEnd(messages, i);
                 let j = i + 1;
-                while (j < messages.length && messages[j]!.role === 'tool_result') {
+                for (; j < runEnd; j++) {
                     const resultMsg = messages[j]!;
+                    if (resultMsg.role !== 'tool_result') continue;
                     const resultToolCallId = resultMsg.toolCallId;
 
                     if (resultToolCallId && toolCallIds.has(resultToolCallId)) {
@@ -1836,7 +1893,6 @@ export class ContextReducer {
                         }
                         toolCallIds.delete(resultToolCallId);
                     }
-                    j++;
                 }
 
                 // Create a collapsed assistant message replacing the entire sequence
@@ -1898,6 +1954,34 @@ export class ContextReducer {
     }
 
     /**
+     * Exclusive end index of the `tool_result` run that belongs to the
+     * assistant(toolCalls) at `assistantIndex` — i.e. the index of the next
+     * `assistant` message, or `messages.length` if none follows.
+     *
+     * Why a shared helper: a tool-call turn is
+     * `assistant(toolCalls) → tool_result* → (next assistant)`, but ChatStream
+     * legitimately injects a synthetic `user(media)` message in the middle of
+     * the `tool_result*` run (right after a media-returning tool_result, so the
+     * LLM can perceive the bytes — see chat-stream where `mediaAttachment` is
+     * unpacked). Any walk that stops at the *first non-`tool_result`* therefore
+     * mis-partitions the batch around that user message and falsely reports the
+     * trailing siblings as missing.
+     *
+     * Stopping at the next `assistant` is safe: a brand-new user turn cannot
+     * appear before the assistant has answered the outstanding tool calls, so
+     * the only non-`tool_result` messages inside the run are media injections.
+     *
+     * Centralised here so `validateAndSanitizeForLLM`, `ensureToolSequenceIntegrity`
+     * and `collapseToolMessagesForSummary` share one definition instead of three
+     * subtly-different walks (docs/context-compression-bug-report.md §2, Bug 3/4).
+     */
+    private static toolResultRunEnd(messages: HistoryMessage[], assistantIndex: number): number {
+        let j = assistantIndex + 1;
+        while (j < messages.length && messages[j]!.role !== "assistant") j++;
+        return j;
+    }
+
+    /**
      * Ensures that tool message sequences remain intact in the message list.
      * 
      * Rules enforced:
@@ -1930,10 +2014,14 @@ export class ContextReducer {
                 continue;
             } else if (msg.role === 'assistant' && msg.toolCalls?.length) {
                 // An assistant message with tool_calls at the very start:
-                // Check if all required tool_results follow
+                // Check if all required tool_results follow. Walk the whole
+                // run (skipping any interleaved user(media) injection) instead
+                // of a fixed `toolCalls.length` window, which a media message
+                // would otherwise push the trailing sibling results out of.
                 const toolCalls = msg.toolCalls;
                 const requiredIds = new Set(toolCalls.map(tc => tc.id));
-                for (let j = i + 1; j < messages.length && j <= i + toolCalls.length; j++) {
+                const runEnd = ContextReducer.toolResultRunEnd(messages, i);
+                for (let j = i + 1; j < runEnd; j++) {
                     const next = messages[j];
                     if (next?.role === 'tool_result' && next.toolCallId) {
                         requiredIds.delete(next.toolCallId);
@@ -1965,13 +2053,15 @@ export class ContextReducer {
             if (msg.role === 'assistant' && msg.toolCalls?.length) {
                 const toolCalls = msg.toolCalls;
                 const requiredIds = new Set(toolCalls.map(tc => tc.id));
-                // Check subsequent messages for matching tool_results
-                for (let j = i + 1; j < result.length; j++) {
+                // Check subsequent messages for matching tool_results. Walk the
+                // full run up to the next assistant so an interleaved
+                // user(media) message does not prematurely stop the scan and
+                // make us falsely truncate a complete batch (Bug 3).
+                const runEnd = ContextReducer.toolResultRunEnd(result, i);
+                for (let j = i + 1; j < runEnd; j++) {
                     const next = result[j];
                     if (next?.role === 'tool_result' && next.toolCallId) {
                         requiredIds.delete(next.toolCallId);
-                    } else {
-                        break; // Stop at first non-tool_result message
                     }
                 }
                 if (requiredIds.size > 0) {

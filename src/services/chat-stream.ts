@@ -1439,8 +1439,19 @@ export class ChatStream implements IChatAgent {
                     ContextReducer.backfillBudgetHints(messagesToSend, rawMessages);
                     backfillChatMessageBudgetHints(this._messages, messagesToSend);
                     // console.log("Context reduced", reduceResult.compressed);
-                    // Persist new summary if compression occurred
-                    if (reduceResult.newSummary) {
+                    // Persist summaries if compression occurred.
+                    //   - Level-2+ merge returns a full replacement set: the
+                    //     old summaries are consolidated into one higher-level
+                    //     summary and must be replaced wholesale, otherwise
+                    //     they accumulate forever in the prompt and on disk
+                    //     (docs/context-compression-bug-report.md §2, Bug 1).
+                    //   - Level-1 returns a single summary to append.
+                    // The session-level persistence reads `this.summaries`
+                    // (getter) at save time, so mutating `_summaries` here is
+                    // sufficient for durability.
+                    if (reduceResult.summariesReplacement) {
+                        this._summaries = reduceResult.summariesReplacement.map(s => ({ ...s }));
+                    } else if (reduceResult.newSummary) {
                         this._summaries.push(reduceResult.newSummary);
                     }
                     // Notify that context compression occurred
