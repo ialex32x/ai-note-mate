@@ -17,10 +17,10 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "delete_files",
                 description:
-                    "Move one or more files to trash. Disposal honours the user's Obsidian " +
+                    "Remove one or more files from the vault. Disposal follows the user's Obsidian " +
                     "\"Files & Links → Deleted files\" setting (system trash, vault `.trash`, or " +
-                    "permanent), so recoverability depends on that. Each path is processed " +
-                    "independently. To delete a folder and its contents, use `delete_folder` instead.",
+                    "permanent deletion), so recoverability is not guaranteed. Each path is processed " +
+                    "independently. To remove a folder and its contents, use `delete_folder` instead.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -29,7 +29,7 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
                             items: { type: "string" },
                             minItems: 1,
                             description:
-                                "List of vault-relative file paths to delete. " +
+                                "List of vault-relative file paths to remove. " +
                                 "Each entry is processed independently; failures on one path do not stop the others.",
                         },
                     },

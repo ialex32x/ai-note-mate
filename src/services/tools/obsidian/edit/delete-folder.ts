@@ -18,15 +18,16 @@ export function vaultDeleteFolder(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "delete_folder",
                 description:
-                    "Delete a folder and all of its contents (files and sub-folders). Items are " +
-                    "disposed according to the user's Obsidian \"Files & Links → Deleted files\" " +
-                    "setting (system trash, vault `.trash`, or permanent).",
+                    "Remove a folder and all of its contents (files and sub-folders) from the vault. " +
+                    "Disposal follows the user's Obsidian \"Files & Links → Deleted files\" " +
+                    "setting (system trash, vault `.trash`, or permanent deletion); recoverability " +
+                    "is not guaranteed.",
                 parameters: {
                     type: "object",
                     properties: {
                         path: {
                             type: "string",
-                            description: "Vault-relative path to the folder to delete, e.g. 'Notes/OldFolder'.",
+                            description: "Vault-relative path to the folder to remove, e.g. 'Notes/OldFolder'.",
                         },
                     },
                     required: ["path"],
