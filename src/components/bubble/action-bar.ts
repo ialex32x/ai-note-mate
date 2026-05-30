@@ -2,6 +2,7 @@ import { setIcon, setTooltip } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { createCopyButton } from '../../utils/copy-button';
+import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from './bubble-context';
 import { SpeechController } from './speech-controller';
 
@@ -201,8 +202,10 @@ export function renderActionBar(
     const { abortedMessageIds, speechController, onExtractInsights } = opts;
     const actions = createActionsContainer(bubble);
 
-    // Copy button — uses unified createCopyButton for consistent flash-feedback
-    const copyBtn = createCopyButton(t('common.copy'), () => msg.content, ACTION_BTN_CLS);
+    // Copy button — uses unified createCopyButton for consistent flash-feedback.
+    // Strip the structured suggestions block so the copied text is clean and
+    // ready to paste elsewhere without exposing the internal markup.
+    const copyBtn = createCopyButton(t('common.copy'), () => stripStructuredBlock(msg.content), ACTION_BTN_CLS);
     actions.appendChild(copyBtn);
 
     // Speak button group
