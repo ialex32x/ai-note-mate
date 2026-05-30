@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.3.4
+
+### What's new
+
+- **Embedding profile selector in toolbar** — The session toolbar now shows a dropdown to choose which embedding profile to use, matching the text-generation and image-generation selectors.
+- **MiniMax model icon** — MiniMax models now have a dedicated icon in the profile selector.
+- **`rank_notes_by_embedded_size` tool** — A new tool lets the model rank vault notes by their embedded content size, useful for prioritizing large reference documents.
+- **Copy action bar on delegate task bubbles** — Handoff payloads in delegate task bubbles now show a copy button, so you can grab structured data with one click.
+- **Edit while streaming** — You can now edit and re-send a message while the assistant is still streaming; the in-progress stream is aborted cleanly and the new prompt takes over.
+- **Vault editor sub-agent label and icon** — The built-in vault-editor sub-agent now shows a distinct label and icon in delegation blocks.
+- **Large file read hints in metadata** — `get_metadata` now includes clues about large files so the model can decide whether to read a file in sections before attempting a full read.
+- **`read_file` end_line exclusive** — The `end_line` parameter in `read_file` is now exclusive (half-open), matching the behaviour of `edit_lines` and other range-based tools.
+
+### Refinements
+
+- **Unified half-open ranges** — `edit_lines` operations now consistently use half-open `[start, end)` semantics, aligning with `read_file` and `read_section`.
+
+### Fixes
+
+- **Status panel render deferred** — The session status dropdown no longer triggers unnecessary renders until it is opened, reducing layout jank.
+- **External action bar positioning** — The action bar now moves correctly when a bubble is prepended to the chat view.
+- **Units reversed on history prepend** — Prepending messages to the session history no longer reverses their internal unit order.
+- **Definition lists excluded from action suggestions** — HTML definition lists in assistant replies no longer produce spurious action chips.
+- **`thinkingInProgress` localized** — The "thinking in progress" label now respects your UI language (ja, ko, zh-cn, zh-tw).
+- **Web agent prompts when search unavailable** — Web agent system prompts now skip search-related instructions when no search tool is configured.
+- **Scroll position on long streaming messages** — The scroll position is now preserved during long streaming replies instead of jumping around.
+- **Structured block stripped from copied messages** — Copying a message no longer includes internal structured blocks meant for the model's eyes only.
+
+---
+
 ## 1.3.3
 
 ### What's new
