@@ -140,6 +140,11 @@ export function createProfileSelector(
     const profileBtnEl = button;
     const profileBtnTextEl = textEl;
 
+    // Model icon displayed inline on the button, before the profile name
+    const profileBtnIconEl = profileBtnEl.createEl('span', { cls: 'session-dropdown-btn-model-icon' });
+    // Insert before the text element
+    profileBtnEl.insertBefore(profileBtnIconEl, profileBtnTextEl);
+
     const profileDropdownEl = profileWrapper.createEl('div', {
         cls: 'session-dropdown-menu',
     });
@@ -147,11 +152,23 @@ export function createProfileSelector(
     const activeProfile = getActiveProfile(plugin.settings);
     profileBtnTextEl.setText(activeProfile.name);
 
+    /** Sync the button's inline model icon to the active profile's model. */
+    const updateButtonIcon = () => {
+        const p = getActiveProfile(plugin.settings);
+        const def = getModelIconDef(p.model);
+        profileBtnIconEl.empty();
+        if (def) {
+            profileBtnIconEl.appendChild(buildSvgIcon(def));
+        }
+    };
+    updateButtonIcon();
+
     const rebuildProfileDropdown = () => {
         profileDropdownEl.empty();
         const current = plugin.settings;
         const currentActive = getActiveProfile(current);
         profileBtnTextEl.setText(currentActive.name);
+        updateButtonIcon();
 
         // Profiles Section
         const profilesHeader = profileDropdownEl.createEl('div', {
@@ -248,10 +265,11 @@ export function createProfileSelector(
         onOpen: rebuildProfileDropdown,
     });
 
-    // Keep button text in sync with active profile
+    // Keep button text and icon in sync with active profile
     const onSettingsChanged = () => {
         const p = getActiveProfile(plugin.settings);
         profileBtnTextEl.setText(p.name);
+        updateButtonIcon();
     };
     plugin.onSettingsChange(onSettingsChanged);
 
