@@ -83,10 +83,21 @@ export class MessageWindowController {
     }
 
     /**
-     * Remove the oldest `count` rendered DOM bubbles from `messagesEl`
+     * Remove the oldest `count` rendered display units from `messagesEl`
      * and advance `renderedStart` accordingly. Does NOT modify `allUnits`
      * so trimmed history can be re-rendered later via "load older".
      * Returns the number of units actually removed.
+     *
+     * A single display unit can span **more than one** sibling DOM node:
+     * user messages and sub-agent replies have their action bar moved
+     * outside the bubble border (see {@link BubbleRenderer.externalizeActionBar}),
+     * so they render as `[.session-bubble][.session-bubble__actions--external]`.
+     * Trimming must therefore count whole units (one `.session-bubble`
+     * starts a unit) and drop each unit's trailing external action bar with
+     * it — otherwise an orphaned toolbar is left behind as a standalone flex
+     * child, producing an empty gap with a lone hover toolbar, and
+     * `renderedStart` would over-advance (one node ≠ one unit) and desync
+     * the logical window from the DOM.
      */
     trimTail(count: number): number {
         if (count <= 0) return 0;
@@ -96,18 +107,34 @@ export class MessageWindowController {
 
         const anchor = this.getPrependAnchor();
         let el: ChildNode | null = anchor;
-        let removed = 0;
+        let unitsRemoved = 0;
 
-        while (el && removed < toRemove) {
+        while (el && unitsRemoved < toRemove) {
+            const isBubble = el.instanceOf(HTMLElement)
+                && el.classList.contains('session-bubble');
             const next = el.nextSibling;
             el.remove();
-            removed++;
+            if (isBubble) {
+                unitsRemoved++;
+            }
             el = next;
+
+            // Drop any trailing nodes that belong to the unit just removed
+            // (e.g. an externalised action bar) before counting the next
+            // unit boundary.
+            while (
+                el?.instanceOf(HTMLElement)
+                && el.classList.contains('session-bubble__actions--external')
+            ) {
+                const after = el.nextSibling;
+                el.remove();
+                el = after;
+            }
         }
 
-        this.renderedStart += removed;
+        this.renderedStart += unitsRemoved;
         this.updateSentinel();
-        return removed;
+        return unitsRemoved;
     }
 
     /**
