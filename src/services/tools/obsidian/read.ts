@@ -137,7 +137,8 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Read a file from the vault. " +
                     "For text/markdown files, optionally specify `start_line` / `end_line` (1-based, " +
-                    "inclusive) for a range; omit both to read the whole file. When the file is large " +
+                    "half-open [start_line, end_line) — `start_line` inclusive, `end_line` exclusive) " +
+                    "for a range; omit both to read the whole file. When the file is large " +
                     "(> ~200 lines) and no range is given, returns line count plus a short preview " +
                     "instead of the full body — use `get_metadata` for heading outline, `read_section` " +
                     "for one section, or re-read with `start_line` / `end_line`. " +
@@ -160,13 +161,15 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         start_line: {
                             type: "number",
                             description:
-                                "1-based starting line number for reading a specific range. " +
+                                "1-based inclusive starting line number for reading a specific range. " +
                                 "Must be used together with end_line. Omit to read the entire file.",
                         },
                         end_line: {
                             type: "number",
                             description:
-                                "1-based ending line number (inclusive) for reading a specific range. " +
+                                "1-based ending line number (EXCLUSIVE) for reading a specific range. " +
+                                "Lines from start_line up to but NOT including end_line are returned. " +
+                                "To read through the end of the file, set end_line = total_lines + 1. " +
                                 "Must be used together with start_line. Omit to read the entire file.",
                         },
                     },
@@ -295,14 +298,13 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const lines = content.split("\n");
             const totalLines = lines.length;
 
-            // Read path is forgiving about a one-line overshoot on end_line:
-            // LLMs routinely emit an exclusive-style upper bound (totalLines + 1).
-            // Slicing past the end is harmless for reads.
+            // `end_line` is exclusive: [startLine, endLine) maps directly to
+            // JS `slice(startLine - 1, endLine)`. `slice()` auto-clamps `end`
+            // to the array length, so `endLine = totalLines + 1` reads to EOF.
             const rangeErr = validateLineRange(startLine, endLine, totalLines, { clampEndLine: true });
             if (rangeErr) return rangeErr;
 
-            const effectiveEndLine = Math.min(endLine, totalLines);
-            const selectedContent = lines.slice(startLine - 1, effectiveEndLine).join("\n");
+            const selectedContent = lines.slice(startLine - 1, endLine).join("\n");
 
             // Behaviour nudge against "scan the file in 100-line slices".
             // We only attach a notice when the same file has been ranged-
@@ -315,7 +317,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 path,
                 content: selectedContent,
                 start_line: startLine,
-                end_line: effectiveEndLine,
+                end_line: endLine,
                 total_lines: totalLines,
                 mtime: file.stat.mtime,
             };

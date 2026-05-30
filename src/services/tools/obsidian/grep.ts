@@ -254,7 +254,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 | { heading: string; level: number; start_line: number; end_line: number }
                 | null = null;
             let scanStart = 1; // 1-based inclusive
-            let scanEnd = totalLines; // 1-based inclusive
+            let scanEnd = totalLines; // exclusive upper bound (loop: i < scanEnd)
             if (headingPath !== null) {
                 const cache = plugin.app.metadataCache.getFileCache(file);
                 const cachedHeadings: HeadingNode[] = (cache?.headings ?? []).map((h) => ({
@@ -281,9 +281,9 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     start_line: resolved.section.start_line,
                     end_line: resolved.section.end_line,
                 };
-                // `end_line` is the 1-based inclusive last line of the section
-                // (equivalently the 0-based exclusive upper bound), matching how
-                // `read_section`'s consumer slices its output.
+                // `end_line` is the 0-based exclusive upper bound of the section
+                // (equivalently the 1-based line of the next heading), matching
+                // how `read_section`'s consumer slices its output.
                 scanStart = section.start_line;
                 scanEnd = section.end_line;
             }

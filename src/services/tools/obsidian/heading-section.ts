@@ -35,8 +35,10 @@ export interface HeadingNode {
 }
 
 /**
- * Successful resolution: a 1-based inclusive `[start_line, end_line]` window
- * plus the matched heading's level.
+ * Successful resolution: `start_line` is 1-based inclusive (heading line),
+ * `end_line` is the 0-based line of the next heading / boundary
+ * (equivalently the exclusive upper bound for `lines.slice(start_line - 1, end_line)`),
+ * plus the matched heading's level and text.
  */
 export interface ResolvedSection {
     start_line: number;
