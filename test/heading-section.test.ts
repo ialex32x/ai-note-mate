@@ -298,6 +298,13 @@ describe("formatFindSectionError", () => {
         const msg = formatFindSectionError({ kind: "empty_path" }, []);
         expect(msg).toContain("must contain at least one element");
     });
+
+    it("renders no_headings without claiming the file lacks markdown headings", () => {
+        const msg = formatFindSectionError({ kind: "no_headings" }, ["Some Heading"]);
+        expect(msg).toContain("heading outline is empty");
+        expect(msg).not.toContain("The file has no headings");
+        expect(msg).toContain("get_metadata");
+    });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

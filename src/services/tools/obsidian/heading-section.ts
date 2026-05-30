@@ -182,7 +182,9 @@ export function normalizeHeadingPathArg(
  *      `ancestorsAtMatch` is the FULL ancestor chain (excluding the matched
  *      heading itself), so callers can echo a fully-qualified path back to
  *      the LLM even when it submitted a short tail.
- *   - `{ ok: false, error: { kind: "no_headings" } }` if the file has no headings.
+ *   - `{ ok: false, error: { kind: "no_headings" } }` if the supplied heading
+ *     list is empty (caller has no outline to search — not necessarily that the
+ *     file lacks markdown headings).
  *   - `{ ok: false, error: { kind: "empty_path" } }` if `headingPath` is empty.
  *   - `{ ok: false, error: { kind: "not_found", available } }` if zero matches.
  *      `available` lists distinct ancestor-chain strings for diagnostics
@@ -330,7 +332,12 @@ export function formatFindSectionError(
         case "empty_path":
             return `heading_path must contain at least one element.`;
         case "no_headings":
-            return `The file has no headings; cannot resolve heading_path ${pathStr}.`;
+            return (
+                `Cannot resolve heading_path ${pathStr}: the heading outline is empty ` +
+                `(no headings indexed for this file). This does NOT necessarily mean the file ` +
+                `lacks markdown headings — the index may be stale or not yet populated. ` +
+                `Use get_metadata or read_section to inspect available headings, or use pattern mode.`
+            );
         case "not_found": {
             const sample = error.available.slice(0, 20);
             const more = error.available.length > sample.length
