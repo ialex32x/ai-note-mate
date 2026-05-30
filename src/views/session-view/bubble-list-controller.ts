@@ -70,6 +70,26 @@ export class BubbleListController {
     }
 
     /**
+     * Remove a bubble from the DOM and drop it from the tracked map.
+     * Used when an ephemeral assistant bubble (e.g. thinking-only on a
+     * pure tool-call turn) is retired from history without a full re-render.
+     */
+    remove(id: string): void {
+        const bubble = this.messageBubbles.get(id);
+        if (!bubble) return;
+
+        const external = bubble.nextElementSibling;
+        if (external?.classList.contains('session-bubble__actions--external')) {
+            external.remove();
+        }
+        bubble.remove();
+        this.messageBubbles.delete(id);
+        this.deps.bubbleRenderer.retireStreamingController(id);
+        this.deps.streamingLoader.pinToEnd();
+        this.deps.updateNewChatBtnState();
+    }
+
+    /**
      * Append a bubble to the tail of the message list.
      *
      * @param msg - The message to render.

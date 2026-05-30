@@ -154,6 +154,13 @@ export interface ChatMessage {
      * model knows the prior turn was incomplete; not shown in the UI bubble.
      */
     wasInterrupted?: boolean;
+    /**
+     * UI-only lifecycle hint: when true the view should remove this bubble
+     * from the DOM. Set on ephemeral retire emits (e.g. pure tool-call turns
+     * that streamed thinking but omit the assistant from history). Never
+     * persisted.
+     */
+    retireBubble?: boolean;
 }
 
 /** Appended to assistant API content when {@link ChatMessage.wasInterrupted} is set. */
@@ -2079,6 +2086,17 @@ export class ChatStream implements IChatAgent {
         }
 
         if (opts?.removeFromHistory) {
+            // The thinking-only bubble may have been rendered while the
+            // model streamed reasoning before emitting tool calls. Pure
+            // tool-call turns drop the assistant from `_messages`, but
+            // the DOM bubble must be explicitly retired — otherwise the
+            // last throttled emit left it stuck at streaming=true
+            // ("Thinking in progress") even after the turn moved on.
+            if (msg.thinkingContent) {
+                msg.thinkingComplete = true;
+            }
+            this._config.onMessageUpdate?.({ ...msg, retireBubble: true });
+
             const idx = this._messages.findIndex(m => m.id === msg.id);
             if (idx >= 0) {
                 this._messages.splice(idx, 1);

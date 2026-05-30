@@ -65,6 +65,10 @@ const DEFAULT_DIMENSIONS: Record<CanvasNodeType, { width: number; height: number
     group: { width: 600, height: 400 },
 };
 
+/** Default spacing when auto-arranging or suggesting node positions. */
+export const DEFAULT_LAYOUT_GAP = 120;
+export const DEFAULT_LAYOUT_COLUMNS = 3;
+
 export function generateCanvasId(): string {
     const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
@@ -72,8 +76,17 @@ export function generateCanvasId(): string {
 }
 
 export function parseCanvasContent(
-    content: string,
+    content: unknown,
 ): { ok: true; data: CanvasData } | { ok: false; error: string } {
+    if (content !== null && typeof content === "object" && !Array.isArray(content)) {
+        return { ok: true, data: content as CanvasData };
+    }
+    if (typeof content !== "string") {
+        return {
+            ok: false,
+            error: "Canvas content must be a JSON string or object with nodes/edges arrays.",
+        };
+    }
     const trimmed = content.trim();
     if (trimmed.length === 0) {
         return { ok: true, data: { nodes: [], edges: [] } };
@@ -304,7 +317,7 @@ export interface NewCanvasEdgeInput {
 
 function suggestNodePosition(existing: CanvasNode[], index: number): { x: number; y: number } {
     const dims = DEFAULT_DIMENSIONS.text;
-    const gap = 80;
+    const gap = DEFAULT_LAYOUT_GAP;
     if (existing.length === 0) {
         return { x: index * (dims.width + gap), y: 0 };
     }
@@ -507,4 +520,126 @@ export function layoutCanvasGrid(
 
     const nodes = allNodes.map((n) => byId.get(n.id)!);
     return { data: { ...data, nodes }, laid_out_ids: laidOutIds };
+}
+
+export interface AutoLayoutCanvasOptions {
+    columns?: number;
+    gap?: number;
+    /** Vertical space reserved for a group label above its children. */
+    groupLabelOffset?: number;
+}
+
+function expandGroupAroundChildren(
+    data: CanvasData,
+    groupId: string,
+    gap: number,
+    labelOffset: number,
+): CanvasData {
+    const nodes = [...(data.nodes ?? [])];
+    const groupIdx = nodes.findIndex((n) => n.id === groupId && n.type === "group");
+    if (groupIdx < 0) return data;
+
+    const groupBefore = nodes[groupIdx]!;
+    const childIndices: number[] = [];
+    for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i]!;
+        if (n.id !== groupId && n.type !== "group" && nodeCenterInsideGroup(n, groupBefore)) {
+            childIndices.push(i);
+        }
+    }
+    if (childIndices.length === 0) return data;
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const i of childIndices) {
+        const child = nodes[i]!;
+        minX = Math.min(minX, child.x);
+        minY = Math.min(minY, child.y);
+        maxX = Math.max(maxX, child.x + child.width);
+        maxY = Math.max(maxY, child.y + child.height);
+    }
+
+    const pad = gap;
+    const newX = minX - pad;
+    const newY = minY - labelOffset;
+    const newW = maxX - minX + pad * 2;
+    const newH = maxY - minY + labelOffset + pad;
+    const dx = newX - groupBefore.x;
+    const dy = newY - groupBefore.y;
+
+    nodes[groupIdx] = {
+        ...groupBefore,
+        x: newX,
+        y: newY,
+        width: Math.max(groupBefore.width, newW),
+        height: Math.max(groupBefore.height, newH),
+    };
+
+    if (dx !== 0 || dy !== 0) {
+        for (const i of childIndices) {
+            const child = nodes[i]!;
+            nodes[i] = { ...child, x: child.x + dx, y: child.y + dy };
+        }
+    }
+
+    return { ...data, nodes };
+}
+
+function isInsideAnyGroup(node: CanvasNode, groups: CanvasNode[]): boolean {
+    return groups.some((g) => nodeCenterInsideGroup(node, g));
+}
+
+/**
+ * Reposition all nodes on readable grids. Children inside group nodes are laid out
+ * locally first; groups and orphan nodes are then arranged on an outer grid.
+ */
+export function autoLayoutCanvas(data: CanvasData, opts?: AutoLayoutCanvasOptions): CanvasData {
+    const nodes = data.nodes ?? [];
+    if (nodes.length === 0) return data;
+
+    const columns = opts?.columns ?? DEFAULT_LAYOUT_COLUMNS;
+    const gap = opts?.gap ?? DEFAULT_LAYOUT_GAP;
+    const labelOffset = opts?.groupLabelOffset ?? 40;
+
+    let current: CanvasData = { ...data, nodes: nodes.map((n) => ({ ...n })) };
+    const groups = (current.nodes ?? [])
+        .filter((n) => n.type === "group")
+        .sort((a, b) => a.id.localeCompare(b.id));
+
+    for (const group of groups) {
+        const childResult = layoutCanvasGrid(current, {
+            columns: Math.min(columns, 2),
+            gap,
+            originX: group.x + gap,
+            originY: group.y + labelOffset,
+            groupId: group.id,
+            includeGroupNodes: false,
+        });
+        if (typeof childResult === "string") continue;
+        current = childResult.data;
+        current = expandGroupAroundChildren(current, group.id, gap, labelOffset);
+    }
+
+    const refreshedGroups = (current.nodes ?? []).filter((n) => n.type === "group");
+    const topLevelIds = new Set<string>();
+    for (const node of current.nodes ?? []) {
+        if (node.type === "group") {
+            topLevelIds.add(node.id);
+        } else if (!isInsideAnyGroup(node, refreshedGroups)) {
+            topLevelIds.add(node.id);
+        }
+    }
+    if (topLevelIds.size === 0) return current;
+
+    const outerResult = layoutCanvasGrid(current, {
+        columns,
+        gap,
+        originX: 0,
+        originY: 0,
+        nodeIds: topLevelIds,
+        includeGroupNodes: false,
+    });
+    return typeof outerResult === "string" ? current : outerResult.data;
 }

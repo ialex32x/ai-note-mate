@@ -14,7 +14,7 @@ vi.mock("obsidian", () => ({
     },
 }));
 
-import { parseBaseContent, validateBase, summarizeBase, hasBaseErrors, addBaseView, updateBaseFilters, updateBaseViewOrder, findViewIndexByName } from "../src/services/tools/obsidian/base/base-schema";
+import { parseBaseContent, validateBase, summarizeBase, hasBaseErrors, addBaseView, updateBaseFilters, updateBaseViewOrder, findViewIndexByName, normalizeBaseData } from "../src/services/tools/obsidian/base/base-schema";
 
 describe("base-schema", () => {
     it("validateBase requires view type and name", () => {
@@ -82,5 +82,37 @@ describe("base-schema", () => {
         expect(typeof next).toBe("object");
         if (typeof next === "string") return;
         expect(next.filters).toBeUndefined();
+    });
+
+    it("normalizeBaseData coerces string groupBy to object", () => {
+        const data = {
+            views: [{ type: "list", name: "By Folder", groupBy: "file.folder", order: ["file.name"] }],
+        };
+        const normalized = normalizeBaseData(data);
+        const view = (normalized.views as Record<string, unknown>[])[0]!;
+        expect(view.groupBy).toEqual({ property: "file.folder" });
+        expect(hasBaseErrors(validateBase(normalized))).toBe(false);
+    });
+
+    it("validateBase rejects invalid groupBy types", () => {
+        const issues = validateBase({
+            views: [{ type: "list", name: "X", groupBy: 123, order: ["file.name"] }],
+        });
+        expect(hasBaseErrors(issues)).toBe(true);
+        expect(issues.some((i) => i.message.includes("groupBy"))).toBe(true);
+    });
+
+    it("validateBase accepts object groupBy with direction", () => {
+        const issues = validateBase({
+            views: [
+                {
+                    type: "list",
+                    name: "By Folder",
+                    groupBy: { property: "file.folder", direction: "ASC" },
+                    order: ["file.name"],
+                },
+            ],
+        });
+        expect(hasBaseErrors(issues)).toBe(false);
     });
 });

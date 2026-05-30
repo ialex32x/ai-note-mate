@@ -34,6 +34,7 @@ import {
     type ConversationInsight,
     type InsightCardState,
 } from '../services/insights';
+import { resolveLinkOpenText } from '../utils/workspace-utils';
 
 import {
     createProfileSelector, type ProfileSelectorHandle,
@@ -1766,6 +1767,11 @@ export class SessionView extends ItemView {
     // ── ChatStream callbacks ─────────────────────────────────────────────────
 
     private handleMessageUpdate(msg: ChatMessage) {
+        if (msg.retireBubble) {
+            this.bubbleList.remove(msg.id);
+            return;
+        }
+
         const existing = this.bubbleList.messageBubbles.get(msg.id);
 
         if (existing) {
@@ -1790,6 +1796,11 @@ export class SessionView extends ItemView {
      * the user sees, since the delegate_task bubble no longer shows its result).
      */
     private handleSubAgentMessageUpdate(msg: ChatMessage, agentName: string): void {
+        if (msg.retireBubble) {
+            this.bubbleList.remove(msg.id);
+            return;
+        }
+
         const tagged = this.ensureSubAgentTag(msg, agentName);
         const existing = this.bubbleList.messageBubbles.get(tagged.id);
         if (existing) {
@@ -1911,26 +1922,11 @@ export class SessionView extends ItemView {
     private tryRunClientAction(action: NonNullable<SuggestedAction['action']>): boolean {
         switch (action.kind) {
             case 'open-note': {
-                // Resolve using the metadata cache so bare basenames, paths
-                // with or without ".md", and subfolder paths all work. The
-                // second arg (source path) is the file *from which* links are
-                // being resolved; an empty string uses the vault root, which
-                // matches the behaviour we want for LLM-provided paths.
-                const dest = this.app.metadataCache.getFirstLinkpathDest(action.path, '');
-                if (dest) {
-                    // Use Obsidian's standard open behaviour: click replaces
-                    // the active tab, Cmd/Ctrl+click opens a new tab.
-                    void this.app.workspace.openLinkText(action.path, '', false);
-                } else {
-                    // Note doesn't exist — defer to Obsidian's standard
-                    // wiki-link behaviour. With the default "Automatically
-                    // create new linked notes" setting this creates an empty
-                    // note at the requested path; otherwise Obsidian shows
-                    // its usual "unresolved link" handling. Either way the
-                    // outcome matches what users get from clicking [[link]],
-                    // which is exactly the contract documented to the model.
-                    void this.app.workspace.openLinkText(action.path, '', false);
-                }
+                void this.app.workspace.openLinkText(
+                    resolveLinkOpenText(this.app, action.path),
+                    '',
+                    false,
+                );
                 return true;
             }
             default:

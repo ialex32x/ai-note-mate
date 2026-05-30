@@ -103,7 +103,8 @@ function buildSelectionRange(editor?: Editor): string {
 
 /**
  * Build a markdown blockquote from the editor's selected text. Returns
- * the variable placeholder when there is no editor or no selection.
+ * the variable placeholder when the editor is absent, or an empty string
+ * when there is no meaningful selection.
  *
  * The output is a series of `> ...` lines, one per line of the
  * selection. Long selections are truncated to
@@ -113,7 +114,7 @@ function buildBlockquote(editor?: Editor): string {
 	if (!editor) return '{{blockquote}}';
 
 	const selection = editor.getSelection();
-	if (!selection || !selection.trim()) return '{{blockquote}}';
+	if (!selection || !selection.trim()) return '';
 
 	const codepoints = Array.from(selection);
 	let body: string;

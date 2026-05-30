@@ -428,26 +428,23 @@ export const zhTW: Record<string, string> = {
 > 引用區塊可用於你的個人批註。
 
 ## 翻譯此筆記 [languages]
-將 {{filepath}} 翻譯成英文，保留 Markdown 格式。
+將 {{filepath}} 全文翻譯為英文，保留 Markdown 格式，並寫回該筆記。勿在聊天中輸出譯文。
 
 ## 自動加標籤 [tags]
-請依照本 Vault 的標籤規範，為筆記 {{filepath}} 自動加上合適的標籤。
+請依照本 Vault 的標籤規範，為筆記 {{filepath}} 自動加上合適的標籤，直接修改筆記。
 
 # Editor
 
 ## 擴寫選取內容 [maximize-2]
-擴寫以下文字，補充細節、範例或背景，保持原意不變。保留原文語言、語氣和行內格式。
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 處，將選取文字擴寫（補充細節、範例或背景），保持原意、語言、語氣和行內格式不變。請直接寫回筆記，勿在聊天中回覆修改後的正文。
 {{blockquote}}
 
 ## 縮寫選取內容 [minimize-2]
-縮寫以下文字，保留所有關鍵資訊和原意。保留原文語言、語氣和行內格式。
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 處，將選取文字縮寫，保留所有關鍵資訊和原意，保持語言、語氣和行內格式不變。請直接寫回筆記，勿在聊天中回覆修改後的正文。
 {{blockquote}}
 
 ## 續寫選取內容 [chevrons-right]
-從以下文字末尾繼續寫作，只輸出新的續寫內容，不要重複或複述原文。
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 選區末尾插入續寫內容，不要重複或複述原文。請直接寫回筆記，勿在聊天中回覆續寫正文。
 {{blockquote}}
 
 ## 解釋選取內容 [sparkles]
@@ -455,8 +452,7 @@ export const zhTW: Record<string, string> = {
 {{blockquote}}
 
 ## 潤色寫作 [wand-2]
-潤色以下文字，使其更清晰簡潔，同時保持原有語氣：
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 處潤色選取文字，使其更清晰簡潔，保持原有語氣。請直接寫回筆記，勿在聊天中回覆修改後的正文。
 {{blockquote}}
 `,
 

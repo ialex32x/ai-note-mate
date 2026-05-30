@@ -428,26 +428,23 @@ export const zhCN: Record<string, string> = {
 > 引用块可用于你的个人批注。
 
 ## 翻译此笔记 [languages]
-将 {{filepath}} 翻译成英文，保留 Markdown 格式。
+将 {{filepath}} 全文翻译为英文，保留 Markdown 格式，并写回该笔记。勿在聊天中输出译文。
 
 ## 自动打标签 [tags]
-请按照本 Vault 的标签规范，为笔记 {{filepath}} 自动添加合适的标签。
+请按照本 Vault 的标签规范，为笔记 {{filepath}} 自动添加合适的标签，直接修改笔记。
 
 # Editor
 
 ## 扩写选中内容 [maximize-2]
-扩写以下文本，补充细节、示例或背景，保持原意不变。保留原文语言、语气和行内格式。
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 处，将选中文本扩写（补充细节、示例或背景），保持原意、语言、语气和行内格式不变。请直接写回笔记，勿在聊天中回复修改后的正文。
 {{blockquote}}
 
 ## 缩写选中内容 [minimize-2]
-缩写以下文本，保留所有关键信息和原意。保留原文语言、语气和行内格式。
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 处，将选中文本缩写，保留所有关键信息和原意，保持语言、语气和行内格式不变。请直接写回笔记，勿在聊天中回复修改后的正文。
 {{blockquote}}
 
 ## 续写选中内容 [chevrons-right]
-从以下文本末尾继续写作，只输出新的续写内容，不要重复或复述原文。
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 选区末尾插入续写内容，不要重复或复述原文。请直接写回笔记，勿在聊天中回复续写正文。
 {{blockquote}}
 
 ## 解释选中内容 [sparkles]
@@ -455,8 +452,7 @@ export const zhCN: Record<string, string> = {
 {{blockquote}}
 
 ## 润色写作 [wand-2]
-润色以下文本，使其更清晰简洁，同时保持原有语气：
-{{filepath}} {{selection}}
+在 {{filepath}} 的 {{selection}} 处润色选中文本，使其更清晰简洁，保持原有语气。请直接写回笔记，勿在聊天中回复修改后的正文。
 {{blockquote}}
 `,
 

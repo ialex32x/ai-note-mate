@@ -11,19 +11,25 @@
 export class TFile {
     path = "";
     name = "";
+    basename = "";
     constructor(path = "") {
         this.path = path;
         const idx = path.lastIndexOf("/");
         this.name = idx >= 0 ? path.slice(idx + 1) : path;
+        const dot = this.name.lastIndexOf(".");
+        this.basename = dot >= 0 ? this.name.slice(0, dot) : this.name;
     }
 }
 
 /** Folder counterpart; same minimal shape, kept for symmetry. */
 export class TFolder {
     path = "";
+    name = "";
     children: unknown[] = [];
     constructor(path = "") {
         this.path = path;
+        const idx = path.lastIndexOf("/");
+        this.name = idx >= 0 ? path.slice(idx + 1) : path;
     }
 }
 

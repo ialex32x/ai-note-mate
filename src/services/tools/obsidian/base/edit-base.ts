@@ -5,12 +5,10 @@ import { isFailure, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 import {
     addBaseView,
-    hasBaseErrors,
     parseBaseContent,
-    serializeBase,
+    prepareBaseDataForWrite,
     updateBaseFilters,
     updateBaseViewOrder,
-    validateBase,
 } from "./base-schema";
 import { inspectBaseContent, requireBaseExtension } from "./_base-io";
 
@@ -58,17 +56,12 @@ async function applyBaseMutation(
         return { success: false, type: "text", content: mutated };
     }
 
-    const issues = validateBase(mutated);
-    if (hasBaseErrors(issues)) {
-        const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-        return {
-            success: false,
-            type: "text",
-            content: "Base validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-        };
+    const prepared = prepareBaseDataForWrite(mutated);
+    if (!prepared.ok) {
+        return { success: false, type: "text", content: prepared.error };
     }
 
-    const serialized = serializeBase(mutated);
+    const serialized = prepared.serialized;
     if (!opts.dryRun) {
         const lockErr = await runVaultMutation(plugin, chatStream, {
             kind: "modify",
@@ -110,6 +103,8 @@ export function vaultAddBaseView(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Append a new view to an existing `.base` file. Requires `type` (table|cards|list|map) and " +
                     "`name` (must be unique). Optional: `order`, `limit`, `filters`, `groupBy`, `summaries`. " +
+                    "For list views, `groupBy` must be `{ property: file.folder }` (optional `direction`: ASC|DESC); " +
+                    "a bare property string is auto-normalized on write. " +
                     "Validated before writing. Use `read_base` first to inspect existing views.",
                 parameters: {
                     type: "object",
@@ -122,7 +117,7 @@ export function vaultAddBaseView(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "object",
                             description:
                                 "View definition. Required: `type`, `name`. Optional: `order` (string[]), `limit` (number), " +
-                                "`filters` (object or expression), `groupBy`, `summaries`.",
+                                "`filters` (object or expression), `groupBy` ({ property, direction? }), `summaries`.",
                         },
                         dry_run: {
                             type: "boolean",

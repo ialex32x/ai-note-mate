@@ -429,26 +429,23 @@ export const ko: Record<string, string> = {
 > 인용 블록은 개인 메모에 사용할 수 있습니다.
 
 ## 이 노트 번역 [languages]
-{{filepath}} 를 영어로 번역하고 Markdown 서식을 유지해 주세요.
+{{filepath}} 전체를 영어로 번역하고 Markdown 서식을 유지한 뒤 노트에 다시 써 주세요. 채팅에 번역문을 출력하지 마세요.
 
 ## 자동 태그 지정 [tags]
-이 Vault의 태그 규칙에 따라 노트 {{filepath}}에 적절한 태그를 자동으로 지정해 주세요.
+이 Vault의 태그 규칙에 따라 노트 {{filepath}}에 적절한 태그를 자동으로 지정하고, 노트를 직접 수정해 주세요.
 
 # Editor
 
 ## 선택 영역 확장 [maximize-2]
-다음 텍스트를 더 자세히, 예시나 배경을 추가해 확장해 주세요. 원래 의미는 유지하고, 원문 언어, 어조, 인라인 서식을 보존해 주세요.
-{{filepath}} {{selection}}
+{{filepath}}의 {{selection}}에 있는 선택 텍스트를 더 자세히, 예시나 배경을 추가해 확장해 주세요. 원래 의미, 언어, 어조, 인라인 서식은 유지해 주세요. 결과를 노트에 다시 쓰고, 채팅에 수정된 본문을 답하지 마세요.
 {{blockquote}}
 
 ## 선택 영역 축약 [minimize-2]
-다음 텍스트를 축약하되 모든 핵심 사실과 원래 의미는 유지해 주세요. 원문 언어, 어조, 인라인 서식을 보존해 주세요.
-{{filepath}} {{selection}}
+{{filepath}}의 {{selection}}에 있는 선택 텍스트를 축약하되 모든 핵심 사실과 원래 의미, 언어, 어조, 인라인 서식은 유지해 주세요. 결과를 노트에 다시 쓰고, 채팅에 수정된 본문을 답하지 마세요.
 {{blockquote}}
 
 ## 선택 영역 이어 쓰기 [chevrons-right]
-다음 텍스트 끝에서 이어서 작성해 주세요. 새로운 이어쓰기만 출력하고 입력 내용을 반복하거나 다시 말하지 마세요.
-{{filepath}} {{selection}}
+{{filepath}}의 {{selection}} 선택 영역 끝에 이어쓰기를 삽입해 주세요. 원문을 반복하거나 다시 말하지 마세요. 이어쓰기를 노트에 다시 쓰고, 채팅에 답하지 마세요.
 {{blockquote}}
 
 ## 선택 영역 설명 [sparkles]
@@ -456,8 +453,7 @@ export const ko: Record<string, string> = {
 {{blockquote}}
 
 ## 글 다듬기 [wand-2]
-다음 텍스트를 더 명확하고 간결하게 다듬되 원래 어조는 유지해 주세요:
-{{filepath}} {{selection}}
+{{filepath}}의 {{selection}}에 있는 선택 텍스트를 더 명확하고 간결하게 다듬되 원래 어조는 유지해 주세요. 결과를 노트에 다시 쓰고, 채팅에 수정된 본문을 답하지 마세요.
 {{blockquote}}
 `,
 

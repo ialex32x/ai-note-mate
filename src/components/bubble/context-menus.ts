@@ -2,7 +2,11 @@ import { Menu, TFile } from 'obsidian';
 import { t } from '../../i18n';
 import { resolveAppUrlToVaultPath } from '../../utils/path-helper';
 import { copyToClipboard } from '../../utils/clipboard';
-import { revealInNavigation } from '../../utils/workspace-utils';
+import {
+    revealInNavigation,
+    resolveLinkOpenText,
+    resolveLinkTarget,
+} from '../../utils/workspace-utils';
 import type { BubbleContext } from './bubble-context';
 
 /**
@@ -85,26 +89,6 @@ export function attachImageContextMenu(
 }
 
 /**
- * Strip a heading reference (`#…`) or block reference (`^…`) suffix from a
- * wikilink path so the remaining portion can be passed to
- * `getFirstLinkpathDest` for file resolution.
- *
- * Handles both `#` and `^` at any position after the first character,
- * taking the earliest delimiter when both are present (e.g.
- * `Note#heading^block` → `Note`).
- */
-function stripHeadingBlockRef(linkText: string): string {
-    const hashIdx = linkText.indexOf('#');
-    const caretIdx = linkText.indexOf('^');
-    if (hashIdx >= 0 && caretIdx >= 0) {
-        return linkText.slice(0, Math.min(hashIdx, caretIdx));
-    }
-    if (hashIdx >= 0) return linkText.slice(0, hashIdx);
-    if (caretIdx >= 0) return linkText.slice(0, caretIdx);
-    return linkText;
-}
-
-/**
  * Attach click + context-menu handlers to every `<a>` inside `container`.
  *
  * Resolves three link flavours:
@@ -137,13 +121,11 @@ export function attachLinkContextMenu(
         const isObsidianInternal = link.classList.contains('internal-link');
         const isAppUrl = hrefAttr.startsWith('app://');
 
-        // Resolve the target file using Obsidian's wikilink resolver. For
-        // `app://` URLs we still resolve via vault path; for wikilinks we
-        // strip heading/block refs before calling `getFirstLinkpathDest`.
+        // Resolve the target file. For wikilinks we combine Obsidian's cache
+        // lookup with our extension-aware resolver (`.base`, `.canvas`, …).
         let resolvedFile: TFile | null = null;
         if (isObsidianInternal && linkText) {
-            const pathOnly = stripHeadingBlockRef(linkText);
-            const dest = app.metadataCache.getFirstLinkpathDest(pathOnly, '');
+            const dest = resolveLinkTarget(app, linkText);
             if (dest instanceof TFile) resolvedFile = dest;
         }
         if (!resolvedFile && isAppUrl) {
@@ -178,7 +160,11 @@ export function attachLinkContextMenu(
                 e.preventDefault();
                 e.stopPropagation();
                 const inNewTab = e.metaKey || e.ctrlKey || e.button === 1;
-                void app.workspace.openLinkText(linkText, '', inNewTab);
+                void app.workspace.openLinkText(
+                    resolveLinkOpenText(app, linkText),
+                    '',
+                    inNewTab,
+                );
             });
 
             // Middle-click (auxclick) — same as Cmd/Ctrl+click.
@@ -186,7 +172,7 @@ export function attachLinkContextMenu(
                 if (e.button !== 1) return;
                 e.preventDefault();
                 e.stopPropagation();
-                void app.workspace.openLinkText(linkText, '', true);
+                void app.workspace.openLinkText(resolveLinkOpenText(app, linkText), '', true);
             });
         }
 

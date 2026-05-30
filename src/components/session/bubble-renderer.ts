@@ -615,6 +615,18 @@ export class BubbleRenderer extends Component {
     }
 
     /**
+     * Drop a streaming controller when its bubble is removed from the DOM
+     * without going through the normal finalize path (e.g. ephemeral
+     * thinking-only assistant bubbles on pure tool-call turns).
+     */
+    retireStreamingController(messageId: string): void {
+        const controller = this.streamingControllers.get(messageId);
+        if (!controller) return;
+        controller.dispose();
+        this.streamingControllers.delete(messageId);
+    }
+
+    /**
      * Dispose all active streaming controllers.
      */
     private disposeAllControllers(): void {

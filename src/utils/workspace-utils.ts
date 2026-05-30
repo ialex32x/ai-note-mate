@@ -1,6 +1,75 @@
 import { App, TFile, TFolder, TAbstractFile } from 'obsidian';
 
 /**
+ * Strip a heading reference (`#…`) or block reference (`^…`) suffix from a
+ * wikilink path so the remaining portion can be resolved to a vault file.
+ */
+export function stripHeadingBlockRef(linkText: string): string {
+    const hashIdx = linkText.indexOf('#');
+    const caretIdx = linkText.indexOf('^');
+    if (hashIdx >= 0 && caretIdx >= 0) {
+        return linkText.slice(0, Math.min(hashIdx, caretIdx));
+    }
+    if (hashIdx >= 0) return linkText.slice(0, hashIdx);
+    if (caretIdx >= 0) return linkText.slice(0, caretIdx);
+    return linkText;
+}
+
+/**
+ * Resolve a wikilink target to a vault file/folder, combining Obsidian's
+ * metadata cache lookup with our extension-aware path resolver.
+ */
+export function resolveLinkTarget(app: App, linkText: string): TAbstractFile | null {
+    const pathOnly = stripHeadingBlockRef(linkText);
+    const dest = app.metadataCache.getFirstLinkpathDest(pathOnly, '');
+    if (dest) return dest;
+
+    const ref = resolveFileRef(app, pathOnly);
+    if (!ref) return null;
+    return app.vault.getAbstractFileByPath(ref.path);
+}
+
+/**
+ * Best-effort wikilink text to pass to `openLinkText`, preserving any
+ * heading/block suffix while substituting a resolved vault path when found.
+ */
+export function resolveLinkOpenText(app: App, linkText: string): string {
+    const pathOnly = stripHeadingBlockRef(linkText);
+    const suffix = linkText.slice(pathOnly.length);
+    const target = resolveLinkTarget(app, linkText);
+    return target ? target.path + suffix : linkText;
+}
+
+function resolveExtensionlessPathInParent(app: App, path: string): TAbstractFile | null {
+    const lastSlash = path.lastIndexOf('/');
+    if (lastSlash < 0) return null;
+
+    const parentPath = path.slice(0, lastSlash);
+    const name = path.slice(lastSlash + 1);
+    if (!name || name.includes('.')) return null;
+
+    const parent = app.vault.getAbstractFileByPath(parentPath);
+    if (!(parent instanceof TFolder)) return null;
+
+    let foundFile: TAbstractFile | null = null;
+    let foundFolder: TAbstractFile | null = null;
+    let matchCount = 0;
+
+    for (const child of parent.children) {
+        if (child instanceof TFile && child.basename === name) {
+            matchCount++;
+            foundFile = child;
+        } else if (child instanceof TFolder && child.name === name) {
+            matchCount++;
+            foundFolder = child;
+        }
+    }
+
+    if (matchCount !== 1) return null;
+    return foundFile ?? foundFolder;
+}
+
+/**
  * Obsidian's public types don't expose this internal view field, but it is
  * stable across versions and is the canonical way to ask the file-explorer
  * to scroll to / highlight a node (`revealInFolder`).
@@ -42,6 +111,11 @@ export function resolveFileRef(app: App, path: string): ResolvedFileRef | null {
         // as a fallback when the exact path is not found.
         if (!file) {
             file = app.vault.getAbstractFileByPath(path + '.md');
+        }
+        // Extensionless paths like `Inbox/Generic Base` may refer to
+        // `.base`, `.canvas`, etc. — match by basename within the parent.
+        if (!file) {
+            file = resolveExtensionlessPathInParent(app, path);
         }
         if (file) {
             return {

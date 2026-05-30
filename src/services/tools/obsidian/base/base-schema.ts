@@ -8,6 +8,8 @@ import { parseYaml, stringifyYaml } from "obsidian";
 export const BASE_VIEW_TYPES = ["table", "cards", "list", "map"] as const;
 export type BaseViewType = (typeof BASE_VIEW_TYPES)[number];
 
+export const GROUP_BY_DIRECTIONS = ["ASC", "DESC"] as const;
+
 export interface BaseValidationIssue {
     severity: "error" | "warning";
     message: string;
@@ -62,6 +64,60 @@ export function parseBaseContent(
     }
 }
 
+function normalizeView(view: Record<string, unknown>): Record<string, unknown> {
+    const groupBy = view["groupBy"];
+    if (typeof groupBy === "string" && groupBy.trim().length > 0) {
+        return { ...view, groupBy: { property: groupBy.trim() } };
+    }
+    return view;
+}
+
+/** Coerce common LLM shorthand (e.g. string `groupBy`) into Obsidian-compatible shapes. */
+export function normalizeBaseData(data: Record<string, unknown>): Record<string, unknown> {
+    const viewsRaw = data["views"];
+    if (!Array.isArray(viewsRaw)) return data;
+    return {
+        ...data,
+        views: viewsRaw.map((v: unknown): unknown => {
+            if (!v || typeof v !== "object" || Array.isArray(v)) return v;
+            return normalizeView(v as Record<string, unknown>);
+        }),
+    };
+}
+
+function validateViewGroupBy(
+    issues: BaseValidationIssue[],
+    viewLabel: string,
+    groupBy: unknown,
+): void {
+    if (groupBy === undefined) return;
+    if (groupBy === null || typeof groupBy !== "object" || Array.isArray(groupBy)) {
+        issues.push({
+            severity: "error",
+            message:
+                `view "${viewLabel}": groupBy must be an object with \`property\` (and optional \`direction\`: ASC|DESC), ` +
+                `e.g. \`groupBy: { property: file.folder }\`. A bare string is not valid Obsidian Bases syntax.`,
+        });
+        return;
+    }
+    const gb = groupBy as Record<string, unknown>;
+    if (typeof gb["property"] !== "string" || gb["property"].length === 0) {
+        issues.push({
+            severity: "error",
+            message: `view "${viewLabel}": groupBy.property must be a non-empty string.`,
+        });
+    }
+    if (gb["direction"] !== undefined) {
+        const dir = gb["direction"];
+        if (typeof dir !== "string" || !(GROUP_BY_DIRECTIONS as readonly string[]).includes(dir)) {
+            issues.push({
+                severity: "error",
+                message: `view "${viewLabel}": groupBy.direction must be ASC or DESC when present.`,
+            });
+        }
+    }
+}
+
 function collectExpressionStrings(value: unknown, out: string[]): void {
     if (typeof value === "string") {
         out.push(value);
@@ -109,6 +165,8 @@ export function validateBase(data: Record<string, unknown>): BaseValidationIssue
                 if (order !== undefined && !Array.isArray(order)) {
                     issues.push({ severity: "error", message: `${prefix}.order must be an array when present.` });
                 }
+                const viewLabel = typeof name === "string" && name.length > 0 ? name : prefix;
+                validateViewGroupBy(issues, viewLabel, view["groupBy"]);
             }
         }
     }
@@ -193,6 +251,43 @@ export function summarizeBase(data: Record<string, unknown>): BaseSummary {
 
 export function serializeBase(data: Record<string, unknown>): string {
     return stringifyYaml(data);
+}
+
+export function prepareBaseContentForWrite(
+    content: string,
+): { ok: true; serialized: string } | { ok: false; error: string } {
+    const parsed = parseBaseContent(content);
+    if (!parsed.ok) {
+        return { ok: false, error: parsed.error };
+    }
+    const normalized = normalizeBaseData(parsed.data);
+    const issues = validateBase(normalized);
+    if (hasBaseErrors(issues)) {
+        const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
+        return {
+            ok: false,
+            error:
+                "Base validation failed:\n" +
+                messages.map((m) => `- ${m}`).join("\n") +
+                "\nFix the YAML and retry, or call read_base after a successful write.",
+        };
+    }
+    return { ok: true, serialized: serializeBase(normalized) };
+}
+
+export function prepareBaseDataForWrite(
+    data: Record<string, unknown>,
+): { ok: true; data: Record<string, unknown>; serialized: string } | { ok: false; error: string } {
+    const normalized = normalizeBaseData(data);
+    const issues = validateBase(normalized);
+    if (hasBaseErrors(issues)) {
+        const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
+        return {
+            ok: false,
+            error: "Base validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
+        };
+    }
+    return { ok: true, data: normalized, serialized: serializeBase(normalized) };
 }
 
 export function findViewIndexByName(data: Record<string, unknown>, name: string): number {

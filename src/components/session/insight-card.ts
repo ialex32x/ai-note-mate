@@ -1,6 +1,7 @@
 import { App, setIcon, setTooltip, TFile } from 'obsidian';
 import type { ConversationInsight, InsightCardState } from '../../services/insights';
 import { t } from '../../i18n';
+import { resolveLinkOpenText, resolveLinkTarget } from '../../utils/workspace-utils';
 
 /**
  * Read-only preview block mounted at the tail of the session view, showing
@@ -380,7 +381,7 @@ export class InsightCard {
         // the link text with any `#heading` suffix stripped for lookup.
         const hashIdx = linkText.indexOf('#');
         const pathOnly = hashIdx >= 0 ? linkText.slice(0, hashIdx) : linkText;
-        const resolved = this.app.metadataCache.getFirstLinkpathDest(pathOnly, '');
+        const resolved = resolveLinkTarget(this.app, pathOnly);
         if (!(resolved instanceof TFile)) {
             link.addClass('is-unresolved');
         }
@@ -389,7 +390,11 @@ export class InsightCard {
             evt.preventDefault();
             evt.stopPropagation();
             const inNewTab = evt.metaKey || evt.ctrlKey || evt.button === 1;
-            void this.app.workspace.openLinkText(linkText, '', inNewTab);
+            void this.app.workspace.openLinkText(
+                resolveLinkOpenText(this.app, linkText),
+                '',
+                inNewTab,
+            );
         });
 
         // Middle-click also opens in a new tab (covered above via `button === 1`
@@ -398,7 +403,11 @@ export class InsightCard {
             if (evt.button !== 1) return;
             evt.preventDefault();
             evt.stopPropagation();
-            void this.app.workspace.openLinkText(linkText, '', true);
+            void this.app.workspace.openLinkText(
+                resolveLinkOpenText(this.app, linkText),
+                '',
+                true,
+            );
         });
 
         // Native hover-preview, same source tag used by chat bubbles.
@@ -408,7 +417,7 @@ export class InsightCard {
                 source: 'ai-assistant',
                 hoverParent: parent,
                 targetEl: link,
-                linktext: linkText,
+                linktext: resolved instanceof TFile ? resolved.path : linkText,
             });
         });
     }

@@ -4,28 +4,15 @@ import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
 import { runVaultMutation } from "../../../vault";
-import { hasBaseErrors, parseBaseContent, validateBase } from "./base-schema";
+import { prepareBaseContentForWrite } from "./base-schema";
 import { inspectBaseContent, requireBaseExtension } from "./_base-io";
 
 function validateBaseContentForWrite(content: string): { serialized: string } | ToolCallResult {
-    const parsed = parseBaseContent(content);
-    if (!parsed.ok) {
-        return { success: false, type: "text", content: parsed.error };
+    const prepared = prepareBaseContentForWrite(content);
+    if (!prepared.ok) {
+        return { success: false, type: "text", content: prepared.error };
     }
-    const issues = validateBase(parsed.data);
-    if (hasBaseErrors(issues)) {
-        const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-        return {
-            success: false,
-            type: "text",
-            content:
-                "Base validation failed:\n" +
-                messages.map((m) => `- ${m}`).join("\n") +
-                "\nFix the YAML and retry, or call read_base after a successful write.",
-        };
-    }
-    // Preserve caller formatting when valid.
-    return { serialized: content };
+    return { serialized: prepared.serialized };
 }
 
 export function vaultCreateBase(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -52,7 +39,9 @@ export function vaultCreateBase(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "string",
                             description:
                                 "YAML body with optional `filters`, `formulas`, `properties`, `summaries`, and `views`. " +
-                                "Each view needs `type` (table|cards|list|map) and `name`.",
+                                "Each view needs `type` (table|cards|list|map) and `name`. " +
+                                "For list views, `groupBy` must be an object: `{ property: file.folder }` " +
+                                "(optional `direction`: ASC|DESC); a bare string is auto-normalized on write.",
                         },
                     },
                     required: ["path", "content"],
@@ -140,7 +129,9 @@ export function vaultWriteBase(plugin: NoteAssistantPlugin): RegisteredTool {
                         },
                         content: {
                             type: "string",
-                            description: "Full replacement YAML body.",
+                            description:
+                                "Full replacement YAML body. List-view `groupBy` must be `{ property: ... }` " +
+                                "(optional `direction`: ASC|DESC); string shorthand is auto-normalized on write.",
                         },
                         expected_pre_edit_mtime: {
                             type: "integer",

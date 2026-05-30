@@ -428,26 +428,23 @@ Please summarise the content of {{filepath}} in one paragraph.
 > Blockquotes are your personal annotations.
 
 ## Translate this note [languages]
-Translate {{filepath}} to English, preserving markdown formatting.
+Translate the full content of {{filepath}} to English, preserving markdown formatting, and write it back into the note. Do not output the translation in chat.
 
 ## Auto-tag [tags]
-Please auto-tag the note {{filepath}} with tags that follow this Vault's tag conventions.
+Add appropriate tags to {{filepath}} following this vault's tag conventions. Apply the changes directly to the note.
 
 # Editor
 
 ## Expand selection [maximize-2]
-Expand the following text with more detail, examples, or context. Keep the original meaning intact. Preserve the original language, tone, and inline formatting.
-{{filepath}} {{selection}}
+At {{selection}} in {{filepath}}, expand the selected text with more detail, examples, or context. Keep the original meaning, language, tone, and inline formatting. Write the result back into the note — do not reply with the edited text in chat.
 {{blockquote}}
 
 ## Shorten selection [minimize-2]
-Shorten the following text while preserving every key fact and the original meaning. Preserve the original language, tone, and inline formatting.
-{{filepath}} {{selection}}
+At {{selection}} in {{filepath}}, shorten the selected text while preserving every key fact and the original meaning, language, tone, and inline formatting. Write the result back into the note — do not reply with the edited text in chat.
 {{blockquote}}
 
 ## Continue writing [chevrons-right]
-Continue writing from where the following text ends. Output only the new continuation — do not repeat or restate the input.
-{{filepath}} {{selection}}
+At {{selection}} in {{filepath}}, insert new continuation after the selection. Do not repeat or restate the original text. Write the continuation into the note — do not reply with it in chat.
 {{blockquote}}
 
 ## Explain selection [sparkles]
@@ -455,8 +452,7 @@ Explain the following content:
 {{blockquote}}
 
 ## Improve writing [wand-2]
-Polish the following text for clarity and conciseness, keeping the original tone:
-{{filepath}} {{selection}}
+At {{selection}} in {{filepath}}, polish the selected text for clarity and conciseness, keeping the original tone. Write the result back into the note — do not reply with the edited text in chat.
 {{blockquote}}
 `,
 
