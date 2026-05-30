@@ -3,7 +3,7 @@ import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
 import { getActiveProfile } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
-import { TEXT_GEN_SECTION_ID, IMAGE_GEN_SECTION_ID } from '../../../settings/section-ids';
+import { TEXT_GEN_SECTION_ID, IMAGE_GEN_SECTION_ID, EMBEDDING_SECTION_ID } from '../../../settings/section-ids';
 import { getModelIconDef } from '../../../utils/model-icons';
 import type { ModelIconDef, SvgDefElement } from '../../../utils/model-icons';
 import type NoteAssistantPlugin from 'main';
@@ -246,6 +246,36 @@ export function createProfileSelector(
                 }
                 item.addEventListener('click', () => {
                     plugin.settings.activeImageGenId = cfg.id;
+                    void plugin.saveSettings();
+                    DropdownManager.updateActiveState(
+                        profileDropdownEl.querySelectorAll('.session-dropdown-item'),
+                        item,
+                        'session-dropdown-item'
+                    );
+                    dropdownManager.closeActive();
+                });
+            }
+        }
+
+        // Embedding Section (only shown when at least one config exists)
+        if (current.embeddingConfigs.length > 0) {
+            const embeddingHeader = profileDropdownEl.createEl('div', {
+                cls: 'session-dropdown-section-header',
+            });
+            embeddingHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.embeddingSection') });
+            appendSectionSettingsAction(embeddingHeader, plugin, dropdownManager, EMBEDDING_SECTION_ID);
+
+            for (const cfg of current.embeddingConfigs) {
+                const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
+                const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
+                item.createEl('span', { text: cfg.name });
+                appendModelName(item, cfg.model);
+                if (cfg.id === current.activeEmbeddingId) {
+                    item.addClass('session-dropdown-item--active');
+                    setIcon(checkIcon, 'check');
+                }
+                item.addEventListener('click', () => {
+                    plugin.settings.activeEmbeddingId = cfg.id;
                     void plugin.saveSettings();
                     DropdownManager.updateActiveState(
                         profileDropdownEl.querySelectorAll('.session-dropdown-item'),
