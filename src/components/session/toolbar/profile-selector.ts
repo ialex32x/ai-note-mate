@@ -4,6 +4,8 @@ import { DropdownManager } from '../dropdown-manager';
 import { getActiveProfile } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
 import { TEXT_GEN_SECTION_ID, IMAGE_GEN_SECTION_ID } from '../../../settings/section-ids';
+import { getModelIconDef } from '../../../utils/model-icons';
+import type { ModelIconDef, SvgDefElement } from '../../../utils/model-icons';
 import type NoteAssistantPlugin from 'main';
 
 export interface ProfileSelectorHandle {
@@ -35,6 +37,86 @@ function appendSectionSettingsAction(
         dropdownManager.closeActive();
         openPluginSettings(plugin.app, plugin.manifest.id, sectionId);
     });
+}
+
+/** Minimal interface covering the runtime API of Obsidian-created SVG elements. */
+interface SvgEl {
+    createSvg(tag: string, options: { attr: Record<string, string> }): SvgEl;
+}
+
+/**
+ * Recursively append a {@link SvgDefElement} tree into a parent SVG element.
+ */
+function appendSvgDefElement(parent: SvgEl, def: SvgDefElement): void {
+    const el = parent.createSvg(def.tag, { attr: def.attr });
+    if (def.children) {
+        for (const child of def.children) {
+            appendSvgDefElement(el, child);
+        }
+    }
+}
+
+/**
+ * Build a vendor-logo SVG element from a {@link ModelIconDef} definition.
+ *
+ * Uses Obsidian's global {@link createSvg} function (declared in the
+ * obsidian type definitions) to construct the element tree with the
+ * correct SVG namespace — no innerHTML or DOMParser involved.
+ *
+ * The brand colour from the definition is applied directly as the SVG
+ * fill / stroke value so CSS overrides (e.g. the generic `.icon-size`
+ * mixin) cannot strip it.  Multi-colour icons may supply per-path
+ * attribute overrides and {@code <defs>} children (gradients, etc.).
+ */
+function buildSvgIcon(def: ModelIconDef): SVGSVGElement {
+    const svgAttrs: Record<string, string | number | boolean | null> = {
+        viewBox: '0 0 24 24',
+    };
+
+    if (def.type === 'stroke') {
+        svgAttrs.fill = 'none';
+        svgAttrs.stroke = def.color;
+        svgAttrs['stroke-width'] = '2';
+        svgAttrs['stroke-linecap'] = 'round';
+        svgAttrs['stroke-linejoin'] = 'round';
+    } else {
+        svgAttrs.fill = def.color;
+    }
+
+    // Global createSvg() — declared by obsidian types, available without import.
+    const svg = createSvg('svg', { attr: svgAttrs });
+
+    // Add <defs> if present (e.g. gradients for multi-colour logos)
+    if (def.defs && def.defs.length > 0) {
+        const defsEl = svg.createSvg('defs') as unknown as SvgEl;
+        for (const defEntry of def.defs) {
+            appendSvgDefElement(defsEl, defEntry);
+        }
+    }
+
+    for (let i = 0; i < def.paths.length; i++) {
+        const attrs: Record<string, string> = { d: def.paths[i]! };
+        const override = def.pathAttrs?.[i];
+        if (override) {
+            Object.assign(attrs, override);
+        }
+        svg.createSvg('path', { attr: attrs });
+    }
+
+    return svg;
+}
+
+/**
+ * Append a model-name span to `parent`.  When the model string matches a
+ * known provider keyword the span is preceded by the vendor's logo SVG.
+ */
+function appendModelName(parent: HTMLElement, model: string): void {
+    const def = getModelIconDef(model);
+    if (def) {
+        const iconEl = parent.createEl('span', { cls: 'session-dropdown-item__model-icon' });
+        iconEl.appendChild(buildSvgIcon(def));
+    }
+    parent.createEl('span', { cls: 'session-dropdown-item__model', text: model });
 }
 
 /**
@@ -90,7 +172,7 @@ export function createProfileSelector(
             const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
             const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
             item.createEl('span', { text: p.name });
-            item.createEl('span', { cls: 'session-dropdown-item__model', text: p.model });
+            appendModelName(item, p.model);
             if (p.id === current.summarizerProfileId) {
                 const badge = item.createEl('span', {
                     cls: 'session-dropdown-item__badge session-dropdown-item__badge--summarizer',
@@ -140,7 +222,7 @@ export function createProfileSelector(
                 const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
                 const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
                 item.createEl('span', { text: cfg.name });
-                item.createEl('span', { cls: 'session-dropdown-item__model', text: cfg.model });
+                appendModelName(item, cfg.model);
                 if (cfg.id === current.activeImageGenId) {
                     item.addClass('session-dropdown-item--active');
                     setIcon(checkIcon, 'check');
