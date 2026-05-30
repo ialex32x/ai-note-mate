@@ -99,7 +99,18 @@ export class BubbleListController {
     prepend(msg: ChatMessage, beforeEl: HTMLElement | null): HTMLElement {
         const bubble = this.createAndRender(msg);
         if (beforeEl) {
+            // createAndRender builds the bubble at the list tail, so a unit
+            // that externalises its action bar (user / sub-agent) leaves the
+            // bar as the bubble's next sibling at the tail. Move it together
+            // with the bubble — otherwise insertBefore relocates only the
+            // bubble and the toolbar is orphaned at the tail as a standalone
+            // flex child, which is always visible on mobile and accumulates
+            // (one per prepended unit) as the user loads older history.
+            const external = bubble.nextElementSibling;
             this.deps.messagesEl.insertBefore(bubble, beforeEl);
+            if (external?.classList.contains('session-bubble__actions--external')) {
+                this.deps.messagesEl.insertBefore(external, beforeEl);
+            }
             this.deps.streamingLoader.pinToEnd();
         }
         return bubble;
