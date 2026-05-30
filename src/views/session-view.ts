@@ -1490,8 +1490,10 @@ export class SessionView extends ItemView {
 
         this.scroller.beginHistoryPrepend();
         try {
-            const reversed = [...units].reverse();
-            await replayUnitsInFrames(reversed, {
+            // Chronological order: each prepend inserts before the same anchor,
+            // so later units stack after earlier ones (0, 1, …, anchor). Reversing
+            // would yield descending order and scramble the conversation.
+            await replayUnitsInFrames(units, {
                 appendUnit: (unit) => {
                     this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
                 },
@@ -1536,8 +1538,7 @@ export class SessionView extends ItemView {
 
         this.scroller.beginHistoryPrepend();
         try {
-            const reversed = [...units].reverse();
-            await replayUnitsInFrames(reversed, {
+            await replayUnitsInFrames(units, {
                 appendUnit: (unit) => {
                     this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
                 },
