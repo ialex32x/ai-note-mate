@@ -1078,10 +1078,6 @@ export class SessionView extends ItemView {
      */
     private async handleEditMessage(msg: ChatMessage): Promise<void> {
         if (msg.role !== 'user') return;
-        if (this.isStreaming) {
-            new Notice(t('view.editWhileStreamingBlocked'));
-            return;
-        }
         if (!this.guardSwitchSession()) return;
         if (!this.runtime) return;
 
@@ -1107,14 +1103,29 @@ export class SessionView extends ItemView {
         );
 
         // ── Confirm before editing ──────────────────────────────────
+        const streamingNow = this.isStreaming;
+        let confirmMessage = t('view.editMessageConfirmMessage');
+        if (streamingNow) {
+            confirmMessage = `${confirmMessage}\n\n${t('view.editMessageConfirmAbortStreaming')}`;
+        }
         const confirmed = await new CheckpointActionConfirmModal(
             this.app,
             t('view.editMessageConfirmTitle'),
-            t('view.editMessageConfirmMessage'),
+            confirmMessage,
             t('view.editMessage'),
             'discard',
         ).waitForResult();
         if (!confirmed) return;
+
+        // Stop an in-flight reply before truncating chat state.
+        if (this.isStreaming) {
+            this.abortInFlightOptimize();
+            this.chat?.abort();
+            if (!await this.waitForChatIdle()) {
+                new Notice(t('view.editAbortTimeout'));
+                return;
+            }
+        }
 
         // Discard affected checkpoints if any, earliest first so the
         // cascade rule (discard(id) → also discards all later pending)
@@ -1625,6 +1636,29 @@ export class SessionView extends ItemView {
     }
 
     // ── Send logic ───────────────────────────────────────────────────────────
+
+    /**
+     * Wait until the active runtime's chat turn finishes (idle), or
+     * until `timeoutMs` elapses. Used after {@link IChatAgent.abort}
+     * so follow-up mutations (edit / truncate) don't race the epilogue.
+     */
+    private waitForChatIdle(timeoutMs = 10_000): Promise<boolean> {
+        const deadline = Date.now() + timeoutMs;
+        return new Promise(resolve => {
+            const tick = () => {
+                if (!this.isStreaming) {
+                    resolve(true);
+                    return;
+                }
+                if (Date.now() >= deadline) {
+                    resolve(false);
+                    return;
+                }
+                window.setTimeout(tick, 50);
+            };
+            tick();
+        });
+    }
 
     private async handleSend() {
         const text = this.cmInput.getContent().trim();

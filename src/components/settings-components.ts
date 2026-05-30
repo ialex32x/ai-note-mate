@@ -745,11 +745,6 @@ export function createModelFieldWithSelector(options: ModelFieldOptions): Settin
 				return;
 			}
 
-			const btnEl = btn.buttonEl;
-			setIcon(btnEl, 'loader-2');
-			btnEl.classList.add('oap-spin');
-			btn.setDisabled(true);
-
 			try {
 				const models = await listModels();
 				if (models.length === 0) {
@@ -770,10 +765,6 @@ export function createModelFieldWithSelector(options: ModelFieldOptions): Settin
 			} catch (e) {
 				console.error('Failed to list models:', e);
 				new Notice(t('settings.refreshModelsFailed'));
-			} finally {
-				btnEl.classList.remove('oap-spin');
-				setIcon(btnEl, 'refresh-cw');
-				btn.setDisabled(false);
 			}
 		}));
 
