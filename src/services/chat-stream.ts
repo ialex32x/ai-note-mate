@@ -148,7 +148,17 @@ export interface ChatMessage {
     contentBudgetHint?: string;
     /** Length of the API tool_result `content` when {@link contentBudgetHint} was set. */
     contentBudgetHintForLength?: number;
+    /**
+     * True when this assistant reply was cut off by user abort or an error
+     * before the stream finished. Used when rebuilding API messages so the
+     * model knows the prior turn was incomplete; not shown in the UI bubble.
+     */
+    wasInterrupted?: boolean;
 }
+
+/** Appended to assistant API content when {@link ChatMessage.wasInterrupted} is set. */
+const INTERRUPTED_ASSISTANT_API_NOTE =
+    '[Note: this assistant reply was interrupted before completion.]';
 
 /** Session state of the ChatStream instance */
 export type ChatSessionState = "idle" | "streaming" | "aborted" | "error";
@@ -837,6 +847,12 @@ export class ChatStream implements IChatAgent {
     private _currentTurn: number = 0;
     /** Separate storage for conversation summaries (kept out of original messages for clean UI) */
     private _summaries: ConversationSummary[] = [];
+    /**
+     * The assistant message currently being streamed by `_processStream`.
+     * Lets abort/error paths commit partial text into `_messages` so the
+     * next prompt() rebuild sees what the user already saw in the UI.
+     */
+    private _inFlightAssistantMessage: ChatMessage | null = null;
 
     // ── Constructor ─────────────────────────────────────────────────────────
 
@@ -928,6 +944,7 @@ export class ChatStream implements IChatAgent {
         this._abortController = null;
         this._sessionTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
         this._currentTurn = 0;
+        this._inFlightAssistantMessage = null;
     }
 
     /**
@@ -1208,7 +1225,9 @@ export class ChatStream implements IChatAgent {
                 // iterations the conversation is reduced to a stub
                 // and the model falls back to its initial reflex.
                 const isAssistantNode = msg.role === "assistant";
-                const assistantContent = isAssistantNode ? msg.content : "";
+                const assistantContent = isAssistantNode
+                    ? this._assistantContentForApi(msg)
+                    : "";
                 const assistantId = isAssistantNode ? msg.id : undefined;
                 const assistantThinking = isAssistantNode ? msg.thinkingContent : undefined;
 
@@ -1490,7 +1509,7 @@ export class ChatStream implements IChatAgent {
                     options?.thinkingLevel,
                 );
 
-                const result = await this._processStream(stream);
+                const result = await this._processStream(stream, currentTurn);
 
                 // Accumulate token usage
                 if (result.usage) {
@@ -1503,20 +1522,17 @@ export class ChatStream implements IChatAgent {
                 }
                 this._config.onUsageUpdate?.(this.sessionTokenUsage);
 
-                // Build and store the assistant ChatMessage
-                // Skip if content is empty and there are tool calls (pure tool-call turn)
-                const assistantMessage: ChatMessage = {
-                    id: generateId(),
-                    role: "assistant",
-                    content: result.content,
-                    streaming: false,
-                    timestamp: Date.now(),
-                    thinkingContent: result.reasoningContent || undefined,
+                const isPureToolCallTurn = !result.content
+                    && !!result.toolCalls
+                    && result.toolCalls.length > 0;
+                // Finalize the in-flight assistant that `_processStream` was
+                // building. Pure tool-call turns omit the empty assistant
+                // bubble from `_messages` (same as before).
+                const assistantMessage = this._finalizeInFlightAssistantMessage({
                     turn: currentTurn,
-                };
-                const isPureToolCallTurn = !result.content && result.toolCalls && result.toolCalls.length > 0;
-                if (!isPureToolCallTurn) {
-                    this._messages.push(assistantMessage);
+                    removeFromHistory: isPureToolCallTurn,
+                });
+                if (assistantMessage) {
                     finalMessage = assistantMessage;
                 }
 
@@ -1529,7 +1545,7 @@ export class ChatStream implements IChatAgent {
                     thinkingContent: result.reasoningContent || undefined,
                     // Carry the same id as the UI-side assistant message so
                     // ContextReducer can stably anchor summary cutoffs.
-                    id: assistantMessage.id,
+                    id: assistantMessage?.id ?? generateId(),
                 };
                 rawMessages.push(assistantApiMsg);
 
@@ -1918,6 +1934,11 @@ export class ChatStream implements IChatAgent {
                 this._state = "aborted";
                 this._abortController = null;
 
+                const interruptedAssistant = this._finalizeInFlightAssistantMessage({
+                    interrupted: true,
+                    turn: currentTurn,
+                });
+
                 // Record the abort as a system message in history (display-only, not sent to API)
                 this._messages.push({
                     id: generateId(),
@@ -1927,17 +1948,13 @@ export class ChatStream implements IChatAgent {
                     timestamp: Date.now(),
                 });
 
-                // Build a partial message from whatever was streamed so far
-                const lastAssistantMsg = this._messages.filter(m => m.role === "assistant").pop();
-                const partialMessage: ChatMessage = lastAssistantMsg
-                    ? { ...lastAssistantMsg, streaming: false }
-                    : {
-                        id: generateId(),
-                        role: "assistant",
-                        content: "",
-                        streaming: false,
-                        timestamp: Date.now(),
-                    };
+                const partialMessage: ChatMessage = interruptedAssistant ?? {
+                    id: generateId(),
+                    role: "assistant",
+                    content: "",
+                    streaming: false,
+                    timestamp: Date.now(),
+                };
                 this._config.onAbort?.(partialMessage);
                 return;
             }
@@ -1959,6 +1976,10 @@ export class ChatStream implements IChatAgent {
             // would leave the abort-via-throw path showing the same
             // "stuck …" bubbles the wasAborted path now avoids.
             this._finalizeStuckToolCallMessages();
+            const interruptedAssistant = this._finalizeInFlightAssistantMessage({
+                interrupted: true,
+                turn: currentTurn,
+            });
 
             // Check if this was a user-initiated abort
             if (err instanceof Error && err.name === 'AbortError') {
@@ -1973,17 +1994,13 @@ export class ChatStream implements IChatAgent {
                     timestamp: Date.now(),
                 });
 
-                // Build a partial message from whatever was streamed so far
-                const lastAssistantMsg = this._messages.filter(m => m.role === "assistant").pop();
-                const partialMessage: ChatMessage = lastAssistantMsg
-                    ? { ...lastAssistantMsg, streaming: false }
-                    : {
-                        id: generateId(),
-                        role: "assistant",
-                        content: "",
-                        streaming: false,
-                        timestamp: Date.now(),
-                    };
+                const partialMessage: ChatMessage = interruptedAssistant ?? {
+                    id: generateId(),
+                    role: "assistant",
+                    content: "",
+                    streaming: false,
+                    timestamp: Date.now(),
+                };
                 this._config.onAbort?.(partialMessage);
                 return;
             }
@@ -1996,6 +2013,83 @@ export class ChatStream implements IChatAgent {
     }
 
     // ── Private methods ─────────────────────────────────────────────────────
+
+    /** Whether an assistant message carries text/thinking worth persisting. */
+    private _assistantHasPersistablePayload(msg: ChatMessage): boolean {
+        return msg.content.length > 0 || (msg.thinkingContent?.length ?? 0) > 0;
+    }
+
+    /**
+     * Map stored assistant text to the API payload. Interrupted replies keep
+     * the user-visible `content` intact and append a short meta note for the
+     * model only (see {@link ChatMessage.wasInterrupted}).
+     */
+    private _assistantContentForApi(msg: ChatMessage): string {
+        if (!msg.wasInterrupted) {
+            return msg.content;
+        }
+        if (msg.content.length === 0) {
+            return INTERRUPTED_ASSISTANT_API_NOTE;
+        }
+        return `${msg.content}\n\n${INTERRUPTED_ASSISTANT_API_NOTE}`;
+    }
+
+    /**
+     * Push the in-flight assistant into `_messages` on first stream output.
+     * Subsequent chunks mutate the same object in place.
+     */
+    private _commitInFlightAssistantToHistory(turn: number): void {
+        const msg = this._inFlightAssistantMessage;
+        if (!msg || !this._assistantHasPersistablePayload(msg)) {
+            return;
+        }
+        msg.turn = turn;
+        if (!this._messages.some(m => m.id === msg.id)) {
+            this._messages.push(msg);
+        }
+    }
+
+    /**
+     * End the current `_processStream` assistant: mark non-streaming, optionally
+     * flag interruption, and ensure `_messages` holds the latest partial text.
+     */
+    private _finalizeInFlightAssistantMessage(opts?: {
+        interrupted?: boolean;
+        turn?: number;
+        /** Drop from `_messages` after finalize (pure tool-call turns). */
+        removeFromHistory?: boolean;
+    }): ChatMessage | null {
+        const msg = this._inFlightAssistantMessage;
+        this._inFlightAssistantMessage = null;
+        if (!msg || !this._assistantHasPersistablePayload(msg)) {
+            return null;
+        }
+
+        if (opts?.turn != null) {
+            msg.turn = opts.turn;
+        }
+        msg.streaming = false;
+        if (opts?.interrupted) {
+            msg.wasInterrupted = true;
+        }
+
+        const inHistory = this._messages.some(m => m.id === msg.id);
+        if (!inHistory) {
+            this._messages.push(msg);
+        }
+
+        if (opts?.removeFromHistory) {
+            const idx = this._messages.findIndex(m => m.id === msg.id);
+            if (idx >= 0) {
+                this._messages.splice(idx, 1);
+            }
+            return null;
+        }
+
+        this._config.onMessageUpdate?.({ ...msg });
+        return msg;
+    }
+
     /**
      * Select which of `tools` should be exposed to the model for the current
      * request, based on cosine similarity between an embedding of `query` and
@@ -2233,6 +2327,7 @@ export class ChatStream implements IChatAgent {
      */
     private async _processStream(
         stream: AsyncIterable<StreamChunk>,
+        currentTurn: number,
     ): Promise<StreamResultInternal> {
         // Create the in-progress assistant message
         const streamingMessage: ChatMessage = {
@@ -2242,6 +2337,7 @@ export class ChatStream implements IChatAgent {
             streaming: true,
             timestamp: Date.now(),
         };
+        this._inFlightAssistantMessage = streamingMessage;
 
         // Don't notify UI yet — wait until there is actual content to show
 
@@ -2298,6 +2394,9 @@ export class ChatStream implements IChatAgent {
                 if (isFirstContent && streamingMessage.thinkingContent) {
                     streamingMessage.thinkingComplete = true;
                 }
+                if (isFirstContent) {
+                    this._commitInFlightAssistantToHistory(currentTurn);
+                }
                 // First content always emits — the bubble must appear
                 // immediately, otherwise the user sees nothing until
                 // the throttle window opens (typical TTFB perception
@@ -2320,7 +2419,11 @@ export class ChatStream implements IChatAgent {
 
             // Accumulate reasoning/thinking content
             if (chunk.reasoningContent) {
+                const isFirstThinking = !streamingMessage.thinkingContent;
                 streamingMessage.thinkingContent = (streamingMessage.thinkingContent ?? "") + chunk.reasoningContent;
+                if (isFirstThinking) {
+                    this._commitInFlightAssistantToHistory(currentTurn);
+                }
                 // Shares the same throttle clock as content emits —
                 // see the streamStart/lastEmitAt comment above for why
                 // a content emit also "covers" thinking. The terminal
@@ -2362,8 +2465,10 @@ export class ChatStream implements IChatAgent {
             }
         }
 
-        // Mark message as complete; fire final update if there was any content
-        streamingMessage.streaming = false;
+        // Flush any throttled tail content to the UI. `streaming` stays true
+        // until `_finalizeInFlightAssistantMessage` runs on the success /
+        // abort / error epilogue so partial text is already in `_messages`
+        // if the turn unwinds mid-stream.
         if (streamingMessage.content || streamingMessage.thinkingContent) {
             this._config.onMessageUpdate?.({ ...streamingMessage });
         }
