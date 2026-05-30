@@ -280,10 +280,24 @@ export class ScrollController {
         this.scrollToBottomBtn.hide();
     }
 
+    /** Whether auto-follow was suppressed because the last message grew
+     * taller than the viewport. When true, {@link restoreAutoFollow}
+     * should be skipped on stream finish so the user can stay at their
+     * current reading position without being yanked to the bottom by
+     * async trailing content (e.g. insight card results). */
+    isFollowDisabledByHeight(): boolean {
+        return this.followDisabledByHeight;
+    }
+
     /**
      * Re-enable `autoFollow` without forcing a scroll. The next mutation
      * (or the safety-net observers) will pick it up. Called on stream
      * finish / abort / error.
+     *
+     * Note: callers should check {@link isFollowDisabledByHeight} on
+     * normal finish — when the user is reading a long streaming message
+     * they should not be forced back to the tail. Abort / error paths
+     * still call this unconditionally because the turn was interrupted.
      */
     restoreAutoFollow(): void {
         this.autoFollow = true;

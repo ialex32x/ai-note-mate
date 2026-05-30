@@ -315,7 +315,15 @@ export class SessionView extends ItemView {
                 // so an exhaustiveness check would catch a missing branch.
                 break;
             case 'finish':
-                this.scroller.restoreAutoFollow();
+                // When the user was reading a long streaming message
+                // that grew taller than the viewport, keep autoFollow
+                // off so async trailing content (insight card results
+                // rendered after the turn) does not yank the view to
+                // the bottom. Abort / error paths restore immediately
+                // because the turn was interrupted.
+                if (!this.scroller.isFollowDisabledByHeight()) {
+                    this.scroller.restoreAutoFollow();
+                }
                 this.hideStreamingLoader();
                 this.setInputLocked(false);
                 // Persistence + title generation + insight extraction
