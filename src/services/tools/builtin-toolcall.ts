@@ -55,7 +55,7 @@ function getCurrentDateTime(): RegisteredTool {
                 const result: Record<string, unknown> = {
                     iso: now.toISOString(),
                     unix: Math.floor(now.getTime() / 1000),
-                    local: now.toLocaleString("zh-CN", {
+                    local: now.toLocaleString(undefined, {
                         timeZone: timezone || undefined,
                         year: "numeric",
                         month: "2-digit",
@@ -65,7 +65,7 @@ function getCurrentDateTime(): RegisteredTool {
                         second: "2-digit",
                         hour12: false,
                     }),
-                    weekday: now.toLocaleDateString("zh-CN", {
+                    weekday: now.toLocaleDateString(undefined, {
                         timeZone: timezone || undefined,
                         weekday: "long",
                     }),
