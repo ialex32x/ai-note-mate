@@ -34,6 +34,22 @@ import {
     vaultGetUnresolvedLinks,
 } from "./graph";
 import { vaultRankNotesByEmbeddedSize } from "./rank-notes-by-embedded-size";
+import {
+    vaultReadCanvas,
+    vaultCreateCanvas,
+    vaultWriteCanvas,
+    vaultAddCanvasNodes,
+    vaultAddCanvasEdges,
+    vaultLayoutCanvasGrid,
+} from "./canvas";
+import {
+    vaultReadBase,
+    vaultCreateBase,
+    vaultWriteBase,
+    vaultAddBaseView,
+    vaultUpdateBaseFilters,
+    vaultUpdateBaseViewOrder,
+} from "./base";
 
 /**
  * Tool partitioning rationale
@@ -101,6 +117,17 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultEditLines(plugin),
         // Template instantiation (read template → replace vars → create file)
         vaultInstantiateTemplate(plugin),
+        // Canvas / Bases (validated JSON Canvas / YAML writes)
+        vaultCreateCanvas(plugin),
+        vaultWriteCanvas(plugin),
+        vaultAddCanvasNodes(plugin),
+        vaultAddCanvasEdges(plugin),
+        vaultLayoutCanvasGrid(plugin),
+        vaultCreateBase(plugin),
+        vaultWriteBase(plugin),
+        vaultAddBaseView(plugin),
+        vaultUpdateBaseFilters(plugin),
+        vaultUpdateBaseViewOrder(plugin),
         // Structural writes (no content body)
         vaultDeleteFiles(plugin),
         vaultDeleteFolder(plugin),
@@ -151,6 +178,9 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
         vaultGetUnresolvedLinks(plugin),
         vaultFindOrphanFiles(plugin),
         vaultRankNotesByEmbeddedSize(plugin),
+        // Canvas / Bases inspection
+        vaultReadCanvas(plugin),
+        vaultReadBase(plugin),
     ];
 }
 

@@ -2,7 +2,7 @@ import { TAbstractFile, TFile, TFolder } from "obsidian";
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { ensureParentFolder, requireFileExtension } from "../_shared";
+import { ensureParentFolder, requireFileExtension, structuredFileCreateRedirect } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -26,7 +26,8 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Create a NEW file in the vault with the given content. Missing parent folders are " +
                     "created automatically. REFUSES if the path already exists — this tool does not " +
-                    "overwrite (use the appropriate edit tool to change an existing file).",
+                    "overwrite (use the appropriate edit tool to change an existing file). " +
+                    "Do NOT use for `.canvas` or `.base` files — use `create_canvas` / `create_base` instead.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -54,6 +55,9 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
 
             const extErr = requireFileExtension(path);
             if (extErr) return extErr;
+
+            const structuredRedirect = structuredFileCreateRedirect(path);
+            if (structuredRedirect) return structuredRedirect;
 
             const existing: TAbstractFile | null = plugin.app.vault.getAbstractFileByPath(path);
 
