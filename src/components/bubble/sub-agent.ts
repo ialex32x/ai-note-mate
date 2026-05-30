@@ -22,6 +22,7 @@ import { renderCollapsibleCodeBlock } from './collapsible-code-block';
 export function getSubAgentLabel(agentName: string): string {
     switch (agentName) {
         case 'vault_inspector': return 'Vault Reader';
+        case 'vault_editor': return 'Vault Editor';
         case 'web': return 'Web';
         case 'code': return 'Code';
         default: return agentName;
@@ -45,6 +46,7 @@ export function shouldShowRoleLabel(msg: ChatMessage): boolean {
 export function getSubAgentIcon(agentName: string): string {
     switch (agentName) {
         case 'vault_inspector': return 'vault';
+        case 'vault_editor': return 'pencil';
         case 'web': return 'globe';
         case 'code': return 'code';
         default: return 'bot';
