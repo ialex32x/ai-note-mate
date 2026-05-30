@@ -116,4 +116,30 @@ export const DESCRIPTIVE_INTRO_LINE_RES: readonly RegExp[] = [
     /(?:含义|含義|解释|解釋|定义|定義|说明|說明)\s*[:：]\s*$/u,
     /^(?:示例|例子|样例|樣例|sample|example|eg\.?|e\.g\.)\s*[:：]\s*$/iu,
     /^tags?\s*[:：]\s*$/i,
+    // Encyclopedic / summary sections — often follow a "接下来…" lead-in.
+    /(?:几个|若干|以下|如下|主要)?(?:关键|關鍵|要点|要點|重点|重點|亮点|亮點|特色|补充|補充|概括|总结|總結|小结|小結|辨析|对比|對比|概念|知識|知识|背景|细节|細節|信息|資訊)(?:点|點|事项|事項|内容|內容|如下|说明|說明)?\s*[:：]\s*$/u,
+    /^(?:key\s*points?|takeaways?|highlights?|summary|overview)\s*[:：]\s*$/iu,
 ];
+
+/**
+ * List item shaped like a glossary / annotation entry: a short topic label,
+ * optional emphasis, a colon, then a longer explanatory body.
+ *
+ * Used to distinguish encyclopedic bullet lists from actionable follow-ups.
+ */
+export const DEFINITION_LIST_ITEM_RE =
+    /^(?:[*_`]+)?([^*_`\n：:]{1,24})(?:[*_`]+)?[：:]\s*(.+)$/u;
+
+/** Labels that look like explicit A/B choices rather than topic headings. */
+export const OPTION_LIST_ITEM_LABEL_RE =
+    /^(?:选项|選項|option|方案|步[骤驟]|step)\s*\d*/iu;
+
+/**
+ * Labels that start with a common imperative verb — these are usually
+ * proposed actions even when written as "动作：具体说明".
+ */
+export const ACTION_LIST_ITEM_LABEL_RE =
+    /^(?:整理|翻译|翻譯|打开|打開|创建|創建|生成|查找|搜索|搜尋|删除|刪除|添加|更新|写入|寫入|导出|導出|导入|導入|总结|總結|对比|對比|比较|比較|继续|繼續|查看|阅读|閱讀|列出|归档|歸檔)/u;
+
+/** Minimum body length (after the in-item colon) to count as explanatory text. */
+export const DEFINITION_LIST_ITEM_MIN_BODY = 20;

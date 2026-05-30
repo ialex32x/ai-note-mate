@@ -291,6 +291,69 @@ describe('extractSuggestions / heuristic fallback', () => {
             { label: '把相关笔记链到这篇', prompt: '把相关笔记链到这篇' },
         ]);
     });
+
+    it('does not treat encyclopedic key-point lists as follow-ups when lead-in contains 接下来', () => {
+        const md = [
+            '正文结束。',
+            '',
+            '接下来介绍三个核心概念：',
+            '',
+            '- **起源**：这种面点最早见于江南市井，做法以手工擀皮、慢火煎制为特点，后来随移民传播到各地。',
+            '- **口感**：外层焦脆、内层柔软，咬开后带有轻微汤汁，和纯 baked 面点差异明显。',
+            '- **现状**：在不少城市已成为日常早餐选项，连锁与夫妻店并存。',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([]);
+    });
+
+    it('does not treat glossary-style bullets with a plain key-points intro as follow-ups', () => {
+        const md = [
+            '回答正文。',
+            '',
+            '要点如下：',
+            '',
+            '- **背景**：该协议最初为解决跨机房日志同步而设计，后来扩展到通用消息队列场景。',
+            '- **限制**：单条消息大小与保留时长都有上限，超出需要分片或归档到对象存储。',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([]);
+    });
+
+    it('still extracts short imperative follow-ups after a 接下来 lead-in', () => {
+        const md = [
+            '正文结束。',
+            '',
+            '接下来你可以：',
+            '',
+            '- 总结要点',
+            '- 翻译为英文',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '总结要点', prompt: '总结要点' },
+            { label: '翻译为英文', prompt: '翻译为英文' },
+        ]);
+    });
+
+    it('still extracts option-style colon items when labels are explicit choices', () => {
+        const md = [
+            '正文结束。',
+            '',
+            '你可以选一个方案：',
+            '',
+            '- 方案 A：先整理大纲再逐段扩写',
+            '- 方案 B：直接生成完整草稿后再微调',
+        ].join('\n');
+
+        const out = extractSuggestions(md, { allowStructured: true });
+        expect(out).toEqual([
+            { label: '方案 A：先整理大纲再逐段扩写', prompt: '方案 A：先整理大纲再逐段扩写' },
+            { label: '方案 B：直接生成完整草稿后再微调', prompt: '方案 B：直接生成完整草稿后再微调' },
+        ]);
+    });
 });
 
 describe('extractSuggestions / closing-question splitter', () => {

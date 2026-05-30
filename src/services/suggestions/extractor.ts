@@ -1,8 +1,12 @@
 import {
+    ACTION_LIST_ITEM_LABEL_RE,
     COLON_LIST_INTRO_HINTS,
+    DEFINITION_LIST_ITEM_MIN_BODY,
+    DEFINITION_LIST_ITEM_RE,
     DESCRIPTIVE_INTRO_LINE_RES,
     FOLLOWUP_HEADERS,
     OFFER_PREFIXES_AT_START,
+    OPTION_LIST_ITEM_LABEL_RE,
     OR_CHOICE_SEPARATORS,
     SINGLE_QUESTION_HINTS,
 } from './triggers';
@@ -242,7 +246,7 @@ function parseHeuristic(markdown: string): SuggestedAction[] {
     // Extract list items from the tail.
     const items = extractListItems(tail);
 
-    if (items.length > 0 && hasHeader) {
+    if (items.length > 0 && hasHeader && !isDocumentationList(tail, items)) {
         return items.map((t) => ({ label: t, prompt: t }));
     }
 
@@ -261,7 +265,11 @@ function parseHeuristic(markdown: string): SuggestedAction[] {
     // "标签说明：" + tag bullets are not mistaken for next-step chips.
     if (items.length >= 2) {
         const intro = tailBeforeList(tail);
-        if (/[:：]\s*$/.test(intro) && isInvitingColonListIntro(intro)) {
+        if (
+            /[:：]\s*$/.test(intro)
+            && isInvitingColonListIntro(intro)
+            && !looksLikeDefinitionListItems(items)
+        ) {
             return items.map((t) => ({ label: t, prompt: t }));
         }
     }
@@ -270,15 +278,57 @@ function parseHeuristic(markdown: string): SuggestedAction[] {
 }
 
 /**
+ * True when the colon-intro line before a list reads as documentation or
+ * encyclopedic summary, not an invitation to pick a next action.
+ */
+function isDescriptiveListIntro(intro: string): boolean {
+    const colonLine = lastNonEmptyLine(intro);
+    if (!colonLine || !/[:：]\s*$/.test(colonLine)) return false;
+    return DESCRIPTIVE_INTRO_LINE_RES.some((re) => re.test(colonLine));
+}
+
+/**
  * True when the text immediately before a list looks like the assistant
  * inviting a next action, not documenting fields/tags/examples.
  */
 function isInvitingColonListIntro(intro: string): boolean {
-    const colonLine = lastNonEmptyLine(intro);
-    if (!colonLine || !/[:：]\s*$/.test(colonLine)) return false;
-    if (DESCRIPTIVE_INTRO_LINE_RES.some((re) => re.test(colonLine))) return false;
+    if (!lastNonEmptyLine(intro) || !/[:：]\s*$/.test(lastNonEmptyLine(intro))) return false;
+    if (isDescriptiveListIntro(intro)) return false;
     const lower = intro.toLowerCase();
     return COLON_LIST_INTRO_HINTS.some((h) => lower.includes(h));
+}
+
+/**
+ * True when the list reads like a glossary / key-points section rather than
+ * actionable follow-ups. Used to guard the header-based path where a
+ * lead-in such as "接下来…" appears in the same block as encyclopedic bullets.
+ */
+function isDocumentationList(tail: string, items: string[]): boolean {
+    const intro = tailBeforeList(tail);
+    if (intro && isDescriptiveListIntro(intro)) return true;
+    return looksLikeDefinitionListItems(items);
+}
+
+/**
+ * Detect bullet items shaped as "topic label：long explanatory body".
+ * Requires every item to match so short imperative actions are not dropped.
+ */
+function looksLikeDefinitionListItems(items: string[]): boolean {
+    if (items.length < 2) return false;
+    let definitionCount = 0;
+    for (const item of items) {
+        const plain = item.replace(/\*\*/g, '').trim();
+        const match = DEFINITION_LIST_ITEM_RE.exec(plain);
+        if (!match) continue;
+        const label = (match[1] ?? '').trim();
+        const body = (match[2] ?? '').trim();
+        if (body.length < DEFINITION_LIST_ITEM_MIN_BODY) continue;
+        if (OPTION_LIST_ITEM_LABEL_RE.test(label)) continue;
+        if (ACTION_LIST_ITEM_LABEL_RE.test(label)) continue;
+        definitionCount++;
+    }
+    return definitionCount >= 2
+        && definitionCount >= Math.ceil(items.length * 0.66);
 }
 
 /** Last trimmed non-empty line of a multi-line intro block. */
