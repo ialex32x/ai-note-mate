@@ -37,6 +37,8 @@ function dispatchEmbeddings(
             return createOpenAIEmbeddings(config, texts, signal);
         case "gemini":
             return createGeminiEmbeddings(config, texts, signal);
+        case "anthropic":
+            throw new Error("Anthropic does not provide an embeddings API. Use OpenAI or Gemini for embeddings.");
         default:
             throw new Error(`Unknown provider type for embedding: ${String(providerType)}`);
     }

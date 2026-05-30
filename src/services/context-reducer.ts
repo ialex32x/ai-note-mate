@@ -1,5 +1,6 @@
 import { createOpenAICompletion } from "./providers/openai-provider";
 import { createGeminiCompletion } from "./providers/gemini-provider";
+import { createAnthropicCompletion } from "./providers/anthropic-provider";
 import { ChatMessageRole, CompleteToolCall, MediaAttachment, MinimalModelConfig } from "./llm-provider";
 import { safeSliceHead } from "../utils/string-safe";
 import {
@@ -2105,6 +2106,12 @@ export function createChatCompletion(
             );
         case "gemini":
             return createGeminiCompletion(
+                { apiKey: modelConfig.apiKey, model: modelConfig.model },
+                inputMessages,
+                signal,
+            );
+        case "anthropic":
+            return createAnthropicCompletion(
                 { apiKey: modelConfig.apiKey, model: modelConfig.model },
                 inputMessages,
                 signal,

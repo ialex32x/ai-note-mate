@@ -447,5 +447,7 @@ export class GlobalSettingsSection implements SettingsSection {
 
 /** Build a display label for a profile (name + provider/model). */
 export function getProfileLabel(p: TextGenConfig): string {
-	return `${p.name} (${p.provider === 'gemini' ? 'Gemini' : p.model})`;
+	if (p.provider === 'gemini') return `${p.name} (Gemini)`;
+	if (p.provider === 'anthropic') return `${p.name} (Anthropic)`;
+	return `${p.name} (${p.model})`;
 }

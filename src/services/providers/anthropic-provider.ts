@@ -1,0 +1,687 @@
+import type {
+    LLMProvider,
+    LLMProviderConfig,
+    MediaAttachment,
+    ModalityCapability,
+    ToolDefinition,
+    ChatMessageParam,
+    StreamChunk,
+    ThinkingLevel,
+} from "../llm-provider";
+import { sanitizeChatMessages } from "./_shared";
+
+// ─────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────
+
+/** Anthropic API version header value */
+const ANTHROPIC_VERSION = "2023-06-01";
+
+/** Default `max_tokens` for streaming requests (Anthropic requires this field). */
+const DEFAULT_MAX_TOKENS = 8192;
+
+/** Default base URL for the Anthropic Messages API */
+const DEFAULT_BASE_URL = "https://api.anthropic.com/v1";
+
+// ─────────────────────────────────────────────
+// Anthropic API wire types (narrow, local-only)
+// ─────────────────────────────────────────────
+
+interface AnthropicMessageParam {
+    role: "user" | "assistant";
+    content: AnthropicContentBlock[];
+}
+
+type AnthropicContentBlock =
+    | { type: "text"; text: string }
+    | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
+    | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+    | { type: "tool_result"; tool_use_id: string; content: string | Array<{ type: "text"; text: string }> }
+    | { type: "thinking"; thinking: string; signature: string };
+
+interface AnthropicToolDef {
+    name: string;
+    description: string;
+    input_schema: Record<string, unknown>;
+}
+
+interface AnthropicThinkingConfig {
+    type: "enabled" | "disabled";
+    budget_tokens?: number;
+}
+
+// SSE event payload types
+interface SSEEventPayload {
+    type: string;
+    message?: {
+        id: string;
+        type: string;
+        role: string;
+        model: string;
+        usage: { input_tokens: number; output_tokens: number };
+    };
+    index?: number;
+    content_block?: {
+        type: string;
+        id?: string;
+        name?: string;
+        thinking?: string;
+        signature?: string;
+    };
+    delta?: {
+        type: string;
+        text?: string;
+        partial_json?: string;
+        thinking?: string;
+        signature?: string;
+        stop_reason?: string;
+    };
+    usage?: { output_tokens: number };
+    stop_reason?: string;
+}
+
+// ─────────────────────────────────────────────
+// Provider
+// ─────────────────────────────────────────────
+
+/**
+ * Anthropic (Claude) LLM provider using native `fetch`.
+ *
+ * Talks directly to the Anthropic Messages API (`/v1/messages`) with
+ * Server-Sent Events (SSE) streaming. No SDK dependency — the payload
+ * shapes are simple enough that a raw-fetch approach keeps the plugin
+ * footprint minimal while giving full control over stream parsing and
+ * abort handling.
+ */
+export class AnthropicProvider implements LLMProvider {
+    private readonly apiKey: string;
+    private readonly baseURL: string;
+    private readonly model: string;
+    private readonly modalities: Set<ModalityCapability>;
+
+    constructor(config: LLMProviderConfig) {
+        this.apiKey = config.apiKey;
+        this.baseURL = config.baseURL || DEFAULT_BASE_URL;
+        this.model = config.model;
+        // Anthropic supports image input on all Claude 3+ models.
+        // Audio / video / pdf are not accepted via the Messages API.
+        this.modalities = new Set(config.modalities ?? ["image"]);
+    }
+
+    // ── listModels ────────────────────────────────────────────────
+
+    async listModels(): Promise<string[]> {
+        // eslint-disable-next-line no-restricted-globals -- native fetch per user request
+        const response = await fetch(`${this.baseURL}/models`, {
+            headers: {
+                "x-api-key": this.apiKey,
+                "anthropic-version": ANTHROPIC_VERSION,
+            },
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text().catch(() => "");
+            throw new Error(
+                `Anthropic listModels failed: ${response.status} ${response.statusText}${errorBody ? ` — ${errorBody}` : ""}`,
+            );
+        }
+
+        const data = (await response.json()) as { data?: Array<{ id: string }> };
+        return (data.data ?? []).map((m) => m.id).sort((a, b) => a.localeCompare(b));
+    }
+
+    // ── createStream ───────────────────────────────────────────────
+
+    async *createStream(
+        messages: ChatMessageParam[],
+        tools?: ToolDefinition[],
+        signal?: AbortSignal,
+        thinkingLevel?: ThinkingLevel,
+    ): AsyncIterable<StreamChunk> {
+        // --- sanitize & convert ---
+        const sanitized = sanitizeChatMessages(messages, "anthropic-provider");
+
+        // Extract system message(s). Anthropic surfaces these as a
+        // top-level `system` field (string or array of text blocks).
+        let systemText = "";
+        for (const m of sanitized) {
+            if (m.role === "system") {
+                systemText += (systemText ? "\n\n" : "") + m.content;
+            }
+        }
+
+        const anthropicMessages = this.convertMessages(sanitized);
+
+        // Convert tools to Anthropic format
+        const anthropicTools: AnthropicToolDef[] | undefined =
+            tools && tools.length > 0
+                ? tools.map((t) => ({
+                      name: t.function.name,
+                      description: t.function.description,
+                      input_schema: t.function.parameters,
+                  }))
+                : undefined;
+
+        // Build thinking config
+        const thinkingConfig = this.buildThinkingConfig(thinkingLevel);
+
+        // --- build request body ---
+        const body: Record<string, unknown> = {
+            model: this.model,
+            max_tokens: DEFAULT_MAX_TOKENS,
+            messages: anthropicMessages,
+            stream: true,
+        };
+        if (systemText) {
+            body.system = systemText;
+        }
+        if (anthropicTools) {
+            body.tools = anthropicTools;
+        }
+        if (thinkingConfig) {
+            body.thinking = thinkingConfig;
+        }
+
+        // --- fire request ---
+        // eslint-disable-next-line no-restricted-globals -- native fetch per user request
+        const response = await fetch(`${this.baseURL}/messages`, {
+            method: "POST",
+            headers: {
+                "x-api-key": this.apiKey,
+                "anthropic-version": ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+            body: JSON.stringify(body),
+            signal,
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text().catch(() => "");
+            throw new Error(
+                `Anthropic API error ${response.status}: ${errorBody || response.statusText}`,
+            );
+        }
+
+        if (!response.body) {
+            throw new Error("Anthropic returned no response body");
+        }
+
+        // --- parse SSE stream ---
+        yield* this.parseSSEStream(response.body, signal);
+    }
+
+    // ── Message conversion ─────────────────────────────────────────
+
+    private convertMessages(messages: ChatMessageParam[]): AnthropicMessageParam[] {
+        const result: AnthropicMessageParam[] = [];
+
+        for (const msg of messages) {
+            if (msg.role === "system") {
+                continue; // handled via top-level `system` field
+            }
+
+            if (msg.role === "user") {
+                const content: AnthropicContentBlock[] = [];
+
+                // Text content
+                content.push({ type: "text", text: msg.content });
+
+                // Multimodal attachments
+                if (msg.media && msg.media.length > 0) {
+                    const skipped: string[] = [];
+                    for (const att of msg.media) {
+                        const block = this.buildMediaBlock(att, skipped);
+                        if (block) content.push(block);
+                    }
+                    if (skipped.length > 0) {
+                        content[0] = {
+                            type: "text",
+                            text: `${msg.content}\n\n[Attachments omitted: ${skipped.join("; ")}]`,
+                        };
+                    }
+                }
+
+                result.push({ role: "user", content });
+            } else if (msg.role === "assistant") {
+                const content: AnthropicContentBlock[] = [];
+
+                // Thinking block (if the assistant had thinking from a prior turn)
+                if (msg.thinkingContent && msg.thoughtSignatures && msg.thoughtSignatures.length > 0) {
+                    const sig = msg.thoughtSignatures[0];
+                    content.push({
+                        type: "thinking",
+                        thinking: msg.thinkingContent,
+                        signature: sig ?? "",
+                    });
+                }
+
+                // Text content
+                if (msg.content) {
+                    content.push({ type: "text", text: msg.content });
+                }
+
+                // Tool use blocks
+                if (msg.toolCalls && msg.toolCalls.length > 0) {
+                    for (const tc of msg.toolCalls) {
+                        let input: Record<string, unknown> = {};
+                        try {
+                            input = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+                        } catch {
+                            /* keep empty input */
+                        }
+                        content.push({
+                            type: "tool_use",
+                            id: tc.id,
+                            name: tc.function.name,
+                            input,
+                        });
+                    }
+                }
+
+                result.push({ role: "assistant", content });
+            } else if (msg.role === "tool_result") {
+                result.push({
+                    role: "user",
+                    content: [
+                        {
+                            type: "tool_result",
+                            tool_use_id: msg.toolCallId ?? "",
+                            content: msg.content,
+                        },
+                    ],
+                });
+            }
+        }
+
+        return result;
+    }
+
+    // ── Media attachment ───────────────────────────────────────────
+
+    private buildMediaBlock(
+        att: MediaAttachment,
+        skipped: string[],
+    ): AnthropicContentBlock | null {
+        const label = att.sourcePath ? ` (${att.sourcePath})` : "";
+
+        if (att.kind === "image") {
+            if (!this.modalities.has("image")) {
+                skipped.push(`image${label}: model not configured for image input`);
+                return null;
+            }
+            return {
+                type: "image",
+                source: {
+                    type: "base64",
+                    media_type: att.mimeType,
+                    data: att.base64,
+                },
+            };
+        }
+
+        // Anthropic Messages API only supports image input natively.
+        // Audio, video, and PDF are not accepted as content blocks.
+        const kindLabel = att.kind;
+        skipped.push(`${kindLabel}${label}: Anthropic Messages API does not support ${kindLabel} input`);
+        return null;
+    }
+
+    // ── Thinking config ────────────────────────────────────────────
+
+    private buildThinkingConfig(
+        thinkingLevel?: ThinkingLevel,
+    ): AnthropicThinkingConfig | null {
+        if (!thinkingLevel || thinkingLevel === "auto") {
+            // Let Anthropic's model defaults decide
+            return null;
+        }
+        if (thinkingLevel === "off") {
+            return { type: "disabled" };
+        }
+        // Map tiers to token budgets. Anthropic models support up to
+        // 16 384 thinking tokens (Claude 3.7+); the three tiers span the
+        // practical range without eating the entire output budget.
+        const budget =
+            thinkingLevel === "low" ? 1024
+            : thinkingLevel === "medium" ? 4096
+            : 16384; // "high"
+        return { type: "enabled", budget_tokens: budget };
+    }
+
+    // ── SSE stream parser ──────────────────────────────────────────
+
+    private async *parseSSEStream(
+        body: ReadableStream<Uint8Array>,
+        signal?: AbortSignal,
+    ): AsyncIterable<StreamChunk> {
+        // Track per-index block types so we know what each delta refers to
+        const blockTypes = new Map<number, string>();
+        const blockToolIds = new Map<number, string>();
+        const blockToolNames = new Map<number, string>();
+
+        let promptTokens = 0;
+        let thinkingSignature: string | undefined;
+
+        const reader = body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        try {
+            while (true) {
+                if (signal?.aborted) break;
+
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+
+                // SSE frames are separated by double newlines
+                while (true) {
+                    const frameEnd = buffer.indexOf("\n\n");
+                    if (frameEnd === -1) break;
+
+                    const frame = buffer.slice(0, frameEnd);
+                    buffer = buffer.slice(frameEnd + 2);
+
+                    const payload = this.parseSSEFrame(frame);
+                    if (!payload) continue;
+
+                    const chunk = this.processSSEPayload(
+                        payload,
+                        blockTypes,
+                        blockToolIds,
+                        blockToolNames,
+                        promptTokens,
+                        thinkingSignature,
+                    );
+
+                    if (chunk) {
+                        // Update tracked state from the event that was just processed
+                        if (payload.type === "message_start" && payload.message) {
+                            promptTokens = payload.message.usage.input_tokens;
+                        }
+                        if (payload.type === "content_block_start" && payload.content_block) {
+                            const idx = payload.index!;
+                            blockTypes.set(idx, payload.content_block.type);
+                            if (payload.content_block.id) blockToolIds.set(idx, payload.content_block.id);
+                            if (payload.content_block.name) blockToolNames.set(idx, payload.content_block.name);
+                        }
+                        if (payload.type === "content_block_stop" && payload.index !== undefined) {
+                            blockTypes.delete(payload.index);
+                            blockToolIds.delete(payload.index);
+                            blockToolNames.delete(payload.index);
+                        }
+
+                        yield chunk;
+                    }
+                }
+            }
+        } finally {
+            reader.releaseLock();
+        }
+    }
+
+    /**
+     * Parse a single SSE frame (lines before `\n\n`).
+     *
+     * Returns the JSON payload from the `data:` line, or null for
+     * empty/ping frames.
+     */
+    private parseSSEFrame(frame: string): SSEEventPayload | null {
+        // SSE frames look like:
+        //   event: content_block_delta
+        //   data: {"type":"content_block_delta",...}
+        //
+        // We only care about the data line; the event type is repeated
+        // inside the JSON as `type` anyway.
+        for (const line of frame.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data: ")) {
+                const jsonStr = trimmed.slice(6);
+                // Skip empty data (ping frames)
+                if (jsonStr === "" || jsonStr === "{}") return null;
+                try {
+                    return JSON.parse(jsonStr) as SSEEventPayload;
+                } catch {
+                    console.warn("[anthropic-provider] SSE JSON parse error:", jsonStr.slice(0, 200));
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Convert a single SSE event payload into a StreamChunk.
+     *
+     * Deltas are emitted as-is (the caller accumulates). Tool-call
+     * start events emit the id + name so the consumer can initialize
+     * its tool-call map; subsequent input_json deltas supply the
+     * arguments piece by piece.
+     */
+    private processSSEPayload(
+        payload: SSEEventPayload,
+        _blockTypes: Map<number, string>,
+        _blockToolIds: Map<number, string>,
+        _blockToolNames: Map<number, string>,
+        _promptTokens: number,
+        _thinkingSignature: string | undefined,
+    ): StreamChunk | null {
+        const type = payload.type;
+
+        // --- message_start ---
+        if (type === "message_start" && payload.message) {
+            return {
+                content: null,
+                reasoningContent: null,
+                toolCallDeltas: null,
+                finishReason: null,
+                usage: {
+                    promptTokens: payload.message.usage.input_tokens,
+                    completionTokens: 0,
+                    totalTokens: payload.message.usage.input_tokens,
+                },
+            };
+        }
+
+        // --- content_block_start ---
+        if (type === "content_block_start" && payload.content_block) {
+            const block = payload.content_block;
+            const index = payload.index!;
+
+            // Tool use block starting
+            if (block.type === "tool_use") {
+                return {
+                    content: null,
+                    reasoningContent: null,
+                    toolCallDeltas: [
+                        {
+                            index,
+                            id: block.id,
+                            function: { name: block.name },
+                        },
+                    ],
+                    finishReason: null,
+                    usage: null,
+                };
+            }
+
+            // Thinking block — may carry initial thinking text and signature
+            if (block.type === "thinking") {
+                const result: StreamChunk = {
+                    content: null,
+                    reasoningContent: block.thinking ?? null,
+                    toolCallDeltas: null,
+                    finishReason: null,
+                    usage: null,
+                };
+                if (block.signature) {
+                    result.thoughtSignatures = [block.signature];
+                }
+                return result;
+            }
+
+            // Text block starting — no content yet, don't emit
+            return null;
+        }
+
+        // --- content_block_delta ---
+        if (type === "content_block_delta" && payload.delta) {
+            const delta = payload.delta;
+
+            if (delta.type === "text_delta" && delta.text) {
+                return {
+                    content: delta.text,
+                    reasoningContent: null,
+                    toolCallDeltas: null,
+                    finishReason: null,
+                    usage: null,
+                };
+            }
+
+            if (delta.type === "input_json_delta" && delta.partial_json) {
+                return {
+                    content: null,
+                    reasoningContent: null,
+                    toolCallDeltas: [
+                        {
+                            index: payload.index!,
+                            function: { arguments: delta.partial_json },
+                        },
+                    ],
+                    finishReason: null,
+                    usage: null,
+                };
+            }
+
+            if (delta.type === "thinking_delta" && delta.thinking) {
+                return {
+                    content: null,
+                    reasoningContent: delta.thinking,
+                    toolCallDeltas: null,
+                    finishReason: null,
+                    usage: null,
+                };
+            }
+
+            if (delta.type === "signature_delta" && delta.signature) {
+                return {
+                    content: null,
+                    reasoningContent: null,
+                    toolCallDeltas: null,
+                    finishReason: null,
+                    usage: null,
+                    thoughtSignatures: [delta.signature],
+                };
+            }
+        }
+
+        // --- content_block_stop ---
+        // No content to emit, just signals end of a block.
+
+        // --- message_delta ---
+        if (type === "message_delta" && payload.delta && payload.usage) {
+            return {
+                content: null,
+                reasoningContent: null,
+                toolCallDeltas: null,
+                finishReason: payload.delta.stop_reason ?? null,
+                usage: {
+                    promptTokens: _promptTokens,
+                    completionTokens: payload.usage.output_tokens,
+                    totalTokens: _promptTokens + payload.usage.output_tokens,
+                },
+            };
+        }
+
+        // --- message_stop ---
+        // End of stream — no chunk to emit.
+
+        // --- ping / error ---
+        // Ping: ignore. Error: Anthropic sends an SSE `error` event
+        // which is rare but possible. We don't handle it here; the
+        // consumer will notice when the stream ends without a proper
+        // message_stop.
+        if (type === "error" && (payload as unknown as Record<string, unknown>).error) {
+            const err = ((payload as unknown as Record<string, unknown>).error as { message?: string });
+            throw new Error(`Anthropic stream error: ${err.message ?? "unknown error"}`);
+        }
+
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────
+// Non-streaming completion helper
+// ─────────────────────────────────────────────
+
+/**
+ * Simple single-turn non-streaming chat completion for Anthropic.
+ *
+ * Used for lightweight tasks like context summarization where streaming
+ * is unnecessary. Talks directly to the Messages API with `stream: false`.
+ */
+export async function createAnthropicCompletion(
+    config: { baseURL?: string; apiKey: string; model: string },
+    messages: { role: string; content: string }[],
+    signal?: AbortSignal,
+): Promise<string> {
+    const baseURL = config.baseURL || DEFAULT_BASE_URL;
+
+    // Extract system message
+    let systemText = "";
+    const anthropicMessages: AnthropicMessageParam[] = [];
+    for (const msg of messages) {
+        if (msg.role === "system") {
+            systemText += (systemText ? "\n\n" : "") + msg.content;
+        } else if (msg.role === "user") {
+            anthropicMessages.push({
+                role: "user",
+                content: [{ type: "text", text: msg.content }],
+            });
+        } else if (msg.role === "assistant") {
+            anthropicMessages.push({
+                role: "assistant",
+                content: [{ type: "text", text: msg.content }],
+            });
+        }
+    }
+
+    const body: Record<string, unknown> = {
+        model: config.model,
+        max_tokens: DEFAULT_MAX_TOKENS,
+        messages: anthropicMessages,
+    };
+    if (systemText) body.system = systemText;
+
+    // eslint-disable-next-line no-restricted-globals -- native fetch per user request
+    const response = await fetch(`${baseURL}/messages`, {
+        method: "POST",
+        headers: {
+            "x-api-key": config.apiKey,
+            "anthropic-version": ANTHROPIC_VERSION,
+            "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
+    });
+
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(
+            `Anthropic completion error ${response.status}: ${errorBody || response.statusText}`,
+        );
+    }
+
+    const data = (await response.json()) as {
+        content?: Array<{ type: string; text?: string }>;
+    };
+
+    // Extract text from the first text content block
+    for (const block of data.content ?? []) {
+        if (block.type === "text" && block.text) {
+            return block.text;
+        }
+    }
+    return "";
+}

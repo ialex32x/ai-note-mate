@@ -1,6 +1,7 @@
 import type { LLMProvider, LLMProviderConfig } from "../llm-provider";
 import { OpenAIProvider } from "./openai-provider";
 import { GeminiProvider } from "./gemini-provider";
+import { AnthropicProvider } from "./anthropic-provider";
 
 /**
  * Supported LLM (Large Language Model) provider types for chat and summarization.
@@ -10,11 +11,12 @@ import { GeminiProvider } from "./gemini-provider";
  *
  * - `"openai"` — OpenAI-compatible API (GPT series, etc.)
  * - `"gemini"` — Google Gemini API
+ * - `"anthropic"` — Anthropic (Claude) API
  *
  * When adding a new provider, append its identifier here **and** add the
  * corresponding `case` branch in {@link createLLMProvider}.
  */
-export type LLMProviderType = "openai" | "gemini";
+export type LLMProviderType = "openai" | "gemini" | "anthropic";
 
 /**
  * Supported provider types for text-embedding.
@@ -23,9 +25,12 @@ export type LLMProviderType = "openai" | "gemini";
  * embedding providers can diverge from chat/summarization providers in the
  * future without breaking existing configurations.
  *
- * Currently the values are kept in sync with {@link LLMProviderType}.
+ * Note: `"anthropic"` is included here so summarizer/insights profiles
+ * (which reuse `MinimalModelConfig`) can be Anthropic-backed, even though
+ * Anthropic does not offer an embeddings API. The embedding dispatcher
+ * throws a descriptive error for `"anthropic"`.
  */
-export type EmbeddingProviderType = "openai" | "gemini";
+export type EmbeddingProviderType = "openai" | "gemini" | "anthropic";
 
 /**
  * Factory function that creates a concrete {@link LLMProvider} instance
@@ -45,6 +50,8 @@ export function createLLMProvider(
             return new OpenAIProvider(config);
         case "gemini":
             return new GeminiProvider(config);
+        case "anthropic":
+            return new AnthropicProvider(config);
         default:
             throw new Error(`Unknown LLM provider type: ${String(type)}`);
     }

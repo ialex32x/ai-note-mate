@@ -138,6 +138,7 @@ export class TextGenSettingsSection implements SettingsSection {
 			options: {
 				'openai': 'OpenAI Compatible',
 				'gemini': 'Google Gemini',
+				'anthropic': 'Anthropic',
 			},
 			value: profile.provider,
 			onChange: async (value) => {
@@ -166,6 +167,8 @@ export class TextGenSettingsSection implements SettingsSection {
 			this.renderOpenAIProfileFields(container, profile, refreshTabLabel);
 		} else if (profile.provider === 'gemini') {
 			this.renderGeminiProfileFields(container, profile, refreshTabLabel);
+		} else if (profile.provider === 'anthropic') {
+			this.renderAnthropicProfileFields(container, profile, refreshTabLabel);
 		}
 
 		// Modality capabilities (image / audio / video / pdf)
@@ -362,6 +365,43 @@ export class TextGenSettingsSection implements SettingsSection {
 		this.renderModelField(container, profile, refreshTabLabel, 'gemini-2.5-flash');
 	}
 
+	private renderAnthropicProfileFields(
+		container: HTMLElement,
+		profile: TextGenConfig,
+		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
+	): void {
+		const { app, plugin } = this.ctx;
+
+		// Base URL
+		createTextField({
+			container,
+			name: t('settings.baseUrl'),
+			desc: t('settings.baseUrlDesc'),
+			placeholder: t('settings.baseUrlPlaceholder'),
+			value: profile.baseUrl,
+			onChange: async (value) => {
+				profile.baseUrl = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Model (with refresh and select from list)
+		this.renderModelField(container, profile, refreshTabLabel, 'claude-sonnet-4-20250514');
+
+		// API Key
+		createApiKeyField({
+			container,
+			app,
+			name: t('common.apiKey'),
+			desc: t('settings.apiKeyDesc'),
+			value: profile.apiKey,
+			onChange: async (value) => {
+				profile.apiKey = value;
+				await plugin.saveSettings();
+			},
+		});
+	}
+
 	/**
 	 * Render the model field with a refresh-and-pick button. Delegates to
 	 * the shared {@link createModelFieldWithSelector} so the Profile and
@@ -384,7 +424,7 @@ export class TextGenSettingsSection implements SettingsSection {
 			getApiKey: () => profile.apiKey,
 			listModels: () => createLLMProvider(profile.provider, {
 				apiKey: resolveSecret(app, profile.apiKey),
-				baseURL: profile.provider === 'openai' ? profile.baseUrl : undefined,
+				baseURL: profile.provider === 'openai' || profile.provider === 'anthropic' ? profile.baseUrl : undefined,
 				model: profile.model,
 			}).listModels(),
 			onChange: async (value) => {
