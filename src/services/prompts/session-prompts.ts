@@ -311,6 +311,13 @@ Reading a whole file just to edit a small section wastes tokens and risks copy-d
 
 If you also need the reverse direction (who links TO A), that's a separate \`get_backlinks\` call — do not ask the sub-agent to read other files to determine this.
 
+**Per-note embedded attachment ranking — delegate \`rank_notes_by_embedded_size\`, not a vault-wide grep/browse plan.** When the user asks which notes have the largest / heaviest embedded attachments, total linked attachment footprint per note, or "notes with attachments ranked by size" — the vault inspector has \`rank_notes_by_embedded_size\` (one call over Obsidian's link index; each attachment file counted once per note). Do NOT delegate exploratory scripts that make the sub-agent \`browse_folder\` every assets path, \`list_files_sorted\` every attachment directory, and \`search_content\` for \`![[\` across all notes — that duplicates the index and burns turns before the right tool appears. Name the tool in the \`task\`:
+
+  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Call rank_notes_by_embedded_size with limit 20 and include_breakdown true. Return the ranked notes under result.", "handoff": { "limit": 20 } })\`
+  ❌ Bad: \`delegate_task({ "agent": "vault_inspector", "task": "Explore the vault: find attachment folders, list every file with sizes, search all notes for ![[ and ![](, return which notes reference which attachments." })\` — forces manual scanning; omit rank_notes_by_embedded_size even though it answers the per-note ranking directly.
+
+If the user ALSO wants orphan files in an \`assets/\` folder (never linked from any note), say so as a **second** focused sub-task (\`list_files_sorted\` with \`folder_prefix\` or \`find_orphan_files\`) — do not fold that into the ranking task as step 1.
+
 **Note analysis / comparison / summary — delegate a digest task, not a raw read.** Whenever the user asks for the *meaning* of one or more notes — "what does this note say about X", "summarize this note", "compare these three notes", "find the conflicts across these papers", "what's in A.md" — do NOT delegate "read the full content and return it". Delegate ONE digest task to vault_inspector with the path list, and let it return a structured digests array (one entry per path with \`summary\`, \`key_points\`, \`anchors\`). You consume \`result.digests\` directly; each \`digests[i].anchors[].heading_path\` is a precise pointer you can later feed to \`replace_text\` (when it gains an anchor mode) or to \`edit_lines\` after a narrow follow-up read.
 
 This applies to **single-note** digests too, not just multi-note comparisons. A 5,000-word note's full body in your context is almost always wasteful when the user only wants to know what it says — the digest's bounded \`summary\` + \`key_points\` is the high-signal answer, and you can still pull a specific section back via a narrow follow-up read if the user asks a follow-up that needs exact wording.
@@ -323,8 +330,9 @@ The exception is when you genuinely need the verbatim bytes — e.g. you are abo
 
 ### Vault inspector delegation tips
 When delegating an inspection task to the **vault_inspector** sub-agent, prefer precise descriptions over "scan all" style instructions:
-- For vault-level statistics (size, file counts) or extremal queries (largest/smallest/oldest/newest note), mention "vault overview" in the task — the vault inspector has a dedicated \`get_overview\` tool that computes these in one call
-- For listing files by size, recency, or creation date, mention "list files sorted by ..." — the vault inspector has \`list_files_sorted\` with sort_by/sort_order support
+- For vault-level statistics (size, file counts) or extremal queries (largest/smallest/oldest/newest **single file**), mention "vault overview" in the task — the vault inspector has a dedicated \`get_overview\` tool that computes these in one call
+- For **which notes have the largest embedded / linked attachments** (per-note totals), say "rank_notes_by_embedded_size" explicitly — NOT "search for ![[ in all notes"
+- For listing files by size, recency, or creation date inside a folder, mention "list_files_sorted" with \`folder_prefix\` — ranks individual files, not per-note embed totals
 - Avoid instructing the vault inspector to "scan all files" or "iterate through all notes" when aggregate or sorted queries exist`;
 
 const DELEGATION_VAULT_EDITOR_TIPS = `

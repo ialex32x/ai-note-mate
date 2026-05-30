@@ -33,6 +33,7 @@ import {
     vaultGetOutgoingLinks,
     vaultGetUnresolvedLinks,
 } from "./graph";
+import { vaultRankNotesByEmbeddedSize } from "./rank-notes-by-embedded-size";
 
 /**
  * Tool partitioning rationale
@@ -149,6 +150,7 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
         vaultGetOutgoingLinks(plugin),
         vaultGetUnresolvedLinks(plugin),
         vaultFindOrphanFiles(plugin),
+        vaultRankNotesByEmbeddedSize(plugin),
     ];
 }
 

@@ -96,7 +96,7 @@ The main agent cannot use your prose programmatically. Whatever the user actuall
 - ❌ Calling \`write_handoff({ key: "result", value: "<short summary of what I did>" })\` when the task wanted actual data. \`result\` is the data itself, not a description of it.
 - ❌ Writing the structured value into your text reply AND into \`write_handoff\`. Pick the latter; the former is redundant noise.`;
 
-export const VAULT_AGENT_DESCRIPTION = 'Read-only Obsidian vault inspector. Reads notes (whole file, a specific line range, or a single heading-anchored section), searches by content/path/tag, lists and browses folders, gets file metadata (frontmatter, tags, headings, links), computes vault overview and sorted listings, and inspects the link graph (backlinks, orphans). Also handles digest tasks — given multiple paths, returns a structured digests array (one entry per path with summary, key_points, anchors) so the main agent can plan edits without ingesting full file contents. DOES NOT modify the vault — all writes, deletes, renames, and tag edits are performed directly by the main agent and MUST NOT be routed through this sub-agent.';
+export const VAULT_AGENT_DESCRIPTION = 'Read-only Obsidian vault inspector. Reads notes (whole file, a specific line range, or a single heading-anchored section), searches by content/path/tag, lists and browses folders, gets file metadata (frontmatter, tags, headings, links), computes vault overview and sorted listings, ranks notes by total embedded attachment size (rank_notes_by_embedded_size), and inspects the link graph (backlinks, orphans). Also handles digest tasks — given multiple paths, returns a structured digests array (one entry per path with summary, key_points, anchors) so the main agent can plan edits without ingesting full file contents. DOES NOT modify the vault — all writes, deletes, renames, and tag edits are performed directly by the main agent and MUST NOT be routed through this sub-agent.';
 
 export const VAULT_AGENT_PROMPT = `\
 You are a READ-ONLY Obsidian vault inspector. You exist to answer "what's in the vault?" questions for the main agent — never to change anything.
@@ -106,6 +106,7 @@ You are a READ-ONLY Obsidian vault inspector. You exist to answer "what's in the
 - Search notes by content, by filename / path, or by tag
 - List and browse files / folders, including sorted listings (by size / mtime / ctime)
 - Compute vault overview (totals, breakdowns, extremes)
+- Rank notes by total size of embedded / linked attachment files (\`rank_notes_by_embedded_size\`)
 - Inspect the link graph (backlinks, orphan files)
 - List and search tags (querying — NOT editing)
 
@@ -122,9 +123,10 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 - Do NOT retry the same tool call more than 3 times if it fails.
 
 ## Tool selection hints
-- For "largest / smallest / oldest / newest note" type questions, use \`get_overview\` first — it already computes these extremes.
-- For "list files by size / date / creation time", use \`list_files_sorted\` with appropriate \`sort_by\` / \`sort_order\` instead of scanning files manually.
-- For first exploration of an unfamiliar vault: \`get_overview\` first, then a SINGLE \`browse_folder\` with \`max_depth: 2\`. Drill deeper only when there's a reason.
+- **Per-note embedded attachment ranking (do this first when the task needs it).** If the task asks which notes have the largest / heaviest embedded attachments, total linked attachment bytes per note, or which notes reference the biggest attachment files — **even when the main agent also told you to "search for \`![[\`", list attachment folders, or explore vault structure** — call \`rank_notes_by_embedded_size\` FIRST in ONE call (\`limit\`, \`include_breakdown: true\` as appropriate). It uses Obsidian's resolved link index (wikilinks + embeds + markdown links) and returns ranked notes plus optional per-target breakdown. Do NOT start with \`search_content\` for \`![[\` or per-note \`get_outgoing_links\` for this ranking. \`list_files_sorted\` ranks individual files in a folder, not per-note embed totals.
+- For "largest / smallest / oldest / newest **single file** in the vault" (not per-note attachment totals), use \`get_overview\` or \`list_files_sorted\` — not \`rank_notes_by_embedded_size\`.
+- For "list files by size / date / creation time" inside a folder (e.g. all PNGs under \`assets/\`), use \`list_files_sorted\` with \`folder_prefix\` — not \`rank_notes_by_embedded_size\`.
+- For first exploration of an unfamiliar vault **when no attachment-ranking question is present**: \`get_overview\` first, then a SINGLE \`browse_folder\` with \`max_depth: 2\`. Drill deeper only when there's a reason.
 - For "what did I edit recently", prefer \`list_files_sorted\` over recursive listing.
 - For finding which notes carry a tag, use \`search_by_tag\` (do not grep file contents).
 - **For link relationship questions** — "does A link to B?", "what does A link to?", "which notes does A reference?", "list A's outgoing links" — use \`get_outgoing_links\` (returns resolved target paths with occurrence counts; set \`include_unresolved: true\` to also list broken wikilinks). Its \`resolved\` array IS the authoritative outgoing link index — you do NOT need to read the file to verify or supplement it. For "which notes link TO B?" (incoming), use \`get_backlinks\`.
@@ -202,10 +204,10 @@ export const VAULT_ROUTING_KEYWORDS = [
     'note', 'notes', 'file', 'files', 'folder', 'vault', 'read',
     'search', 'find', 'list', 'browse', 'show',
     'tag', 'tags', 'frontmatter', 'metadata', 'link', 'links', 'backlink', 'backlinks',
-    'overview', 'summary', 'attachment',
+    'overview', 'summary', 'attachment', 'embedded', 'footprint', 'rank', 'assets',
     // Chinese
     '笔记', '文件', '文件夹', '库', '读取', '查看',
-    '搜索', '查找', '列出', '浏览', '标签', '元数据', '链接', '反向链接', '附件',
+    '搜索', '查找', '列出', '浏览', '标签', '元数据', '链接', '反向链接', '附件', '附件占用', '嵌入', '占用最大', '附件最大',
     // Japanese
     'ノート', 'ファイル', 'フォルダ', '検索', 'タグ',
     // Korean
