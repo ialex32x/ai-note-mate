@@ -77,7 +77,7 @@ export const zhCN: Record<string, string> = {
 	'view.roleResult': '结果',
 	'view.roleError': '错误',
 	'view.toggleThinking': '展开/收起思考过程',
-	'view.thinkingInProgress': 'Thinking...',
+	'view.thinkingInProgress': '思考中...',
 	'view.thinkingDone': '思考完成',
 	'view.suggestionBarTitle': '下一步',
 	'view.insightCardTitle': '见解',

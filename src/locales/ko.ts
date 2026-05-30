@@ -77,7 +77,7 @@ export const ko: Record<string, string> = {
 	'view.roleResult': '결과',
 	'view.roleError': '오류',
 	'view.toggleThinking': '생각 과정 토글',
-	'view.thinkingInProgress': 'Thinking...',
+	'view.thinkingInProgress': '생각 중...',
 	'view.thinkingDone': '생각 완료',
 	'view.suggestionBarTitle': '다음 단계',
 	'view.insightCardTitle': '인사이트',

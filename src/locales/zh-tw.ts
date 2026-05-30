@@ -77,7 +77,7 @@ export const zhTW: Record<string, string> = {
 	'view.roleResult': '結果',
 	'view.roleError': '錯誤',
 	'view.toggleThinking': '展開/收合思考過程',
-	'view.thinkingInProgress': 'Thinking...',
+	'view.thinkingInProgress': '思考中...',
 	'view.thinkingDone': '思考完成',
 	'view.suggestionBarTitle': '下一步',
 	'view.insightCardTitle': '見解',

@@ -77,7 +77,7 @@ export const ja: Record<string, string> = {
 	'view.roleResult': '結果',
 	'view.roleError': 'エラー',
 	'view.toggleThinking': '思考プロセスを展開/折りたたむ',
-	'view.thinkingInProgress': 'Thinking...',
+	'view.thinkingInProgress': '思考中...',
 	'view.thinkingDone': '思考完了',
 	'view.suggestionBarTitle': '次のステップ',
 	'view.insightCardTitle': 'インサイト',
