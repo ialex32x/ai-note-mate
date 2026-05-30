@@ -890,8 +890,16 @@ export class SessionView extends ItemView {
             button: sessionStatusMainEl,
             dropdown: sessionStatusPanelEl,
             onOpen: () => {
-                // Delegate to the status controller's full render logic
-                // so the panel is always in sync when opened.
+                // Refresh the compact toolbar indicator and context ring.
+                // Panel rendering is deferred to onAfterOpen so that
+                // DropdownManager.isActive() returns true (the guard
+                // inside updateStatusDisplay relies on it).
+                if (this.statusController) {
+                    this.statusController.updateStatusDisplay();
+                }
+            },
+            onAfterOpen: () => {
+                // Re-render the panel now that isActive() is true.
                 if (this.statusController) {
                     this.statusController.updateStatusDisplay();
                 }
