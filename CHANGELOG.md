@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.3
+
+### What's new
+
+- **Anthropic (Claude) provider** — Claude models are now supported as a first-class provider. Configure your API key and start chatting with Claude directly.
+- **Vendor logos & model icons** — Provider logos (OpenAI, Anthropic, Google, etc.) and per-model icons (Gemma, GLM, etc.) now appear in the profile selector for quick visual identification.
+- **Save-as-note directory setting** — Instead of a modal every time you save assistant output, configure a default directory under **Settings → Note Mate → General** and notes are saved there without extra clicks.
+
+### Refinements
+
+- **Localized insight deepen prompt** — The "deepen insight" prompt now respects your UI language.
+- **Internal cleanup** — Shared UI helpers (chip/badge mixins, BubbleListController, SessionStatusController, action-bar/dropdown) are extracted into reusable modules, reducing code duplication.
+
+### Fixes
+
+- **trimTail on mobile** — Action bars detached from message bubbles no longer cause trimTail to over-prune the chat view.
+- **Level-2+ summary merge** — Deep summary chains and tool result walks now merge correctly, preventing stale context from being dropped during compression.
+
+---
+
 ## 1.3.2
 
 ### What's new
