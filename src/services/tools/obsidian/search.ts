@@ -99,7 +99,8 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                 name: "search_content",
                 description:
                     "Vault-wide full-text search across ALL markdown files; returns matching files with " +
-                    "line numbers and surrounding context lines. Use when the target file is UNKNOWN. " +
+                    "1-based physical line numbers and surrounding context lines. Leading blank lines are not skipped — an empty first line counts as line 1. " +
+                    "Use when the target file is UNKNOWN. " +
                     "If you already know the file, use `grep_file` instead — much cheaper, supports " +
                     "multiple queries at once, and can be scoped to a heading section. Paginated via " +
                     "`skip` / `limit`.",

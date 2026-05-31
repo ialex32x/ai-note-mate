@@ -137,9 +137,10 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "read_file",
                 description:
                     "Read a file from the vault. " +
-                    "For text/markdown files, optionally specify `start_line` / `end_line` (1-based, " +
-                    "half-open [start_line, end_line) — `start_line` inclusive, `end_line` exclusive) " +
-                    "for a range; omit both to read the whole file. When the file is large " +
+                    "For text/markdown files, optionally specify `start_line` / `end_line` (1-based physical line numbers, " +
+                    "closed interval [start_line, end_line] — both bounds inclusive). " +
+                    "Lines are split by `\\n`; leading blank lines count — an empty first line IS line 1. " +
+                    "Omit both to read the whole file. When the file is large " +
                     `(>${LARGE_FILE_LINE_THRESHOLD} lines) and no range is given, returns line count plus a short preview ` +
                     "instead of the full body — use `get_metadata` for heading outline, `read_section` " +
                     "for one section, or re-read with `start_line` / `end_line`. " +
@@ -162,15 +163,16 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         start_line: {
                             type: "number",
                             description:
-                                "1-based inclusive starting line number for reading a specific range. " +
+                                "1-based inclusive physical starting line number for reading a specific range. " +
+                                "Leading blank lines are not skipped — an empty first line counts as line 1. " +
                                 "Must be used together with end_line. Omit to read the entire file.",
                         },
                         end_line: {
                             type: "number",
                             description:
-                                "1-based ending line number (EXCLUSIVE) for reading a specific range. " +
-                                "Lines from start_line up to but NOT including end_line are returned. " +
-                                "To read through the end of the file, set end_line = total_lines + 1. " +
+                                "1-based physical ending line number (INCLUSIVE) for reading a specific range. " +
+                                "The range is [start_line, end_line] — both bounds inclusive. " +
+                                "To read through the end of the file, set end_line = total_lines. " +
                                 "Must be used together with start_line. Omit to read the entire file.",
                         },
                     },
@@ -299,10 +301,10 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const lines = content.split("\n");
             const totalLines = lines.length;
 
-            // `end_line` is exclusive: [startLine, endLine) maps directly to
+            // `end_line` is inclusive: [startLine, endLine] maps directly to
             // JS `slice(startLine - 1, endLine)`. `slice()` auto-clamps `end`
-            // to the array length, so `endLine = totalLines + 1` reads to EOF.
-            const rangeErr = validateLineRange(startLine, endLine, totalLines, { clampEndLine: true });
+            // to the array length, so `endLine = totalLines` reads to EOF.
+            const rangeErr = validateLineRange(startLine, endLine, totalLines);
             if (rangeErr) return rangeErr;
 
             const selectedContent = lines.slice(startLine - 1, endLine).join("\n");
@@ -363,7 +365,8 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                     "are included by default. Set include_subsections=false to stop at the very " +
                     "next heading of any level. Matching is exact (case-sensitive, trimmed). " +
                     "If the heading_path is ambiguous or missing, the tool returns an error " +
-                    "with concrete diagnostics so you can refine the heading_path on the next call.",
+                    "with concrete diagnostics so you can refine the heading_path on the next call. " +
+                    "Returned `start_line` / `end_line` are 1-based physical line numbers; leading blank lines count.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -589,7 +592,8 @@ export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
                     "state (mtime / ctime / size) for one or more vault files — without reading the full " +
                     "content. Accepts any file extension; headings, tags, and frontmatter are populated from " +
                     "Obsidian's metadata cache and are most meaningful for markdown (`.md`) notes — for other " +
-                    "types you still get total_lines plus timestamps/size. When total_lines exceeds " +
+                    "types you still get total_lines plus timestamps/size. Headings' `line` values and `total_lines` use 1-based physical line numbers; " +
+                    "leading blank lines count. When total_lines exceeds " +
                     `${LARGE_FILE_LINE_THRESHOLD}, \`whole_file_read_available\` is false and ` +
                     "`read_guidance` explains how to read targeted slices — plan read_section / grep_file / " +
                     "ranged read_file before attempting a whole-file read. For outgoing links use `get_outgoing_links` (resolved target paths " +

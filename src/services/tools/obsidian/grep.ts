@@ -81,8 +81,9 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "grep_file",
                 description:
-                    "Find lines matching one or more queries within a SINGLE known file; returns line " +
-                    "numbers and matched content. Prefer this over `read_file` when you already know " +
+                    "Find lines matching one or more queries within a SINGLE known file; returns 1-based physical " +
+                    "line numbers and matched content. Leading blank lines are not skipped — an empty first line counts as line 1. " +
+                    "Prefer this over `read_file` when you already know " +
                     "the file and just need line numbers for specific strings/patterns (e.g. preparing " +
                     "a follow-up `edit_lines` call). Multiple queries are OR-combined; each match " +
                     "reports its `matched_query`. Optional `heading_path` restricts the search to a " +

@@ -259,12 +259,16 @@ export function normalizeVaultPathsArg(args: Record<string, unknown>): string[] 
  *
  * Options:
  * - `clampEndLine`: When true, an `endLine` equal to `totalLines + 1` is
- *   accepted — this supports exclusive-style callers (e.g. `read_file`)
- *   where the half-open bound `[start, end)` naturally hits `totalLines + 1`
- *   for "read to EOF". **Never enable this for write/replace tools** —
- *   a one-line overshoot there would change which lines get replaced and
- *   silently corrupt user data. Only clamps by exactly 1 line; larger
- *   overshoots still fail.
+ *   accepted — this supports legacy exclusive-style callers (e.g. internal
+ *   section resolution) where the half-open bound `[start, end)` naturally
+ *   hits `totalLines + 1` for "read to EOF". **Never enable this for
+ *   write/replace tools** — a one-line overshoot there would change which
+ *   lines get replaced and silently corrupt user data. Only clamps by
+ *   exactly 1 line; larger overshoots still fail.
+ *
+ *   NOTE: `read_file` and `edit_lines` now use INCLUSIVE `end_line`
+ *   semantics — `clampEndLine` is no longer needed for those tools.
+ *   This option remains for internal use (e.g. heading section resolution).
  *
  * - When `totalLines` is provided, range upper bounds are also checked.
  * - Returns `null` if the range is valid, otherwise a failure `ToolCallResult`.
