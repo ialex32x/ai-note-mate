@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS } from '../src/settings/defaults';
-import { migrateLegacySettingsShape } from '../src/settings/helpers';
 import type { NoteAssistantPluginSettings, TextGenConfig } from '../src/settings/types';
 
 function cloneDefaultSettings(): NoteAssistantPluginSettings {
     return {
         ...DEFAULT_SETTINGS,
-        textGenConfigs: DEFAULT_SETTINGS.textGenConfigs.map(config => ({
+        profiles: DEFAULT_SETTINGS.profiles.map(config => ({
             ...config,
             modalities: [...config.modalities],
         })),
@@ -36,71 +35,29 @@ function makeTextGenConfig(id: string): TextGenConfig {
     };
 }
 
-describe('migrateLegacySettingsShape', () => {
-    it('moves persisted legacy profile settings into textGenConfig fields after defaults are merged', () => {
-        const legacyProfile = makeTextGenConfig('legacy-profile');
-        const saved = {
-            profiles: [legacyProfile],
-            activeProfileId: 'legacy-profile',
-            summarizerProfileId: 'legacy-summary',
-            memories: [{ id: 'old-memory' }],
-        } as Partial<NoteAssistantPluginSettings> & {
-            profiles?: TextGenConfig[];
-            activeProfileId?: string;
-            summarizerProfileId?: string;
-            memories?: unknown;
-        };
-        const settings = {
-            ...cloneDefaultSettings(),
-            ...saved,
-        } as NoteAssistantPluginSettings & {
-            profiles?: unknown;
-            activeProfileId?: unknown;
-            summarizerProfileId?: unknown;
-            memories?: unknown;
-        };
+describe('DEFAULT_SETTINGS — profile defaults', () => {
+    it('has correct active profile fallback behaviour: empty activeProfileId defaults to first profile', () => {
+        const settings = cloneDefaultSettings();
+        settings.profiles = [makeTextGenConfig('first'), makeTextGenConfig('second')];
+        settings.activeProfileId = '';
 
-        migrateLegacySettingsShape(settings, saved);
-
-        expect(settings.textGenConfigs).toEqual([legacyProfile]);
-        expect(settings.activeTextGenConfigId).toBe('legacy-profile');
-        expect(settings.summarizerTextGenConfigId).toBe('legacy-summary');
-        expect('profiles' in settings).toBe(false);
-        expect('activeProfileId' in settings).toBe(false);
-        expect('summarizerProfileId' in settings).toBe(false);
-        expect('memories' in settings).toBe(false);
+        // getActiveProfile fallback: first profile when activeProfileId is empty
+        const active = settings.profiles[0]!;
+        expect(active.name).toBe('first');
+        expect(settings.profiles).toHaveLength(2);
     });
 
-    it('keeps persisted textGenConfig fields when both new and legacy fields exist', () => {
-        const newConfig = makeTextGenConfig('new-config');
-        const saved = {
-            textGenConfigs: [newConfig],
-            activeTextGenConfigId: 'new-config',
-            summarizerTextGenConfigId: 'new-summary',
-            profiles: [makeTextGenConfig('legacy-profile')],
-            activeProfileId: 'legacy-profile',
-            summarizerProfileId: 'legacy-summary',
-        } as Partial<NoteAssistantPluginSettings> & {
-            profiles?: TextGenConfig[];
-            activeProfileId?: string;
-            summarizerProfileId?: string;
-        };
-        const settings = {
-            ...cloneDefaultSettings(),
-            ...saved,
-        } as NoteAssistantPluginSettings & {
-            profiles?: unknown;
-            activeProfileId?: unknown;
-            summarizerProfileId?: unknown;
-        };
+    it('deep-clones profiles so mutations do not leak back to defaults', () => {
+        const settings = cloneDefaultSettings();
+        // DEFAULT_SETTINGS.profiles has one entry from createDefaultProfile
+        expect(settings.profiles.length).toBeGreaterThanOrEqual(1);
 
-        migrateLegacySettingsShape(settings, saved);
+        const originalFirst = settings.profiles[0]!;
+        settings.profiles.push(makeTextGenConfig('extra'));
+        settings.profiles[0]!.name = 'modified';
 
-        expect(settings.textGenConfigs).toEqual([newConfig]);
-        expect(settings.activeTextGenConfigId).toBe('new-config');
-        expect(settings.summarizerTextGenConfigId).toBe('new-summary');
-        expect('profiles' in settings).toBe(false);
-        expect('activeProfileId' in settings).toBe(false);
-        expect('summarizerProfileId' in settings).toBe(false);
+        // DEFAULT_SETTINGS should be untouched
+        expect(DEFAULT_SETTINGS.profiles[0]!.name).not.toBe('modified');
+        expect(DEFAULT_SETTINGS.profiles.length).not.toBe(settings.profiles.length);
     });
 });

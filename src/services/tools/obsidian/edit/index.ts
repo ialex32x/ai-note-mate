@@ -11,7 +11,6 @@ export { vaultDeleteFolder } from "./delete-folder";
 export { vaultRenameFile } from "./rename-file";
 export { vaultReplaceText } from "./replace-text";
 export { vaultEditLines } from "./edit-lines";
-export { vaultInsertLinesBefore } from "./insert-lines-before";
 export { vaultEditFilesFrontmatter } from "./edit-frontmatter";
 export { vaultWriteFile } from "./write-file";
 export { vaultInstantiateTemplate } from "./instantiate-template";

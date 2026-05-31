@@ -9,24 +9,29 @@ import { runVaultMutation } from "../../../vault";
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * A single line-based edit operation. Unified shape — no `op` field:
- *   - { start_line, end_line, content }
+ * A single line-based edit operation.
  *
  * `start_line` and `end_line` are both 1-based INCLUSIVE.
- * The closed range [start_line, end_line] specifies which lines are replaced.
  *
- *   - Replace: content != "" → lines in [start_line, end_line] are replaced.
- *   - Delete:  content == ""  → lines in [start_line, end_line] are removed.
- *
- * To insert content before a line, use the separate `insert_lines_before` tool.
+ * Three operations via the optional `op` field:
+ *   - **replace** (default when `op` omitted and `content != ""`):
+ *     lines in [start_line, end_line] are replaced.
+ *   - **delete** (default when `op` omitted and `content == ""`):
+ *     lines in [start_line, end_line] are removed.
+ *   - **insert_before**: content is inserted BEFORE `start_line`.
+ *     `end_line` is unused. Use `start_line = totalLines + 1` to append
+ *     at end of file.
  *
  * All edits in one call refer to line numbers in the SAME pre-edit snapshot
  * of the file. The tool sorts by start position descending and applies them
  * back-to-front so earlier edits never invalidate later ones' line numbers.
+ * This works for mixed replace/delete/insert_before edits — everything
+ * resolves correctly in one atomic call.
  */
 interface LineEdit {
+    op?: "replace" | "delete" | "insert_before";
     start_line: number;
-    end_line: number;
+    end_line?: number;
     content: string;
 }
 
@@ -34,24 +39,25 @@ interface LineEdit {
  * Normalise an edit into a half-open zero-based slice [from, to) on the
  * original `lines` array, plus the replacement string.
  *
- *   edit [a, b] inclusive  →  from = a-1, to = b
- *
- * This unification lets overlap detection and back-to-front application
- * treat replace/delete with identical logic. Insert is handled by the
- * separate `insert_lines_before` tool.
+ *   replace/delete [a, b] inclusive  →  from = a-1, to = b
+ *   insert_before at line a          →  from = a-1, to = a-1  (zero-width)
  */
 interface NormalisedEdit {
     /** Index into `args.edits`, used purely for error reporting. */
     index: number;
     /** Original edit, kept for the result payload. */
     raw: LineEdit;
-    /** Zero-based, inclusive start of the slice to replace. */
+    /** Resolved operation. */
+    op: "replace" | "delete" | "insert_before";
+    /** Zero-based inclusive start of the slice to modify. */
     from: number;
-    /** Zero-based, exclusive end of the slice to replace. */
+    /** Zero-based exclusive end of the slice to modify. For inserts this equals `from`. */
     to: number;
-    /** Replacement content (may be empty for deletions; insert always has content). */
+    /** Replacement/inserted content (empty for deletions). */
     content: string;
 }
+
+const VALID_OPS = ["replace", "delete", "insert_before"] as const;
 
 function normaliseEdit(edit: unknown, index: number, totalLines: number): NormalisedEdit | string {
     if (!edit || typeof edit !== "object") {
@@ -67,25 +73,69 @@ function normaliseEdit(edit: unknown, index: number, totalLines: number): Normal
     if (typeof content !== "string") {
         return `edits[${index}]: content must be a string.`;
     }
-    if (!Number.isInteger(start) || !Number.isInteger(end)) {
-        return `edits[${index}]: start_line and end_line must be integers.`;
+    if (!Number.isInteger(start)) {
+        return `edits[${index}]: start_line must be an integer.`;
     }
     const s = start as number;
-    const en = end as number;
-
     if (s < 1) {
         return `edits[${index}]: start_line must be >= 1 (got ${s}).`;
     }
+
+    // ── Resolve op ─
+    let op: "replace" | "delete" | "insert_before" | undefined;
+    if (typeof e["op"] === "string") {
+        const rawOp = e["op"];
+        if (!(VALID_OPS as readonly string[]).includes(rawOp)) {
+            return `edits[${index}]: op must be one of: ${VALID_OPS.join(", ")} (got "${rawOp}").`;
+        }
+        op = rawOp as "replace" | "delete" | "insert_before";
+    }
+    if (!op) {
+        // Auto-detect: empty content → delete, non-empty → replace (backward compat)
+        op = content === "" ? "delete" : "replace";
+    }
+
+    // ── insert_before ─
+    if (op === "insert_before") {
+        if (content === "") {
+            return `edits[${index}]: insert_before requires non-empty content. Use op: "delete" to remove lines.`;
+        }
+        if (s > totalLines + 1) {
+            return (
+                `edits[${index}]: start_line (${s}) exceeds max allowed ${totalLines + 1} ` +
+                `for insert_before (file has ${totalLines} lines). ` +
+                `Use ${totalLines + 1} to append at end of file.`
+            );
+        }
+        return {
+            index,
+            raw: { start_line: s, content, op: "insert_before" },
+            op: "insert_before",
+            from: s - 1,
+            to: s - 1, // zero-width span — splice with deleteCount=0
+            content,
+        };
+    }
+
+    // ── replace / delete ─
+    if (!Number.isInteger(end)) {
+        return `edits[${index}]: end_line must be an integer (required for ${op}).`;
+    }
+    const en = end as number;
     if (en < s) {
         return `edits[${index}]: end_line (${en}) must be >= start_line (${s}).`;
     }
     if (en > totalLines) {
-        return `edits[${index}]: end_line (${en}) exceeds total lines (${totalLines}). Use insert_lines_before to add content at the end of the file.`;
+        return (
+            `edits[${index}]: end_line (${en}) exceeds total lines (${totalLines}). ` +
+            `Use op: "insert_before" with start_line ${totalLines + 1} to append content at the end.`
+        );
     }
 
     return {
         index,
-        raw: { start_line: s, end_line: en, content },
+        raw: { start_line: s, end_line: en, content, op },
+        op,
         from: s - 1,
         to: en, // inclusive end_line → exclusive zero-based bound is en
         content,
@@ -95,26 +145,29 @@ function normaliseEdit(edit: unknown, index: number, totalLines: number): Normal
 /**
  * Human-readable description of a normalised edit, used in error messages so
  * the model can locate the offending edit without re-reading its own args.
- *   replace → "replace 5-7"
- *   delete  → "delete 5-7"
  */
 function describeEdit(ed: NormalisedEdit): string {
+    if (ed.op === "insert_before") {
+        return `insert_before ${ed.raw.start_line}`;
+    }
     const { start_line: s, end_line: e } = ed.raw;
-    // end_line is inclusive, so the last replaced line is e
-    if (ed.content === "") {
+    if (ed.op === "delete") {
         return `delete ${s}-${e}`;
     }
     return `replace ${s}-${e}`;
 }
 
 /**
- * Detect overlapping/conflicting edits.
+ * Detect overlapping/conflicting edits among replace/delete operations.
  *
- * Edits are sorted by `from` ascending; we then walk and ensure each next
- * edit starts at or after the previous one's `to`.
+ * Zero-width inserts (`from === to`) don't consume pre-edit lines and
+ * therefore can never overlap with anything — they are excluded from
+ * the overlap sweep.
  */
 function detectOverlap(edits: NormalisedEdit[]): string | null {
-    const sorted = [...edits].sort((a, b) => a.from - b.from || a.to - b.to);
+    // Only ranged edits (replace/delete) can overlap.
+    const ranged = edits.filter((e) => e.from < e.to);
+    const sorted = [...ranged].sort((a, b) => a.from - b.from || a.to - b.to);
     for (let i = 1; i < sorted.length; i++) {
         const prev = sorted[i - 1]!;
         const cur = sorted[i]!;
@@ -122,7 +175,7 @@ function detectOverlap(edits: NormalisedEdit[]): string | null {
             return (
                 `edits[${prev.index}] (${describeEdit(prev)}) and ` +
                 `edits[${cur.index}] (${describeEdit(cur)}) overlap. ` +
-                `All edits must reference disjoint ranges of the original file.`
+                `All ranged edits must reference disjoint ranges of the original file.`
             );
         }
     }
@@ -140,8 +193,8 @@ const AFFECTED_CONTEXT_LINES = 3;
 interface AffectedRegionEdit {
     /** Index of this edit in the caller's `edits` array. */
     input_index: number;
-    /** Derived kind — "replace" or "delete" (computed, NOT an input field). */
-    op: "replace" | "delete";
+    /** Resolved operation — "replace", "delete", or "insert_before". */
+    op: "replace" | "delete" | "insert_before";
     /**
      * 1-based inclusive line range in the post-edit file covering exactly
      * this edit's new content. `null` when the edit produced no post-edit
@@ -208,10 +261,9 @@ function buildAffectedRegions(windows: EditWindow[], workingLines: string[]): Af
             snippetLines.length > 0
                 ? [groupFrom + 1, groupFrom + snippetLines.length]
                 : [0, 0];
-        // Member edits are already in post-edit order from the outer sort.
         const edits: AffectedRegionEdit[] = groupMembers.map((w) => ({
             input_index: w.ed.index,
-            op: w.ed.content === "" ? "delete" : "replace",
+            op: w.ed.op,
             new_range:
                 w.newToExcl > w.newFrom ? [w.newFrom + 1, w.newToExcl] : null,
         }));
@@ -224,8 +276,6 @@ function buildAffectedRegions(windows: EditWindow[], workingLines: string[]): Af
 
     for (let i = 1; i < sorted.length; i++) {
         const w = sorted[i]!;
-        // Touching (`<=`) windows are merged: the boundary line would otherwise
-        // appear in both regions' snippets.
         if (w.winFrom <= groupToExcl) {
             groupToExcl = Math.max(groupToExcl, w.winToExcl);
             groupMembers.push(w);
@@ -254,16 +304,17 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                     "1-based physical line numbers in a closed range `[start_line, end_line]` — both bounds inclusive. " +
                     "Leading blank lines count; an empty first line IS line 1. " +
                     "\n\n" +
-                    "Two operations via one shape (no `op` field needed): " +
-                    "- **Replace**: non-empty `content` → lines in [start_line, end_line] are replaced. " +
-                    "- **Delete**: `content: \"\"` → lines in [start_line, end_line] are removed. " +
+                    "Three operations via the optional `op` field: " +
+                    "- **replace** (default when `op` omitted and `content != \"\"`): non-empty `content` → lines in [start_line, end_line] are replaced. " +
+                    "- **delete** (default when `op` omitted and `content == \"\"`): `content: \"\"` → lines in [start_line, end_line] are removed. " +
+                    "- **insert_before**: content is inserted BEFORE `start_line`. `end_line` is unused. " +
+                    "Use `start_line = totalLines + 1` to append at end of file. " +
                     "\n\n" +
-                    "To insert new content before a line (or append at end of file), use the separate " +
-                    "`insert_lines_before` tool. " +
-                    "\n\n" +
-                    "All edits' line numbers refer to the PRE-EDIT file; the tool applies them back-to-front " +
-                    "so earlier edits never shift later ones. Edits must reference disjoint ranges; " +
-                    "overlapping edits are rejected. If validation fails, nothing is written (atomic). " +
+                    "You can mix all three operations in a single `edits` array — inserts, replaces, and " +
+                    "deletions coexist in one atomic call. All edits' line numbers refer to the PRE-EDIT file; " +
+                    "the tool applies them back-to-front so earlier edits never shift later ones. " +
+                    "Ranged edits (replace/delete) must reference disjoint ranges; overlapping ranges are rejected. " +
+                    "Zero-width inserts don't conflict with anything. If validation fails, nothing is written (atomic). " +
                     "Set `dry_run` to preview. " +
                     "\n\n" +
                     "Lines are 1-based physical lines split by `\\n`; leading blank lines count, and a trailing newline produces a final empty line " +
@@ -287,14 +338,26 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                             minItems: 1,
                             description:
                                 "List of edits to apply atomically. Each edit's line numbers refer to the " +
-                                "file BEFORE any edit is applied. Edits must not overlap.",
+                                "file BEFORE any edit is applied. Ranged edits (replace/delete) must not overlap. " +
+                                "Insert edits (op: insert_before) are zero-width and never conflict.",
                             items: {
                                 type: "object",
                                 properties: {
+                                    op: {
+                                        type: "string",
+                                        enum: ["replace", "delete", "insert_before"],
+                                        description:
+                                            "Operation type. Omit to auto-detect: non-empty `content` → replace, " +
+                                            "empty `content` → delete. Use \"insert_before\" to insert content " +
+                                            "before `start_line` (no `end_line` needed).",
+                                    },
                                     start_line: {
                                         type: "number",
                                         description:
-                                            "1-based INCLUSIVE physical start of the range to replace. " +
+                                            "1-based INCLUSIVE physical line number. " +
+                                            "For replace/delete: start of the range to modify. " +
+                                            "For insert_before: insert content BEFORE this line. " +
+                                            "Use `totalLines + 1` to append at end of file. " +
                                             "Leading blank lines count; an empty first line is line 1. " +
                                             "Field name is `start_line` (with underscore). " +
                                             "LLM aliases `start` also accepted.",
@@ -302,23 +365,24 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                                     end_line: {
                                         type: "number",
                                         description:
-                                            "1-based INCLUSIVE physical end of the range to replace. " +
+                                            "1-based INCLUSIVE physical end of the range. " +
+                                            "Required for replace/delete, UNUSED for insert_before. " +
                                             "The range is [start_line, end_line] — both bounds inclusive. " +
-                                            "Must be >= start_line. To replace a single line, set equal to " +
-                                            "start_line. To insert content, use `insert_lines_before` instead. " +
+                                            "Must be >= start_line (for replace/delete). " +
                                             "Field name is `end_line` (with underscore). " +
                                             "LLM aliases `end` also accepted.",
                                     },
                                     content: {
                                         type: "string",
                                         description:
-                                            "Replacement content. May be more or fewer lines than the " +
-                                            "original range. Pass '' (empty string) to delete the range. " +
+                                            "For replace/insert_before: the new content. May be more or fewer lines " +
+                                            "than the original range. For delete: pass '' (empty string). " +
                                             "Do NOT append a trailing '\\n' unless you intend an extra " +
-                                            "empty line — 'X\\n' becomes two lines ['X', ''].",
+                                            "empty line — 'X\\n' becomes two lines ['X', '']. " +
+                                            "For insert_before, content must be non-empty.",
                                     },
                                 },
-                                required: ["start_line", "end_line", "content"],
+                                required: ["start_line", "content"],
                             },
                         },
                         dry_run: {
@@ -395,6 +459,7 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             // Apply back-to-front so each splice doesn't shift earlier indices.
+            // Zero-width inserts (from === to) splice with deleteCount=0 → pure insertion.
             const sortedDesc = [...normalised].sort((a, b) => b.from - a.from || b.to - a.to);
             const working = lines.slice();
             for (const ed of sortedDesc) {
@@ -425,7 +490,8 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             // coordinates by accumulating length deltas of all edits that lie
             // strictly earlier in the file. Sorting ascending by `from` makes
             // the running offset trivially correct, since detectOverlap has
-            // already ensured disjointness (modulo zero-length boundaries).
+            // already ensured disjointness for ranged edits, and zero-width
+            // inserts always stay correct.
             const sortedAsc = [...normalised].sort((a, b) => a.from - b.from || a.to - b.to);
             const totalNew = working.length;
             const editWindows: EditWindow[] = [];
@@ -448,12 +514,10 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             const applied = normalised.map((ed) => {
                 const replaced = ed.to - ed.from;
                 const inserted = ed.content === "" ? 0 : ed.content.split("\n").length;
-                const kind: "replace" | "delete" =
-                    ed.content === "" ? "delete" : "replace";
                 return {
-                    kind,
+                    kind: ed.op,
                     start_line: ed.raw.start_line,
-                    end_line: ed.raw.end_line,
+                    ...(ed.op !== "insert_before" ? { end_line: ed.raw.end_line } : {}),
                     replaced_lines_count: replaced,
                     new_lines_count: inserted,
                 };

@@ -16,7 +16,6 @@ import {
     vaultDeleteFiles,
     vaultDeleteFolder,
     vaultEditFilesFrontmatter,
-    vaultInsertLinesBefore,
     vaultInstantiateTemplate,
     vaultPrependFile,
     vaultRenameFile,
@@ -106,11 +105,11 @@ import {
  *
  * Includes (so a future "what's a mutation tool?" check is unambiguous):
  *  - Content-writes: create / append / prepend / replace_text /
- *    edit_lines / insert_lines_before
+ *    edit_lines
  *    (replace_text batches multiple literal find/replace edits on a
  *    single file via its `replacements` array; edit_lines handles
- *    replace/delete via its `edits` array; insert_lines_before is
- *    a dedicated insert-before-line tool)
+ *    replace/delete/insert_before via its `edits` array with the
+ *    optional `op` field)
  *  - Structural: delete_files / delete_folder / rename_or_move_file
  *  - Frontmatter: edit_files_frontmatter (set/unset arbitrary YAML keys; tag
  *    keys are refused and routed to the tag-specific tools below)
@@ -124,7 +123,6 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultPrependFile(plugin),
         vaultReplaceText(plugin),
         vaultEditLines(plugin),
-        vaultInsertLinesBefore(plugin),
         // Template instantiation (read template → replace vars → create file)
         vaultInstantiateTemplate(plugin),
         // Canvas / Bases (validated JSON Canvas / YAML writes)
@@ -260,7 +258,6 @@ export function createObsidianEditorTools(plugin: NoteAssistantPlugin): Register
         // Content writes ONLY — no structural mutations.
         vaultReplaceText(plugin),
         vaultEditLines(plugin),
-        vaultInsertLinesBefore(plugin),
         vaultAppendFile(plugin),
         vaultPrependFile(plugin),
         vaultWriteFile(plugin),

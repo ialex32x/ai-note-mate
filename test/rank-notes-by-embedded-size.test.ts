@@ -5,7 +5,7 @@ import {
     extensionFromVaultPath,
     isEmbeddedAttachmentTarget,
     isNoteSourcePath,
-} from "../src/services/tools/obsidian/rank-notes-by-embedded-size";
+} from "../src/services/tools/obsidian/vault/rank-notes-by-embedded-size";
 
 function mockFile(path: string, size: number): TFile {
     const ext = extensionFromVaultPath(path);
