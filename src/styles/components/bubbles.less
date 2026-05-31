@@ -176,6 +176,9 @@
 
 // Bubble role label (sits outside the body wrapper)
 .session-bubble__role {
+    display: flex;
+    align-items: baseline;
+    gap: @spacing-md;
     font-size: 0.75em;
     font-weight: 600;
     opacity: 0.7;
@@ -184,6 +187,25 @@
     margin-bottom: @spacing-xs;
     padding-left: @spacing-lg;
     padding-right: @spacing-lg;
+}
+
+// Role label text (always visible)
+.session-bubble__role-label {
+    white-space: nowrap;
+}
+
+// Timestamp displayed next to the role name on hover
+.session-bubble__role-time {
+    display: none;
+    font-weight: 400;
+    opacity: 0.75;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+}
+
+.session-bubble:hover .session-bubble__role-time {
+    display: inline;
 }
 
 // Bubble content area

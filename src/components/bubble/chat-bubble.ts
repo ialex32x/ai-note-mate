@@ -212,7 +212,7 @@ export class ChatBubble {
         }
 
         if (msg.role === 'system') {
-            ChatBubble.renderRole(bubble, 'System');
+            ChatBubble.renderRole(bubble, msg, 'System');
             const bodyEl = bubble.createEl('div', { cls: BUBBLE_BODY_CLS });
             const contentEl = bodyEl.createEl('div', { cls: BUBBLE_CONTENT_CLS });
             contentEl.setText(msg.content);
@@ -231,7 +231,7 @@ export class ChatBubble {
         const showRole = ChatBubble.shouldRenderRole(msg);
         if (showRole) {
             const roleText = ChatBubble.resolveRoleLabel(msg);
-            ChatBubble.renderRole(bubble, roleText);
+            ChatBubble.renderRole(bubble, msg, roleText);
         }
 
         // ── Body wrapper (background box) ─────────────────────────────
@@ -458,9 +458,49 @@ export class ChatBubble {
         return getDefaultRoleLabel(msg.role);
     }
 
-    /** Append the role label element. */
-    private static renderRole(bubble: HTMLElement, text: string): void {
-        bubble.createEl('span', { cls: BUBBLE_ROLE_CLS, text });
+    /** Append the role label element with a hover-revealed timestamp. */
+    private static renderRole(bubble: HTMLElement, msg: ChatMessage, text: string): void {
+        const roleEl = bubble.createEl('span', { cls: BUBBLE_ROLE_CLS });
+        roleEl.createEl('span', { cls: 'session-bubble__role-label', text });
+        if (msg.timestamp) {
+            const timeStr = ChatBubble.formatTimestamp(msg.timestamp);
+            roleEl.createEl('span', {
+                cls: 'session-bubble__role-time',
+                text: timeStr,
+                attr: { 'data-timestamp': String(msg.timestamp) },
+            });
+        }
+    }
+
+    /**
+     * Format a timestamp for display next to the role label.
+     * - Today: HH:MM
+     * - This year: MM/DD HH:MM
+     * - Different year: YYYY/MM/DD HH:MM
+     */
+    private static formatTimestamp(ts: number): string {
+        const d = new Date(ts);
+        const hh = String(d.getHours()).padStart(2, '0');
+        const mm = String(d.getMinutes()).padStart(2, '0');
+        const time = `${hh}:${mm}`;
+
+        const now = new Date();
+        const isToday =
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth() &&
+            d.getDate() === now.getDate();
+
+        if (isToday) return time;
+
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        const date = `${month}/${day}`;
+
+        if (d.getFullYear() === now.getFullYear()) {
+            return `${date} ${time}`;
+        }
+
+        return `${d.getFullYear()}/${date} ${time}`;
     }
 
 }
