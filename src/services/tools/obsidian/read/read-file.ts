@@ -127,6 +127,7 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "read_file",
                 description:
                     "Read a file from the vault. " +
+                    "This reads FILES only. If the path is (or might be) a folder, use `browse_folder` to list its contents instead. " +
                     "For text/markdown files, optionally specify `start_line` / `end_line` (1-based physical line numbers, " +
                     "closed interval [start_line, end_line] — both bounds inclusive). " +
                     "Lines are split by `\\n`; leading blank lines count — an empty first line IS line 1. " +
