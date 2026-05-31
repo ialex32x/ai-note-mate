@@ -1900,9 +1900,10 @@ export class SessionView extends ItemView {
         }
         const autoSend = this.plugin.settings.followUpSuggestionsAutoSend === true;
         if (autoSend) {
-            // Replace any in-progress draft with the picked prompt and send.
-            this.cmInput.setContent(action.prompt);
-            void this.handleSend();
+            // Send the picked prompt directly without touching the input
+            // editor — the user's current draft must be preserved because
+            // follow-up is self-contained and does not consume user input.
+            void this.sendPrompt(action.prompt);
             return;
         }
         this.cmInput.setContent(action.prompt);
