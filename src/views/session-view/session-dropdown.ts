@@ -142,8 +142,10 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         titleEl.setText(displayTitle);
 
         const metaRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-meta' });
+        const d = new Date(session.createdAt);
+        const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
         metaRow.createEl('span', { cls: 'session-dropdown__item-time' })
-            .setText(new Date(session.createdAt).toLocaleString());
+            .setText(dateStr);
 
         // Token usage (prompt / completion). Hidden when no tokens were ever spent.
         const usage = session.tokenUsage;
