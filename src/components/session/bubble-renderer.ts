@@ -14,6 +14,7 @@ import {
     renderSubAgentBadge,
     renderDelegateTaskBubble,
     shouldShowRoleLabel,
+    getSubAgentLabel,
 } from '../bubble/sub-agent';
 import { renderThinkingSection as renderThinkingSectionImpl } from '../bubble/thinking-section';
 import { renderUserContent } from '../bubble/user-content';
@@ -434,15 +435,22 @@ export class BubbleRenderer extends Component {
             return;
         }
 
-        // Sub-agent badge: show which sub-agent produced this message
-        if (msg.subAgent) {
+        // Sub-agent badge: show which sub-agent produced this message.
+        // Skip for tool_call messages — the sub-agent name is shown in the
+        // role label instead (e.g. "Tools (Vault Reader)").
+        if (msg.subAgent && msg.role !== 'tool_call') {
             renderSubAgentBadge(bubble, msg.subAgent.agentName);
         }
 
         if (shouldShowRoleLabel(msg)) {
+            let roleText = this.roleLabel(msg.role);
+            // For sub-agent tool calls, append the sub-agent name in parentheses
+            if (msg.subAgent && msg.role === 'tool_call') {
+                roleText += ` (${getSubAgentLabel(msg.subAgent.agentName)})`;
+            }
             bubble.createEl('span', {
                 cls: 'session-bubble__role',
-                text: this.roleLabel(msg.role),
+                text: roleText,
             });
         }
 
