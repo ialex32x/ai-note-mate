@@ -35,11 +35,10 @@ export function getSubAgentLabel(agentName: string): string {
  * identify the speaker via the agent badge, so the role line is redundant.
  */
 export function shouldShowRoleLabel(msg: ChatMessage): boolean {
-    // Sub-agent tool_call messages show the role label with the sub-agent
-    // name appended (e.g. "Tools (Vault Reader)"), so we allow them through.
-    if (msg.subAgent && msg.role !== 'tool_call') return false;
+    // All sub-agent messages now identify the speaker via the role label,
+    // not via a badge — so we no longer suppress it for subAgent messages.
     if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
-        return false;
+        return false; // delegate_task renders its own role label inline
     }
     return true;
 }

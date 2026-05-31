@@ -11,7 +11,6 @@ import {
 import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from '../bubble/bubble-context';
 import {
-    renderSubAgentBadge,
     renderDelegateTaskBubble,
     shouldShowRoleLabel,
     getSubAgentLabel,
@@ -435,18 +434,21 @@ export class BubbleRenderer extends Component {
             return;
         }
 
-        // Sub-agent badge: show which sub-agent produced this message.
-        // Skip for tool_call messages — the sub-agent name is shown in the
-        // role label instead (e.g. "Tools (Vault Reader)").
-        if (msg.subAgent && msg.role !== 'tool_call') {
-            renderSubAgentBadge(bubble, msg.subAgent.agentName);
+        // Role label: all sub-agent messages now show their name here
+        // instead of a separate badge. For tool_call it's "Tools (name)",
+        // for assistant it's just the name.
+        if (msg.subAgent) {
+            // No badge — the role label below handles identification.
         }
 
         if (shouldShowRoleLabel(msg)) {
-            let roleText = this.roleLabel(msg.role);
-            // For sub-agent tool calls, append the sub-agent name in parentheses
+            let roleText: string;
             if (msg.subAgent && msg.role === 'tool_call') {
-                roleText += ` (${getSubAgentLabel(msg.subAgent.agentName)})`;
+                roleText = `${this.roleLabel(msg.role)} (${getSubAgentLabel(msg.subAgent.agentName)})`;
+            } else if (msg.subAgent) {
+                roleText = getSubAgentLabel(msg.subAgent.agentName);
+            } else {
+                roleText = this.roleLabel(msg.role);
             }
             bubble.createEl('span', {
                 cls: 'session-bubble__role',
@@ -648,15 +650,18 @@ export class BubbleRenderer extends Component {
 
     /**
      * Sub-agent bubbles that were first rendered without `subAgent` metadata
-     * (or before a badge was added) can retain a stale "AI" role line while
-     * streaming. Force a full re-render when that happens.
+     * can retain a stale "AI" role line while streaming. Force a full re-render
+     * when that happens. After the first correct render (role label == expected
+     * sub-agent name), streaming updates use the incremental path.
      */
     private subAgentBubbleNeedsFullRender(bubble: HTMLElement, msg: ChatMessage): boolean {
         if (!msg.subAgent) return false;
-        const hasStaleRole = bubble.querySelector('.session-bubble__role') !== null;
-        const missingBadge = bubble.querySelector('.session-bubble__subagent-badge') === null;
-        const missingSubagentClass = !bubble.hasClass('session-bubble--subagent');
-        return hasStaleRole || missingBadge || missingSubagentClass;
+        const roleEl = bubble.querySelector('.session-bubble__role');
+        if (!roleEl) return true; // No role label yet — needs render
+        const expectedText = getSubAgentLabel(msg.subAgent.agentName);
+        if (roleEl.textContent !== expectedText) return true; // Stale "AI" label
+        if (!bubble.hasClass('session-bubble--subagent')) return true;
+        return false;
     }
 
     private roleLabel(role: ChatMessage['role']): string {
