@@ -187,38 +187,142 @@ export class BubbleListController {
     }
 
     /**
-     * Find the nearest preceding user message for the given message
-     * and scroll to its bubble with a flash highlight.
+     * Find the ID of the nearest preceding user message in the chat data.
+     * Returns null when there is no previous user message.
+     *
+     * For sub-agent messages (inline bubbles rendered after a delegate_task
+     * tool call), the lookup anchors on the delegate_task's position in the
+     * main message list, since sub-agent messages are NOT part of
+     * `chat.messages` — they live in a separate per-tool-call store.
      */
-    scrollToPrevUser(msg: ChatMessage): boolean {
-        const currentBubble = this.messageBubbles.get(msg.id);
-        if (!currentBubble) return false;
-        const target = walkToUserBubble(currentBubble, 'prev');
-        if (!target) return false;
-        flashAndScroll(target);
-        return true;
+    findPrevUserMessageId(msg: ChatMessage): string | null {
+        const messages = this.deps.chat()?.messages ?? [];
+        if (messages.length === 0) return null;
+
+        const scanStart = this.resolveScanStart(msg, messages, 'prev');
+        if (scanStart < 0) return null;
+
+        for (let i = scanStart; i >= 0; i--) {
+            const m = messages[i];
+            if (m?.role === 'user') return m.id;
+        }
+        return null;
     }
 
     /**
-     * Check whether a next (following) user bubble exists in the DOM.
+     * Find the ID of the nearest following user message in the chat data.
+     * Returns null when there is no next user message.
+     *
+     * Sub-agent messages: anchored on the delegate_task's position in the
+     * main message list (see {@link findPrevUserMessageId}).
+     */
+    findNextUserMessageId(msg: ChatMessage): string | null {
+        const messages = this.deps.chat()?.messages ?? [];
+        if (messages.length === 0) return null;
+
+        const scanStart = this.resolveScanStart(msg, messages, 'next');
+        if (scanStart < 0) return null;
+
+        for (let i = scanStart; i < messages.length; i++) {
+            const m = messages[i];
+            if (m?.role === 'user') return m.id;
+        }
+        return null;
+    }
+
+    /**
+     * Resolve the starting index in the main messages array for scanning
+     * towards prev/next user messages.
+     *
+     * - **Normal messages**: use the message's own index in `chat.messages`.
+     * - **Sub-agent messages**: use the position of the parent `delegate_task`
+     *   tool call (matched by `toolCallId`), since sub-agent messages live
+     *   in a separate per-tool-call store and are NOT in `chat.messages`.
+     *   For "prev" scan we start from the delegate_task itself (so the user
+     *   message that triggered this turn is included); for "next" scan we
+     *   start from the position after the delegate_task.
+     */
+    private resolveScanStart(
+        msg: ChatMessage,
+        messages: ReadonlyArray<ChatMessage>,
+        dir: 'prev' | 'next',
+    ): number {
+        // ── Sub-agent message: anchor on the parent delegate_task ─────
+        if (msg.subAgent) {
+            const parentTcId = msg.subAgent.parentToolCallId;
+            const delegateIdx = messages.findIndex(
+                m => m.role === 'tool_call' && m.toolCallMeta?.toolCallId === parentTcId,
+            );
+            if (delegateIdx < 0) {
+                // Fallback: delegate_task not found (shouldn't happen in
+                // normal operation). Treat as if we can't determine position.
+                return -1;
+            }
+            // For "prev": include the delegate_task row itself so the
+            // user message that triggered this turn is reachable.
+            // For "next": start after the delegate_task (the next user
+            // message lives in the main conversation after this turn).
+            return dir === 'prev' ? delegateIdx : delegateIdx + 1;
+        }
+
+        // ── Normal message: use its own index ─────────────────────────
+        const idx = messages.findIndex(m => m.id === msg.id);
+        if (idx < 0) return -1;
+        return dir === 'prev' ? idx - 1 : idx + 1;
+    }
+
+    /**
+     * Check whether a next (following) user message exists (ID-based, not DOM).
      */
     canJumpNext(msg: ChatMessage): boolean {
-        const bubble = this.messageBubbles.get(msg.id);
-        if (!bubble) return false;
-        return walkToUserBubble(bubble, 'next') !== null;
+        return this.findNextUserMessageId(msg) !== null;
+    }
+
+    /**
+     * Check whether a previous user message exists (ID-based, not DOM).
+     */
+    canJumpPrev(msg: ChatMessage): boolean {
+        return this.findPrevUserMessageId(msg) !== null;
+    }
+
+    /**
+     * Find the nearest preceding user message for the given message
+     * and scroll to its bubble with a flash highlight.
+     *
+     * When the target bubble is not yet in the DOM (outside the rendered
+     * window), returns the target message ID so the caller can expand
+     * the window. Returns null when scrolled successfully or when no
+     * target exists.
+     */
+    scrollToPrevUser(msg: ChatMessage): string | null {
+        const targetId = this.findPrevUserMessageId(msg);
+        if (!targetId) return null;
+        const bubble = this.messageBubbles.get(targetId);
+        if (bubble) {
+            flashAndScroll(bubble);
+            return null;
+        }
+        return targetId;
     }
 
     /**
      * Find the nearest following user message for the given message
      * and scroll to its bubble with a flash highlight.
+     *
+     * When the target bubble is not yet in the DOM (outside the rendered
+     * window), returns the target message ID so the caller can expand
+     * the window. Returns null when scrolled successfully or when no
+     * target exists.
      */
-    scrollToNextUser(msg: ChatMessage): boolean {
-        const currentBubble = this.messageBubbles.get(msg.id);
-        if (!currentBubble) return false;
-        const target = walkToUserBubble(currentBubble, 'next');
-        if (!target) return false;
-        flashAndScroll(target);
-        return true;
+    scrollToNextUser(msg: ChatMessage): string | null {
+        const targetId = this.findNextUserMessageId(msg);
+        if (!targetId) return null;
+        const bubble = this.messageBubbles.get(targetId);
+        if (bubble) {
+            flashAndScroll(bubble);
+            return null;
+        }
+        return targetId;
     }
 
     /**
@@ -251,20 +355,9 @@ export class BubbleListController {
     }
 }
 
-// ── Shared jump helpers ──────────────────────────────────────────────
+// ── Shared scroll helper ─────────────────────────────────────────────
 
-/** Walk forwards or backwards from a bubble to find a user bubble. */
-function walkToUserBubble(start: Element, dir: 'prev' | 'next'): Element | null {
-    const prop = dir === 'prev' ? 'previousElementSibling' : 'nextElementSibling';
-    let sibling: Element | null = start[prop];
-    while (sibling) {
-        if (sibling.classList.contains('session-bubble--user')) return sibling;
-        sibling = sibling[prop];
-    }
-    return null;
-}
-
-/** Scroll to a user bubble and flash it briefly. */
+/** Scroll to a bubble and flash it briefly. */
 function flashAndScroll(target: Element): void {
     target.scrollIntoView({ behavior: 'smooth', block: 'start' });
     target.classList.add('session-bubble--highlight');

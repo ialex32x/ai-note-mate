@@ -681,8 +681,9 @@ export class SessionView extends ItemView {
             this.containerEl,
             (msg) => { void this.handleBranchFromMessage(msg); },
             (msg) => { void this.handleEditMessage(msg); },
-            (msg) => { this.handleJumpToUser(msg); },
-            (msg) => { this.handleJumpToNextUser(msg); },
+            (msg) => { void this.handleJumpToUser(msg); },
+            (msg) => { void this.handleJumpToNextUser(msg); },
+            (msg) => this.canJumpToPrevUser(msg),
             (msg) => this.canJumpToNextUser(msg),
         );
         this.addChild(this.bubbleRenderer);
@@ -1186,17 +1187,52 @@ export class SessionView extends ItemView {
     /**
      * Scroll to the user message that precedes the given message
      * (i.e. the user message that started the current turn).
+     *
+     * Uses message IDs from the data model, then looks up the
+     * corresponding bubble. If the target bubble hasn't been rendered
+     * yet (outside the lazy window), expands the window first.
      */
     private handleJumpToUser(msg: ChatMessage): void {
-        this.bubbleList.scrollToPrevUser(msg);
+        const targetId = this.bubbleList.scrollToPrevUser(msg);
+        if (targetId) {
+            // Target exists but bubble is outside the rendered window
+            void this.ensureMessageVisible(targetId).then(() => {
+                window.requestAnimationFrame(() => {
+                    const bubble = this.bubbleList.messageBubbles.get(targetId);
+                    if (bubble) {
+                        bubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        bubble.addClass('session-bubble--highlight');
+                        window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 1700);
+                    }
+                });
+            });
+        }
     }
 
-    /** Scroll to the next (following) user message. */
+    /** Scroll to the next (following) user message (ID-based). */
     private handleJumpToNextUser(msg: ChatMessage): void {
-        this.bubbleList.scrollToNextUser(msg);
+        const targetId = this.bubbleList.scrollToNextUser(msg);
+        if (targetId) {
+            // Target exists but bubble is outside the rendered window
+            void this.ensureMessageVisible(targetId).then(() => {
+                window.requestAnimationFrame(() => {
+                    const bubble = this.bubbleList.messageBubbles.get(targetId);
+                    if (bubble) {
+                        bubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        bubble.addClass('session-bubble--highlight');
+                        window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 1700);
+                    }
+                });
+            });
+        }
     }
 
-    /** Returns true if the message has another user bubble after it in the DOM. */
+    /** Returns true if the message has a previous user message in the data model. */
+    private canJumpToPrevUser(msg: ChatMessage): boolean {
+        return this.bubbleList.canJumpPrev(msg);
+    }
+
+    /** Returns true if the message has a next user message in the data model. */
     private canJumpToNextUser(msg: ChatMessage): boolean {
         return this.bubbleList.canJumpNext(msg);
     }

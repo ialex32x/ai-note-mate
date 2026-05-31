@@ -122,8 +122,10 @@ export class BubbleRenderer extends Component {
         private onJumpToUser?: (msg: ChatMessage) => void,
         /** Callback: scroll to the next (following) user message. */
         private onJumpToNextUser?: (msg: ChatMessage) => void,
-        /** Returns true when the given message has a next user message to jump to. */
-        private canJumpNextUser?: (msg: ChatMessage) => boolean,
+        /** Returns true when the given message has a previous user message to jump to (ID-based). */
+        private canJumpToPrevUser?: (msg: ChatMessage) => boolean,
+        /** Returns true when the given message has a next user message to jump to (ID-based). */
+        private canJumpToNextUser?: (msg: ChatMessage) => boolean,
     ) {
         super();
         this.ctx = {
@@ -181,6 +183,8 @@ export class BubbleRenderer extends Component {
             onBranch: this.onBranchFromMessage,
             onJumpToUser: this.onJumpToUser,
             onJumpToNextUser: this.onJumpToNextUser,
+            canJumpToPrevUser: this.canJumpToPrevUser,
+            canJumpToNextUser: this.canJumpToNextUser,
         };
     }
 

@@ -48,6 +48,10 @@ export interface ChatBubbleOptions {
     onJumpToUser?: (msg: ChatMessage) => void;
     /** Jump navigation: scroll to next user message. */
     onJumpToNextUser?: (msg: ChatMessage) => void;
+    /** Whether this message has a previous user message to jump to (ID-based, not DOM). */
+    canJumpToPrevUser?: (msg: ChatMessage) => boolean;
+    /** Whether this message has a next user message to jump to (ID-based, not DOM). */
+    canJumpToNextUser?: (msg: ChatMessage) => boolean;
     /** Host callback for insight extraction (assistant bubbles). */
     onExtractInsights?: (msg: ChatMessage) => void;
 }
@@ -194,6 +198,8 @@ export class ChatBubble {
             onJumpToUser,
             onJumpToNextUser,
             onExtractInsights,
+            canJumpToPrevUser,
+            canJumpToNextUser,
         } = opts;
 
         // ── System message (special layout: no body wrapper) ──────────
@@ -273,6 +279,8 @@ export class ChatBubble {
             onJumpToNextUser,
             onEdit,
             onBranch,
+            canJumpToPrevUser,
+            canJumpToNextUser,
         });
 
         ctx.onScrollNeeded();
@@ -292,7 +300,7 @@ export class ChatBubble {
             ChatBubbleOptions,
             'abortedMessageIds' | 'onExtractInsights'
             | 'isBusy' | 'onJumpToUser' | 'onJumpToNextUser'
-            | 'onEdit'
+            | 'onEdit' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
     ): IconActionOptions[] {
         const {
@@ -302,16 +310,18 @@ export class ChatBubble {
             onJumpToUser,
             onJumpToNextUser,
             onEdit,
+            canJumpToPrevUser,
+            canJumpToNextUser,
         } = opts;
 
         const defs: IconActionOptions[] = [];
 
         switch (msg.role) {
             case 'user': {
-                if (onJumpToUser && hasPreviousUserBubble(bubble)) {
+                if (onJumpToUser && canJumpToPrevUser?.(msg)) {
                     defs.push({ icon: 'arrow-up', label: t('view.jumpToUser'), onClick: () => onJumpToUser(msg) });
                 }
-                if (onJumpToNextUser) {
+                if (onJumpToNextUser && canJumpToNextUser?.(msg)) {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
                 }
                 if (onEdit) {
@@ -321,10 +331,10 @@ export class ChatBubble {
                 break;
             }
             case 'assistant': {
-                if (onJumpToUser) {
+                if (onJumpToUser && canJumpToPrevUser?.(msg)) {
                     defs.push({ icon: 'arrow-up', label: t('view.jumpToUser'), onClick: () => onJumpToUser(msg) });
                 }
-                if (onJumpToNextUser && hasNextUserBubble(bubble)) {
+                if (onJumpToNextUser && canJumpToNextUser?.(msg)) {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
                 }
                 // Copy button handled separately
@@ -334,10 +344,10 @@ export class ChatBubble {
                 break;
             }
             case 'tool_call': {
-                if (onJumpToUser) {
+                if (onJumpToUser && canJumpToPrevUser?.(msg)) {
                     defs.push({ icon: 'arrow-up', label: t('view.jumpToUser'), onClick: () => onJumpToUser(msg) });
                 }
-                if (onJumpToNextUser) {
+                if (onJumpToNextUser && canJumpToNextUser?.(msg)) {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
                 }
                 // Copy button handled separately
@@ -356,7 +366,7 @@ export class ChatBubble {
             ChatBubbleOptions,
             'abortedMessageIds' | 'speechController' | 'onExtractInsights'
             | 'isBusy' | 'onJumpToUser' | 'onJumpToNextUser'
-            | 'onEdit' | 'onBranch'
+            | 'onEdit' | 'onBranch' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
     ): void {
         const {
@@ -487,22 +497,4 @@ function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
     return Object.keys(v as Record<string, unknown>).length > 0;
 }
 
-// ── DOM-walk helpers for conditional toolbar actions ──────────────────
 
-function hasPreviousUserBubble(bubble: HTMLElement): boolean {
-    let el: Element | null = bubble.previousElementSibling;
-    while (el) {
-        if (el.classList.contains('session-bubble--user')) return true;
-        el = el.previousElementSibling;
-    }
-    return false;
-}
-
-function hasNextUserBubble(bubble: HTMLElement): boolean {
-    let el: Element | null = bubble.nextElementSibling;
-    while (el) {
-        if (el.classList.contains('session-bubble--user')) return true;
-        el = el.nextElementSibling;
-    }
-    return false;
-}
