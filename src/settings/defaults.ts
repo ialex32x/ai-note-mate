@@ -204,7 +204,6 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	memoryExtractMinReplyChars: 400,
 	followUpSuggestionsEnabled: true,
 	followUpSuggestionsStructured: false,
-	followUpSuggestionsAutoSend: false,
 	insightExtractionEnabled: true,
 	insightExtractionMinReplyChars: 400,
 	// Mirrors ARTIFACT_STORE_DEFAULTS (1 MB / 128 KB / 30 min). Kept as

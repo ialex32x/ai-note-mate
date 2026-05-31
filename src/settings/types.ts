@@ -384,8 +384,6 @@ export interface NoteAssistantPluginSettings {
 	followUpSuggestionsEnabled: boolean;
 	/** When true, instruct the model (via system prompt) to emit a structured <!--suggestions--> block. */
 	followUpSuggestionsStructured: boolean;
-	/** When true, clicking a suggestion button sends it immediately instead of just prefilling the input. */
-	followUpSuggestionsAutoSend: boolean;
 
 	// ── Conversation insight extraction (knowledge-nugget preview) ──────────
 	/**

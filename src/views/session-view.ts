@@ -1889,26 +1889,15 @@ export class SessionView extends ItemView {
      * - If the client action cannot be carried out (unknown kind, note not
      *   found in the vault, ...), we transparently fall back to the default
      *   prompt-based flow so the user still gets a useful response.
-     * - Default flow: prefill the input editor with the full prompt and
-     *   focus it, so the user can review/edit before sending. When the
-     *   "auto-send on click" option is enabled, the prompt is sent
-     *   immediately instead.
+     * - Default flow: send the picked prompt directly without touching the
+     *   input editor. Follow-up picks are self-contained and must preserve
+     *   any user draft already in progress.
      */
     private handleFollowUpPick(action: SuggestedAction): void {
         if (action.action && this.tryRunClientAction(action.action)) {
             return;
         }
-        const autoSend = this.plugin.settings.followUpSuggestionsAutoSend === true;
-        if (autoSend) {
-            // Send the picked prompt directly without touching the input
-            // editor — the user's current draft must be preserved because
-            // follow-up is self-contained and does not consume user input.
-            void this.sendPrompt(action.prompt);
-            return;
-        }
-        this.cmInput.setContent(action.prompt);
-        this.cmInput.focus();
-        this.draftController?.scheduleSave();
+        void this.sendPrompt(action.prompt);
     }
 
     /**

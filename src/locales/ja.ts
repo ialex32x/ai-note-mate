@@ -232,8 +232,6 @@ export const ja: Record<string, string> = {
 	'settings.followUpSuggestionsDesc': 'AI が回答の最後で次のアクションを提案したとき、それらをメッセージ末尾の使い捨てクイックボタンとして表示し、クリック一つで続けられるようにします。',
 	'settings.followUpSuggestionsStructured': 'モデルに構造化されたフォローアップを要求',
 	'settings.followUpSuggestionsStructuredDesc': 'システムプロンプトに短い指示を追加し、有能なモデルに非表示の、機械可読なフォローアップブロックの出力を促します。精度は上がりますが、少量のプロンプトトークンを消費します。',
-	'settings.followUpSuggestionsAutoSend': 'クリックで即時送信',
-	'settings.followUpSuggestionsAutoSendDesc': '有効にすると、提案ボタンをクリックした際にプロンプトをそのまま送信します。無効の場合は入力欄に転写され、編集後に送信できます。',
 	'settings.insightExtraction': '応答から再利用可能な知見を抽出',
 	'settings.insightExtractionDesc': 'AI の応答ごとに、一度きり・状態を持たない呼び出しで候補となる知見を読み取り専用カードとして表示します。各項目をクリックすると、その内容を追加の対話ターンでさらに深掘りできます。',
 	'settings.insightsProfile': 'インサイト',

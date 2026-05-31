@@ -232,8 +232,6 @@ export const zhTW: Record<string, string> = {
 	'settings.followUpSuggestionsDesc': 'AI 回覆結尾建議下一步時，將其渲染為訊息結尾的一次性快捷按鈕，點擊即可繼續，省去重複輸入。',
 	'settings.followUpSuggestionsStructured': '讓模型輸出結構化追問',
 	'settings.followUpSuggestionsStructuredDesc': '在系統提示中追加一段說明，讓能力較強的模型輸出一個隱藏的、機器可讀的追問區塊。識別更精準，但會多消耗少量提示詞 Token。',
-	'settings.followUpSuggestionsAutoSend': '點擊追問按鈕立即傳送',
-	'settings.followUpSuggestionsAutoSendDesc': '開啟後，點擊追問按鈕將直接傳送該提示；關閉時僅將提示填入輸入框，方便你先編輯再傳送。',
 	'settings.insightExtraction': '從回覆中萃取可複用知識點',
 	'settings.insightExtractionDesc': 'AI 每次回覆後，透過一次性、無狀態呼叫將候選知識點以唯讀卡片呈現；點擊任一條可讓 AI 在後續對話中進一步展開。',
 	'settings.insightsProfile': '見解',

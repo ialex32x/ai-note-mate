@@ -232,8 +232,6 @@ export const ko: Record<string, string> = {
 	'settings.followUpSuggestionsDesc': 'AI 응답의 끝에 다음 단계 제안이 있을 때 해당 제안을 메시지 끝의 일회성 퀵 픽 버튼으로 표시하여 클릭 한 번으로 계속 진행할 수 있게 합니다.',
 	'settings.followUpSuggestionsStructured': '모델에 구조화된 후속 제안 요청',
 	'settings.followUpSuggestionsStructuredDesc': '시스템 프롬프트에 짧은 안내를 추가하여, 유능한 모델이 숨겨진 기계 가독 후속 제안 블록을 출력하도록 합니다. 정확도가 향상되지만 약간의 프롬프트 토큰이 더 사용됩니다.',
-	'settings.followUpSuggestionsAutoSend': '클릭 시 즉시 전송',
-	'settings.followUpSuggestionsAutoSendDesc': '활성화하면 제안 버튼을 클릭할 때 프롬프트를 즉시 전송합니다. 비활성화 시에는 입력란에만 채워져 수정 후 전송할 수 있습니다.',
 	'settings.insightExtraction': '응답에서 재사용 가능한 인사이트 추출',
 	'settings.insightExtractionDesc': '어시스턴트 응답마다 일회성·무상태 호출로 후보 인사이트를 읽기 전용 카드로 보여줍니다. 항목을 클릭하면 후속 대화 턴으로 해당 인사이트를 더 깊이 파고들 수 있습니다.',
 	'settings.insightsProfile': '인사이트',

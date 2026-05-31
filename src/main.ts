@@ -403,6 +403,9 @@ export default class NoteAssistantPlugin extends Plugin {
 		if ('memories' in legacy) {
 			delete legacy.memories;
 		}
+		if ('followUpSuggestionsAutoSend' in legacy) {
+			delete legacy.followUpSuggestionsAutoSend;
+		}
 
 		// Migrate legacy profile fields. Older versions stored a single
 		// `supportsVision: boolean`; we now use a `modalities` array so users

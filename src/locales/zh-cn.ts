@@ -232,8 +232,6 @@ export const zhCN: Record<string, string> = {
 	'settings.followUpSuggestionsDesc': 'AI 回复末尾建议下一步操作时，将其渲染为消息末尾的一次性快捷按钮，点击即可继续，免去重复输入。',
 	'settings.followUpSuggestionsStructured': '让模型输出结构化追问',
 	'settings.followUpSuggestionsStructuredDesc': '在系统提示中追加一小段说明，让能力较强的模型输出一个隐藏的、机器可读的追问块。识别更准确，但会多消耗少量提示词 Token。',
-	'settings.followUpSuggestionsAutoSend': '点击追问按钮立即发送',
-	'settings.followUpSuggestionsAutoSendDesc': '开启后，点击追问按钮将直接发送该提示；关闭时只会将提示填入输入框，方便你先编辑再发送。',
 	'settings.insightExtraction': '从回复中提炼可复用知识点',
 	'settings.insightExtractionDesc': 'AI 每次回复后，通过一次性、无状态调用将候选知识点以只读卡片呈现；点击任意一条可让 AI 在后续对话中进一步展开。',
 	'settings.insightsProfile': '见解',

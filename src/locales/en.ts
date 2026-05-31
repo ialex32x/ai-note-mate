@@ -232,8 +232,6 @@ export const en: Record<string, string> = {
 	'settings.followUpSuggestionsDesc': 'When the AI ends its reply with proposed next actions, render them as one-shot quick-pick buttons so you can continue with a single click.',
 	'settings.followUpSuggestionsStructured': 'Ask the model for structured follow-ups',
 	'settings.followUpSuggestionsStructuredDesc': 'Injects a short system-prompt section asking the model to emit a hidden, machine-readable suggestions block. Improves accuracy with capable models, at the cost of a few extra prompt tokens.',
-	'settings.followUpSuggestionsAutoSend': 'Send suggestion on click',
-	'settings.followUpSuggestionsAutoSendDesc': 'When enabled, clicking a suggestion button immediately sends the prompt instead of just prefilling the input.',
 	'settings.insightExtraction': 'Extract reusable insights from replies',
 	'settings.insightExtractionDesc': 'After each assistant reply, runs a one-shot, stateless call to surface candidate knowledge nuggets in a read-only card. Click any item to let the assistant expand on it as a follow-up turn.',
 	'settings.insightsProfile': 'Insights',
