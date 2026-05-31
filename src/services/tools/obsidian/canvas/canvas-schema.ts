@@ -50,6 +50,8 @@ export interface CanvasSummary {
     node_count: number;
     edge_count: number;
     nodes_by_type: Record<string, number>;
+    /** All node ids grouped by type. Only populated when `include_node_ids` is true. */
+    node_ids?: Record<string, string[]>;
     referenced_files: string[];
     groups: Array<{ id: string; label: string | null; child_hint: string | null }>;
     bounds: { min_x: number; min_y: number; max_x: number; max_y: number } | null;
@@ -241,10 +243,14 @@ export function hasCanvasErrors(issues: CanvasValidationIssue[]): boolean {
     return issues.some((i) => i.severity === "error");
 }
 
-export function summarizeCanvas(data: CanvasData): CanvasSummary {
+export function summarizeCanvas(
+    data: CanvasData,
+    includeNodeIds?: boolean,
+): CanvasSummary {
     const nodes = data.nodes ?? [];
     const edges = data.edges ?? [];
     const nodesByType: Record<string, number> = {};
+    const nodeIdsByType: Record<string, string[]> = {};
     const referencedFiles: string[] = [];
     const groups: CanvasSummary["groups"] = [];
 
@@ -255,6 +261,9 @@ export function summarizeCanvas(data: CanvasData): CanvasSummary {
 
     for (const node of nodes) {
         nodesByType[node.type] = (nodesByType[node.type] ?? 0) + 1;
+        if (includeNodeIds) {
+            (nodeIdsByType[node.type] ??= []).push(node.id);
+        }
         if (node.type === "file" && typeof node.file === "string" && node.file.length > 0) {
             referencedFiles.push(node.file);
         }
@@ -278,7 +287,7 @@ export function summarizeCanvas(data: CanvasData): CanvasSummary {
             ? { min_x: minX, min_y: minY, max_x: maxX, max_y: maxY }
             : null;
 
-    return {
+    const summary: CanvasSummary = {
         node_count: nodes.length,
         edge_count: edges.length,
         nodes_by_type: nodesByType,
@@ -286,6 +295,12 @@ export function summarizeCanvas(data: CanvasData): CanvasSummary {
         groups,
         bounds,
     };
+
+    if (includeNodeIds) {
+        summary.node_ids = nodeIdsByType;
+    }
+
+    return summary;
 }
 
 export interface NewCanvasNodeInput {
@@ -428,6 +443,19 @@ export function addNodesToCanvas(data: CanvasData, newNodes: CanvasNode[]): Canv
 export function addEdgesToCanvas(data: CanvasData, newEdges: CanvasEdge[]): CanvasData {
     const edges = [...(data.edges ?? []), ...newEdges];
     return { ...data, edges };
+}
+
+export function removeNodesFromCanvas(data: CanvasData, nodeIds: Set<string>): CanvasData {
+    const survivingNodes = (data.nodes ?? []).filter((n) => !nodeIds.has(n.id));
+    const survivingEdges = (data.edges ?? []).filter(
+        (e) => !nodeIds.has(e.fromNode) && !nodeIds.has(e.toNode),
+    );
+    return { ...data, nodes: survivingNodes, edges: survivingEdges };
+}
+
+export function removeEdgesFromCanvas(data: CanvasData, edgeIds: Set<string>): CanvasData {
+    const survivingEdges = (data.edges ?? []).filter((e) => !edgeIds.has(e.id));
+    return { ...data, edges: survivingEdges };
 }
 
 export interface LayoutCanvasGridOptions {

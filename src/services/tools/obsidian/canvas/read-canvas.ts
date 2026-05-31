@@ -24,6 +24,13 @@ export function vaultReadCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "string",
                             description: "Vault-relative path to a .canvas file, e.g. 'Boards/Overview.canvas'.",
                         },
+                        include_node_ids: {
+                            type: "boolean",
+                            description:
+                                "When true, returns `node_ids` grouped by type so you can reference " +
+                                "specific nodes in follow-up tools (add_canvas_edges, update_canvas_nodes, " +
+                                "delete_canvas_nodes, layout_canvas_grid). Defaults to false.",
+                        },
                     },
                     required: ["path"],
                 },
@@ -32,11 +39,12 @@ export function vaultReadCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["read_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal) => {
             const path = args["path"] as string;
+            const includeNodeIds = (args["include_node_ids"] as boolean) ?? false;
             const loaded = await loadCanvasFromVault(plugin.app, path);
             if (!loaded.ok) return loaded.result;
 
             const resolvePath = makePathResolver(plugin.app);
-            const inspection = inspectCanvasContent(loaded.content, resolvePath);
+            const inspection = inspectCanvasContent(loaded.content, resolvePath, includeNodeIds);
 
             return {
                 success: true,

@@ -42,6 +42,10 @@ import {
     vaultAddCanvasNodes,
     vaultAddCanvasEdges,
     vaultLayoutCanvasGrid,
+    vaultUpdateCanvasNodes,
+    vaultDeleteCanvasNodes,
+    vaultDeleteCanvasEdges,
+    vaultAutoLayoutCanvas,
 } from "./canvas";
 import {
     vaultReadBase,
@@ -125,6 +129,10 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultWriteCanvas(plugin),
         vaultAddCanvasNodes(plugin),
         vaultAddCanvasEdges(plugin),
+        vaultUpdateCanvasNodes(plugin),
+        vaultDeleteCanvasNodes(plugin),
+        vaultDeleteCanvasEdges(plugin),
+        vaultAutoLayoutCanvas(plugin),
         vaultLayoutCanvasGrid(plugin),
         vaultCreateBase(plugin),
         vaultWriteBase(plugin),

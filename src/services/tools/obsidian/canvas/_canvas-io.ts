@@ -41,6 +41,7 @@ export async function loadCanvasFromVault(
 export function inspectCanvasContent(
     content: string,
     resolvePath?: (vaultRelativePath: string) => boolean,
+    includeNodeIds?: boolean,
 ): {
     parse_ok: boolean;
     validation_issues: CanvasValidationIssue[];
@@ -51,14 +52,14 @@ export function inspectCanvasContent(
         return {
             parse_ok: false,
             validation_issues: [{ severity: "error", message: parsed.error }],
-            summary: summarizeCanvas({ nodes: [], edges: [] }),
+            summary: summarizeCanvas({ nodes: [], edges: [] }, includeNodeIds),
         };
     }
     const issues = validateCanvas(parsed.data, resolvePath);
     return {
         parse_ok: !hasCanvasErrors(issues),
         validation_issues: issues,
-        summary: summarizeCanvas(parsed.data),
+        summary: summarizeCanvas(parsed.data, includeNodeIds),
     };
 }
 
