@@ -5,7 +5,6 @@ import type { ToolCapability } from "../../../llm-provider";
 import { ensureParentFolder, requireFileExtension } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 import {
-    autoLayoutCanvas,
     hasCanvasErrors,
     parseCanvasContent,
     serializeCanvas,
@@ -16,18 +15,12 @@ import { inspectCanvasContent, makePathResolver, requireCanvasExtension } from "
 function validateCanvasContentForWrite(
     app: NoteAssistantPlugin["app"],
     content: unknown,
-    autoLayout = false,
-): { serialized: string; auto_layout_applied: boolean } | ToolCallResult {
+): { serialized: string } | ToolCallResult {
     const parsed = parseCanvasContent(content);
     if (!parsed.ok) {
         return { success: false, type: "text", content: parsed.error };
     }
-    let data = parsed.data;
-    const autoLayoutApplied = autoLayout && (data.nodes?.length ?? 0) > 0;
-    if (autoLayoutApplied) {
-        data = autoLayoutCanvas(data);
-    }
-    const issues = validateCanvas(data, makePathResolver(app));
+    const issues = validateCanvas(parsed.data, makePathResolver(app));
     if (hasCanvasErrors(issues)) {
         const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
         return {
@@ -39,7 +32,7 @@ function validateCanvasContentForWrite(
                 "\nFix the JSON and retry, or call read_canvas after a successful write to inspect structure.",
         };
     }
-    return { serialized: serializeCanvas(data), auto_layout_applied: autoLayoutApplied };
+    return { serialized: serializeCanvas(parsed.data) };
 }
 
 export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -54,8 +47,8 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                     "Create a NEW Obsidian Canvas file (`.canvas`, JSON Canvas 1.0). Content is validated " +
                     "against the JSON Canvas schema before writing. REFUSES if the path already exists. " +
                     "Prefer this over `create_file` for canvas files. Missing parent folders are created " +
-                    "automatically. By default, nodes are auto-arranged on a readable grid after validation " +
-                    "(set `auto_layout` to false to keep AI-provided coordinates).",
+                    "automatically. Place nodes at sensible coordinates and use `layout_canvas_grid` " +
+                    "to rearrange specific nodes on a uniform grid if needed.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -70,13 +63,7 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                             description:
                                 "JSON Canvas document body (object with `nodes` and/or `edges` arrays). " +
                                 "Each node needs id, type, x, y, width, height; file nodes need `file`; link nodes need `url`. " +
-                                "Coordinates may be approximate — they are re-arranged on a grid unless `auto_layout` is false.",
-                        },
-                        auto_layout: {
-                            type: "boolean",
-                            description:
-                                "When true (default), reposition nodes on a spaced grid for readability. " +
-                                "Set false only when preserving exact manual coordinates matters.",
+                                "Coordinates are written as-is; use `layout_canvas_grid` to reposition afterwards.",
                         },
                     },
                     required: ["path", "content"],
@@ -87,7 +74,6 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
         exec: async (chatStream, args, _signal) => {
             const path = args["path"] as string;
             const content = args["content"];
-            const autoLayout = (args["auto_layout"] as boolean | undefined) ?? true;
 
             const canvasExt = requireCanvasExtension(path);
             if (!canvasExt.ok) {
@@ -96,7 +82,7 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
             const extErr = requireFileExtension(path);
             if (extErr) return extErr;
 
-            const validated = validateCanvasContentForWrite(plugin.app, content, autoLayout);
+            const validated = validateCanvasContentForWrite(plugin.app, content);
             if ("success" in validated) return validated;
 
             const existing: TAbstractFile | null = plugin.app.vault.getAbstractFileByPath(path);
@@ -133,10 +119,9 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                 success: true,
                 type: "object",
                 content: {
-                    action: "created",
+                    action: "canvas_created",
                     path,
-                    auto_layout_applied: validated.auto_layout_applied,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
@@ -234,7 +219,7 @@ export function vaultWriteCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                     path,
                     previous_mtime: previousMtime,
                     new_mtime: file.stat.mtime,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },

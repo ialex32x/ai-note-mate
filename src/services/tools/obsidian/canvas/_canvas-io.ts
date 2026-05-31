@@ -42,24 +42,26 @@ export function inspectCanvasContent(
     content: string,
     resolvePath?: (vaultRelativePath: string) => boolean,
     includeNodeIds?: boolean,
+    includeEdgeIds?: boolean,
 ): {
-    parse_ok: boolean;
+    valid: boolean;
     validation_issues: CanvasValidationIssue[];
     summary: ReturnType<typeof summarizeCanvas>;
 } {
+    const opts = { includeNodeIds, includeEdgeIds };
     const parsed = parseCanvasContent(content);
     if (!parsed.ok) {
         return {
-            parse_ok: false,
+            valid: false,
             validation_issues: [{ severity: "error", message: parsed.error }],
-            summary: summarizeCanvas({ nodes: [], edges: [] }, includeNodeIds),
+            summary: summarizeCanvas({ nodes: [], edges: [] }, opts),
         };
     }
     const issues = validateCanvas(parsed.data, resolvePath);
     return {
-        parse_ok: !hasCanvasErrors(issues),
+        valid: !hasCanvasErrors(issues),
         validation_issues: issues,
-        summary: summarizeCanvas(parsed.data, includeNodeIds),
+        summary: summarizeCanvas(parsed.data, opts),
     };
 }
 

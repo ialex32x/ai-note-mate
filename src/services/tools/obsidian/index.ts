@@ -37,15 +37,18 @@ import {
 import { vaultAddFilesTags, vaultRemoveFilesTags, vaultSetFilesTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
 import {
     vaultReadCanvas,
+    vaultReadCanvasNode,
+    vaultListCanvasNodes,
+    vaultListCanvasEdges,
     vaultCreateCanvas,
     vaultWriteCanvas,
     vaultAddCanvasNodes,
     vaultAddCanvasEdges,
     vaultLayoutCanvasGrid,
     vaultUpdateCanvasNodes,
+    vaultUpdateCanvasEdges,
     vaultDeleteCanvasNodes,
     vaultDeleteCanvasEdges,
-    vaultAutoLayoutCanvas,
 } from "./canvas";
 import {
     vaultReadBase,
@@ -130,9 +133,9 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultAddCanvasNodes(plugin),
         vaultAddCanvasEdges(plugin),
         vaultUpdateCanvasNodes(plugin),
+        vaultUpdateCanvasEdges(plugin),
         vaultDeleteCanvasNodes(plugin),
         vaultDeleteCanvasEdges(plugin),
-        vaultAutoLayoutCanvas(plugin),
         vaultLayoutCanvasGrid(plugin),
         vaultCreateBase(plugin),
         vaultWriteBase(plugin),
@@ -191,6 +194,9 @@ export function createObsidianReadOnlyTools(plugin: NoteAssistantPlugin): Regist
         vaultRankNotesByEmbeddedSize(plugin),
         // Canvas / Bases inspection
         vaultReadCanvas(plugin),
+        vaultReadCanvasNode(plugin),
+        vaultListCanvasNodes(plugin),
+        vaultListCanvasEdges(plugin),
         vaultReadBase(plugin),
     ];
 }

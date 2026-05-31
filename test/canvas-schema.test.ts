@@ -5,7 +5,9 @@ import {
     summarizeCanvas,
     hasCanvasErrors,
     normalizeNewNode,
+    normalizeNewEdge,
     addNodesToCanvas,
+    updateEdgesInCanvas,
     serializeCanvas,
     layoutCanvasGrid,
     autoLayoutCanvas,
@@ -62,6 +64,50 @@ describe("canvas-schema", () => {
         };
         const issues = validateCanvas(data);
         expect(hasCanvasErrors(issues)).toBe(true);
+    });
+
+    it("validateCanvas requires text field for text nodes", () => {
+        const data = {
+            nodes: [{ id: "a", type: "text" as const, x: 0, y: 0, width: 100, height: 100 }],
+            edges: [],
+        };
+        const issues = validateCanvas(data);
+        expect(hasCanvasErrors(issues)).toBe(true);
+        expect(issues.some((i) => i.message.includes(".text is required"))).toBe(true);
+    });
+
+    it("validateCanvas warns on invalid color value", () => {
+        const data = {
+            nodes: [{ id: "a", type: "text", x: 0, y: 0, width: 100, height: 100, text: "ok", color: "invalid" }],
+            edges: [],
+        };
+        const issues = validateCanvas(data);
+        expect(hasCanvasErrors(issues)).toBe(false); // color is warning, not error
+        expect(issues.some((i) => i.message.includes("color must be"))).toBe(true);
+    });
+
+    it("validateCanvas accepts valid color presets and hex", () => {
+        const data = {
+            nodes: [
+                { id: "a", type: "text", x: 0, y: 0, width: 100, height: 100, text: "ok", color: "4" },
+                { id: "b", type: "text", x: 0, y: 0, width: 100, height: 100, text: "ok", color: "#FF0000" },
+                { id: "c", type: "text", x: 0, y: 0, width: 100, height: 100, text: "ok", color: "#abc" },
+            ],
+            edges: [],
+        };
+        const issues = validateCanvas(data);
+        expect(hasCanvasErrors(issues)).toBe(false);
+        expect(issues.filter((i) => i.message.includes("color")).length).toBe(0);
+    });
+
+    it("validateCanvas rejects cross-collection id collision", () => {
+        const data = {
+            nodes: [{ id: "same_id", type: "text", x: 0, y: 0, width: 100, height: 100, text: "hi" }],
+            edges: [{ id: "same_id", fromNode: "same_id", toNode: "same_id" }],
+        };
+        const issues = validateCanvas(data);
+        expect(hasCanvasErrors(issues)).toBe(true);
+        expect(issues.some((i) => i.message.includes("collides with a node id"))).toBe(true);
     });
 
     it("summarizeCanvas counts types and bounds", () => {
@@ -162,5 +208,48 @@ describe("canvas-schema", () => {
         const root = laidOut.nodes!.find((n) => n.id === "root")!;
         expect(b.x - (a.x + a.width)).toBeGreaterThanOrEqual(79);
         expect(root.y).toBeGreaterThanOrEqual(0);
+    });
+
+    it("normalizeNewNode suggests wider positions for group nodes", () => {
+        const used = new Set<string>();
+        const groupNode = normalizeNewNode({ type: "group", label: "G1" }, 0, [], used);
+        expect(typeof groupNode).toBe("object");
+        if (typeof groupNode !== "object") return;
+        // Second group node should be placed beyond first group's width + gap
+        const group2 = normalizeNewNode({ type: "group", label: "G2" }, 1, [groupNode], used);
+        expect(typeof group2).toBe("object");
+        if (typeof group2 !== "object") return;
+        // Group nodes are 600px wide + 120 gap = 720, so x >= 720
+        expect(group2.x).toBeGreaterThanOrEqual(720);
+    });
+
+    it("updateEdgesInCanvas updates edge fields by id", () => {
+        const data = {
+            nodes: [{ id: "a", type: "text" as const, x: 0, y: 0, width: 100, height: 100 }],
+            edges: [
+                { id: "e1", fromNode: "a", toNode: "a", label: "old", color: "#000" },
+                { id: "e2", fromNode: "a", toNode: "a" },
+            ],
+        };
+        const result = updateEdgesInCanvas(data, [
+            { id: "e1", label: "new", toEnd: "none" },
+        ]);
+        expect(result.updated_ids).toEqual(["e1"]);
+        const e1 = result.data.edges!.find((e) => e.id === "e1")!;
+        expect(e1.label).toBe("new");
+        expect(e1.toEnd).toBe("none");
+        expect(e1.color).toBe("#000"); // unchanged
+        // e2 untouched
+        const e2 = result.data.edges!.find((e) => e.id === "e2")!;
+        expect(e2.label).toBeUndefined();
+    });
+
+    it("updateEdgesInCanvas ignores missing edge ids", () => {
+        const data = {
+            nodes: [],
+            edges: [{ id: "e1", fromNode: "missing", toNode: "missing" }],
+        };
+        const result = updateEdgesInCanvas(data, [{ id: "nonexistent", label: "x" }]);
+        expect(result.updated_ids).toEqual([]);
     });
 });

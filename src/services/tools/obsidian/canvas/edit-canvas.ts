@@ -6,7 +6,7 @@ import { runVaultMutation } from "../../../vault";
 import {
     addEdgesToCanvas,
     addNodesToCanvas,
-    autoLayoutCanvas,
+    DEFAULT_LAYOUT_GAP,
     hasCanvasErrors,
     layoutCanvasGrid,
     normalizeNewEdge,
@@ -15,6 +15,7 @@ import {
     removeEdgesFromCanvas,
     removeNodesFromCanvas,
     serializeCanvas,
+    updateEdgesInCanvas,
     validateCanvas,
     type CanvasEdge,
     type CanvasNode,
@@ -45,7 +46,8 @@ export function vaultAddCanvasNodes(plugin: NoteAssistantPlugin): RegisteredTool
                             minItems: 1,
                             description:
                                 "Nodes to append. Each needs `type` (text|file|link|group). File nodes need `file`; " +
-                                "link nodes need `url`. Optional: id, x, y, width, height, text, label, subpath, color.",
+                                "link nodes need `url`. Optional: id, x, y, width, height, text, label, subpath, color, " +
+                                "background, backgroundStyle (group nodes only: cover|ratio|repeat).",
                             items: { type: "object" },
                         },
                         dry_run: {
@@ -144,7 +146,7 @@ export function vaultAddCanvasNodes(plugin: NoteAssistantPlugin): RegisteredTool
                     previous_mtime: previousMtime,
                     new_mtime: dryRun ? previousMtime : file.stat.mtime,
                     dry_run: dryRun,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
@@ -269,6 +271,14 @@ export function vaultAddCanvasEdges(plugin: NoteAssistantPlugin): RegisteredTool
                 success: true,
                 type: "object",
                 content: {
+                    action: dryRun ? "dry_run_add_canvas_edges" : "canvas_edges_added",
+                    path,
+                    added_edge_ids: newEdges.map((e) => e.id),
+                    previous_mtime: previousMtime,
+                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
+                    dry_run: dryRun,
+                    valid: inspection.valid,
+                    validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
             };
@@ -303,7 +313,7 @@ export function vaultLayoutCanvasGrid(plugin: NoteAssistantPlugin): RegisteredTo
                         },
                         gap: {
                             type: "number",
-                            description: "Pixel gap between grid cells. Defaults to 80.",
+                            description: "Pixel gap between grid cells. Defaults to 120.",
                         },
                         origin_x: {
                             type: "number",
@@ -349,7 +359,7 @@ export function vaultLayoutCanvasGrid(plugin: NoteAssistantPlugin): RegisteredTo
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
             const columns = Math.max(1, (args["columns"] as number) ?? 3);
-            const gap = Math.max(0, (args["gap"] as number) ?? 80);
+            const gap = Math.max(0, (args["gap"] as number) ?? DEFAULT_LAYOUT_GAP);
             const originX = (args["origin_x"] as number) ?? 0;
             const originY = (args["origin_y"] as number) ?? 0;
             const rawNodeIds = args["node_ids"] as string[] | undefined;
@@ -444,7 +454,7 @@ export function vaultLayoutCanvasGrid(plugin: NoteAssistantPlugin): RegisteredTo
                     previous_mtime: previousMtime,
                     new_mtime: dryRun ? previousMtime : file.stat.mtime,
                     dry_run: dryRun,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
@@ -464,7 +474,7 @@ export function vaultUpdateCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
                 name: "update_canvas_nodes",
                 description:
                     "Update fields of existing nodes in a `.canvas` file by id. Only the provided fields are " +
-                    "changed — omitted fields are left alone. Use `read_canvas` with `include_node_ids: true` first " +
+                    "changed — omitted fields are left alone. Use `list_canvas_nodes` first " +
                     "to discover node ids and current values. Does NOT add or delete nodes.",
                 parameters: {
                     type: "object",
@@ -494,6 +504,8 @@ export function vaultUpdateCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
                                     width: { type: "number" },
                                     height: { type: "number" },
                                     subpath: { type: "string" },
+                                    background: { type: "string", description: "Background image path (group nodes only)." },
+                                    backgroundStyle: { type: "string", description: "cover, ratio, or repeat (group nodes)." },
                                 },
                                 required: ["id"],
                             },
@@ -550,7 +562,9 @@ export function vaultUpdateCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
             const nodeById = new Map(nodes.map((n) => [n.id, n]));
             const updatableKeys = new Set([
                 "text", "file", "url", "label", "color", "x", "y", "width", "height", "subpath",
+                "background", "backgroundStyle",
             ]);
+            const stringKeys = new Set(["text", "file", "url", "label", "color", "subpath", "background", "backgroundStyle"]);
             const updatedIds: string[] = [];
 
             for (let i = 0; i < rawPatches.length; i++) {
@@ -561,13 +575,13 @@ export function vaultUpdateCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
                 }
                 const existing = nodeById.get(nodeId);
                 if (!existing) {
-                    return { success: false, type: "text", content: `Node id '${nodeId}' not found in canvas. Use read_canvas with include_node_ids: true to list ids.` };
+                    return { success: false, type: "text", content: `Node id '${nodeId}' not found in canvas. Use list_canvas_nodes to list ids.` };
                 }
                 const merged = { ...existing };
                 for (const key of updatableKeys) {
                     const v = patch[key];
                     if (v !== undefined) {
-                        if (key === "text" || key === "file" || key === "url" || key === "label" || key === "color" || key === "subpath") {
+                        if (stringKeys.has(key)) {
                             if (typeof v === "string") (merged as Record<string, unknown>)[key] = v;
                         } else {
                             if (typeof v === "number" && Number.isFinite(v)) (merged as Record<string, unknown>)[key] = v;
@@ -615,7 +629,7 @@ export function vaultUpdateCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
                     previous_mtime: previousMtime,
                     new_mtime: dryRun ? previousMtime : file.stat.mtime,
                     dry_run: dryRun,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
@@ -635,7 +649,7 @@ export function vaultDeleteCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
                 name: "delete_canvas_nodes",
                 description:
                     "Delete one or more nodes from a `.canvas` file by id. Edges connected to deleted nodes " +
-                    "are automatically removed to keep the canvas valid. Use `read_canvas` with `include_node_ids: true` " +
+                    "are automatically removed to keep the canvas valid. Use `list_canvas_nodes` " +
                     "first to discover node ids.",
                 parameters: {
                     type: "object",
@@ -748,7 +762,7 @@ export function vaultDeleteCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
                     previous_mtime: previousMtime,
                     new_mtime: dryRun ? previousMtime : file.stat.mtime,
                     dry_run: dryRun,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
@@ -768,7 +782,7 @@ export function vaultDeleteCanvasEdges(plugin: NoteAssistantPlugin): RegisteredT
                 name: "delete_canvas_edges",
                 description:
                     "Delete one or more edges from a `.canvas` file by id. Does NOT affect nodes. " +
-                    "Use `read_canvas` or `read_file` to find edge ids.",
+                    "Use `list_canvas_edges` to discover edge ids, or `read_file` for full JSON.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -876,7 +890,7 @@ export function vaultDeleteCanvasEdges(plugin: NoteAssistantPlugin): RegisteredT
                     previous_mtime: previousMtime,
                     new_mtime: dryRun ? previousMtime : file.stat.mtime,
                     dry_run: dryRun,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },
@@ -886,19 +900,18 @@ export function vaultDeleteCanvasEdges(plugin: NoteAssistantPlugin): RegisteredT
     };
 }
 
-export function vaultAutoLayoutCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultUpdateCanvasEdges(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "auto_layout_canvas",
+                name: "update_canvas_edges",
                 description:
-                    "Smart auto-layout for a `.canvas` file that handles groups and hierarchy. Children inside " +
-                    "each group node are laid out on a local grid and the group is expanded to fit them. " +
-                    "Top-level groups and orphan nodes are then arranged on an outer grid. Use after adding, " +
-                    "updating, or deleting nodes to keep the canvas neatly organized.",
+                    "Update fields of existing edges in a `.canvas` file by id. Only the provided fields are " +
+                    "changed — omitted fields are left alone. Use `list_canvas_edges` first " +
+                    "to discover edge ids and current values. Does NOT add or delete edges.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -906,22 +919,30 @@ export function vaultAutoLayoutCanvas(plugin: NoteAssistantPlugin): RegisteredTo
                             type: "string",
                             description: "Vault-relative path to an existing .canvas file.",
                         },
-                        columns: {
-                            type: "number",
-                            description: "Grid column count for top-level layout. Defaults to 3.",
-                        },
-                        gap: {
-                            type: "number",
-                            description: "Pixel gap between grid cells. Defaults to 120.",
-                        },
-                        group_label_offset: {
-                            type: "number",
+                        edges: {
+                            type: "array",
+                            minItems: 1,
                             description:
-                                "Vertical space reserved for a group label above its children. Defaults to 40.",
+                                "Patches to apply. Each entry needs `id` and any fields to update: " +
+                                "label, color, fromSide, toSide, fromEnd, toEnd. " +
+                                "Omitted fields are left unchanged.",
+                            items: {
+                                type: "object",
+                                properties: {
+                                    id: { type: "string", description: "Edge id to update." },
+                                    label: { type: "string" },
+                                    color: { type: "string" },
+                                    fromSide: { type: "string", description: "top, right, bottom, or left." },
+                                    toSide: { type: "string", description: "top, right, bottom, or left." },
+                                    fromEnd: { type: "string", description: "none or arrow." },
+                                    toEnd: { type: "string", description: "none or arrow." },
+                                },
+                                required: ["id"],
+                            },
                         },
                         dry_run: {
                             type: "boolean",
-                            description: "If true, preview layout without writing. Defaults to false.",
+                            description: "If true, validate and preview without writing. Defaults to false.",
                         },
                         expected_pre_edit_mtime: {
                             type: "integer",
@@ -929,22 +950,23 @@ export function vaultAutoLayoutCanvas(plugin: NoteAssistantPlugin): RegisteredTo
                             description: "Optional Unix ms; fail if on-disk mtime differs.",
                         },
                     },
-                    required: ["path"],
+                    required: ["path", "edges"],
                 },
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            const columns = Math.max(1, (args["columns"] as number) ?? 3);
-            const gap = Math.max(0, (args["gap"] as number) ?? 120);
-            const groupLabelOffset = (args["group_label_offset"] as number) ?? 40;
+            const rawPatches = args["edges"];
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
             const canvasExt = requireCanvasExtension(path);
             if (!canvasExt.ok) {
                 return { success: false, type: "text", content: canvasExt.message };
+            }
+            if (!Array.isArray(rawPatches) || rawPatches.length === 0) {
+                return { success: false, type: "text", content: "`edges` must be a non-empty array." };
             }
 
             const fileOrErr = requireFile(plugin.app, path);
@@ -966,25 +988,35 @@ export function vaultAutoLayoutCanvas(plugin: NoteAssistantPlugin): RegisteredTo
                 return { success: false, type: "text", content: parsed.error };
             }
 
-            const layoutResult = autoLayoutCanvas(parsed.data, { columns, gap, groupLabelOffset });
-            const issues = validateCanvas(layoutResult, makePathResolver(plugin.app));
+            const existingIds = new Set((parsed.data.edges ?? []).map((e) => e.id));
+            const patches = rawPatches as Array<{ id: string } & Record<string, unknown>>;
+            const missing = patches.filter((p) => !existingIds.has(p.id)).map((p) => p.id);
+            if (missing.length > 0) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `Edge ids not found: ${missing.join(", ")}. Use list_canvas_edges to list ids.`,
+                };
+            }
+
+            const result = updateEdgesInCanvas(parsed.data, patches as Parameters<typeof updateEdgesInCanvas>[1]);
+
+            const issues = validateCanvas(result.data, makePathResolver(plugin.app));
             if (hasCanvasErrors(issues)) {
                 const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
                 return {
                     success: false,
                     type: "text",
-                    content:
-                        "Auto-layout produced invalid canvas:\n" +
-                        messages.map((m) => `- ${m}`).join("\n"),
+                    content: "Merged canvas validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
                 };
             }
 
-            const serialized = serializeCanvas(layoutResult);
+            const serialized = serializeCanvas(result.data);
             if (!dryRun) {
                 const lockErr = await runVaultMutation(plugin, chatStream, {
                     kind: "modify",
                     path,
-                    toolName: "auto_layout_canvas",
+                    toolName: "update_canvas_edges",
                     perform: async () => {
                         await plugin.app.vault.modify(file, serialized);
                     },
@@ -997,15 +1029,13 @@ export function vaultAutoLayoutCanvas(plugin: NoteAssistantPlugin): RegisteredTo
                 success: true,
                 type: "object",
                 content: {
-                    action: dryRun ? "dry_run_auto_layout_canvas" : "canvas_auto_layout_applied",
+                    action: dryRun ? "dry_run_update_canvas_edges" : "canvas_edges_updated",
                     path,
-                    columns,
-                    gap,
-                    group_label_offset: groupLabelOffset,
+                    updated_edge_ids: result.updated_ids,
                     previous_mtime: previousMtime,
                     new_mtime: dryRun ? previousMtime : file.stat.mtime,
                     dry_run: dryRun,
-                    parse_ok: inspection.parse_ok,
+                    valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
                     ...inspection.summary,
                 },

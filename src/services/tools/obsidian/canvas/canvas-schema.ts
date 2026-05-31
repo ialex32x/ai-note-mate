@@ -50,8 +50,10 @@ export interface CanvasSummary {
     node_count: number;
     edge_count: number;
     nodes_by_type: Record<string, number>;
-    /** All node ids grouped by type. Only populated when `include_node_ids` is true. */
+    /** All node ids grouped by type. Only populated when requested. */
     node_ids?: Record<string, string[]>;
+    /** All edge ids. Only populated when requested. */
+    edge_ids?: string[];
     referenced_files: string[];
     groups: Array<{ id: string; label: string | null; child_hint: string | null }>;
     bounds: { min_x: number; min_y: number; max_x: number; max_y: number } | null;
@@ -60,16 +62,29 @@ export interface CanvasSummary {
 const EDGE_SIDES = new Set(["top", "right", "bottom", "left"]);
 const EDGE_ENDS = new Set(["none", "arrow"]);
 
+/** Valid canvas color presets (1-6) per JSON Canvas spec / Obsidian convention. */
+const COLOR_PRESETS = new Set(["1", "2", "3", "4", "5", "6"]);
+
+function isValidCanvasColor(value: unknown): boolean {
+    if (typeof value !== "string") return false;
+    // Preset "1" through "6"
+    if (COLOR_PRESETS.has(value)) return true;
+    // Hex color (#RGB, #RRGGBB, #RRGGBBAA)
+    return /^#[0-9a-fA-F]{3,8}$/.test(value);
+}
+
 const DEFAULT_DIMENSIONS: Record<CanvasNodeType, { width: number; height: number }> = {
     text: { width: 400, height: 200 },
     file: { width: 400, height: 400 },
-    link: { width: 400, height: 200 },
+    link: { width: 300, height: 180 },
     group: { width: 600, height: 400 },
 };
 
 /** Default spacing when auto-arranging or suggesting node positions. */
 export const DEFAULT_LAYOUT_GAP = 120;
 export const DEFAULT_LAYOUT_COLUMNS = 3;
+/** Vertical space (px) reserved for group node labels above their laid-out children. */
+export const DEFAULT_LABEL_OFFSET = 60;
 
 export function generateCanvasId(): string {
     const bytes = new Uint8Array(8);
@@ -182,6 +197,20 @@ export function validateCanvas(
                 issues.push({ severity: "error", message: `${prefix}.url is required for link nodes.` });
             }
         }
+        if (nodeType === "text") {
+            const text = node["text"];
+            if (typeof text !== "string" || text.length === 0) {
+                issues.push({ severity: "error", message: `${prefix}.text is required for text nodes.` });
+            }
+        }
+        // Color validation (preset "1"-"6" or hex) — warning only, not blocking
+        const color = node["color"];
+        if (color !== undefined && color !== null && !isValidCanvasColor(color)) {
+            issues.push({
+                severity: "warning",
+                message: `${prefix}.color must be a preset string "1"-"6" or a hex value like "#FF0000".`,
+            });
+        }
     }
 
     const edgeIds = new Set<string>();
@@ -234,6 +263,24 @@ export function validateCanvas(
                 issues.push({ severity: "error", message: `${prefix}.${endKey} must be none or arrow.` });
             }
         }
+        // Edge color validation
+        const edgeColor = edge["color"];
+        if (edgeColor !== undefined && edgeColor !== null && !isValidCanvasColor(edgeColor)) {
+            issues.push({
+                severity: "warning",
+                message: `${prefix}.color must be a preset string "1"-"6" or a hex value like "#FF0000".`,
+            });
+        }
+    }
+
+    // Cross-collection ID uniqueness (node ids and edge ids must not collide)
+    for (const eid of edgeIds) {
+        if (nodeIds.has(eid)) {
+            issues.push({
+                severity: "error",
+                message: `Edge id '${eid}' collides with a node id — all ids must be unique across nodes and edges.`,
+            });
+        }
     }
 
     return issues;
@@ -243,10 +290,20 @@ export function hasCanvasErrors(issues: CanvasValidationIssue[]): boolean {
     return issues.some((i) => i.severity === "error");
 }
 
+export interface SummarizeCanvasOptions {
+    includeNodeIds?: boolean;
+    includeEdgeIds?: boolean;
+}
+
 export function summarizeCanvas(
     data: CanvasData,
-    includeNodeIds?: boolean,
+    options?: boolean | SummarizeCanvasOptions,
 ): CanvasSummary {
+    const { includeNodeIds, includeEdgeIds } =
+        typeof options === "boolean"
+            ? { includeNodeIds: options, includeEdgeIds: false }
+            : { includeNodeIds: false, includeEdgeIds: false, ...options };
+
     const nodes = data.nodes ?? [];
     const edges = data.edges ?? [];
     const nodesByType: Record<string, number> = {};
@@ -299,6 +356,9 @@ export function summarizeCanvas(
     if (includeNodeIds) {
         summary.node_ids = nodeIdsByType;
     }
+    if (includeEdgeIds) {
+        summary.edge_ids = edges.map((e) => e.id);
+    }
 
     return summary;
 }
@@ -316,6 +376,8 @@ export interface NewCanvasNodeInput {
     url?: string;
     label?: string;
     color?: string;
+    background?: string;
+    backgroundStyle?: string;
 }
 
 export interface NewCanvasEdgeInput {
@@ -330,8 +392,12 @@ export interface NewCanvasEdgeInput {
     color?: string;
 }
 
-function suggestNodePosition(existing: CanvasNode[], index: number): { x: number; y: number } {
-    const dims = DEFAULT_DIMENSIONS.text;
+function suggestNodePosition(
+    existing: CanvasNode[],
+    index: number,
+    type: CanvasNodeType,
+): { x: number; y: number } {
+    const dims = DEFAULT_DIMENSIONS[type];
     const gap = DEFAULT_LAYOUT_GAP;
     if (existing.length === 0) {
         return { x: index * (dims.width + gap), y: 0 };
@@ -375,7 +441,7 @@ export function normalizeNewNode(
     const pos =
         typeof r["x"] === "number" && typeof r["y"] === "number"
             ? { x: r["x"], y: r["y"] }
-            : suggestNodePosition(existing, index);
+            : suggestNodePosition(existing, index, type);
 
     const node: CanvasNode = {
         id: id as string,
@@ -385,7 +451,7 @@ export function normalizeNewNode(
         width: typeof r["width"] === "number" ? r["width"] : dims.width,
         height: typeof r["height"] === "number" ? r["height"] : dims.height,
     };
-    for (const key of ["text", "file", "subpath", "url", "label", "color"] as const) {
+    for (const key of ["text", "file", "subpath", "url", "label", "color", "background", "backgroundStyle"] as const) {
         const v = r[key];
         if (typeof v === "string") node[key] = v;
     }
@@ -456,6 +522,37 @@ export function removeNodesFromCanvas(data: CanvasData, nodeIds: Set<string>): C
 export function removeEdgesFromCanvas(data: CanvasData, edgeIds: Set<string>): CanvasData {
     const survivingEdges = (data.edges ?? []).filter((e) => !edgeIds.has(e.id));
     return { ...data, edges: survivingEdges };
+}
+
+/**
+ * Apply patches to existing edges by id. Only the provided fields are changed;
+ * omitted fields are left alone. Returns the ids that were actually updated.
+ */
+export function updateEdgesInCanvas(
+    data: CanvasData,
+    patches: Array<{ id: string } & Partial<Pick<CanvasEdge, "fromSide" | "toSide" | "fromEnd" | "toEnd" | "label" | "color">>>,
+): { data: CanvasData; updated_ids: string[] } {
+    const edges = [...(data.edges ?? [])];
+    const edgeById = new Map(edges.map((e) => [e.id, { ...e }]));
+    const updatableKeys = new Set(["fromSide", "toSide", "fromEnd", "toEnd", "label", "color"] as const);
+    const updatedIds: string[] = [];
+
+    for (const patch of patches) {
+        const existing = edgeById.get(patch.id);
+        if (!existing) continue;
+        const merged = { ...existing };
+        for (const key of updatableKeys) {
+            const v = (patch as Record<string, unknown>)[key];
+            if (v !== undefined && typeof v === "string") {
+                (merged as Record<string, unknown>)[key] = v;
+            }
+        }
+        edgeById.set(patch.id, merged);
+        updatedIds.push(patch.id);
+    }
+
+    const updatedEdges = edges.map((e) => edgeById.get(e.id) ?? e);
+    return { data: { ...data, edges: updatedEdges }, updated_ids: updatedIds };
 }
 
 export interface LayoutCanvasGridOptions {
@@ -629,7 +726,7 @@ export function autoLayoutCanvas(data: CanvasData, opts?: AutoLayoutCanvasOption
 
     const columns = opts?.columns ?? DEFAULT_LAYOUT_COLUMNS;
     const gap = opts?.gap ?? DEFAULT_LAYOUT_GAP;
-    const labelOffset = opts?.groupLabelOffset ?? 40;
+    const labelOffset = opts?.groupLabelOffset ?? DEFAULT_LABEL_OFFSET;
 
     let current: CanvasData = { ...data, nodes: nodes.map((n) => ({ ...n })) };
     const groups = (current.nodes ?? [])
