@@ -13,6 +13,7 @@ import { renderUserContent } from './user-content';
 import { renderCollapsibleCodeBlock } from './collapsible-code-block';
 import { createCopyButton } from '../../utils/copy-button';
 import { SpeechController } from './speech-controller';
+import { stripStructuredBlock } from '../../services/suggestions';
 import { t } from '../../i18n';
 
 // ── Re-export for callers that construct these class strings ──────────
@@ -386,10 +387,23 @@ export class ChatBubble {
         // 2. Copy button (every non-system bubble gets one)
         if (msg.role !== 'system') {
             const copyText = msg.role === 'tool_call'
-                ? () => (msg.toolCallMeta?.toolName === 'delegate_task'
-                    ? (msg.toolCallMeta?.toolArgs?.['task'] as string | undefined) ?? msg.content
-                    : msg.toolCallMeta?.toolName ?? msg.content)
-                : () => msg.content;
+                ? () => {
+                    if (msg.toolCallMeta?.toolName === 'delegate_task') {
+                        return (msg.toolCallMeta?.toolArgs?.['task'] as string | undefined) ?? msg.content;
+                    }
+                    const parts: string[] = [];
+                    if (msg.toolCallMeta?.toolName) {
+                        parts.push('toolName: ' + msg.toolCallMeta.toolName);
+                    }
+                    if (msg.toolCallMeta?.toolArgs && Object.keys(msg.toolCallMeta.toolArgs).length > 0) {
+                        parts.push('toolArgs: ' + JSON.stringify(msg.toolCallMeta.toolArgs, null, 2));
+                    }
+                    if (msg.toolCallResult?.result) {
+                        parts.push('result: ' + msg.toolCallResult.result);
+                    }
+                    return parts.length > 0 ? parts.join('\n') : msg.content;
+                  }
+                : () => stripStructuredBlock(msg.content);
             const copyCls = msg.role === 'tool_call' && msg.toolCallMeta?.toolName !== 'delegate_task'
                 ? 'session-bubble__action-btn'
                 : ACTION_BTN_CLS;
