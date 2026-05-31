@@ -1607,13 +1607,14 @@ export class SessionView extends ItemView {
         }
 
         const units = this.messageWindow.slice(idx, this.messageWindow.start);
-        // When jumping to a specific target we deliberately skip the
-        // scroll-anchor capture/restore — we're going to scroll to the
-        // target after loading, so preserving the old viewport position
-        // would create a visual "bounce" (restore → re-scroll).
+        // The prepend anchor is ALWAYS needed for correct DOM insertion
+        // position (older messages go before the first rendered bubble).
+        // When jumping we skip the scroll-anchor capture/restore because
+        // we're going to scroll to the target after loading — preserving
+        // the old viewport would create a visual "bounce".
         const isJump = !!scrollToId;
-        const anchor = isJump ? null : this.messageWindow.getPrependAnchor();
-        const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
+        const anchor = this.messageWindow.getPrependAnchor();
+        const anchorOffset = isJump ? null : (anchor ? this.scroller.captureAnchorScroll(anchor) : null);
         const showOverlay = units.length >= HISTORY_LOADING.showOverlayMinUnits;
 
         if (showOverlay) {
