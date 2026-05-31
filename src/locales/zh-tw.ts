@@ -94,6 +94,8 @@ export const zhTW: Record<string, string> = {
 	'view.todoStatusCompleted': '已完成',
 	'view.todoStatusCancelled': '已取消',
 	'view.extractInsights': '從此回覆萃取見解',
+	'view.jumpToUser': '跳轉到使用者訊息',
+	'view.jumpToNextUser': '跳到下一輪使用者訊息',
 	'view.insightExtractionUnavailable': '萃取見解前，請先於設定中配置見解方案（或配置摘要器作為回退）。',
 	'view.permissions': '權限',
 	'view.profileSummarizerBadge': '目前用作上下文摘要器',

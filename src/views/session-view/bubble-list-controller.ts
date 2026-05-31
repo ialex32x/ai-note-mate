@@ -209,6 +209,41 @@ export class BubbleListController {
     }
 
     /**
+     * Find the nearest preceding user message for the given message
+     * and scroll to its bubble with a flash highlight.
+     */
+    scrollToPrevUser(msg: ChatMessage): boolean {
+        const currentBubble = this.messageBubbles.get(msg.id);
+        if (!currentBubble) return false;
+        const target = walkToUserBubble(currentBubble, 'prev');
+        if (!target) return false;
+        flashAndScroll(target);
+        return true;
+    }
+
+    /**
+     * Check whether a next (following) user bubble exists in the DOM.
+     */
+    canJumpNext(msg: ChatMessage): boolean {
+        const bubble = this.messageBubbles.get(msg.id);
+        if (!bubble) return false;
+        return walkToUserBubble(bubble, 'next') !== null;
+    }
+
+    /**
+     * Find the nearest following user message for the given message
+     * and scroll to its bubble with a flash highlight.
+     */
+    scrollToNextUser(msg: ChatMessage): boolean {
+        const currentBubble = this.messageBubbles.get(msg.id);
+        if (!currentBubble) return false;
+        const target = walkToUserBubble(currentBubble, 'next');
+        if (!target) return false;
+        flashAndScroll(target);
+        return true;
+    }
+
+    /**
      * Handle an aborted message: mark it, re-render its bubble, and
      * append any trailing system message.
      *
@@ -236,4 +271,30 @@ export class BubbleListController {
         // onAbort) — the view only needs to refresh derived UI here.
         this.deps.updateSessionTitle();
     }
+}
+
+// ── Shared jump helpers ──────────────────────────────────────────────
+
+const SKIP_CLASSES = ['session-bubble__actions--external', 'session-bubble__role--external'];
+
+/** Walk forwards or backwards from a bubble to find a user bubble. */
+function walkToUserBubble(start: Element, dir: 'prev' | 'next'): Element | null {
+    const prop = dir === 'prev' ? 'previousElementSibling' : 'nextElementSibling';
+    let sibling: Element | null = start[prop];
+    while (sibling) {
+        if (SKIP_CLASSES.some(c => sibling!.classList.contains(c))) {
+            sibling = sibling[prop];
+            continue;
+        }
+        if (sibling.classList.contains('session-bubble--user')) return sibling;
+        sibling = sibling[prop];
+    }
+    return null;
+}
+
+/** Scroll to a user bubble and flash it briefly. */
+function flashAndScroll(target: Element): void {
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.classList.add('session-bubble--highlight');
+    window.setTimeout(() => target.classList.remove('session-bubble--highlight'), 1700);
 }

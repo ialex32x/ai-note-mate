@@ -23,7 +23,7 @@ import {
 } from '../bubble/context-menus';
 import { renderToolCallContent as renderToolCallContentImpl } from '../bubble/tool-call';
 import { SpeechController } from '../bubble/speech-controller';
-import { renderActionBar as renderActionBarImpl, createActionsContainer, renderUserActionBar } from '../bubble/action-bar';
+import { renderActionBar as renderActionBarImpl, createActionsContainer, addIconAction, renderUserActionBar } from '../bubble/action-bar';
 import { createCopyButton } from '../../utils/copy-button';
 
 /**
@@ -115,6 +115,16 @@ export class BubbleRenderer extends Component {
          * input box. When omitted, the button is not rendered.
          */
         private onEditFromMessage?: (msg: ChatMessage) => void,
+        /**
+         * Optional callback fired when the user clicks the jump button on an
+         * AI bubble. The host should find the nearest preceding user message
+         * and scroll to it.
+         */
+        private onJumpToUser?: (msg: ChatMessage) => void,
+        /** Callback: scroll to the next (following) user message. */
+        private onJumpToNextUser?: (msg: ChatMessage) => void,
+        /** Returns true when the given message has a next user message to jump to. */
+        private canJumpNextUser?: (msg: ChatMessage) => boolean,
     ) {
         super();
         this.ctx = {
@@ -411,7 +421,7 @@ export class BubbleRenderer extends Component {
         // is intentionally hidden; the sub-agent's own assistant reply is shown
         // as a separate bubble instead.
         if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
-            renderDelegateTaskBubble(bubble, msg);
+            renderDelegateTaskBubble(bubble, msg, this.onJumpToUser, this.onJumpToNextUser);
             if (this.shouldExternalizeActionBar(msg)) {
                 this.externalizeActionBar(bubble);
             }
@@ -496,6 +506,8 @@ export class BubbleRenderer extends Component {
                 msg,
                 this.onBranchFromMessage,
                 this.onEditFromMessage,
+                this.onJumpToUser,
+                this.onJumpToNextUser,
             );
         } else {
             contentEl.setText(msg.content);
@@ -509,10 +521,26 @@ export class BubbleRenderer extends Component {
                 speechController: this.speechController,
                 onExtractInsights: this.onExtractInsights,
                 isBusy,
+                onJumpToUser: this.onJumpToUser,
+                onJumpToNextUser: this.onJumpToNextUser,
             });
         } else if (msg.role === 'tool_call') {
-            // Tool call bubbles reserve toolbar space with a copy button.
+            // Tool call bubbles reserve toolbar space with jump + copy buttons.
             const actions = createActionsContainer(bubble);
+            if (this.onJumpToUser) {
+                addIconAction(actions, {
+                    icon: 'arrow-up',
+                    label: t('view.jumpToUser'),
+                    onClick: () => this.onJumpToUser!(msg),
+                });
+            }
+            if (this.onJumpToNextUser) {
+                addIconAction(actions, {
+                    icon: 'arrow-down',
+                    label: t('view.jumpToNextUser'),
+                    onClick: () => this.onJumpToNextUser!(msg),
+                });
+            }
             const toolLabel = msg.toolCallMeta?.toolName ?? msg.content;
             const copyBtn = createCopyButton(t('common.copy'), () => toolLabel, 'session-bubble__action-btn');
             actions.appendChild(copyBtn);

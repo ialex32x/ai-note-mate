@@ -681,6 +681,9 @@ export class SessionView extends ItemView {
             this.containerEl,
             (msg) => { void this.handleBranchFromMessage(msg); },
             (msg) => { void this.handleEditMessage(msg); },
+            (msg) => { this.handleJumpToUser(msg); },
+            (msg) => { this.handleJumpToNextUser(msg); },
+            (msg) => this.canJumpToNextUser(msg),
         );
         this.addChild(this.bubbleRenderer);
 
@@ -1178,6 +1181,24 @@ export class SessionView extends ItemView {
         this.draftController?.scheduleSave();
 
         new Notice(t('view.messageEdited'));
+    }
+
+    /**
+     * Scroll to the user message that precedes the given message
+     * (i.e. the user message that started the current turn).
+     */
+    private handleJumpToUser(msg: ChatMessage): void {
+        this.bubbleList.scrollToPrevUser(msg);
+    }
+
+    /** Scroll to the next (following) user message. */
+    private handleJumpToNextUser(msg: ChatMessage): void {
+        this.bubbleList.scrollToNextUser(msg);
+    }
+
+    /** Returns true if the message has another user bubble after it in the DOM. */
+    private canJumpToNextUser(msg: ChatMessage): boolean {
+        return this.bubbleList.canJumpNext(msg);
     }
 
     private async handleNewChat() {

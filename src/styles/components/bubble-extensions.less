@@ -222,17 +222,18 @@
     }
 }
 
-// Message highlight effect
-.session-bubble--highlight {
-    animation: highlight-pulse 2s ease-out;
+// Message highlight effect — flashes the body background between the
+// accent colour and its original colour, signalling a jumped-to message.
+.session-bubble--highlight .session-bubble__body {
+    animation: highlight-flash 0.5s ease-in-out 3;
 }
 
-@keyframes highlight-pulse {
-    0% {
-        background: color-mix(in srgb, @text-accent 30%, transparent);
-    }
-    100% {
+@keyframes highlight-flash {
+    0%, 100% {
         background: inherit;
+    }
+    50% {
+        background: color-mix(in srgb, @text-accent 30%, transparent);
     }
 }
 

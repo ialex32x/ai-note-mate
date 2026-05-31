@@ -83,6 +83,26 @@ export function createActionsContainer(bubble: HTMLElement): HTMLElement {
  *  via {@link createCopyButton}, which builds its own element). */
 export const ACTION_BTN_CLS = ICON_ACTION_BTN_CLS;
 
+/** Check whether a user bubble has a preceding user bubble (i.e. it's not the first turn). */
+function hasPreviousUserBubble(bubble: HTMLElement): boolean {
+    let el: Element | null = bubble.previousElementSibling;
+    while (el) {
+        if (el.classList.contains('session-bubble--user')) return true;
+        el = el.previousElementSibling;
+    }
+    return false;
+}
+
+/** Check whether any user bubble follows this bubble in the DOM. */
+export function hasNextUserBubble(bubble: HTMLElement): boolean {
+    let el: Element | null = bubble.nextElementSibling;
+    while (el) {
+        if (el.classList.contains('session-bubble--user')) return true;
+        el = el.nextElementSibling;
+    }
+    return false;
+}
+
 /**
  * Render a minimal action bar for a user message bubble.
  *
@@ -103,8 +123,28 @@ export function renderUserActionBar(
     msg: ChatMessage,
     onBranch?: (msg: ChatMessage) => void,
     onEdit?: (msg: ChatMessage) => void,
+    onJumpToPrevUser?: (msg: ChatMessage) => void,
+    onJumpToNextUser?: (msg: ChatMessage) => void,
 ): void {
     const actions = createActionsContainer(bubble);
+
+    // Jump to previous user message — only show if a preceding user bubble exists
+    if (onJumpToPrevUser && hasPreviousUserBubble(bubble)) {
+        addIconAction(actions, {
+            icon: 'arrow-up',
+            label: t('view.jumpToUser'),
+            onClick: () => onJumpToPrevUser(msg),
+        });
+    }
+
+    // Jump to next user message
+    if (onJumpToNextUser) {
+        addIconAction(actions, {
+            icon: 'arrow-down',
+            label: t('view.jumpToNextUser'),
+            onClick: () => onJumpToNextUser(msg),
+        });
+    }
 
     // Edit button — restores this message to the input and rolls back
     // the conversation to before this point
@@ -145,8 +185,28 @@ export function renderUserActionBar(
  * Mirrors the copy affordance on user / assistant bubbles; the bar is
  * externalised below the bubble by {@link BubbleRenderer.externalizeActionBar}.
  */
-export function renderDelegateTaskActionBar(bubble: HTMLElement, taskText: string): void {
+export function renderDelegateTaskActionBar(
+    bubble: HTMLElement,
+    taskText: string,
+    onJumpToUser?: (msg: ChatMessage) => void,
+    delegateMsg?: ChatMessage,
+    onJumpToNextUser?: (msg: ChatMessage) => void,
+): void {
     const actions = createActionsContainer(bubble);
+    if (onJumpToUser && delegateMsg) {
+        addIconAction(actions, {
+            icon: 'arrow-up',
+            label: t('view.jumpToUser'),
+            onClick: () => onJumpToUser(delegateMsg),
+        });
+    }
+    if (onJumpToNextUser && delegateMsg) {
+        addIconAction(actions, {
+            icon: 'arrow-down',
+            label: t('view.jumpToNextUser'),
+            onClick: () => onJumpToNextUser(delegateMsg),
+        });
+    }
     const copyBtn = createCopyButton(t('common.copy'), () => taskText, ACTION_BTN_CLS);
     actions.appendChild(copyBtn);
 }
@@ -182,6 +242,16 @@ export interface ActionBarOptions {
      * conversation is still in-flight.
      */
     isBusy?: boolean;
+    /**
+     * Host-provided callback to scroll to the user message that started
+     * the current turn. When omitted, the jump button is not rendered.
+     */
+    onJumpToUser?: (msg: ChatMessage) => void;
+    /**
+     * Host-provided callback to scroll to the next (following) user
+     * message. When omitted, the down-jump button is not rendered.
+     */
+    onJumpToNextUser?: (msg: ChatMessage) => void;
 }
 
 /**
@@ -199,8 +269,26 @@ export function renderActionBar(
     msg: ChatMessage,
     opts: ActionBarOptions
 ): void {
-    const { abortedMessageIds, speechController, onExtractInsights } = opts;
+    const { abortedMessageIds, speechController, onExtractInsights, onJumpToUser, onJumpToNextUser } = opts;
     const actions = createActionsContainer(bubble);
+
+    // Jump-to-user button — scrolls to the user message that started this turn
+    if (onJumpToUser) {
+        addIconAction(actions, {
+            icon: 'arrow-up',
+            label: t('view.jumpToUser'),
+            onClick: () => onJumpToUser(msg),
+        });
+    }
+
+    // Jump-to-next-user button — scrolls to the following user message
+    if (onJumpToNextUser && hasNextUserBubble(bubble)) {
+        addIconAction(actions, {
+            icon: 'arrow-down',
+            label: t('view.jumpToNextUser'),
+            onClick: () => onJumpToNextUser(msg),
+        });
+    }
 
     // Copy button — uses unified createCopyButton for consistent flash-feedback.
     // Strip the structured suggestions block so the copied text is clean and

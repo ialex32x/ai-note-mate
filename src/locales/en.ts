@@ -94,6 +94,8 @@ export const en: Record<string, string> = {
 	'view.todoStatusCompleted': 'Completed',
 	'view.todoStatusCancelled': 'Cancelled',
 	'view.extractInsights': 'Extract insights from this reply',
+	'view.jumpToUser': 'Jump to user message',
+	'view.jumpToNextUser': 'Jump to next user message',
 	'view.insightExtractionUnavailable': 'Configure an insights profile (or a context summarizer as fallback) in settings before extracting insights.',
 	'view.permissions': 'Permissions',
 	'view.profileSummarizerBadge': 'Used as context summarizer',
