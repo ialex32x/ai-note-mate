@@ -23,7 +23,8 @@ import {
 } from '../bubble/context-menus';
 import { renderToolCallContent as renderToolCallContentImpl } from '../bubble/tool-call';
 import { SpeechController } from '../bubble/speech-controller';
-import { renderActionBar as renderActionBarImpl, renderUserActionBar } from '../bubble/action-bar';
+import { renderActionBar as renderActionBarImpl, createActionsContainer, renderUserActionBar } from '../bubble/action-bar';
+import { createCopyButton } from '../../utils/copy-button';
 
 /**
  * Message bubble renderer - handles rendering of all message types.
@@ -298,7 +299,6 @@ export class BubbleRenderer extends Component {
      * `removeStaleExternalActionBar` invariant in `renderInto`.
      */
     private shouldExternalizeActionBar(msg: ChatMessage): boolean {
-        if (msg.role === 'user') return true;
         if (msg.role === 'assistant' && msg.subAgent && msg.content.trim()) return true;
         if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
             const task = msg.toolCallMeta.toolArgs?.['task'];
@@ -443,8 +443,11 @@ export class BubbleRenderer extends Component {
 
         if (shouldShowRoleLabel(msg)) {
             let roleText: string;
-            if (msg.subAgent && msg.role === 'tool_call') {
-                roleText = `${this.roleLabel(msg.role)} (${getSubAgentLabel(msg.subAgent.agentName)})`;
+            if (msg.role === 'tool_call') {
+                // Tool call bubbles show the agent name instead of "Tool"
+                roleText = msg.subAgent
+                    ? getSubAgentLabel(msg.subAgent.agentName)
+                    : t('view.roleAI');
             } else if (msg.subAgent) {
                 roleText = getSubAgentLabel(msg.subAgent.agentName);
             } else {
@@ -456,15 +459,20 @@ export class BubbleRenderer extends Component {
             });
         }
 
+        // Body wrapper — carries the visual background box. Everything below
+        // the role label lives inside this wrapper so the background does not
+        // include the name label.
+        const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
+
         // Thinking section (assistant messages only)
         if (msg.role === 'assistant' && msg.thinkingContent) {
             // Thinking is complete if explicitly marked, or if message streaming has finished
             const thinkingComplete = msg.thinkingComplete === true || msg.streaming === false;
-            this.renderThinkingSection(bubble, msg.thinkingContent, thinkingComplete, wasThinkingExpanded);
+            this.renderThinkingSection(bodyEl, msg.thinkingContent, thinkingComplete, wasThinkingExpanded);
         }
 
         // Content
-        const contentEl = bubble.createEl('div', { cls: 'session-bubble__content' });
+        const contentEl = bodyEl.createEl('div', { cls: 'session-bubble__content' });
 
         if (msg.role === 'tool_call') {
             renderToolCallContentImpl(this.ctx, contentEl, msg, wasToolDetailExpanded, pendingConfirmations);
@@ -493,7 +501,8 @@ export class BubbleRenderer extends Component {
             contentEl.setText(msg.content);
         }
 
-        // Action bar (assistant messages only, and only if content is non-empty)
+        // Action bar — rendered on bubble (not bodyEl) so it sits outside
+        // the background box.
         if (msg.role === 'assistant' && msg.content.trim()) {
             renderActionBarImpl(this.ctx, bubble, msg, {
                 abortedMessageIds,
@@ -501,6 +510,12 @@ export class BubbleRenderer extends Component {
                 onExtractInsights: this.onExtractInsights,
                 isBusy,
             });
+        } else if (msg.role === 'tool_call') {
+            // Tool call bubbles reserve toolbar space with a copy button.
+            const actions = createActionsContainer(bubble);
+            const toolLabel = msg.toolCallMeta?.toolName ?? msg.content;
+            const copyBtn = createCopyButton(t('common.copy'), () => toolLabel, 'session-bubble__action-btn');
+            actions.appendChild(copyBtn);
         }
 
         // Final pass: move action bars outside the bubble border for the
@@ -519,11 +534,13 @@ export class BubbleRenderer extends Component {
      */
     private renderSystemMessage(bubble: HTMLElement, msg: ChatMessage): void {
         if (msg.content === 'aborted') {
-            const divider = bubble.createEl('div', { cls: 'session-bubble__abort-divider' });
+            const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
+            const divider = bodyEl.createEl('div', { cls: 'session-bubble__abort-divider' });
             divider.createEl('span', { cls: 'session-bubble__abort-text', text: t('view.responseAborted') });
         } else {
             bubble.createEl('span', { cls: 'session-bubble__role', text: 'System' });
-            const contentEl = bubble.createEl('div', { cls: 'session-bubble__content' });
+            const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
+            const contentEl = bodyEl.createEl('div', { cls: 'session-bubble__content' });
             contentEl.setText(msg.content);
         }
     }

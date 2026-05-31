@@ -78,10 +78,12 @@ export class BubbleListController {
         const bubble = this.messageBubbles.get(id);
         if (!bubble) return;
 
+        // Remove external action bar (next sibling)
         const external = bubble.nextElementSibling;
         if (external?.classList.contains('session-bubble__actions--external')) {
             external.remove();
         }
+
         bubble.remove();
         this.messageBubbles.delete(id);
         this.deps.bubbleRenderer.retireStreamingController(id);
@@ -120,12 +122,12 @@ export class BubbleListController {
         const bubble = this.createAndRender(msg);
         if (beforeEl) {
             // createAndRender builds the bubble at the list tail, so a unit
-            // that externalises its action bar (user / sub-agent) leaves the
-            // bar as the bubble's next sibling at the tail. Move it together
-            // with the bubble — otherwise insertBefore relocates only the
-            // bubble and the toolbar is orphaned at the tail as a standalone
-            // flex child, which is always visible on mobile and accumulates
-            // (one per prepended unit) as the user loads older history.
+            // that externalises its action bar (sub-agent) leaves the bar as
+            // the bubble's next sibling at the tail. Move it together with
+            // the bubble — otherwise insertBefore relocates only the bubble
+            // and the toolbar is orphaned at the tail as a standalone flex
+            // child, which is always visible on mobile and accumulates (one
+            // per prepended unit) as the user loads older history.
             const external = bubble.nextElementSibling;
             this.deps.messagesEl.insertBefore(bubble, beforeEl);
             if (external?.classList.contains('session-bubble__actions--external')) {

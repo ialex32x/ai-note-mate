@@ -6,10 +6,7 @@
 .session-bubble {
     display: flex;
     flex-direction: column;
-    gap: @spacing-xs;
     max-width: @bubble-max-width;
-    padding: @spacing-md @spacing-lg;
-    border-radius: @radius-lg;
     font-size: 0.9em;
     word-break: break-word;
     
@@ -20,11 +17,23 @@
     }
 }
 
-// User message bubble (right aligned)
+// Body wrapper — carries the visual background box (name label sits outside)
+.session-bubble__body {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-xs;
+    padding: @spacing-md @spacing-lg;
+    border-radius: @radius-lg;
+}
+
+// User message bubble (left aligned, name sits outside)
 .session-bubble--user {
-    align-self: flex-end;
-    background: @bg-modifier-hover;
-    color: @text-primary;
+    align-self: flex-start;
+
+    .session-bubble__body {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
 
     // User messages are plain text (not markdown-rendered), so preserve
     // newlines and runs of whitespace exactly as the user typed them.
@@ -40,47 +49,65 @@
 .session-bubble--assistant {
     align-self: stretch;
     max-width: 100%;
-    background: @bg-secondary;
-    color: @text-primary;
+
+    .session-bubble__body {
+        background: @bg-secondary-alt;
+        color: @text-primary;
+    }
 }
 
 // Tool call/result bubbles (left aligned)
 .session-bubble--tool_call,
 .session-bubble--tool_result {
     align-self: flex-start;
-    background: @bg-secondary-alt;
-    color: @text-secondary;
     font-size: 0.82em;
+
+    .session-bubble__body {
+        background: @bg-secondary-alt;
+        color: @text-secondary;
+    }
 }
 
 // Tool call status variants
 .session-bubble--tool-error {
-    background: color-mix(in srgb, @text-error 8%, @bg-secondary-alt);
-    border-left: 3px solid @text-error;
+    .session-bubble__body {
+        background: color-mix(in srgb, @text-error 8%, @bg-secondary-alt);
+        border-left: 3px solid @text-error;
+    }
 }
 
 .session-bubble--tool-warning {
-    background: color-mix(in srgb, @text-warning 8%, @bg-secondary-alt);
-    border-left: 3px solid @text-warning;
+    .session-bubble__body {
+        background: color-mix(in srgb, @text-warning 8%, @bg-secondary-alt);
+        border-left: 3px solid @text-warning;
+    }
 }
 
 .session-bubble--tool-success {
-    background: @bg-secondary-alt;
+    .session-bubble__body {
+        background: @bg-secondary-alt;
+    }
 }
 
 // System message bubble
 .session-bubble--system {
     align-self: stretch;
-    background: @bg-secondary;
-    color: @text-primary;
+
+    .session-bubble__body {
+        background: @bg-secondary;
+        color: @text-primary;
+    }
 }
 
 // Abort system message - centered divider indicator
 .session-bubble--system:has(.session-bubble__abort-divider) {
-    background: transparent;
     max-width: 80%;
     margin: @spacing-sm auto;
     padding: @spacing-xs 0;
+
+    .session-bubble__body {
+        background: transparent;
+    }
 }
 
 .session-bubble__abort-divider {
@@ -108,10 +135,13 @@
 // Error message bubble
 .session-bubble--error {
     align-self: stretch;
-    background: color-mix(in srgb, @text-error 8%, @bg-secondary);
-    color: @text-primary;
-    border-left: 3px solid @text-error;
     position: relative;
+
+    .session-bubble__body {
+        background: color-mix(in srgb, @text-error 8%, @bg-secondary);
+        color: @text-primary;
+        border-left: 3px solid @text-error;
+    }
 
     .session-bubble__role {
         display: flex;
@@ -144,14 +174,16 @@
     }
 }
 
-// Bubble role label
+// Bubble role label (sits outside the body wrapper)
 .session-bubble__role {
     font-size: 0.75em;
     font-weight: 600;
     opacity: 0.7;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    margin-bottom: @spacing-sm;
+    margin-bottom: @spacing-xs;
+    padding-left: @spacing-lg;
+    padding-right: @spacing-lg;
 }
 
 // Bubble content area
@@ -277,11 +309,13 @@
     }
 }
 
-// Bubble action bar
+// Bubble action bar (outside the background box, aligned with body content)
 .session-bubble__actions {
     display: flex;
     gap: @spacing-sm;
-    margin-top: @spacing-md;
+    margin-top: @spacing-xs;
+    padding-left: @spacing-lg;
+    padding-right: @spacing-lg;
     opacity: 0;
     transition: opacity @duration-normal ease;
 }
@@ -310,12 +344,6 @@
     transition: opacity @duration-normal ease;
 }
 
-// An external action bar that follows a right-aligned user bubble should
-// itself be right-aligned so it stays visually attached to the bubble.
-.session-bubble--user + .session-bubble__actions--external {
-    align-self: flex-end;
-}
-
 // Show the external action bar on hover of the immediately preceding bubble,
 // OR when the action bar itself is hovered. The sibling selector alone isn't
 // enough because the pointer crosses a narrow gap between the bubble and the
@@ -323,7 +351,6 @@
 // be clicked.
 .session-bubble--subagent:hover + .session-bubble__actions--external,
 .session-bubble--delegate-task:hover + .session-bubble__actions--external,
-.session-bubble--user:hover + .session-bubble__actions--external,
 .session-bubble__actions--external:hover {
     opacity: 1;
 }

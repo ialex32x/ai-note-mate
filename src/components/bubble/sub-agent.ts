@@ -105,8 +105,11 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
         text: roleLabel,
     });
 
+    // Body wrapper — background box sits below the name label.
+    const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
+
     // Content: render the task text as plain text (no tool-detail chrome).
-    const contentEl = bubble.createEl('div', { cls: 'session-bubble__content' });
+    const contentEl = bodyEl.createEl('div', { cls: 'session-bubble__content' });
     if (taskText) {
         contentEl.createEl('div', {
             cls: 'session-bubble__delegate-task-text',
@@ -117,7 +120,7 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
 
     // Handoff seed: only render when we actually have a non-empty plain object.
     if (isNonEmptyPlainObject(handoffSeed)) {
-        renderDelegateInputsCollapsible(bubble, handoffSeed);
+        renderDelegateInputsCollapsible(bodyEl, handoffSeed);
     }
 
     // No per-bubble streaming cursor: the single trailing `…` loader at
