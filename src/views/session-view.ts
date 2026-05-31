@@ -681,7 +681,7 @@ export class SessionView extends ItemView {
             this.containerEl,
             (msg) => { void this.handleBranchFromMessage(msg); },
             (msg) => { void this.handleEditMessage(msg); },
-            (msg) => { void this.handleJumpToUser(msg); },
+            (msg) => { void this.handleJumpToPrevUser(msg); },
             (msg) => { void this.handleJumpToNextUser(msg); },
             (msg) => this.canJumpToPrevUser(msg),
             (msg) => this.canJumpToNextUser(msg),
@@ -1194,7 +1194,7 @@ export class SessionView extends ItemView {
      * the target as a single integrated operation to avoid competing
      * scroll-anchor-restore and scroll-to-target animations.
      */
-    private handleJumpToUser(msg: ChatMessage): void {
+    private handleJumpToPrevUser(msg: ChatMessage): void {
         const targetId = this.bubbleList.scrollToPrevUser(msg);
         if (targetId) {
             // Pass targetId as both the expansion range and the scroll

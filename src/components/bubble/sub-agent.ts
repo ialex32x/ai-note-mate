@@ -93,7 +93,7 @@ export function renderSubAgentBadge(parent: HTMLElement, agentName: string): voi
 export function renderDelegateTaskBubble(
     bubble: HTMLElement,
     msg: ChatMessage,
-    onJumpToUser?: (msg: ChatMessage) => void,
+    onJumpToPrevUser?: (msg: ChatMessage) => void,
     onJumpToNextUser?: (msg: ChatMessage) => void,
 ): void {
     bubble.addClass('session-bubble--delegate-task');
@@ -120,7 +120,7 @@ export function renderDelegateTaskBubble(
             cls: 'session-bubble__delegate-task-text',
             text: taskText,
         });
-        renderDelegateTaskActionBar(bubble, taskText, onJumpToUser, msg, onJumpToNextUser);
+        renderDelegateTaskActionBar(bubble, taskText, onJumpToPrevUser, msg, onJumpToNextUser);
     }
 
     // Handoff seed: only render when we actually have a non-empty plain object.

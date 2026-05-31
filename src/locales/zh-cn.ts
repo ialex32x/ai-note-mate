@@ -94,7 +94,7 @@ export const zhCN: Record<string, string> = {
 	'view.todoStatusCompleted': '已完成',
 	'view.todoStatusCancelled': '已取消',
 	'view.extractInsights': '从该回复提炼见解',
-	'view.jumpToUser': '跳转到用户消息',
+	'view.jumpToPrevUser': '跳到上一轮用户消息',
 	'view.jumpToNextUser': '跳到下一轮用户消息',
 	'view.insightExtractionUnavailable': '提炼见解前，请先在设置中配置见解方案（或配置摘要器作为回退）。',
 	'view.permissions': '权限',

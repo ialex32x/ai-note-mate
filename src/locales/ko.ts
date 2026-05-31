@@ -94,7 +94,7 @@ export const ko: Record<string, string> = {
 	'view.todoStatusCompleted': '완료',
 	'view.todoStatusCancelled': '취소됨',
 	'view.extractInsights': '이 응답에서 인사이트 추출',
-	'view.jumpToUser': '사용자 메시지로 이동',
+	'view.jumpToPrevUser': '이전 사용자 메시지로 이동',
 	'view.jumpToNextUser': '다음 사용자 메시지로 이동',
 	'view.insightExtractionUnavailable': '인사이트를 추출하기 전에 설정에서 인사이트 프로필(또는 대체용 요약기)을 구성하세요.',
 	'view.permissions': '권한',

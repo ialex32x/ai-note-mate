@@ -132,7 +132,7 @@ export function renderUserActionBar(
     if (onJumpToPrevUser && hasPreviousUserBubble(bubble)) {
         addIconAction(actions, {
             icon: 'arrow-up',
-            label: t('view.jumpToUser'),
+            label: t('view.jumpToPrevUser'),
             onClick: () => onJumpToPrevUser(msg),
         });
     }
@@ -188,16 +188,16 @@ export function renderUserActionBar(
 export function renderDelegateTaskActionBar(
     bubble: HTMLElement,
     taskText: string,
-    onJumpToUser?: (msg: ChatMessage) => void,
+    onJumpToPrevUser?: (msg: ChatMessage) => void,
     delegateMsg?: ChatMessage,
     onJumpToNextUser?: (msg: ChatMessage) => void,
 ): void {
     const actions = createActionsContainer(bubble);
-    if (onJumpToUser && delegateMsg) {
+    if (onJumpToPrevUser && delegateMsg) {
         addIconAction(actions, {
             icon: 'arrow-up',
-            label: t('view.jumpToUser'),
-            onClick: () => onJumpToUser(delegateMsg),
+            label: t('view.jumpToPrevUser'),
+            onClick: () => onJumpToPrevUser(delegateMsg),
         });
     }
     if (onJumpToNextUser && delegateMsg) {
@@ -246,7 +246,7 @@ export interface ActionBarOptions {
      * Host-provided callback to scroll to the user message that started
      * the current turn. When omitted, the jump button is not rendered.
      */
-    onJumpToUser?: (msg: ChatMessage) => void;
+    onJumpToPrevUser?: (msg: ChatMessage) => void;
     /**
      * Host-provided callback to scroll to the next (following) user
      * message. When omitted, the down-jump button is not rendered.
@@ -269,15 +269,15 @@ export function renderActionBar(
     msg: ChatMessage,
     opts: ActionBarOptions
 ): void {
-    const { abortedMessageIds, speechController, onExtractInsights, onJumpToUser, onJumpToNextUser } = opts;
+    const { abortedMessageIds, speechController, onExtractInsights, onJumpToPrevUser, onJumpToNextUser } = opts;
     const actions = createActionsContainer(bubble);
 
     // Jump-to-user button — scrolls to the user message that started this turn
-    if (onJumpToUser) {
+    if (onJumpToPrevUser) {
         addIconAction(actions, {
             icon: 'arrow-up',
-            label: t('view.jumpToUser'),
-            onClick: () => onJumpToUser(msg),
+            label: t('view.jumpToPrevUser'),
+            onClick: () => onJumpToPrevUser(msg),
         });
     }
 

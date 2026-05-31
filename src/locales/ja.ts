@@ -94,7 +94,7 @@ export const ja: Record<string, string> = {
 	'view.todoStatusCompleted': '完了',
 	'view.todoStatusCancelled': 'キャンセル',
 	'view.extractInsights': 'この返信からインサイトを抽出',
-	'view.jumpToUser': 'ユーザーメッセージに移動',
+	'view.jumpToPrevUser': '前のユーザーメッセージに移動',
 	'view.jumpToNextUser': '次のユーザーメッセージに移動',
 	'view.insightExtractionUnavailable': 'インサイトを抽出する前に、設定でインサイト用プロファイル（またはフォールバック用の要約器）を構成してください。',
 	'view.permissions': '権限',

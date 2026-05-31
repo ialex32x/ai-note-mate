@@ -46,7 +46,7 @@ export interface ChatBubbleOptions {
     /** User message: branch handler. */
     onBranch?: (msg: ChatMessage) => void;
     /** Jump navigation: scroll to previous user message. */
-    onJumpToUser?: (msg: ChatMessage) => void;
+    onJumpToPrevUser?: (msg: ChatMessage) => void;
     /** Jump navigation: scroll to next user message. */
     onJumpToNextUser?: (msg: ChatMessage) => void;
     /** Whether this message has a previous user message to jump to (ID-based, not DOM). */
@@ -196,7 +196,7 @@ export class ChatBubble {
             speechController,
             onEdit,
             onBranch,
-            onJumpToUser,
+            onJumpToPrevUser,
             onJumpToNextUser,
             onExtractInsights,
             canJumpToPrevUser,
@@ -276,7 +276,7 @@ export class ChatBubble {
             speechController,
             onExtractInsights,
             isBusy,
-            onJumpToUser,
+            onJumpToPrevUser,
             onJumpToNextUser,
             onEdit,
             onBranch,
@@ -300,7 +300,7 @@ export class ChatBubble {
         opts: Pick<
             ChatBubbleOptions,
             'abortedMessageIds' | 'onExtractInsights'
-            | 'isBusy' | 'onJumpToUser' | 'onJumpToNextUser'
+            | 'isBusy' | 'onJumpToPrevUser' | 'onJumpToNextUser'
             | 'onEdit' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
     ): IconActionOptions[] {
@@ -308,7 +308,7 @@ export class ChatBubble {
             abortedMessageIds = new Set(),
             onExtractInsights,
             isBusy = false,
-            onJumpToUser,
+            onJumpToPrevUser,
             onJumpToNextUser,
             onEdit,
             canJumpToPrevUser,
@@ -319,8 +319,8 @@ export class ChatBubble {
 
         switch (msg.role) {
             case 'user': {
-                if (onJumpToUser && canJumpToPrevUser?.(msg)) {
-                    defs.push({ icon: 'arrow-up', label: t('view.jumpToUser'), onClick: () => onJumpToUser(msg) });
+                if (onJumpToPrevUser && canJumpToPrevUser?.(msg)) {
+                    defs.push({ icon: 'arrow-up', label: t('view.jumpToPrevUser'), onClick: () => onJumpToPrevUser(msg) });
                 }
                 if (onJumpToNextUser && canJumpToNextUser?.(msg)) {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
@@ -332,8 +332,8 @@ export class ChatBubble {
                 break;
             }
             case 'assistant': {
-                if (onJumpToUser && canJumpToPrevUser?.(msg)) {
-                    defs.push({ icon: 'arrow-up', label: t('view.jumpToUser'), onClick: () => onJumpToUser(msg) });
+                if (onJumpToPrevUser && canJumpToPrevUser?.(msg)) {
+                    defs.push({ icon: 'arrow-up', label: t('view.jumpToPrevUser'), onClick: () => onJumpToPrevUser(msg) });
                 }
                 if (onJumpToNextUser && canJumpToNextUser?.(msg)) {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
@@ -345,8 +345,8 @@ export class ChatBubble {
                 break;
             }
             case 'tool_call': {
-                if (onJumpToUser && canJumpToPrevUser?.(msg)) {
-                    defs.push({ icon: 'arrow-up', label: t('view.jumpToUser'), onClick: () => onJumpToUser(msg) });
+                if (onJumpToPrevUser && canJumpToPrevUser?.(msg)) {
+                    defs.push({ icon: 'arrow-up', label: t('view.jumpToPrevUser'), onClick: () => onJumpToPrevUser(msg) });
                 }
                 if (onJumpToNextUser && canJumpToNextUser?.(msg)) {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
@@ -366,7 +366,7 @@ export class ChatBubble {
         opts: Pick<
             ChatBubbleOptions,
             'abortedMessageIds' | 'speechController' | 'onExtractInsights'
-            | 'isBusy' | 'onJumpToUser' | 'onJumpToNextUser'
+            | 'isBusy' | 'onJumpToPrevUser' | 'onJumpToNextUser'
             | 'onEdit' | 'onBranch' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
     ): void {

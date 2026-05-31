@@ -119,7 +119,7 @@ export class BubbleRenderer extends Component {
          * AI bubble. The host should find the nearest preceding user message
          * and scroll to it.
          */
-        private onJumpToUser?: (msg: ChatMessage) => void,
+        private onJumpToPrevUser?: (msg: ChatMessage) => void,
         /** Callback: scroll to the next (following) user message. */
         private onJumpToNextUser?: (msg: ChatMessage) => void,
         /** Returns true when the given message has a previous user message to jump to (ID-based). */
@@ -181,7 +181,7 @@ export class BubbleRenderer extends Component {
             onExtractInsights: this.onExtractInsights,
             onEdit: this.onEditFromMessage,
             onBranch: this.onBranchFromMessage,
-            onJumpToUser: this.onJumpToUser,
+            onJumpToPrevUser: this.onJumpToPrevUser,
             onJumpToNextUser: this.onJumpToNextUser,
             canJumpToPrevUser: this.canJumpToPrevUser,
             canJumpToNextUser: this.canJumpToNextUser,
