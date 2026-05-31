@@ -9,9 +9,7 @@ import {
     vaultReadSection,
     vaultResolveLink,
 } from "./read";
-import { vaultBrowseFolder } from "./browse";
-import { vaultGrepFile } from "./grep";
-import { vaultSearchContent, vaultSearchFiles } from "./search";
+import { vaultGrepFile, vaultSearchContent, vaultSearchFiles } from "./find";
 import {
     vaultAppendFile,
     vaultCreateFile,
@@ -26,15 +24,17 @@ import {
     vaultReplaceText,
     vaultWriteFile,
 } from "./edit";
-import { vaultGetOverview, vaultListFilesSorted } from "./overview";
-import { vaultAddFilesTags, vaultRemoveFilesTags, vaultSetFilesTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
 import {
+    vaultBrowseFolder,
     vaultFindOrphanFiles,
     vaultGetBacklinks,
     vaultGetOutgoingLinks,
+    vaultGetOverview,
     vaultGetUnresolvedLinks,
-} from "./graph";
-import { vaultRankNotesByEmbeddedSize } from "./rank-notes-by-embedded-size";
+    vaultListFilesSorted,
+    vaultRankNotesByEmbeddedSize,
+} from "./vault";
+import { vaultAddFilesTags, vaultRemoveFilesTags, vaultSetFilesTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
 import {
     vaultReadCanvas,
     vaultCreateCanvas,

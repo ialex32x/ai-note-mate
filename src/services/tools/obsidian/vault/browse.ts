@@ -1,7 +1,7 @@
 import { TFile, TFolder } from "obsidian";
-import type NoteAssistantPlugin from "../../../main";
-import type { RegisteredTool } from "../../chat-stream";
-import { isFailure, requireFolder } from "./_shared";
+import type NoteAssistantPlugin from "../../../../main";
+import type { RegisteredTool } from "../../../chat-stream";
+import { isFailure, requireFolder } from "../_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: browse_folder

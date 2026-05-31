@@ -1,13 +1,13 @@
-import type NoteAssistantPlugin from "../../../main";
-import type { RegisteredTool, ToolCallResult } from "../../chat-stream";
-import type { ToolCapability } from "../../llm-provider";
-import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "./_shared";
+import type NoteAssistantPlugin from "../../../../main";
+import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
+import type { ToolCapability } from "../../../llm-provider";
+import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "../_shared";
 import {
     formatFindSectionError,
     normalizeHeadingPathArg,
     resolveHeadingPathToRange,
     type HeadingNode,
-} from "./heading-section";
+} from "../heading-section";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: grep_file

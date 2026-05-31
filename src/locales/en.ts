@@ -436,24 +436,36 @@ Add appropriate tags to {{filepath}} following this vault's tag conventions. App
 # Editor
 
 ## Expand selection [maximize-2]
-At {{selection}} in {{filepath}}, expand the selected text with more detail, examples, or context. Keep the original meaning, language, tone, and inline formatting. Write the result back into the note — do not reply with the edited text in chat.
+Expand the following text with more detail, examples, or context, keeping the original meaning:
+{{filepath}} {{selection}}
 {{blockquote}}
+
+Keep the original language, tone, and inline formatting. Do not add extra blank lines at the start or end. Write the result directly into the note — do not reply with the edited text in chat.
 
 ## Shorten selection [minimize-2]
-At {{selection}} in {{filepath}}, shorten the selected text while preserving every key fact and the original meaning, language, tone, and inline formatting. Write the result back into the note — do not reply with the edited text in chat.
+Shorten the following text, keeping all key facts and the original meaning. Keep the original language, tone, and inline formatting:
+{{filepath}} {{selection}}
 {{blockquote}}
 
+Write the result directly into the note — do not reply with the edited text in chat. Do not add extra blank lines at the start or end.
+
 ## Continue writing [chevrons-right]
-At {{selection}} in {{filepath}}, insert new continuation after the selection. Do not repeat or restate the original text. Write the continuation into the note — do not reply with it in chat.
+Continue writing immediately after the specified text:
+{{filepath}} {{selection}}
 {{blockquote}}
+
+Write the continuation directly into the note at the specified location — do not reply with it in chat. Do not add extra blank lines at the start or end.
 
 ## Explain selection [sparkles]
 Explain the following content:
 {{blockquote}}
 
 ## Improve writing [wand-2]
-At {{selection}} in {{filepath}}, polish the selected text for clarity and conciseness, keeping the original tone. Write the result back into the note — do not reply with the edited text in chat.
+Polish the following text for clarity and conciseness, keeping the original tone:
+{{filepath}} {{selection}}
 {{blockquote}}
+
+Write the result directly into the note — do not reply with the edited text in chat. Do not add extra blank lines at the start or end.
 `,
 
 

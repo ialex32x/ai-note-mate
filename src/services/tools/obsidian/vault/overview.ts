@@ -1,7 +1,7 @@
 import { TFile } from "obsidian";
-import type NoteAssistantPlugin from "../../../main";
-import type { RegisteredTool } from "../../chat-stream";
-import type { ToolCapability } from "../../llm-provider";
+import type NoteAssistantPlugin from "../../../../main";
+import type { RegisteredTool } from "../../../chat-stream";
+import type { ToolCapability } from "../../../llm-provider";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: get_overview

@@ -1,8 +1,8 @@
 import { TFile } from "obsidian";
-import type NoteAssistantPlugin from "../../../main";
-import type { RegisteredTool } from "../../chat-stream";
-import type { ToolCapability } from "../../llm-provider";
-import { isFailure, requireFile } from "./_shared";
+import type NoteAssistantPlugin from "../../../../main";
+import type { RegisteredTool } from "../../../chat-stream";
+import type { ToolCapability } from "../../../llm-provider";
+import { isFailure, requireFile } from "../_shared";
 
 const MARKDOWN_EXTENSIONS = new Set(["md", "canvas"]);
 
