@@ -23,7 +23,7 @@ export function updateSessionTitle(
 
     if (sessionTitleEl) {
         sessionTitleEl.textContent = displayTitle;
-        setTooltip(sessionTitleEl, fullTitle);
+        setTooltip(sessionTitleEl, session?.id ?? fullTitle);
     }
 }
 

@@ -150,7 +150,7 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         // Token usage (prompt / completion). Hidden when no tokens were ever spent.
         const usage = session.tokenUsage;
         if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
-            const tokensEl = metaRow.createEl('span', { cls: 'session-dropdown__item-tokens' });
+            const tokensEl = metaRow.createEl('span', { cls: 'session-dropdown__item-time' });
             const promptStr = SessionStatusDisplay.formatCompact(usage.promptTokens);
             const completionStr = SessionStatusDisplay.formatCompact(usage.completionTokens);
             tokensEl.createEl('span', {
@@ -167,6 +167,10 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
                 `${t('statusLabel.completion')}: ${usage.completionTokens.toLocaleString()}`,
             );
         }
+
+        // Session ID
+        const sessionIdEl = metaRow.createEl('span', { cls: 'session-dropdown__item-time' });
+        sessionIdEl.setText(session.id);
 
         // Delete button (shown for all sessions including active)
         const deleteBtn = item.createEl('button', {
