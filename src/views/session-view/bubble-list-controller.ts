@@ -112,9 +112,14 @@ export class BubbleListController {
     /**
      * Insert a bubble before an existing anchor node (older-history
      * prepend). Does not auto-scroll to the tail.
+     *
+     * Tail elements (follow-up bar, insight card, error continue button)
+     * are NOT dismissed here — prepending older messages does not change
+     * which message is the conversation tail, so the existing follow-up
+     * suggestions and insight card remain valid.
      */
     prepend(msg: ChatMessage, beforeEl: HTMLElement | null): HTMLElement {
-        const bubble = this.createAndRender(msg);
+        const bubble = this.createAndRender(msg, { isPrepend: true });
         if (beforeEl) {
             this.deps.messagesEl.insertBefore(bubble, beforeEl);
             this.deps.streamingLoader.pinToEnd();
@@ -123,22 +128,28 @@ export class BubbleListController {
     }
 
     /** Shared DOM construction for append and prepend paths. */
-    private createAndRender(msg: ChatMessage): HTMLElement {
-        // Any new bubble invalidates the previous follow-up suggestions bar
-        // and insight card AT THE DOM LEVEL. Must dismiss BEFORE creating
-        // the new bubble so neither tail element ends up sandwiched
-        // between two bubbles. The runtime is the source of truth for
-        // persisted insight state — its `insight-update`/`start` events
-        // are what actually flip the canonical state; this hide is just
-        // a defensive DOM cleanup for the rare case where a new bubble
+    private createAndRender(msg: ChatMessage, opts?: { isPrepend?: boolean }): HTMLElement {
+        // When appending a new bubble (not prepending history), any
+        // existing follow-up suggestions bar and insight card must be
+        // dismissed BEFORE creating the new bubble so neither tail
+        // element ends up sandwiched between two bubbles.
+        //
+        // Prepending older messages does NOT change which message is
+        // the conversation tail, so tail elements are preserved.
+        // The runtime is the source of truth for persisted insight
+        // state — its `insight-update`/`start` events are what
+        // actually flip the canonical state; this hide is just a
+        // defensive DOM cleanup for the rare case where a new bubble
         // arrives before the runtime's clear event has been observed
         // (e.g. during replay, where no runtime emit happens).
-        this.deps.followUpBar?.hide();
-        this.deps.insightCard?.hide();
-        // A new chat bubble means the conversation has moved past the
-        // last error tail (if any), so the inline "continue" affordance
-        // is no longer applicable to that historical error.
-        this.deps.errorBubbles.clearContinueBtn();
+        if (!opts?.isPrepend) {
+            this.deps.followUpBar?.hide();
+            this.deps.insightCard?.hide();
+            // A new chat bubble means the conversation has moved past the
+            // last error tail (if any), so the inline "continue" affordance
+            // is no longer applicable to that historical error.
+            this.deps.errorBubbles.clearContinueBtn();
+        }
 
         // CSS class computation is centralised in ChatBubble — the
         // single source of truth. renderInto also updates classes on
