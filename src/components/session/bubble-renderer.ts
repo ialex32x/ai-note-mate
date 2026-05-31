@@ -11,23 +11,22 @@ import {
 import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from '../bubble/bubble-context';
 import {
-    renderDelegateTaskBubble,
-    shouldShowRoleLabel,
     getSubAgentLabel,
 } from '../bubble/sub-agent';
 import { renderThinkingSection as renderThinkingSectionImpl } from '../bubble/thinking-section';
-import { renderUserContent } from '../bubble/user-content';
 import {
     attachImageContextMenu,
     attachLinkContextMenu,
 } from '../bubble/context-menus';
-import { renderToolCallContent as renderToolCallContentImpl } from '../bubble/tool-call';
 import { SpeechController } from '../bubble/speech-controller';
-import { renderActionBar as renderActionBarImpl, createActionsContainer, addIconAction, renderUserActionBar } from '../bubble/action-bar';
-import { createCopyButton } from '../../utils/copy-button';
+import { ChatBubble, type ChatBubbleOptions } from '../bubble/chat-bubble';
 
 /**
  * Message bubble renderer - handles rendering of all message types.
+ *
+ * Owns cross-bubble state (streaming controllers, speech controller,
+ * floating layer) and delegates per-bubble DOM rendering to
+ * {@link ChatBubble}, the single source of truth for bubble DOM structure.
  */
 export class BubbleRenderer extends Component {
     /**
@@ -164,10 +163,31 @@ export class BubbleRenderer extends Component {
     }
 
     /**
-     * Render a complete message bubble
-     * @param msg - The message to render
-     * @param options - Rendering options
-     * @param options.parentEl - Optional parent element to append the bubble to. If not provided, creates a detached element.
+     * Build a {@link ChatBubbleOptions} from the renderer's constructor
+     * callbacks. Merged with per-call overrides.
+     */
+    private buildBubbleOpts(overrides: {
+        wasThinkingExpanded?: boolean;
+        wasToolDetailExpanded?: boolean;
+        abortedMessageIds?: Set<string>;
+        pendingConfirmations?: Map<string, (approved: boolean) => void>;
+        isBusy?: boolean;
+    }): ChatBubbleOptions {
+        return {
+            ...overrides,
+            speechController: this.speechController,
+            onExtractInsights: this.onExtractInsights,
+            onEdit: this.onEditFromMessage,
+            onBranch: this.onBranchFromMessage,
+            onJumpToUser: this.onJumpToUser,
+            onJumpToNextUser: this.onJumpToNextUser,
+        };
+    }
+
+    /**
+     * Render a complete message bubble.
+     * @param msg - The message to render.
+     * @param options - Rendering options.
      */
     render(
         msg: ChatMessage,
@@ -181,37 +201,35 @@ export class BubbleRenderer extends Component {
         } = {}
     ): HTMLElement {
         const { parentEl, ...renderOptions } = options;
+        const bubbleOpts = this.buildBubbleOpts(renderOptions);
 
-        let statusCls = '';
-        if (msg.role === 'tool_call' && msg.toolCallResult) {
-            statusCls = ` session-bubble--tool-${msg.toolCallResult.status}`;
-        }
-        // Apply sub-agent origin classes so the UI can render a colored side bar
-        // + badge for messages produced by a sub-agent.
-        let subAgentCls = '';
-        if (msg.subAgent) {
-            subAgentCls = ` session-bubble--subagent session-bubble--subagent-${msg.subAgent.agentName}`;
-        }
-
-        // Create bubble element - either attached to parent or detached
         const bubble = parentEl
-            ? parentEl.createEl('div', {
-                  cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
-              })
-            : createEl('div', {
-                  cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
-              });
+            ? ChatBubble.createIn(parentEl, this.ctx, msg, bubbleOpts)
+            : ChatBubble.create(this.ctx, msg, bubbleOpts);
 
-        this.renderBubbleContent(bubble, msg, renderOptions);
+        // For assistant messages, handle content rendering
+        if (msg.role === 'assistant') {
+            const contentEl = bubble.querySelector('.session-bubble__content');
+            if (contentEl instanceof HTMLElement) {
+                if (msg.streaming) {
+                    const controller = this.getOrCreateController(msg.id);
+                    controller.update(contentEl, msg.content);
+                } else {
+                    this.finalizeStreamingController(msg.id, contentEl, msg.content);
+                }
+            }
+        }
+
         return bubble;
     }
 
     /**
      * Render message content into an existing bubble element.
      * This clears the existing bubble and re-renders its content.
-     * @param bubble - The existing bubble element to render into
-     * @param msg - The message to render
-     * @param options - Rendering options
+     *
+     * Delegates DOM structure to {@link ChatBubble.renderInto} — the
+     * single source of truth for bubble layout. Cross-bubble concerns
+     * (streaming controllers, speech) remain here.
      */
     renderInto(
         bubble: HTMLElement,
@@ -224,19 +242,13 @@ export class BubbleRenderer extends Component {
             isBusy?: boolean;
         } = {}
     ): void {
-        // Sub-agent assistant reply with empty content: hide the bubble entirely
-        // (avoid showing a lone "Reply from {agent}" collapsible header that
-        // expands to nothing). The bubble will be revealed automatically on the
-        // next render once content arrives.
+        // Sub-agent assistant reply with empty content: hide the bubble
         if (msg.role === 'assistant' && msg.subAgent && !msg.content.trim()) {
             bubble.empty();
             bubble.addClass('session-bubble--hidden');
             return;
         }
-        // manage_todos tool calls are surfaced exclusively through the
-        // pinned TodoPanel; keep the chat bubble itself collapsed so
-        // mid-stream re-renders (e.g. when toolCallResult arrives)
-        // don't briefly flash the default tool-call chrome.
+        // manage_todos tool calls stay collapsed
         if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'manage_todos') {
             bubble.empty();
             bubble.addClass('session-bubble--hidden');
@@ -244,8 +256,7 @@ export class BubbleRenderer extends Component {
         }
         bubble.removeClass('session-bubble--hidden');
 
-        // For streaming assistant messages, try to do an incremental update
-        // instead of tearing down and rebuilding the entire DOM tree.
+        // For streaming assistant messages, try incremental update
         if (msg.role === 'assistant' && msg.streaming) {
             const existing = bubble.querySelector('.session-bubble__content');
             if (existing instanceof HTMLElement && !this.subAgentBubbleNeedsFullRender(bubble, msg)) {
@@ -254,81 +265,25 @@ export class BubbleRenderer extends Component {
             }
         }
 
-        // Update bubble class
-        bubble.className = `session-bubble session-bubble--${msg.role}`;
-        if (msg.role === 'tool_call' && msg.toolCallResult) {
-            bubble.addClass(`session-bubble--tool-${msg.toolCallResult.status}`);
-        }
-        if (msg.subAgent) {
-            bubble.addClass('session-bubble--subagent');
-            bubble.addClass(`session-bubble--subagent-${msg.subAgent.agentName}`);
-        }
+        // Full re-render via ChatBubble
+        const bubbleOpts = this.buildBubbleOpts(options);
+        ChatBubble.renderInto(bubble, this.ctx, msg, bubbleOpts);
 
-        // Remove any stale external action bar left from a previous render
-        // before the bubble is rebuilt (applies to bubbles whose toolbars
-        // live outside the bubble border — see {@link externalizeActionBar}).
-        this.removeStaleExternalActionBar(bubble);
-
-        // Clear existing content
-        bubble.empty();
-
-        this.renderBubbleContent(bubble, msg, options);
-    }
-
-    /**
-     * Detach a previously-externalised action bar that sits as the bubble's
-     * next sibling. Called before re-rendering so a fresh action bar
-     * doesn't end up duplicated next to a stale one.
-     *
-     * Idempotent and side-effect-free when no external bar is present, so
-     * it's safe to call unconditionally.
-     */
-    private removeStaleExternalActionBar(bubble: HTMLElement): void {
-        const oldExternal = bubble.nextElementSibling;
-        if (oldExternal?.classList.contains('session-bubble__actions--external')) {
-            oldExternal.remove();
+        // For assistant messages, handle content rendering
+        if (msg.role === 'assistant') {
+            const contentEl = bubble.querySelector('.session-bubble__content');
+            if (contentEl instanceof HTMLElement) {
+                if (msg.streaming) {
+                    const controller = this.getOrCreateController(msg.id);
+                    controller.update(contentEl, msg.content);
+                } else {
+                    this.finalizeStreamingController(msg.id, contentEl, msg.content);
+                }
+            }
         }
     }
 
-    /**
-     * Determine whether a bubble's action bar should be moved outside the
-     * bubble border (becoming the bubble's next sibling) rather than
-     * sitting inside the bubble's padded area.
-     *
-     * Two cases qualify today:
-     *   - User messages: keeps Edit / Copy / Branch hovering below the
-     *     bubble so they don't crowd the message text.
-     *   - Sub-agent assistant replies (with non-empty content): mirrors
-     *     the user-bubble layout so sub-agent toolbars don't visually
-     *     bury the agent's reply.
-     *   - `delegate_task` handoff bubbles (non-empty task): same footer
-     *     treatment as user messages so the copy control doesn't crowd
-     *     the task prose.
-     *
-     * Centralised here so the predicate stays in lockstep with the
-     * `removeStaleExternalActionBar` invariant in `renderInto`.
-     */
-    private shouldExternalizeActionBar(msg: ChatMessage): boolean {
-        if (msg.role === 'assistant' && msg.subAgent && msg.content.trim()) return true;
-        if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
-            const task = msg.toolCallMeta.toolArgs?.['task'];
-            return typeof task === 'string' && task.trim().length > 0;
-        }
-        return false;
-    }
-
-    /**
-     * Move the bubble's action bar (rendered as a direct child) outside
-     * the bubble border so it appears below the bubble. No-op when the
-     * bubble has no action bar (e.g. sub-agent reply with empty content
-     * has the actions suppressed upstream).
-     */
-    private externalizeActionBar(bubble: HTMLElement): void {
-        const actionsEl = bubble.querySelector(':scope > .session-bubble__actions');
-        if (!actionsEl) return;
-        actionsEl.classList.add('session-bubble__actions--external');
-        bubble.insertAdjacentElement('afterend', actionsEl);
-    }
+    // ── Incremental streaming update (performance optimisation) ────────
 
     /**
      * Incremental update for a streaming assistant message.
@@ -378,204 +333,14 @@ export class BubbleRenderer extends Component {
         }
 
         // Feed content to the streaming controller (throttled + sanitized).
-        // The trailing `…` loader at the tail of the message list is the
-        // single global "AI is working" indicator now — bubbles no longer
-        // host their own per-message streaming cursor.
         const controller = this.getOrCreateController(msg.id);
         controller.update(contentEl, msg.content);
 
         this.onScrollNeeded();
     }
 
-    /**
-     * Core rendering logic shared by render() and renderInto().
-     * Populates the given bubble element with message content.
-     */
-    private renderBubbleContent(
-        bubble: HTMLElement,
-        msg: ChatMessage,
-        options: {
-            wasThinkingExpanded?: boolean;
-            wasToolDetailExpanded?: boolean;
-            abortedMessageIds?: Set<string>;
-            pendingConfirmations?: Map<string, (approved: boolean) => void>;
-            isBusy?: boolean;
-        } = {}
-    ): void {
-        const {
-            wasThinkingExpanded = false,
-            wasToolDetailExpanded = false,
-            abortedMessageIds = new Set<string>(),
-            pendingConfirmations = new Map<string, (approved: boolean) => void>(),
-            isBusy = false,
-        } = options;
+    // ── Thinking section (public API preserved for backward compat) ────
 
-        // System messages: special handling
-        if (msg.role === 'system') {
-            this.renderSystemMessage(bubble, msg);
-            return;
-        }
-
-        // delegate_task: render as a plain message bubble (task as content),
-        // not as a collapsible tool-call bubble. The delegate_task's tool result
-        // is intentionally hidden; the sub-agent's own assistant reply is shown
-        // as a separate bubble instead.
-        if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'delegate_task') {
-            renderDelegateTaskBubble(bubble, msg, this.onJumpToUser, this.onJumpToNextUser);
-            if (this.shouldExternalizeActionBar(msg)) {
-                this.externalizeActionBar(bubble);
-            }
-            this.onScrollNeeded();
-            return;
-        }
-
-        // manage_todos: the entire UI surface for this tool lives in
-        // the pinned TodoPanel above the message list. Rendering a
-        // per-call bubble in the conversation flow would be noise —
-        // a long plan can produce 20+ updates that mean nothing to
-        // the user once the panel state is already correct. We hide
-        // the bubble with a dedicated class so the chat history file
-        // still records the call (so future replays remain accurate)
-        // but it takes no space. The `tool_call` ChatMessage stays
-        // intact for the chat agent's own context.
-        if (msg.role === 'tool_call' && msg.toolCallMeta?.toolName === 'manage_todos') {
-            bubble.addClass('session-bubble--hidden');
-            bubble.empty();
-            return;
-        }
-
-        // Role label: all sub-agent messages now show their name here
-        // instead of a separate badge. For tool_call it's "Tools (name)",
-        // for assistant it's just the name.
-        if (msg.subAgent) {
-            // No badge — the role label below handles identification.
-        }
-
-        if (shouldShowRoleLabel(msg)) {
-            let roleText: string;
-            if (msg.role === 'tool_call') {
-                // Tool call bubbles show the agent name instead of "Tool"
-                roleText = msg.subAgent
-                    ? getSubAgentLabel(msg.subAgent.agentName)
-                    : t('view.roleAI');
-            } else if (msg.subAgent) {
-                roleText = getSubAgentLabel(msg.subAgent.agentName);
-            } else {
-                roleText = this.roleLabel(msg.role);
-            }
-            bubble.createEl('span', {
-                cls: 'session-bubble__role',
-                text: roleText,
-            });
-        }
-
-        // Body wrapper — carries the visual background box. Everything below
-        // the role label lives inside this wrapper so the background does not
-        // include the name label.
-        const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
-
-        // Thinking section (assistant messages only)
-        if (msg.role === 'assistant' && msg.thinkingContent) {
-            // Thinking is complete if explicitly marked, or if message streaming has finished
-            const thinkingComplete = msg.thinkingComplete === true || msg.streaming === false;
-            this.renderThinkingSection(bodyEl, msg.thinkingContent, thinkingComplete, wasThinkingExpanded);
-        }
-
-        // Content
-        const contentEl = bodyEl.createEl('div', { cls: 'session-bubble__content' });
-
-        if (msg.role === 'tool_call') {
-            renderToolCallContentImpl(this.ctx, contentEl, msg, wasToolDetailExpanded, pendingConfirmations);
-        } else if (msg.role === 'assistant') {
-            if (msg.streaming) {
-                // Streaming: use throttled controller with markdown sanitization
-                const controller = this.getOrCreateController(msg.id);
-                controller.update(contentEl, msg.content);
-            } else {
-                // Complete message or finalization: render directly
-                this.finalizeStreamingController(msg.id, contentEl, msg.content);
-            }
-        } else if (msg.role === 'user') {
-            renderUserContent(this.ctx, contentEl, msg.content);
-            // Render inline action bar (Edit + Copy + Branch) — replaces the
-            // previous right-click context menu so the same actions are
-            // discoverable on hover without a secondary gesture. The bar
-            // gets externalised below alongside sub-agent action bars.
-            renderUserActionBar(
-                bubble,
-                msg,
-                this.onBranchFromMessage,
-                this.onEditFromMessage,
-                this.onJumpToUser,
-                this.onJumpToNextUser,
-            );
-        } else {
-            contentEl.setText(msg.content);
-        }
-
-        // Action bar — rendered on bubble (not bodyEl) so it sits outside
-        // the background box.
-        if (msg.role === 'assistant' && msg.content.trim()) {
-            renderActionBarImpl(this.ctx, bubble, msg, {
-                abortedMessageIds,
-                speechController: this.speechController,
-                onExtractInsights: this.onExtractInsights,
-                isBusy,
-                onJumpToUser: this.onJumpToUser,
-                onJumpToNextUser: this.onJumpToNextUser,
-            });
-        } else if (msg.role === 'tool_call') {
-            // Tool call bubbles reserve toolbar space with jump + copy buttons.
-            const actions = createActionsContainer(bubble);
-            if (this.onJumpToUser) {
-                addIconAction(actions, {
-                    icon: 'arrow-up',
-                    label: t('view.jumpToUser'),
-                    onClick: () => this.onJumpToUser!(msg),
-                });
-            }
-            if (this.onJumpToNextUser) {
-                addIconAction(actions, {
-                    icon: 'arrow-down',
-                    label: t('view.jumpToNextUser'),
-                    onClick: () => this.onJumpToNextUser!(msg),
-                });
-            }
-            const toolLabel = msg.toolCallMeta?.toolName ?? msg.content;
-            const copyBtn = createCopyButton(t('common.copy'), () => toolLabel, 'session-bubble__action-btn');
-            actions.appendChild(copyBtn);
-        }
-
-        // Final pass: move action bars outside the bubble border for the
-        // bubble shapes that want their toolbars to read as a footer rather
-        // than crowd the message body. Centralised here so user and
-        // sub-agent paths share the same externalisation invariant.
-        if (this.shouldExternalizeActionBar(msg)) {
-            this.externalizeActionBar(bubble);
-        }
-
-        this.onScrollNeeded();
-    }
-
-    /**
-     * Render system message
-     */
-    private renderSystemMessage(bubble: HTMLElement, msg: ChatMessage): void {
-        if (msg.content === 'aborted') {
-            const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
-            const divider = bodyEl.createEl('div', { cls: 'session-bubble__abort-divider' });
-            divider.createEl('span', { cls: 'session-bubble__abort-text', text: t('view.responseAborted') });
-        } else {
-            bubble.createEl('span', { cls: 'session-bubble__role', text: 'System' });
-            const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
-            const contentEl = bodyEl.createEl('div', { cls: 'session-bubble__content' });
-            contentEl.setText(msg.content);
-        }
-    }
-
-    /**
-     * Render tool call content
-     */
     /**
      * Render the collapsible "thinking" section for an assistant message.
      *
@@ -593,23 +358,25 @@ export class BubbleRenderer extends Component {
         renderThinkingSectionImpl(bubble, thinkingContent, thinkingComplete, startExpanded);
     }
 
+    // ── Sub-agent full-render detection ────────────────────────────────
+
     /**
-     * Render fully-formed markdown content (used for non-streaming / final
-     * renders such as history loads). Shares the same preprocess +
-     * after-render pipeline as {@link StreamingMarkdownController.finalize}
-     * so streaming and non-streaming bubbles end up with identical DOM.
+     * Sub-agent bubbles that were first rendered without `subAgent` metadata
+     * can retain a stale "AI" role line while streaming. Force a full re-render
+     * when that happens. After the first correct render (role label == expected
+     * sub-agent name), streaming updates use the incremental path.
      */
-    private renderFinalContent(contentEl: HTMLElement, markdown: string): Promise<void> {
-        return renderFinalMarkdown(this.app, this, contentEl, markdown, {
-            preprocess: stripStructuredBlock,
-            afterRender: (el) => {
-                attachImageContextMenu(this.ctx, el);
-                attachLinkContextMenu(this.ctx, el);
-            },
-        });
+    private subAgentBubbleNeedsFullRender(bubble: HTMLElement, msg: ChatMessage): boolean {
+        if (!msg.subAgent) return false;
+        const roleEl = bubble.querySelector('.session-bubble__role');
+        if (!roleEl) return true; // No role label yet — needs render
+        const expectedText = getSubAgentLabel(msg.subAgent.agentName);
+        if (roleEl.textContent !== expectedText) return true; // Stale "AI" label
+        if (!bubble.hasClass('session-bubble--subagent')) return true;
+        return false;
     }
 
-    // ── Streaming controller management ──────────────────────────────────────
+    // ── Streaming controller management ────────────────────────────────
 
     /**
      * Get or create a StreamingMarkdownController for the given message.
@@ -639,17 +406,6 @@ export class BubbleRenderer extends Component {
      * Finalize and clean up the streaming controller for a message.
      * If no controller exists (e.g. loading from history), falls back
      * to a direct one-shot render.
-     *
-     * Eviction-before-await: the controller is removed from the map
-     * synchronously, before {@link StreamingMarkdownController.finalize}
-     * is awaited. If a stray subsequent render path looks up the same
-     * `messageId` while the finalize promise is still pending, it will
-     * miss and create a fresh controller instead of reusing the one
-     * that has already committed its terminal state. The controller's
-     * own `finalizing` flag would also reject any racing `update()`,
-     * but evicting from the map keeps the scenario from arising in the
-     * first place and means the lookup tree only ever holds
-     * "live streaming" controllers.
      */
     private finalizeStreamingController(
         messageId: string,
@@ -691,37 +447,20 @@ export class BubbleRenderer extends Component {
         this.streamingControllers.clear();
     }
 
-    // ── Utility methods ─────────────────────────────────────────────────────
-
     /**
-     * Sub-agent bubbles that were first rendered without `subAgent` metadata
-     * can retain a stale "AI" role line while streaming. Force a full re-render
-     * when that happens. After the first correct render (role label == expected
-     * sub-agent name), streaming updates use the incremental path.
+     * Render fully-formed markdown content (used for non-streaming / final
+     * renders such as history loads). Shares the same preprocess +
+     * after-render pipeline as {@link StreamingMarkdownController.finalize}
+     * so streaming and non-streaming bubbles end up with identical DOM.
      */
-    private subAgentBubbleNeedsFullRender(bubble: HTMLElement, msg: ChatMessage): boolean {
-        if (!msg.subAgent) return false;
-        const roleEl = bubble.querySelector('.session-bubble__role');
-        if (!roleEl) return true; // No role label yet — needs render
-        const expectedText = getSubAgentLabel(msg.subAgent.agentName);
-        if (roleEl.textContent !== expectedText) return true; // Stale "AI" label
-        if (!bubble.hasClass('session-bubble--subagent')) return true;
-        return false;
-    }
-
-    private roleLabel(role: ChatMessage['role']): string {
-        switch (role) {
-            case 'user':
-                return t('view.roleYou');
-            case 'assistant':
-                return t('view.roleAI');
-            case 'tool_call':
-                return t('view.roleTool');
-            case 'tool_result':
-                return t('view.roleResult');
-            case 'system':
-                return '';
-        }
+    private renderFinalContent(contentEl: HTMLElement, markdown: string): Promise<void> {
+        return renderFinalMarkdown(this.app, this, contentEl, markdown, {
+            preprocess: stripStructuredBlock,
+            afterRender: (el) => {
+                attachImageContextMenu(this.ctx, el);
+                attachLinkContextMenu(this.ctx, el);
+            },
+        });
     }
 
     /**

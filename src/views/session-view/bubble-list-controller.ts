@@ -6,6 +6,7 @@ import type { StreamingLoader } from './streaming-loader';
 import type { ScrollController } from './scroll-controller';
 import type { MessageWindowController } from './message-window-controller';
 import type { ErrorBubbleTracker } from './error-bubble';
+import { computeBubbleClasses } from '../../components/bubble/chat-bubble';
 
 export interface BubbleListControllerDeps {
     messagesEl: HTMLElement;
@@ -78,12 +79,6 @@ export class BubbleListController {
         const bubble = this.messageBubbles.get(id);
         if (!bubble) return;
 
-        // Remove external action bar (next sibling)
-        const external = bubble.nextElementSibling;
-        if (external?.classList.contains('session-bubble__actions--external')) {
-            external.remove();
-        }
-
         bubble.remove();
         this.messageBubbles.delete(id);
         this.deps.bubbleRenderer.retireStreamingController(id);
@@ -121,18 +116,7 @@ export class BubbleListController {
     prepend(msg: ChatMessage, beforeEl: HTMLElement | null): HTMLElement {
         const bubble = this.createAndRender(msg);
         if (beforeEl) {
-            // createAndRender builds the bubble at the list tail, so a unit
-            // that externalises its action bar (sub-agent) leaves the bar as
-            // the bubble's next sibling at the tail. Move it together with
-            // the bubble — otherwise insertBefore relocates only the bubble
-            // and the toolbar is orphaned at the tail as a standalone flex
-            // child, which is always visible on mobile and accumulates (one
-            // per prepended unit) as the user loads older history.
-            const external = bubble.nextElementSibling;
             this.deps.messagesEl.insertBefore(bubble, beforeEl);
-            if (external?.classList.contains('session-bubble__actions--external')) {
-                this.deps.messagesEl.insertBefore(external, beforeEl);
-            }
             this.deps.streamingLoader.pinToEnd();
         }
         return bubble;
@@ -156,18 +140,12 @@ export class BubbleListController {
         // is no longer applicable to that historical error.
         this.deps.errorBubbles.clearContinueBtn();
 
-        let statusCls = '';
-        if (msg.role === 'tool_call' && msg.toolCallResult) {
-            statusCls = ` session-bubble--tool-${msg.toolCallResult.status}`;
-        }
-        let subAgentCls = '';
-        if (msg.subAgent) {
-            subAgentCls = ` session-bubble--subagent session-bubble--subagent-${msg.subAgent.agentName}`;
-        }
-
-        const bubble = this.deps.messagesEl.createEl('div', {
-            cls: `session-bubble session-bubble--${msg.role}${statusCls}${subAgentCls}`,
-        });
+        // CSS class computation is centralised in ChatBubble — the
+        // single source of truth. renderInto also updates classes on
+        // re-render, so the same compute* function is used for both
+        // initial creation and subsequent updates.
+        const cls = computeBubbleClasses(msg);
+        const bubble = this.deps.messagesEl.createEl('div', { cls });
 
         this.deps.bubbleRenderer.renderInto(bubble, msg, {
             abortedMessageIds: this.abortedMessageIds,
@@ -275,17 +253,11 @@ export class BubbleListController {
 
 // ── Shared jump helpers ──────────────────────────────────────────────
 
-const SKIP_CLASSES = ['session-bubble__actions--external', 'session-bubble__role--external'];
-
 /** Walk forwards or backwards from a bubble to find a user bubble. */
 function walkToUserBubble(start: Element, dir: 'prev' | 'next'): Element | null {
     const prop = dir === 'prev' ? 'previousElementSibling' : 'nextElementSibling';
     let sibling: Element | null = start[prop];
     while (sibling) {
-        if (SKIP_CLASSES.some(c => sibling!.classList.contains(c))) {
-            sibling = sibling[prop];
-            continue;
-        }
         if (sibling.classList.contains('session-bubble--user')) return sibling;
         sibling = sibling[prop];
     }

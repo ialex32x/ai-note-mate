@@ -4,6 +4,11 @@ import { prettifyIfJson } from '../../utils/json-format';
 import { copyToClipboard } from '../../utils/clipboard';
 import { safeSliceHead } from '../../utils/string-safe';
 import { addIconAction, createActionsContainer } from '../../components/bubble/action-bar';
+import {
+    BUBBLE_BASE_CLS,
+    BUBBLE_CONTENT_CLS,
+    BUBBLE_ROLE_CLS,
+} from '../../components/bubble/chat-bubble';
 
 /**
  * Class string for action buttons inside an error bubble.
@@ -57,7 +62,11 @@ export interface AppendErrorBubbleResult {
 const ERROR_DISPLAY_MAX_CHARS = 100;
 
 /**
- * Append an error bubble to the message list. Extracted from SessionView.
+ * Append an error bubble to the message list.
+ *
+ * Now uses the same CSS class vocabulary as all other chat bubbles
+ * (`session-bubble`, `session-bubble__role`, `session-bubble__content`)
+ * so the styling stays consistent with user/assistant/tool bubbles.
  */
 export function appendErrorBubble(
     message: string,
@@ -72,20 +81,24 @@ export function appendErrorBubble(
         : fullText;
 
     const bubble = opts.messagesEl.createEl('div', {
-        cls: 'session-bubble session-bubble--error',
+        cls: `${BUBBLE_BASE_CLS} ${BUBBLE_BASE_CLS}--error`,
     });
 
-    const role = bubble.createEl('div', { cls: 'session-bubble__role' });
+    // Role label — same position as "AI" / "You" labels, but with an icon
+    const role = bubble.createEl('div', { cls: BUBBLE_ROLE_CLS });
     const roleIcon = role.createEl('span', { cls: 'session-bubble__error-icon' });
     setIcon(roleIcon, 'alert-triangle');
     role.createEl('span', { text: t('view.roleError') });
 
-    const content = bubble.createEl('div', { cls: 'session-bubble__content' });
+    // Body wrapper — same pattern as regular bubbles (background box)
+    const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
+    const content = bodyEl.createEl('div', { cls: BUBBLE_CONTENT_CLS });
     content.createEl('pre', {
         cls: 'session-bubble__error-text',
         text: displayText,
     });
 
+    // Action bar — same position as assistant/user action bars
     const actions = createActionsContainer(bubble);
 
     let continueBtn: HTMLElement | null = null;
