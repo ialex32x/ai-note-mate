@@ -99,9 +99,12 @@ export function renderDelegateTaskBubble(bubble: HTMLElement, msg: ChatMessage):
         ?? msg.toolCallMeta?.toolArgs?.['exchange']
         ?? msg.toolCallMeta?.toolArgs?.['inputs'];
 
-    // Agent badge (same visual treatment as sub-agent bubbles so the
-    // "main agent → sub-agent" handoff reads naturally).
-    renderSubAgentBadge(bubble, agentName);
+    // Role label: sub-agent name in the same position as the main-agent "AI" label.
+    const roleLabel = getSubAgentLabel(agentName);
+    bubble.createEl('span', {
+        cls: 'session-bubble__role',
+        text: roleLabel,
+    });
 
     // Content: render the task text as plain text (no tool-detail chrome).
     const contentEl = bubble.createEl('div', { cls: 'session-bubble__content' });
