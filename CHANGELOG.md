@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.1
+
+### What's new
+
+- **Jump to previous messages** — Click the new navigation arrow on user message bubbles to jump back to the previous user message, making long conversations easier to scan.
+- **Hover timestamps** — Hover over any message's role label to see when it was sent.
+
+### Refinements
+
+- **Follow-up chips auto-send** — Clicking a follow-up suggestion now sends it immediately instead of parking it in the input field.
+- **Cleaner sub-agent labels** — Sub-agent names now appear as plain role labels instead of badges, reducing visual clutter.
+- **User bubbles get a tint** — Your own messages now have a subtle accent-colour background, making conversation flow easier to follow at a glance.
+
+### Fixes
+
+- **Date formatting** — Session dates in the session switcher now respect your system locale.
+- **Copy improvements** — Copying tool-call messages and assistant replies now produces cleaner, more useful text.
+- **Scroll stability** — Jumping between messages no longer causes the view to jump or flicker.
+- **History prepend** — Loading older messages into a session no longer disrupts the view or loses UI elements.
+- **Safe filenames** — The assistant now follows vault naming rules more carefully when creating new notes.
+
+---
+
 ## 1.4.0
 
 ### What's new
