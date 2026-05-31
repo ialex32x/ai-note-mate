@@ -1190,22 +1190,18 @@ export class SessionView extends ItemView {
      *
      * Uses message IDs from the data model, then looks up the
      * corresponding bubble. If the target bubble hasn't been rendered
-     * yet (outside the lazy window), expands the window first.
+     * yet (outside the lazy window), expands the window and scrolls to
+     * the target as a single integrated operation to avoid competing
+     * scroll-anchor-restore and scroll-to-target animations.
      */
     private handleJumpToUser(msg: ChatMessage): void {
         const targetId = this.bubbleList.scrollToPrevUser(msg);
         if (targetId) {
-            // Target exists but bubble is outside the rendered window
-            void this.ensureMessageVisible(targetId).then(() => {
-                window.requestAnimationFrame(() => {
-                    const bubble = this.bubbleList.messageBubbles.get(targetId);
-                    if (bubble) {
-                        bubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        bubble.addClass('session-bubble--highlight');
-                        window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 1700);
-                    }
-                });
-            });
+            // Pass targetId as both the expansion range and the scroll
+            // target so ensureMessageVisible loads older units AND
+            // scrolls to the target in one pass, skipping the competing
+            // anchor-restore.
+            void this.ensureMessageVisible(targetId, targetId);
         }
     }
 
@@ -1213,17 +1209,7 @@ export class SessionView extends ItemView {
     private handleJumpToNextUser(msg: ChatMessage): void {
         const targetId = this.bubbleList.scrollToNextUser(msg);
         if (targetId) {
-            // Target exists but bubble is outside the rendered window
-            void this.ensureMessageVisible(targetId).then(() => {
-                window.requestAnimationFrame(() => {
-                    const bubble = this.bubbleList.messageBubbles.get(targetId);
-                    if (bubble) {
-                        bubble.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        bubble.addClass('session-bubble--highlight');
-                        window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 1700);
-                    }
-                });
-            });
+            void this.ensureMessageVisible(targetId, targetId);
         }
     }
 
@@ -1599,17 +1585,34 @@ export class SessionView extends ItemView {
     }
 
     /**
-     * Expand the rendered window until `messageId` is in the DOM, then
-     * let the caller scroll to it.
+     * Expand the rendered window until `messageId` is in the DOM.
+     *
+     * @param messageId - The message whose display unit range must be loaded.
+     * @param scrollToId - Optional: when provided, scroll to this specific
+     *   bubble after loading instead of restoring the scroll anchor. Used
+     *   for jump-to-message operations where the user explicitly navigates
+     *   to a target; the anchor-restore path is for passive "load older"
+     *   scrolling where the viewport should stay put.
      */
-    private async ensureMessageVisible(messageId: string): Promise<void> {
+    private async ensureMessageVisible(messageId: string, scrollToId?: string): Promise<void> {
         const idx = this.messageWindow.findUnitIndex(messageId);
         if (idx < 0 || idx >= this.messageWindow.start) {
+            // Already visible. If we still need to scroll, do it after a
+            // double RAF so any in-flight layout from a concurrent load
+            // (unlikely here, but defensive) has settled.
+            if (scrollToId) {
+                this.scrollToBubbleSync(scrollToId);
+            }
             return;
         }
 
         const units = this.messageWindow.slice(idx, this.messageWindow.start);
-        const anchor = this.messageWindow.getPrependAnchor();
+        // When jumping to a specific target we deliberately skip the
+        // scroll-anchor capture/restore — we're going to scroll to the
+        // target after loading, so preserving the old viewport position
+        // would create a visual "bounce" (restore → re-scroll).
+        const isJump = !!scrollToId;
+        const anchor = isJump ? null : this.messageWindow.getPrependAnchor();
         const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
         const showOverlay = units.length >= HISTORY_LOADING.showOverlayMinUnits;
 
@@ -1631,12 +1634,18 @@ export class SessionView extends ItemView {
                 signal: this.historyReplayAbort?.signal,
             });
             this.messageWindow.expandRenderedStart(idx);
-            // Trim BEFORE restoring scroll, otherwise the anchor's
-            // offsetTop changes after scroll restoration and the
-            // viewport jumps to a stale position.
+            // Trim BEFORE any scroll, otherwise the anchor's / target's
+            // offsetTop changes after the scroll position was set and the
+            // viewport lands at a stale offset.
             this.messageWindow.maybeTrimTail();
             this.messageWindow.updateSentinel();
-            if (anchor && anchor.isConnected && anchorOffset !== null) {
+            if (isJump && scrollToId) {
+                // Jump mode: scroll to the target instead of restoring
+                // the anchor. Use a double RAF to let the browser flush
+                // layout after the bulk prepend + trim mutations before
+                // we read offsetTop and set scrollTop.
+                this.scheduleScrollToBubble(scrollToId);
+            } else if (anchor && anchor.isConnected && anchorOffset !== null) {
                 this.scroller.restoreAnchorScroll(anchor, anchorOffset);
             }
         } catch (err) {
@@ -1649,6 +1658,38 @@ export class SessionView extends ItemView {
             }
             this.scroller.endHistoryPrepend();
         }
+    }
+
+    /**
+     * Schedule a scroll to a specific bubble after the next two animation
+     * frames. Double RAF ensures the browser has finished layout for any
+     * recently-inserted DOM nodes (e.g. from {@link replayUnitsInFrames})
+     * before we read `offsetTop`.
+     */
+    private scheduleScrollToBubble(messageId: string): void {
+        window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+                this.scrollToBubbleSync(messageId);
+            });
+        });
+    }
+
+    /**
+     * Immediately scroll a bubble into view using synchronous `scrollTop`
+     * and flash the highlight class.
+     *
+     * Uses `scrollTop` (not `scrollIntoView`) to avoid the async smooth-
+     * scroll animation which can be interrupted by competing DOM mutations
+     * or conflicting scroll operations (e.g. after a bulk history prepend).
+     */
+    private scrollToBubbleSync(messageId: string): void {
+        const bubble = this.bubbleList.messageBubbles.get(messageId);
+        if (!bubble) return;
+        // 80 px padding from the top so the bubble isn't flush against the
+        // viewport edge and has some surrounding context visible.
+        this.messagesEl.scrollTop = bubble.offsetTop - 80;
+        bubble.addClass('session-bubble--highlight');
+        window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 2000);
     }
 
 
