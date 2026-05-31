@@ -1542,12 +1542,16 @@ export class SessionView extends ItemView {
                 signal: this.historyReplayAbort?.signal,
             });
             this.messageWindow.applyOlderBatch(newStart);
-            if (anchor && anchorOffset !== null) {
+            // Trim oldest rendered bubbles if the window grew past the limit
+            // BEFORE restoring the scroll anchor. trimTail removes DOM nodes
+            // from the top, which changes every remaining node's offsetTop.
+            // If we restore the scroll first and then trim, the anchor-based
+            // scroll position becomes stale — the viewport jumps because the
+            // anchor's offsetTop shrinks after trimming.
+            this.messageWindow.maybeTrimTail();
+            if (anchor && anchor.isConnected && anchorOffset !== null) {
                 this.scroller.restoreAnchorScroll(anchor, anchorOffset);
             }
-            // Trim oldest rendered bubbles if the window grew past the limit.
-            // Removing from the top preserves the viewport position naturally.
-            this.messageWindow.maybeTrimTail();
         } catch (err) {
             if (!(err instanceof DOMException && err.name === 'AbortError')) {
                 throw err;
@@ -1591,11 +1595,14 @@ export class SessionView extends ItemView {
                 signal: this.historyReplayAbort?.signal,
             });
             this.messageWindow.expandRenderedStart(idx);
-            if (anchor && anchorOffset !== null) {
+            // Trim BEFORE restoring scroll, otherwise the anchor's
+            // offsetTop changes after scroll restoration and the
+            // viewport jumps to a stale position.
+            this.messageWindow.maybeTrimTail();
+            this.messageWindow.updateSentinel();
+            if (anchor && anchor.isConnected && anchorOffset !== null) {
                 this.scroller.restoreAnchorScroll(anchor, anchorOffset);
             }
-            this.messageWindow.updateSentinel();
-            this.messageWindow.maybeTrimTail();
         } catch (err) {
             if (!(err instanceof DOMException && err.name === 'AbortError')) {
                 throw err;
