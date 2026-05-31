@@ -1,5 +1,28 @@
 # Changelog
 
+## 1.4.0
+
+### What's new
+
+- **Obsidian Bases support** — Create, view, update, and list Obsidian Bases directly from the session. Validation is tightened and singular argument aliases are accepted for smoother calls.
+- **Canvas tools** — Update, delete, and auto-layout canvas files with new `canvas_*` tools, plus read and list operations for canvas inspection.
+- **Persist interrupted messages** — When you stop a streaming reply, the partial message is now saved to the session instead of being lost.
+
+### Refinements
+
+- **Inclusive `end_line` everywhere** — Both `read_file` and `edit_lines` now use inclusive `end_line` semantics, reverting the half-open ranges introduced in 1.3.4. `insert_lines_before` is merged into `edit_lines` as a unified editing tool.
+- **Better vault browsing** — `vaultBrowseFolder` and `vaultReadFile` pagination is clearer and more consistent.
+- **Link resolution improvements** — Context menu and wiki-link handling are more robust.
+- **Large file threshold raised** — Files under 500 lines no longer trigger sectioned-read hints.
+- **Tool description polish** — Delete file/folder and read-file descriptions are clearer about their scope.
+
+### Fixes
+
+- **Datetime locale** — Date formatting now respects the system default locale instead of always using English.
+- **Empty heading outlines** — Error messages for notes with no headings are now more helpful.
+
+---
+
 ## 1.3.4
 
 ### What's new
