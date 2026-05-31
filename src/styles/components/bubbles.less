@@ -51,7 +51,7 @@
     max-width: 100%;
 
     .session-bubble__body {
-        background: @bg-secondary-alt;
+        background: color-mix(in srgb, @bg-secondary-alt 65%, transparent);
         color: @text-primary;
     }
 }
@@ -63,7 +63,7 @@
     font-size: 0.82em;
 
     .session-bubble__body {
-        background: @bg-secondary-alt;
+        background: color-mix(in srgb, @bg-secondary-alt 65%, transparent);
         color: @text-secondary;
     }
 }
@@ -71,21 +71,21 @@
 // Tool call status variants
 .session-bubble--tool-error {
     .session-bubble__body {
-        background: color-mix(in srgb, @text-error 8%, @bg-secondary-alt);
+        background: color-mix(in srgb, @text-error 8%, color-mix(in srgb, @bg-secondary-alt 65%, transparent));
         border-left: 3px solid @text-error;
     }
 }
 
 .session-bubble--tool-warning {
     .session-bubble__body {
-        background: color-mix(in srgb, @text-warning 8%, @bg-secondary-alt);
+        background: color-mix(in srgb, @text-warning 8%, color-mix(in srgb, @bg-secondary-alt 65%, transparent));
         border-left: 3px solid @text-warning;
     }
 }
 
 .session-bubble--tool-success {
     .session-bubble__body {
-        background: @bg-secondary-alt;
+        background: color-mix(in srgb, @bg-secondary-alt 65%, transparent);
     }
 }
 
