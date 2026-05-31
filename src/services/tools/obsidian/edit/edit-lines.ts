@@ -97,9 +97,6 @@ function normaliseEdit(edit: unknown, index: number, totalLines: number): Normal
 
     // ── insert_before ─
     if (op === "insert_before") {
-        if (content === "") {
-            return `edits[${index}]: insert_before requires non-empty content. Use op: "delete" to remove lines.`;
-        }
         if (s > totalLines + 1) {
             return (
                 `edits[${index}]: start_line (${s}) exceeds max allowed ${totalLines + 1} ` +
@@ -349,7 +346,9 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                                         description:
                                             "Operation type. Omit to auto-detect: non-empty `content` → replace, " +
                                             "empty `content` → delete. Use \"insert_before\" to insert content " +
-                                            "before `start_line` (no `end_line` needed).",
+                                            "before `start_line` (no `end_line` needed). " +
+                                            "To insert a blank line, use \"insert_before\" with `content: \"\"`. " +
+                                            "Omitting `op` with empty content ALWAYS means delete, never insert.",
                                     },
                                     start_line: {
                                         type: "number",
@@ -375,11 +374,11 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                                     content: {
                                         type: "string",
                                         description:
-                                            "For replace/insert_before: the new content. May be more or fewer lines " +
-                                            "than the original range. For delete: pass '' (empty string). " +
-                                            "Do NOT append a trailing '\\n' unless you intend an extra " +
-                                            "empty line — 'X\\n' becomes two lines ['X', '']. " +
-                                            "For insert_before, content must be non-empty.",
+                                            "For replace: the new content. May be more or fewer lines " +
+                                            "than the original range. For delete: pass \"\" (empty string). " +
+                                            "For insert_before: the content to insert before `start_line`. " +
+                                            "Pass \"\" to insert a single blank line. " +
+                                            "Include \\n between lines for multi-line content.",
                                     },
                                 },
                                 required: ["start_line", "content"],
