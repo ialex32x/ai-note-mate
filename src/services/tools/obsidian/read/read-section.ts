@@ -45,8 +45,9 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                     "the next heading at the same OR shallower level — i.e. nested subsections " +
                     "are included by default. Set include_subsections=false to stop at the very " +
                     "next heading of any level. Matching is exact (case-sensitive, trimmed). " +
-                    "If the heading_path is ambiguous or missing, the tool returns an error " +
-                    "with concrete diagnostics so you can refine the heading_path on the next call. " +
+                    "If the heading_path is not found the tool returns an error with diagnostics. " +
+                    "If ambiguous (multiple headings share the same tail), the tool returns the first " +
+                    "match with an 'ambiguity_note' so you can refine the heading_path if needed. " +
                     "Returned `start_line` / `end_line` are 1-based physical line numbers; leading blank lines count.",
                 parameters: {
                     type: "object",
@@ -65,8 +66,8 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "ordered outermost → innermost, that the target heading's ancestor chain " +
                                 "must END WITH. The full chain ['Chapter 2', 'Background'] and the shorter " +
                                 "tail ['Background'] both resolve to the same heading IF that tail is unique " +
-                                "in the file; otherwise the call fails as ambiguous and you must prepend more " +
-                                "ancestors. Intermediate ancestors must NOT be skipped (['Chapter 1', 'Background'] " +
+                                "in the file; if ambiguous, the first match is returned with an 'ambiguity_note'. " +
+                                "Intermediate ancestors must NOT be skipped (['Chapter 1', 'Background'] " +
                                 "is rejected when 'Background' actually sits under 'Chapter 1 > Body').",
                         },
                         include_subsections: {
@@ -138,6 +139,7 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 headingPath,
                 totalLines,
                 includeSubsections,
+                "first",
             );
             if (!resolved.ok) {
                 return {
@@ -147,24 +149,34 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
-            const { start_line, end_line, level, heading } = resolved.section;
+            const { start_line, end_line, level, heading, ambiguous, ambiguous_match_count } = resolved.section;
             const sliced = lines.slice(start_line - 1, end_line).join("\n");
+
+            const resultContent: Record<string, unknown> = {
+                path,
+                heading_path: headingPath,
+                matched_heading: heading,
+                level,
+                start_line,
+                end_line,
+                total_lines: totalLines,
+                include_subsections: includeSubsections,
+                content: sliced,
+                mtime: file.stat.mtime,
+            };
+
+            if (ambiguous) {
+                resultContent.ambiguity_note =
+                    `heading_path ${headingPath.map((s) => JSON.stringify(s)).join(" > ")} ` +
+                    `is ambiguous (${ambiguous_match_count} matches). ` +
+                    `Returned the first match at line ${start_line}. ` +
+                    `Prepend more ancestors to disambiguate if this is not the intended section.`;
+            }
 
             return {
                 success: true,
                 type: "object",
-                content: {
-                    path,
-                    heading_path: headingPath,
-                    matched_heading: heading,
-                    level,
-                    start_line,
-                    end_line,
-                    total_lines: totalLines,
-                    include_subsections: includeSubsections,
-                    content: sliced,
-                    mtime: file.stat.mtime,
-                },
+                content: resultContent,
             };
         },
     };

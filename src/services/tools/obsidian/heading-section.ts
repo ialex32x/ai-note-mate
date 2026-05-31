@@ -45,12 +45,16 @@ export interface ResolvedSection {
     end_line: number;
     level: number;
     heading: string;
+    /** When the heading_path matched multiple headings and onAmbiguous='first' was used. */
+    ambiguous?: boolean;
+    /** Number of ambiguous matches (populated when ambiguous=true). */
+    ambiguous_match_count?: number;
 }
 
 export type FindSectionError =
     | { kind: "no_headings" }
     | { kind: "not_found"; available: string[] }
-    | { kind: "ambiguous"; matches: Array<{ line: number; level: number; ancestors: string[] }> }
+    | { kind: "ambiguous"; matches: Array<{ index: number; line: number; level: number; ancestors: string[] }> }
     | { kind: "empty_path" };
 
 export type FindSectionResult =
@@ -253,6 +257,7 @@ export function findHeadingByPath(
         error: {
             kind: "ambiguous",
             matches: matches.map((m) => ({
+                index: m.index,
                 line: headings[m.index]!.line + 1, // 1-based for user-facing errors
                 level: headings[m.index]!.level,
                 ancestors: m.ancestors,
@@ -276,15 +281,50 @@ export function findHeadingByPath(
  *   - `false`: the section stops at the very next heading of ANY level. Useful
  *     when the caller wants only the prose directly under the heading and
  *     intends to handle subsections separately.
+ * @param onAmbiguous
+ *   - `'error'` (default): return an `ambiguous` error when multiple headings
+ *     share the same tail.
+ *   - `'first'`: return the first match optimistically, with
+ *     `section.ambiguous = true` and `section.ambiguous_match_count` set.
  */
 export function resolveHeadingPathToRange(
     headings: readonly HeadingNode[],
     headingPath: readonly string[],
     totalLines: number,
     includeSubsections: boolean = true,
+    onAmbiguous: "error" | "first" = "error",
 ): FindSectionResult {
     const lookup = findHeadingByPath(headings, headingPath);
-    if (!lookup.ok) return { ok: false, error: lookup.error };
+    if (!lookup.ok) {
+        if (lookup.error.kind === "ambiguous" && onAmbiguous === "first") {
+            const first = lookup.error.matches[0]!;
+            const target = headings[first.index]!;
+            const startLine = target.line + 1;
+
+            let endLine = totalLines;
+            for (let i = first.index + 1; i < headings.length; i++) {
+                const h = headings[i]!;
+                const isBoundary = includeSubsections ? h.level <= target.level : true;
+                if (isBoundary) {
+                    endLine = h.line;
+                    break;
+                }
+            }
+
+            return {
+                ok: true,
+                section: {
+                    start_line: startLine,
+                    end_line: Math.max(startLine, endLine),
+                    level: target.level,
+                    heading: target.heading,
+                    ambiguous: true,
+                    ambiguous_match_count: lookup.error.matches.length,
+                },
+            };
+        }
+        return { ok: false, error: lookup.error };
+    }
 
     const idx = lookup.index;
     const target = headings[idx]!;
