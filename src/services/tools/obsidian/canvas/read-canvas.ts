@@ -229,7 +229,8 @@ export function vaultListCanvasEdges(plugin: NoteAssistantPlugin): RegisteredToo
             const items = edges.map((e) => {
                 const item: Record<string, unknown> = { id: e.id, fromNode: e.fromNode, toNode: e.toNode };
                 for (const key of ["label", "color", "fromSide", "toSide", "fromEnd", "toEnd"] as const) {
-                    if (typeof e[key] === "string" && e[key]!.length > 0) item[key] = e[key];
+                    const value = e[key];
+                    if (typeof value === "string" && value.length > 0) item[key] = value;
                 }
                 return item;
             });

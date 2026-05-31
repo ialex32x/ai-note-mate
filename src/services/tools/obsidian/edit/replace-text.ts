@@ -670,7 +670,11 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            const rawReplacements = args["replacements"];
+            // Accept both `replacements` (array, canonical) and `replacement` (single object, common LLM slip).
+            let rawReplacements = args["replacements"];
+            if (!rawReplacements && args["replacement"] && typeof args["replacement"] === "object" && !Array.isArray(args["replacement"])) {
+                rawReplacements = [args["replacement"]];
+            }
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 

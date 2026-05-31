@@ -30,7 +30,8 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
                             minItems: 1,
                             description:
                                 "List of vault-relative file paths to remove. " +
-                                "Each entry is processed independently; failures on one path do not stop the others.",
+                                "Each entry is processed independently; failures on one path do not stop the others. " +
+                                'Example: {"paths": ["folder/note.md", "other.md"]}',
                         },
                     },
                     required: ["paths"],
@@ -39,7 +40,11 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
         },
         capabilities: ["delete_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal) => {
-            const rawPaths = args["paths"];
+            // Accept both `paths` (array, canonical) and `path` (single string, common LLM slip).
+            let rawPaths = args["paths"];
+            if (!rawPaths && typeof args["path"] === "string") {
+                rawPaths = [args["path"]];
+            }
             if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
                 return { success: false, type: "text", content: "`paths` must be a non-empty array of strings." };
             }

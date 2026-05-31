@@ -10,6 +10,24 @@ export type BaseViewType = (typeof BASE_VIEW_TYPES)[number];
 
 export const GROUP_BY_DIRECTIONS = ["ASC", "DESC"] as const;
 
+/** Built-in summary formula names recognized by Obsidian Bases (case-sensitive). */
+export const DEFAULT_SUMMARY_NAMES = [
+    "Average",
+    "Min",
+    "Max",
+    "Sum",
+    "Range",
+    "Median",
+    "Stddev",
+    "Earliest",
+    "Latest",
+    "Checked",
+    "Unchecked",
+    "Empty",
+    "Filled",
+    "Unique",
+] as const;
+
 export interface BaseValidationIssue {
     severity: "error" | "warning";
     message: string;
@@ -35,9 +53,20 @@ const DEPRECATED_BASE_FUNCTIONS: Array<{ pattern: RegExp; hint: string }> = [
     { pattern: /\bfile\.has_tag\b/, hint: "use file.hasTag" },
     { pattern: /\bfile\.in_folder\b/, hint: "use file.inFolder" },
     { pattern: /\bfile\.has_link\b/, hint: "use file.hasLink" },
-    { pattern: /\bfile\.has_tag\(/, hint: "use file.hasTag(" },
-    { pattern: /\bfile\.in_folder\(/, hint: "use file.inFolder(" },
-    { pattern: /\bfile\.has_link\(/, hint: "use file.hasLink(" },
+    { pattern: /\bfile\.has_property\b/, hint: "use file.hasProperty" },
+    { pattern: /\bfile\.as_link\b/, hint: "use file.asLink" },
+    { pattern: /\.as_file\b/, hint: "use .asFile" },
+    { pattern: /\.links_to\b/, hint: "use .linksTo" },
+    { pattern: /\.is_empty\b/, hint: "use .isEmpty" },
+    { pattern: /\.is_type\b/, hint: "use .isType" },
+    { pattern: /\.is_truthy\b/, hint: "use .isTruthy" },
+    { pattern: /\.to_string\b/, hint: "use .toString" },
+    { pattern: /\.to_fixed\b/, hint: "use .toFixed" },
+    { pattern: /\.contains_all\b/, hint: "use .containsAll" },
+    { pattern: /\.contains_any\b/, hint: "use .containsAny" },
+    { pattern: /\.starts_with\b/, hint: "use .startsWith" },
+    { pattern: /\.ends_with\b/, hint: "use .endsWith" },
+    { pattern: /\bescape_html\b/, hint: "use escapeHTML" },
 ];
 
 export function parseBaseContent(
@@ -134,6 +163,131 @@ function collectExpressionStrings(value: unknown, out: string[]): void {
     }
 }
 
+function getMappingKeys(value: unknown): string[] {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        return Object.keys(value as Record<string, unknown>);
+    }
+    return [];
+}
+
+/** A `formula.X` token is valid only if `X` is defined under the top-level `formulas` mapping. */
+function validateFormulaReferences(
+    issues: BaseValidationIssue[],
+    data: Record<string, unknown>,
+): void {
+    const definedFormulas = new Set(getMappingKeys(data["formulas"]));
+    const checkRef = (ref: string, where: string): void => {
+        if (!ref.startsWith("formula.")) return;
+        const name = ref.slice("formula.".length);
+        if (name.length > 0 && !definedFormulas.has(name)) {
+            issues.push({
+                severity: "error",
+                message:
+                    `${where} references undefined formula '${ref}'. ` +
+                    `Define '${name}' under the top-level \`formulas\` mapping, or remove the reference.`,
+            });
+        }
+    };
+
+    for (const key of getMappingKeys(data["properties"])) {
+        checkRef(key, "properties key");
+    }
+    if (Array.isArray(data["views"])) {
+        data["views"].forEach((v: unknown, i: number) => {
+            if (!v || typeof v !== "object" || Array.isArray(v)) return;
+            const view = v as Record<string, unknown>;
+            const label =
+                typeof view["name"] === "string" && view["name"].length > 0 ? view["name"] : `views[${i}]`;
+            const order = view["order"];
+            if (Array.isArray(order)) {
+                for (const o of order) {
+                    if (typeof o === "string") checkRef(o, `view "${label}" order`);
+                }
+            }
+            for (const key of getMappingKeys(view["summaries"])) {
+                checkRef(key, `view "${label}" summaries key`);
+            }
+        });
+    }
+}
+
+/** View `summaries` values must be a built-in summary name or a custom one defined in top-level `summaries`. */
+function validateSummaryNames(
+    issues: BaseValidationIssue[],
+    data: Record<string, unknown>,
+): void {
+    const customSummaries = new Set(getMappingKeys(data["summaries"]));
+    const known = new Set<string>([...DEFAULT_SUMMARY_NAMES, ...customSummaries]);
+    if (!Array.isArray(data["views"])) return;
+    data["views"].forEach((v: unknown, i: number) => {
+        if (!v || typeof v !== "object" || Array.isArray(v)) return;
+        const view = v as Record<string, unknown>;
+        const summaries = view["summaries"];
+        if (summaries === undefined) return;
+        const label =
+            typeof view["name"] === "string" && view["name"].length > 0 ? view["name"] : `views[${i}]`;
+        if (!summaries || typeof summaries !== "object" || Array.isArray(summaries)) {
+            issues.push({
+                severity: "error",
+                message: `view "${label}": summaries must be a mapping of property -> summary name.`,
+            });
+            return;
+        }
+        for (const [prop, summaryName] of Object.entries(summaries as Record<string, unknown>)) {
+            if (typeof summaryName !== "string" || !known.has(summaryName)) {
+                issues.push({
+                    severity: "warning",
+                    message:
+                        `view "${label}": summary '${String(summaryName)}' for '${prop}' is not a built-in ` +
+                        `(${DEFAULT_SUMMARY_NAMES.join(", ")}) or a custom name from top-level \`summaries\`.`,
+                });
+            }
+        }
+    });
+}
+
+/**
+ * Heuristics for the most common Bases formula mistakes documented by Obsidian:
+ * subtracting two dates yields a Duration, which does not support .round()/.floor()/.ceil()
+ * directly and cannot be divided then rounded — access a numeric field (.days/.hours/...) first.
+ */
+const DURATION_MISUSE_PATTERNS: Array<{ pattern: RegExp; hint: string }> = [
+    {
+        // Matches rounding applied directly to a `(... - <date>)` group, e.g. `(now() - file.ctime).round(0)`.
+        // Deliberately narrow (requires a date token before the close paren) to avoid flagging valid
+        // number rounding such as `(file.size / 5).round(0)`.
+        pattern: /-\s*(now\(\)|today\(\)|date\([^)]*\)|file\.\w*time)\s*\)\s*\.(round|floor|ceil)\s*\(/,
+        hint: "Subtracting dates yields a Duration; access a numeric field first, e.g. (a - b).days.round(0).",
+    },
+    {
+        pattern: /\/\s*86400000/,
+        hint: "Dividing a Duration by 86400000 is not supported — use (a - b).days instead.",
+    },
+];
+
+function validateExpressionHeuristics(issues: BaseValidationIssue[], exprStrings: string[]): void {
+    for (const expr of exprStrings) {
+        for (const { pattern, hint } of DEPRECATED_BASE_FUNCTIONS) {
+            if (pattern.test(expr)) {
+                issues.push({
+                    severity: "warning",
+                    message: `Expression contains deprecated snake_case function — ${hint}: ${expr.slice(0, 120)}`,
+                });
+                break;
+            }
+        }
+        for (const { pattern, hint } of DURATION_MISUSE_PATTERNS) {
+            if (pattern.test(expr)) {
+                issues.push({
+                    severity: "warning",
+                    message: `Possible Duration misuse — ${hint} Expression: ${expr.slice(0, 120)}`,
+                });
+                break;
+            }
+        }
+    }
+}
+
 export function validateBase(data: Record<string, unknown>): BaseValidationIssue[] {
     const issues: BaseValidationIssue[] = [];
 
@@ -165,6 +319,16 @@ export function validateBase(data: Record<string, unknown>): BaseValidationIssue
                 if (order !== undefined && !Array.isArray(order)) {
                     issues.push({ severity: "error", message: `${prefix}.order must be an array when present.` });
                 }
+                const limit = view["limit"];
+                if (
+                    limit !== undefined &&
+                    (typeof limit !== "number" || !Number.isInteger(limit) || limit < 0)
+                ) {
+                    issues.push({
+                        severity: "error",
+                        message: `${prefix}.limit must be a non-negative integer when present.`,
+                    });
+                }
                 const viewLabel = typeof name === "string" && name.length > 0 ? name : prefix;
                 validateViewGroupBy(issues, viewLabel, view["groupBy"]);
             }
@@ -178,10 +342,12 @@ export function validateBase(data: Record<string, unknown>): BaseValidationIssue
         issues.push({ severity: "error", message: "`properties` must be a mapping when present." });
     }
 
+    validateFormulaReferences(issues, data);
+    validateSummaryNames(issues, data);
+
     const exprStrings: string[] = [];
     collectExpressionStrings(data["filters"], exprStrings);
     collectExpressionStrings(data["formulas"], exprStrings);
-    collectExpressionStrings(data["summaries"], exprStrings);
     if (Array.isArray(data["views"])) {
         for (const v of data["views"]) {
             if (v && typeof v === "object") {
@@ -189,18 +355,7 @@ export function validateBase(data: Record<string, unknown>): BaseValidationIssue
             }
         }
     }
-
-    for (const expr of exprStrings) {
-        for (const { pattern, hint } of DEPRECATED_BASE_FUNCTIONS) {
-            if (pattern.test(expr)) {
-                issues.push({
-                    severity: "warning",
-                    message: `Expression contains deprecated snake_case function — ${hint}: ${expr.slice(0, 120)}`,
-                });
-                break;
-            }
-        }
-    }
+    validateExpressionHeuristics(issues, exprStrings);
 
     return issues;
 }

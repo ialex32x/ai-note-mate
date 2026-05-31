@@ -40,8 +40,9 @@ export function vaultCreateBase(plugin: NoteAssistantPlugin): RegisteredTool {
                             description:
                                 "YAML body with optional `filters`, `formulas`, `properties`, `summaries`, and `views`. " +
                                 "Each view needs `type` (table|cards|list|map) and `name`. " +
-                                "For list views, `groupBy` must be an object: `{ property: file.folder }` " +
-                                "(optional `direction`: ASC|DESC); a bare string is auto-normalized on write.",
+                                "`groupBy` (any view type) must be an object: `{ property: file.folder }` " +
+                                "(optional `direction`: ASC|DESC); a bare string is auto-normalized on write. " +
+                                "Every `formula.X` used in a view `order` or in `properties` must be defined under `formulas`.",
                         },
                     },
                     required: ["path", "content"],
@@ -130,7 +131,7 @@ export function vaultWriteBase(plugin: NoteAssistantPlugin): RegisteredTool {
                         content: {
                             type: "string",
                             description:
-                                "Full replacement YAML body. List-view `groupBy` must be `{ property: ... }` " +
+                                "Full replacement YAML body. `groupBy` (any view type) must be `{ property: ... }` " +
                                 "(optional `direction`: ASC|DESC); string shorthand is auto-normalized on write.",
                         },
                         expected_pre_edit_mtime: {

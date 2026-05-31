@@ -336,8 +336,15 @@ export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const rawPaths = args["paths"];
-            const rawTags = args["tags"];
+            // Accept singular aliases (common LLM slip).
+            let rawPaths = args["paths"];
+            if (!rawPaths && typeof args["path"] === "string") {
+                rawPaths = [args["path"]];
+            }
+            let rawTags = args["tags"];
+            if (!rawTags && typeof args["tag"] === "string") {
+                rawTags = [args["tag"]];
+            }
             const rawLocation = (args["location"] as string | undefined) ?? "frontmatter";
 
             // Validate paths
@@ -440,8 +447,15 @@ export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredToo
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const rawPaths = args["paths"];
-            const rawTags = args["tags"];
+            // Accept singular aliases (common LLM slip).
+            let rawPaths = args["paths"];
+            if (!rawPaths && typeof args["path"] === "string") {
+                rawPaths = [args["path"]];
+            }
+            let rawTags = args["tags"];
+            if (!rawTags && typeof args["tag"] === "string") {
+                rawTags = [args["tag"]];
+            }
             const rawLocation = (args["location"] as string | undefined) ?? "both";
             const includeDescendants = (args["include_descendants"] as boolean) ?? false;
 
@@ -528,8 +542,15 @@ export function vaultSetFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const rawPaths = args["paths"];
-            const rawTags = args["tags"];
+            // Accept singular aliases (common LLM slip).
+            let rawPaths = args["paths"];
+            if (!rawPaths && typeof args["path"] === "string") {
+                rawPaths = [args["path"]];
+            }
+            let rawTags = args["tags"];
+            if (!rawTags && typeof args["tag"] === "string") {
+                rawTags = [args["tag"]];
+            }
 
             // Validate paths
             if (!Array.isArray(rawPaths) || rawPaths.length === 0) {

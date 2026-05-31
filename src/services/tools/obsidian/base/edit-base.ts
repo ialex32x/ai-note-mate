@@ -103,8 +103,9 @@ export function vaultAddBaseView(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Append a new view to an existing `.base` file. Requires `type` (table|cards|list|map) and " +
                     "`name` (must be unique). Optional: `order`, `limit`, `filters`, `groupBy`, `summaries`. " +
-                    "For list views, `groupBy` must be `{ property: file.folder }` (optional `direction`: ASC|DESC); " +
-                    "a bare property string is auto-normalized on write. " +
+                    "`groupBy` (any view type) must be `{ property: file.folder }` (optional `direction`: ASC|DESC); " +
+                    "a bare property string is auto-normalized on write. Each `summaries` value must be a built-in " +
+                    "name (Sum, Average, Max, Min, ...) or a custom one defined in top-level `summaries`. " +
                     "Validated before writing. Use `read_base` first to inspect existing views.",
                 parameters: {
                     type: "object",

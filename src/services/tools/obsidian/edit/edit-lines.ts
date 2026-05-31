@@ -343,7 +343,11 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            const rawEdits = args["edits"];
+            // Accept both `edits` (array, canonical) and `edit` (single object, common LLM slip).
+            let rawEdits = args["edits"];
+            if (!rawEdits && args["edit"] && typeof args["edit"] === "object" && !Array.isArray(args["edit"])) {
+                rawEdits = [args["edit"]];
+            }
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 

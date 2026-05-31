@@ -184,7 +184,11 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
-            const rawPaths = args["paths"];
+            // Accept both `paths` (array, canonical) and `path` (single string, common LLM slip).
+            let rawPaths = args["paths"];
+            if (!rawPaths && typeof args["path"] === "string") {
+                rawPaths = [args["path"]];
+            }
             const opName = args["op"] as string;
             const dryRun = (args["dry_run"] as boolean) ?? false;
 
