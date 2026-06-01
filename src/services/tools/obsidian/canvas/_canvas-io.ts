@@ -6,6 +6,7 @@ import {
     parseCanvasContent,
     summarizeCanvas,
     validateCanvas,
+    type CanvasData,
     type CanvasValidationIssue,
 } from "./canvas-schema";
 
@@ -36,6 +37,29 @@ export async function loadCanvasFromVault(
     }
     const content = await app.vault.read(fileOrErr);
     return { ok: true, content, mtime: fileOrErr.stat.mtime };
+}
+
+/**
+ * Parse loaded `.canvas` content into structured data, or return a failure
+ * `ToolCallResult` when the JSON is invalid. Tools that read nodes/edges should
+ * use this instead of silently treating a parse error as an empty canvas, which
+ * would mislead the agent into believing the file is blank.
+ */
+export function parseCanvasOrFailure(
+    content: string,
+): { ok: true; data: CanvasData } | { ok: false; result: ToolCallResult } {
+    const parsed = parseCanvasContent(content);
+    if (!parsed.ok) {
+        return {
+            ok: false,
+            result: {
+                success: false,
+                type: "text",
+                content: `Failed to parse canvas: ${parsed.error} The .canvas file may be corrupted — use read_file to inspect the raw JSON.`,
+            },
+        };
+    }
+    return { ok: true, data: parsed.data };
 }
 
 export function inspectCanvasContent(

@@ -1,8 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { inspectCanvasContent, loadCanvasFromVault, makePathResolver } from "./_canvas-io";
-import { parseCanvasContent } from "./canvas-schema";
+import { inspectCanvasContent, loadCanvasFromVault, makePathResolver, parseCanvasOrFailure } from "./_canvas-io";
 import type { CanvasNode, CanvasEdge } from "./canvas-schema";
 
 export function vaultReadCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -91,8 +90,9 @@ export function vaultListCanvasNodes(plugin: NoteAssistantPlugin): RegisteredToo
             const loaded = await loadCanvasFromVault(plugin.app, path);
             if (!loaded.ok) return loaded.result;
 
-            const parsed = parseCanvasContent(loaded.content);
-            const nodes: CanvasNode[] = parsed.ok ? (parsed.data.nodes ?? []) : [];
+            const parsed = parseCanvasOrFailure(loaded.content);
+            if (!parsed.ok) return parsed.result;
+            const nodes: CanvasNode[] = parsed.data.nodes ?? [];
 
             const items = nodes.map((n) => {
                 const item: Record<string, unknown> = { id: n.id, type: n.type };
@@ -160,8 +160,9 @@ export function vaultReadCanvasNode(plugin: NoteAssistantPlugin): RegisteredTool
             const loaded = await loadCanvasFromVault(plugin.app, path);
             if (!loaded.ok) return loaded.result;
 
-            const parsed = parseCanvasContent(loaded.content);
-            const nodes: CanvasNode[] = parsed.ok ? (parsed.data.nodes ?? []) : [];
+            const parsed = parseCanvasOrFailure(loaded.content);
+            if (!parsed.ok) return parsed.result;
+            const nodes: CanvasNode[] = parsed.data.nodes ?? [];
             const node = nodes.find((n) => n.id === nodeId);
             if (!node) {
                 return {
@@ -223,8 +224,9 @@ export function vaultListCanvasEdges(plugin: NoteAssistantPlugin): RegisteredToo
             const loaded = await loadCanvasFromVault(plugin.app, path);
             if (!loaded.ok) return loaded.result;
 
-            const parsed = parseCanvasContent(loaded.content);
-            const edges: CanvasEdge[] = parsed.ok ? (parsed.data.edges ?? []) : [];
+            const parsed = parseCanvasOrFailure(loaded.content);
+            if (!parsed.ok) return parsed.result;
+            const edges: CanvasEdge[] = parsed.data.edges ?? [];
 
             const items = edges.map((e) => {
                 const item: Record<string, unknown> = { id: e.id, fromNode: e.fromNode, toNode: e.toNode };
