@@ -96,6 +96,13 @@ export class SessionView extends ItemView {
     private messageWindow!: MessageWindowController;
     /** Cancels an in-flight history replay when switching sessions. */
     private historyReplayAbort: AbortController | null = null;
+    /**
+     * Serializes history-prepend operations so {@link loadOlderMessages} and
+     * {@link ensureMessageVisible} never interleave their `replayUnitsInFrames`
+     * batches against a stale anchor / window bounds (which would scramble
+     * message order). See {@link runHistoryMutation}.
+     */
+    private historyMutationChain: Promise<void> = Promise.resolve();
     /** Flag to prevent concurrent session switches */
     private isSwitchingSession = false;
     private scrollToBottomBtn!: HTMLButtonElement;
@@ -1553,6 +1560,20 @@ export class SessionView extends ItemView {
     }
 
     /**
+     * Serialize a history-prepend operation. Each call waits for the previous
+     * one to finish before running `work`, so {@link loadOlderMessages} and
+     * {@link ensureMessageVisible} can't interleave their `replayUnitsInFrames`
+     * batches against stale window bounds. The chain swallows errors internally
+     * to stay alive; callers still observe their own rejection via the returned
+     * promise.
+     */
+    private runHistoryMutation(work: () => Promise<void>): Promise<void> {
+        const run = this.historyMutationChain.then(work, work);
+        this.historyMutationChain = run.catch(() => { /* keep the chain alive */ });
+        return run;
+    }
+
+    /**
      * Prepend older history bubbles above the current window, preserving
      * scroll position via a scrollHeight delta anchor.
      */
@@ -1562,41 +1583,51 @@ export class SessionView extends ItemView {
         }
 
         this.messageWindow.setLoadingOlder(true);
-        const newStart = Math.max(0, this.messageWindow.start - HISTORY_LOADING.olderBatchUnits);
-        const units = this.messageWindow.slice(newStart, this.messageWindow.start);
-        const anchor = this.messageWindow.getPrependAnchor();
-        const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
-
-        this.scroller.beginHistoryPrepend();
         try {
-            // Chronological order: each prepend inserts before the same anchor,
-            // so later units stack after earlier ones (0, 1, …, anchor). Reversing
-            // would yield descending order and scramble the conversation.
-            await replayUnitsInFrames(units, {
-                appendUnit: (unit) => {
-                    this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
-                },
-                onProgress: () => { /* sentinel shows loading state */ },
-                signal: this.historyReplayAbort?.signal,
+            await this.runHistoryMutation(async () => {
+                // Re-check after acquiring the lock: an interleaved
+                // ensureMessageVisible may have already rendered these units
+                // while this load was queued behind it.
+                if (!this.messageWindow.hasOlderUnrendered()) return;
+
+                const newStart = Math.max(0, this.messageWindow.start - HISTORY_LOADING.olderBatchUnits);
+                const units = this.messageWindow.slice(newStart, this.messageWindow.start);
+                const anchor = this.messageWindow.getPrependAnchor();
+                const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
+
+                this.scroller.beginHistoryPrepend();
+                try {
+                    // Chronological order: each prepend inserts before the same anchor,
+                    // so later units stack after earlier ones (0, 1, …, anchor). Reversing
+                    // would yield descending order and scramble the conversation.
+                    await replayUnitsInFrames(units, {
+                        appendUnit: (unit) => {
+                            this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
+                        },
+                        onProgress: () => { /* sentinel shows loading state */ },
+                        signal: this.historyReplayAbort?.signal,
+                    });
+                    this.messageWindow.applyOlderBatch(newStart);
+                    // Trim oldest rendered bubbles if the window grew past the limit
+                    // BEFORE restoring the scroll anchor. trimTail removes DOM nodes
+                    // from the top, which changes every remaining node's offsetTop.
+                    // If we restore the scroll first and then trim, the anchor-based
+                    // scroll position becomes stale — the viewport jumps because the
+                    // anchor's offsetTop shrinks after trimming.
+                    this.messageWindow.maybeTrimTail();
+                    if (anchor && anchor.isConnected && anchorOffset !== null) {
+                        this.scroller.restoreAnchorScroll(anchor, anchorOffset);
+                    }
+                } catch (err) {
+                    if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                        throw err;
+                    }
+                } finally {
+                    this.scroller.endHistoryPrepend();
+                }
             });
-            this.messageWindow.applyOlderBatch(newStart);
-            // Trim oldest rendered bubbles if the window grew past the limit
-            // BEFORE restoring the scroll anchor. trimTail removes DOM nodes
-            // from the top, which changes every remaining node's offsetTop.
-            // If we restore the scroll first and then trim, the anchor-based
-            // scroll position becomes stale — the viewport jumps because the
-            // anchor's offsetTop shrinks after trimming.
-            this.messageWindow.maybeTrimTail();
-            if (anchor && anchor.isConnected && anchorOffset !== null) {
-                this.scroller.restoreAnchorScroll(anchor, anchorOffset);
-            }
-        } catch (err) {
-            if (!(err instanceof DOMException && err.name === 'AbortError')) {
-                throw err;
-            }
         } finally {
             this.messageWindow.setLoadingOlder(false);
-            this.scroller.endHistoryPrepend();
         }
     }
 
@@ -1611,70 +1642,72 @@ export class SessionView extends ItemView {
      *   scrolling where the viewport should stay put.
      */
     private async ensureMessageVisible(messageId: string, scrollToId?: string): Promise<void> {
-        const idx = this.messageWindow.findUnitIndex(messageId);
-        if (idx < 0 || idx >= this.messageWindow.start) {
-            // Already visible. If we still need to scroll, do it after a
-            // double RAF so any in-flight layout from a concurrent load
-            // (unlikely here, but defensive) has settled.
-            if (scrollToId) {
-                this.scrollToBubbleSync(scrollToId);
+        await this.runHistoryMutation(async () => {
+            const idx = this.messageWindow.findUnitIndex(messageId);
+            if (idx < 0 || idx >= this.messageWindow.start) {
+                // Already visible. If we still need to scroll, do it after a
+                // double RAF so any in-flight layout from a concurrent load
+                // (unlikely here, but defensive) has settled.
+                if (scrollToId) {
+                    this.scrollToBubbleSync(scrollToId);
+                }
+                return;
             }
-            return;
-        }
 
-        const units = this.messageWindow.slice(idx, this.messageWindow.start);
-        // The prepend anchor is ALWAYS needed for correct DOM insertion
-        // position (older messages go before the first rendered bubble).
-        // When jumping we skip the scroll-anchor capture/restore because
-        // we're going to scroll to the target after loading — preserving
-        // the old viewport would create a visual "bounce".
-        const isJump = !!scrollToId;
-        const anchor = this.messageWindow.getPrependAnchor();
-        const anchorOffset = isJump ? null : (anchor ? this.scroller.captureAnchorScroll(anchor) : null);
-        const showOverlay = units.length >= HISTORY_LOADING.showOverlayMinUnits;
+            const units = this.messageWindow.slice(idx, this.messageWindow.start);
+            // The prepend anchor is ALWAYS needed for correct DOM insertion
+            // position (older messages go before the first rendered bubble).
+            // When jumping we skip the scroll-anchor capture/restore because
+            // we're going to scroll to the target after loading — preserving
+            // the old viewport would create a visual "bounce".
+            const isJump = !!scrollToId;
+            const anchor = this.messageWindow.getPrependAnchor();
+            const anchorOffset = isJump ? null : (anchor ? this.scroller.captureAnchorScroll(anchor) : null);
+            const showOverlay = units.length >= HISTORY_LOADING.showOverlayMinUnits;
 
-        if (showOverlay) {
-            this.historyLoadingOverlay.show(units.length);
-        }
-
-        this.scroller.beginHistoryPrepend();
-        try {
-            await replayUnitsInFrames(units, {
-                appendUnit: (unit) => {
-                    this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
-                },
-                onProgress: (done, total) => {
-                    if (showOverlay) {
-                        this.historyLoadingOverlay.setProgress(done, total);
-                    }
-                },
-                signal: this.historyReplayAbort?.signal,
-            });
-            this.messageWindow.expandRenderedStart(idx);
-            // Trim BEFORE any scroll, otherwise the anchor's / target's
-            // offsetTop changes after the scroll position was set and the
-            // viewport lands at a stale offset.
-            this.messageWindow.maybeTrimTail();
-            this.messageWindow.updateSentinel();
-            if (isJump && scrollToId) {
-                // Jump mode: scroll to the target instead of restoring
-                // the anchor. Use a double RAF to let the browser flush
-                // layout after the bulk prepend + trim mutations before
-                // we read offsetTop and set scrollTop.
-                this.scheduleScrollToBubble(scrollToId);
-            } else if (anchor && anchor.isConnected && anchorOffset !== null) {
-                this.scroller.restoreAnchorScroll(anchor, anchorOffset);
-            }
-        } catch (err) {
-            if (!(err instanceof DOMException && err.name === 'AbortError')) {
-                throw err;
-            }
-        } finally {
             if (showOverlay) {
-                this.historyLoadingOverlay.hide();
+                this.historyLoadingOverlay.show(units.length);
             }
-            this.scroller.endHistoryPrepend();
-        }
+
+            this.scroller.beginHistoryPrepend();
+            try {
+                await replayUnitsInFrames(units, {
+                    appendUnit: (unit) => {
+                        this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
+                    },
+                    onProgress: (done, total) => {
+                        if (showOverlay) {
+                            this.historyLoadingOverlay.setProgress(done, total);
+                        }
+                    },
+                    signal: this.historyReplayAbort?.signal,
+                });
+                this.messageWindow.expandRenderedStart(idx);
+                // Trim BEFORE any scroll, otherwise the anchor's / target's
+                // offsetTop changes after the scroll position was set and the
+                // viewport lands at a stale offset.
+                this.messageWindow.maybeTrimTail();
+                this.messageWindow.updateSentinel();
+                if (isJump && scrollToId) {
+                    // Jump mode: scroll to the target instead of restoring
+                    // the anchor. Use a double RAF to let the browser flush
+                    // layout after the bulk prepend + trim mutations before
+                    // we read offsetTop and set scrollTop.
+                    this.scheduleScrollToBubble(scrollToId);
+                } else if (anchor && anchor.isConnected && anchorOffset !== null) {
+                    this.scroller.restoreAnchorScroll(anchor, anchorOffset);
+                }
+            } catch (err) {
+                if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                    throw err;
+                }
+            } finally {
+                if (showOverlay) {
+                    this.historyLoadingOverlay.hide();
+                }
+                this.scroller.endHistoryPrepend();
+            }
+        });
     }
 
     /**
