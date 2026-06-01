@@ -1232,8 +1232,26 @@ export class SessionView extends ItemView {
      */
     private jumpToUserMessage(targetId: string | null): void {
         if (!targetId) return;
+        void this.jumpToMessageId(targetId);
+    }
+
+    /**
+     * Unified "jump to a specific message by id" path shared by the
+     * jump-to-prev/next-user buttons, checkpoint goto, and search-result
+     * navigation. Routes through {@link ensureMessageVisible} (rendered and
+     * not-yet-rendered cases) which scrolls to the target via
+     * {@link ScrollController.jumpScrollTo}.
+     *
+     * Auto-follow is suppressed up-front only as a TRANSIENT guard: a jump is
+     * an explicit "leave the tail" gesture, so without this the
+     * MutationObserver (during streaming) or the async history load could
+     * re-pin to the bottom before the target lands. `jumpScrollTo` then makes
+     * the authoritative decision from the landing position — resuming follow
+     * when the target turns out to sit at the tail.
+     */
+    private jumpToMessageId(targetId: string): Promise<void> {
         this.scroller.suppressAutoFollow();
-        void this.ensureMessageVisible(targetId, targetId);
+        return this.ensureMessageVisible(targetId, targetId);
     }
 
     /** Returns true if the message has a previous user message in the data model. */
@@ -1742,8 +1760,11 @@ export class SessionView extends ItemView {
         const bubble = this.bubbleList.messageBubbles.get(messageId);
         if (!bubble) return;
         // 80 px padding from the top so the bubble isn't flush against the
-        // viewport edge and has some surrounding context visible.
-        this.messagesEl.scrollTop = bubble.offsetTop - 80;
+        // viewport edge and has some surrounding context visible. Routed
+        // through the scroller so the scroll is guarded and auto-follow is
+        // re-evaluated from the landing position (resume follow if the target
+        // sits at the tail, otherwise park at it).
+        this.scroller.jumpScrollTo(bubble.offsetTop - 80);
         bubble.addClass('session-bubble--highlight');
         window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 2000);
     }
@@ -1780,29 +1801,23 @@ export class SessionView extends ItemView {
             this.clearViewDOM();
             await this.bindActiveSessionRuntime();
 
-            // Scroll to the specific message
-            await this.ensureMessageVisible(result.messageId);
-            window.requestAnimationFrame(() => {
-                void this.scrollToMessage(result.messageId);
-            });
+            // Scroll to the specific message via the unified id-based jump
+            // (expands the lazy window if needed, then guarded landing-aware
+            // scroll + highlight).
+            await this.scrollToMessage(result.messageId);
         } finally {
             this.isSwitchingSession = false;
         }
     }
 
+    /**
+     * Scroll to a message by id (checkpoint goto / search-result navigation).
+     * Delegates to the unified {@link jumpToMessageId} path so it shares the
+     * same guarded, landing-aware scroll + highlight as jump-to-user — no more
+     * separate `scrollIntoView` smooth-scroll branch.
+     */
     private async scrollToMessage(messageId: string) {
-        await this.ensureMessageVisible(messageId);
-        const bubble = this.bubbleList.messageBubbles.get(messageId);
-        if (bubble) {
-            // Scroll the message into view with some padding
-            bubble.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-            // Add a brief highlight effect
-            bubble.addClass('session-bubble--highlight');
-            window.setTimeout(() => {
-                bubble.removeClass('session-bubble--highlight');
-            }, 2000);
-        }
+        await this.jumpToMessageId(messageId);
     }
 
     // ── Send logic ───────────────────────────────────────────────────────────

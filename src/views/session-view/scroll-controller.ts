@@ -15,7 +15,7 @@ import { setIcon } from 'obsidian';
  *   floating "scroll to bottom" button is shown so the user can rejoin
  *   manually.
  *
- * State transitions are driven ONLY by explicit user gestures:
+ * State transitions are driven by explicit user gestures:
  *
  *   - `wheel` deltaY < 0                              → autoFollow = false
  *   - `wheel` deltaY > 0 landing at absolute bottom
@@ -30,17 +30,22 @@ import { setIcon } from 'obsidian';
  *   - click on the floating button                    → autoFollow = true
  *   - session switch / turn finish / abort / error    → autoFollow = true
  *
- * The `scroll` event itself NEVER writes the flag. It only adjusts the
- * floating button's visibility. This decoupling is the key to robust
- * behaviour on mobile, where the scroll event from a programmatic
- * `scrollTop = scrollHeight` may be coalesced and dispatched a frame or
- * two later — at which point `scrollHeight` has typically grown further
+ * The `scroll` event participates only narrowly: it disables auto-follow
+ * when the view actually moves UP and away from the tail with no
+ * accompanying wheel/touch event — i.e. a scrollbar drag or inertial
+ * momentum scroll, the only "browse history" gestures that produce no
+ * other signal. It can NEVER re-enable auto-follow.
+ *
+ * The direction gate (`scrollTop` decreased vs. the previous event) is what
+ * makes this safe on mobile, where the scroll event from a programmatic
+ * `scrollTop = scrollHeight` may be coalesced and dispatched a frame or two
+ * later — at which point `scrollHeight` has typically grown further
  * (streaming markdown rendered, image loaded, virtual keyboard pushed
- * layout, ...). Treating that delayed event as a user upward scroll —
- * which the previous implementation did — would incorrectly latch
- * `userScrolledUp = true` and disable auto-scroll for the rest of the
- * turn. We avoid this entire failure mode by sourcing intent only from
- * actual user-gesture events.
+ * layout, ...). Such a delayed event still reflects a DOWNWARD move, so it
+ * fails the "moved up" test and cannot latch auto-follow off. A short-lived
+ * {@link programmaticScrollGuard} additionally short-circuits the handler
+ * during our own scrolls; the direction gate is the durable guarantee that
+ * holds even if a coalesced event slips past that window.
  *
  * ## Programmatic-scroll guard
  *
@@ -118,6 +123,20 @@ export class ScrollController {
     /** Accumulated drag delta across `touchmove` events of the current gesture. */
     private touchAccumulatedDeltaY = 0;
 
+    /**
+     * `scrollTop` observed on the previous `scroll` event. Used to derive the
+     * direction of movement so {@link onMessagesScroll} can disable auto-follow
+     * ONLY on genuine upward movement (scrollbar drag / inertial momentum —
+     * the no-gesture scrolls that produce no wheel/touch event). Programmatic
+     * follow always moves DOWN, so its (possibly delayed/coalesced) scroll
+     * events can never look like an upward user scroll and thus can't wrongly
+     * latch follow off — this holds even if such an event slips past the
+     * {@link programmaticScrollGuard} window.
+     */
+    private lastScrollTop = 0;
+    /** Min `scrollTop` decrease (px) treated as a real upward movement. */
+    private static readonly UP_MOVE_EPSILON_PX = 1;
+
     private mutationObserver: MutationObserver | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private viewportResizeListener: (() => void) | null = null;
@@ -161,6 +180,9 @@ export class ScrollController {
     attach(): void {
         setIcon(this.scrollToBottomBtn, 'chevrons-down');
         this.scrollToBottomBtn.hide();
+        // Seed the direction baseline so the first user scroll is classified
+        // correctly (a 0-baseline would mis-read an initial upward drag).
+        this.lastScrollTop = this.messagesEl.scrollTop;
         this.addListener(this.scrollToBottomBtn, 'click', () => this.handleButtonClick());
         this.addListener(this.messagesEl, 'scroll', () => this.onMessagesScroll());
 
@@ -363,11 +385,17 @@ export class ScrollController {
 
     /**
      * Latch auto-follow off because the user explicitly navigated to a
-     * specific message (jump-to-prev/next-user). Mirrors an upward user
-     * gesture (wheel-up / PageUp): the view should stay at the jump target
-     * and NOT be yanked back to the tail by streaming mutations. Cancels any
-     * pending follow frame and shows the rejoin button while a turn is in
-     * flight so the user can return manually.
+     * specific message (jump-to-prev/next-user, search-result / checkpoint
+     * goto). Mirrors an upward user gesture (wheel-up / PageUp): the view
+     * should stay at the jump target and NOT be yanked back to the tail by
+     * streaming mutations. Cancels any pending follow frame and shows the
+     * rejoin button while a turn is in flight so the user can return manually.
+     *
+     * In the jump flow this is called up-front as a TRANSIENT guard so an
+     * async history load (or in-flight streaming) can't re-pin to the tail
+     * before the target lands. {@link jumpScrollTo} then makes the
+     * authoritative follow decision based on where the target actually
+     * settles — re-enabling follow when it lands at the tail.
      */
     suppressAutoFollow(): void {
         this.autoFollow = false;
@@ -377,6 +405,42 @@ export class ScrollController {
         this.autoFollowParked = true;
         this.cancelPendingFollowFrame();
         if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+    }
+
+    /**
+     * Scroll to an absolute offset as part of a user jump to a specific
+     * message, then decide the auto-follow state from the LANDING position:
+     *
+     * - target lands at/near the tail (`isNearBottom()`) → the user hasn't
+     *   really left the conversation, so resume follow (clear the park);
+     * - target lands away from the tail → park at the target so streaming /
+     *   trailing content won't yank the view back to the bottom.
+     *
+     * The scroll is guarded (`programmaticScrollGuard`) so the direction-aware
+     * {@link onMessagesScroll} ignores the resulting event, and the direction
+     * baseline is moved with it so a delayed coalesced event can't be misread.
+     */
+    jumpScrollTo(top: number): void {
+        this.programmaticScrollGuard++;
+        this.messagesEl.scrollTop = top;
+        this.lastScrollTop = this.messagesEl.scrollTop;
+        this.cancelPendingFollowFrame();
+
+        if (this.isNearBottom()) {
+            this.autoFollow = true;
+            this.autoFollowParked = false;
+            this.scrollToBottomBtn.hide();
+        } else {
+            this.autoFollow = false;
+            this.autoFollowParked = true;
+            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+        }
+
+        // Two RAFs cover iOS WebView's habit of coalescing the scroll event
+        // for a programmatic write into the next frame.
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            this.programmaticScrollGuard = Math.max(0, this.programmaticScrollGuard - 1);
+        }));
     }
 
     /** Suppress auto-follow safety-net checks during bulk prepend passes. */
@@ -532,6 +596,10 @@ export class ScrollController {
         if (Math.abs(this.messagesEl.scrollTop - target) < 2) return;
         this.programmaticScrollGuard++;
         this.messagesEl.scrollTop = target;
+        // Move the direction baseline to the new (downward) position now, so a
+        // delayed coalesced scroll event for this write is never misread as an
+        // upward user move regardless of guard timing.
+        this.lastScrollTop = this.messagesEl.scrollTop;
         // Two RAFs cover iOS WebView's habit of coalescing the scroll
         // event for a programmatic write into the next frame.
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
@@ -540,22 +608,35 @@ export class ScrollController {
     }
 
     private onMessagesScroll(): void {
+        // Direction of this scroll relative to the previous one. Updated for
+        // EVERY event (including guarded/programmatic ones) so the baseline
+        // stays current; a programmatic scroll-to-bottom that bumped scrollTop
+        // up therefore won't later read as an "upward" user move.
+        const scrollTop = this.messagesEl.scrollTop;
+        const movedUp = scrollTop < this.lastScrollTop - ScrollController.UP_MOVE_EPSILON_PX;
+        this.lastScrollTop = scrollTop;
+
         // Programmatic scrolls never update intent. Short-circuit the
         // whole handler so the coalesced scroll event for our own
         // `scrollTop = scrollHeight` does not toggle the button to a
         // stale state either.
         if (this.programmaticScrollGuard > 0) return;
 
-        // Scrollbar / trackpad momentum can move the view without a wheel
-        // event — treat any non-programmatic scroll away from the tail as
-        // the user browsing history so auto-follow does not fight prepend.
-        if (!this.isNearBottom()) {
+        // Scrollbar drag / inertial momentum move the view without a wheel or
+        // touch event. Such no-gesture scrolling is the only thing this handler
+        // is allowed to source intent from — and ONLY when it actually moves
+        // UP and away from the tail (the user browsing history). Gating on
+        // `movedUp` is what keeps programmatic follow (always downward) from
+        // ever latching auto-follow off, even if its delayed scroll event
+        // arrives after the guard window — auto-follow stays robust without
+        // relying on guard timing alone.
+        if (movedUp && !this.isNearBottom()) {
             this.autoFollow = false;
         }
 
         if (
             this.nearTopCallback
-            && this.messagesEl.scrollTop < ScrollController.NEAR_TOP_THRESHOLD_PX
+            && scrollTop < ScrollController.NEAR_TOP_THRESHOLD_PX
         ) {
             this.nearTopCallback();
         }
