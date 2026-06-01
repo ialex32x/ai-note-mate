@@ -349,7 +349,7 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
                     "that DOES count toward the total. Run `read_file` first to verify line numbers — do " +
                     "not guess. " +
                     "\n\n" +
-                    "RETURN: `affected_regions` lists post-edit snippets (±3 lines of context, adjacent " +
+                    "RETURN: `affected_regions` lists post-edit snippets (±15 lines of context, adjacent " +
                     "windows merged) with each contained edit's `input_index` (back-reference into your " +
                     "`edits` array) and `new_range` (1-based post-edit range, null for pure deletions) — " +
                     "use this to verify without re-reading. Response also echoes `previous_mtime` / " +
