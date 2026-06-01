@@ -68,21 +68,9 @@
     }
 }
 
-// Tool call status variants
-.session-bubble--tool-error {
-    .session-bubble__body {
-        background: color-mix(in srgb, @text-error 8%, color-mix(in srgb, @bg-secondary-alt 65%, transparent));
-        border-left: 3px solid @text-error;
-    }
-}
-
-.session-bubble--tool-warning {
-    .session-bubble__body {
-        background: color-mix(in srgb, @text-warning 8%, color-mix(in srgb, @bg-secondary-alt 65%, transparent));
-        border-left: 3px solid @text-warning;
-    }
-}
-
+// Tool call status variants (no special styling)
+.session-bubble--tool-error,
+.session-bubble--tool-warning,
 .session-bubble--tool-success {
     .session-bubble__body {
         background: color-mix(in srgb, @bg-secondary-alt 65%, transparent);
