@@ -2016,7 +2016,20 @@ export class SessionView extends ItemView {
      *   any user draft already in progress.
      */
     private handleFollowUpPick(action: SuggestedAction): void {
+        // Client-side actions (e.g. open-note) don't start a chat turn, so
+        // they're always safe — even mid-stream.
         if (action.action && this.tryRunClientAction(action.action)) {
+            return;
+        }
+        // Prompt-based picks start a new turn. In the normal single-view flow
+        // the bar can't be visible while streaming (it only renders on
+        // `finish`), but a bar can linger from a previous turn when another
+        // view (re)starts a stream on a SHARED runtime. Guard so chat.prompt's
+        // concurrency check doesn't throw an unhandled rejection, and dismiss
+        // the now-stale bar so the UI self-corrects. Mirrors the same guard on
+        // the continue-after-error action.
+        if (this.isStreaming) {
+            this.followUpBar?.hide();
             return;
         }
         void this.sendPrompt(action.prompt);
