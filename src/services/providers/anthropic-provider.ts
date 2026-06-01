@@ -17,7 +17,12 @@ import { sanitizeChatMessages } from "./_shared";
 /** Anthropic API version header value */
 const ANTHROPIC_VERSION = "2023-06-01";
 
-/** Default `max_tokens` for streaming requests (Anthropic requires this field). */
+/**
+ * Output budget reserved for the *visible* reply (Anthropic requires `max_tokens`).
+ * When extended thinking is enabled, the thinking budget is added on top of this so
+ * that `max_tokens` always stays strictly greater than `thinking.budget_tokens`
+ * (Anthropic rejects requests where `max_tokens <= budget_tokens`).
+ */
 const DEFAULT_MAX_TOKENS = 8192;
 
 /** Default base URL for the Anthropic Messages API */
@@ -168,7 +173,7 @@ export class AnthropicProvider implements LLMProvider {
         // --- build request body ---
         const body: Record<string, unknown> = {
             model: this.model,
-            max_tokens: DEFAULT_MAX_TOKENS,
+            max_tokens: this.resolveMaxTokens(thinkingConfig),
             messages: anthropicMessages,
             stream: true,
         };
@@ -346,6 +351,23 @@ export class AnthropicProvider implements LLMProvider {
             : thinkingLevel === "medium" ? 4096
             : 16384; // "high"
         return { type: "enabled", budget_tokens: budget };
+    }
+
+    /**
+     * Resolve `max_tokens` for a request. When extended thinking is enabled,
+     * `max_tokens` must exceed `thinking.budget_tokens`, so we add the visible
+     * reply budget on top of the thinking budget (e.g. high tier: 16384 + 8192).
+     */
+    private resolveMaxTokens(
+        thinkingConfig: AnthropicThinkingConfig | null,
+    ): number {
+        if (
+            thinkingConfig?.type === "enabled" &&
+            typeof thinkingConfig.budget_tokens === "number"
+        ) {
+            return thinkingConfig.budget_tokens + DEFAULT_MAX_TOKENS;
+        }
+        return DEFAULT_MAX_TOKENS;
     }
 
     // ── SSE stream parser ──────────────────────────────────────────
