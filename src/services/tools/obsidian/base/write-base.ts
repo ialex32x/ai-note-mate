@@ -195,7 +195,7 @@ export function vaultWriteBase(plugin: NoteAssistantPlugin): RegisteredTool {
                 success: true,
                 type: "object",
                 content: {
-                    action: "base_written",
+                    action: "overwritten",
                     path,
                     previous_mtime: previousMtime,
                     new_mtime: file.stat.mtime,

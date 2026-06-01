@@ -119,7 +119,7 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                 success: true,
                 type: "object",
                 content: {
-                    action: "canvas_created",
+                    action: "created",
                     path,
                     valid: inspection.valid,
                     validation_issues: inspection.validation_issues,
@@ -215,7 +215,7 @@ export function vaultWriteCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                 success: true,
                 type: "object",
                 content: {
-                    action: "canvas_written",
+                    action: "overwritten",
                     path,
                     previous_mtime: previousMtime,
                     new_mtime: file.stat.mtime,

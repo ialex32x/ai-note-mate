@@ -229,7 +229,7 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 success: true,
                 type: "object",
                 content: {
-                    action: dryRun ? "dry_run_file_overwrite" : "file_overwritten",
+                    action: dryRun ? "dry_run_overwrite" : "overwritten",
                     path,
                     previous_size: previousSize,
                     new_size: newSize,
