@@ -17,10 +17,115 @@ import {
     serializeCanvas,
     updateEdgesInCanvas,
     validateCanvas,
+    type CanvasData,
     type CanvasEdge,
     type CanvasNode,
 } from "./canvas-schema";
 import { inspectCanvasContent, makePathResolver, requireCanvasExtension } from "./_canvas-io";
+
+/**
+ * Shared pipeline for every `.canvas` mutation tool: extension check → file
+ * lookup → mtime guard → read → parse → `mutate` → validate → serialize →
+ * (optional) write → inspect → structured result. Mirrors `applyBaseMutation`
+ * in `base/edit-base.ts` so the eight canvas tools no longer copy-paste the
+ * load/validate/serialize/modify boilerplate.
+ *
+ * `mutate` receives the parsed {@link CanvasData} and returns either the
+ * mutated document or a human-readable error string (e.g. "node id not found").
+ * `extra` may be a function so callers can surface values derived from the
+ * mutation (ids added, edges auto-removed, …) that are only known after
+ * `mutate` runs.
+ */
+async function applyCanvasMutation(
+    plugin: NoteAssistantPlugin,
+    chatStream: Parameters<RegisteredTool["exec"]>[0],
+    opts: {
+        path: string;
+        toolName: string;
+        dryRun: boolean;
+        expectedPreEditMtime?: number;
+        mutate: (data: CanvasData) => CanvasData | string;
+        action: string;
+        dryRunAction: string;
+        /** Prefix for the validation-failure message. Defaults to a generic one. */
+        validationErrorPrefix?: string;
+        /** Extra result fields; a function is evaluated after `mutate`. */
+        extra?: Record<string, unknown> | (() => Record<string, unknown>);
+    },
+): Promise<ToolCallResult> {
+    const canvasExt = requireCanvasExtension(opts.path);
+    if (!canvasExt.ok) {
+        return { success: false, type: "text", content: canvasExt.message };
+    }
+
+    const fileOrErr = requireFile(plugin.app, opts.path);
+    if (isFailure(fileOrErr)) return fileOrErr;
+    const file = fileOrErr;
+
+    const previousMtime = file.stat.mtime;
+    if (opts.expectedPreEditMtime !== undefined && opts.expectedPreEditMtime !== previousMtime) {
+        return {
+            success: false,
+            type: "text",
+            content:
+                `\`expected_pre_edit_mtime\` mismatch: expected ${opts.expectedPreEditMtime}, actual ${previousMtime}.`,
+        };
+    }
+
+    const content = await plugin.app.vault.read(file);
+    const parsed = parseCanvasContent(content);
+    if (!parsed.ok) {
+        return { success: false, type: "text", content: parsed.error };
+    }
+
+    const mutated = opts.mutate(parsed.data);
+    if (typeof mutated === "string") {
+        return { success: false, type: "text", content: mutated };
+    }
+
+    const resolvePath = makePathResolver(plugin.app);
+    const issues = validateCanvas(mutated, resolvePath);
+    if (hasCanvasErrors(issues)) {
+        const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
+        const prefix = opts.validationErrorPrefix ?? "Merged canvas validation failed:";
+        return {
+            success: false,
+            type: "text",
+            content: `${prefix}\n` + messages.map((m) => `- ${m}`).join("\n"),
+        };
+    }
+
+    const serialized = serializeCanvas(mutated);
+    if (!opts.dryRun) {
+        const lockErr = await runVaultMutation(plugin, chatStream, {
+            kind: "modify",
+            path: opts.path,
+            toolName: opts.toolName,
+            perform: async () => {
+                await plugin.app.vault.modify(file, serialized);
+            },
+        });
+        if (lockErr) return lockErr;
+    }
+
+    const extra = typeof opts.extra === "function" ? opts.extra() : (opts.extra ?? {});
+    const inspection = inspectCanvasContent(serialized, resolvePath);
+    return {
+        success: true,
+        type: "object",
+        content: {
+            action: opts.dryRun ? opts.dryRunAction : opts.action,
+            path: opts.path,
+            previous_mtime: previousMtime,
+            new_mtime: opts.dryRun ? previousMtime : file.stat.mtime,
+            dry_run: opts.dryRun,
+            valid: inspection.valid,
+            validation_issues: inspection.validation_issues,
+            ...inspection.summary,
+            ...extra,
+        },
+    };
+}
 
 export function vaultAddCanvasNodes(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
@@ -71,86 +176,32 @@ export function vaultAddCanvasNodes(plugin: NoteAssistantPlugin): RegisteredTool
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (!Array.isArray(rawNodes) || rawNodes.length === 0) {
                 return { success: false, type: "text", content: "`nodes` must be a non-empty array." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const existing = parsed.data.nodes ?? [];
-            const usedIds = new Set(existing.map((n) => n.id));
-            const newNodes: CanvasNode[] = [];
-
-            for (let i = 0; i < rawNodes.length; i++) {
-                const result = normalizeNewNode(rawNodes[i], i, [...existing, ...newNodes], usedIds);
-                if (typeof result === "string") {
-                    return { success: false, type: "text", content: result };
-                }
-                newNodes.push(result);
-            }
-
-            const merged = addNodesToCanvas(parsed.data, newNodes);
-            const issues = validateCanvas(merged, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Merged canvas validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const serialized = serializeCanvas(merged);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "add_canvas_nodes",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_add_canvas_nodes" : "canvas_nodes_added",
-                    path,
-                    added_node_ids: newNodes.map((n) => n.id),
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
+            let addedIds: string[] = [];
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "add_canvas_nodes",
+                dryRun,
+                expectedPreEditMtime,
+                mutate: (data) => {
+                    const existing = data.nodes ?? [];
+                    const usedIds = new Set(existing.map((n) => n.id));
+                    const newNodes: CanvasNode[] = [];
+                    for (let i = 0; i < rawNodes.length; i++) {
+                        const result = normalizeNewNode(rawNodes[i], i, [...existing, ...newNodes], usedIds);
+                        if (typeof result === "string") return result;
+                        newNodes.push(result);
+                    }
+                    addedIds = newNodes.map((n) => n.id);
+                    return addNodesToCanvas(data, newNodes);
                 },
-            };
+                action: "canvas_nodes_added",
+                dryRunAction: "dry_run_add_canvas_nodes",
+                extra: () => ({ added_node_ids: addedIds }),
+            });
         },
         requiresConfirmation: true,
     };
@@ -203,85 +254,31 @@ export function vaultAddCanvasEdges(plugin: NoteAssistantPlugin): RegisteredTool
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (!Array.isArray(rawEdges) || rawEdges.length === 0) {
                 return { success: false, type: "text", content: "`edges` must be a non-empty array." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const usedIds = new Set((parsed.data.edges ?? []).map((e) => e.id));
-            const newEdges: CanvasEdge[] = [];
-
-            for (let i = 0; i < rawEdges.length; i++) {
-                const result = normalizeNewEdge(rawEdges[i], i, usedIds);
-                if (typeof result === "string") {
-                    return { success: false, type: "text", content: result };
-                }
-                newEdges.push(result);
-            }
-
-            const merged = addEdgesToCanvas(parsed.data, newEdges);
-            const issues = validateCanvas(merged, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Merged canvas validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const serialized = serializeCanvas(merged);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "add_canvas_edges",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_add_canvas_edges" : "canvas_edges_added",
-                    path,
-                    added_edge_ids: newEdges.map((e) => e.id),
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
+            let addedIds: string[] = [];
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "add_canvas_edges",
+                dryRun,
+                expectedPreEditMtime,
+                mutate: (data) => {
+                    const usedIds = new Set((data.edges ?? []).map((e) => e.id));
+                    const newEdges: CanvasEdge[] = [];
+                    for (let i = 0; i < rawEdges.length; i++) {
+                        const result = normalizeNewEdge(rawEdges[i], i, usedIds);
+                        if (typeof result === "string") return result;
+                        newEdges.push(result);
+                    }
+                    addedIds = newEdges.map((e) => e.id);
+                    return addEdgesToCanvas(data, newEdges);
                 },
-            };
+                action: "canvas_edges_added",
+                dryRunAction: "dry_run_add_canvas_edges",
+                extra: () => ({ added_edge_ids: addedIds }),
+            });
         },
         requiresConfirmation: true,
     };
@@ -368,10 +365,6 @@ export function vaultLayoutCanvasGrid(plugin: NoteAssistantPlugin): RegisteredTo
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (rawNodeIds !== undefined && groupId !== undefined) {
                 return {
                     success: false,
@@ -383,82 +376,37 @@ export function vaultLayoutCanvasGrid(plugin: NoteAssistantPlugin): RegisteredTo
                 return { success: false, type: "text", content: "`node_ids` must be a non-empty array when provided." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const layoutResult = layoutCanvasGrid(parsed.data, {
-                columns,
-                gap,
-                originX,
-                originY,
-                nodeIds: rawNodeIds ? new Set(rawNodeIds) : undefined,
-                groupId,
-                includeGroupNodes,
-            });
-            if (typeof layoutResult === "string") {
-                return { success: false, type: "text", content: layoutResult };
-            }
-
-            const issues = validateCanvas(layoutResult.data, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Layout produced invalid canvas:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const serialized = serializeCanvas(layoutResult.data);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "layout_canvas_grid",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_layout_canvas_grid" : "canvas_grid_layout_applied",
-                    path,
-                    laid_out_node_ids: layoutResult.laid_out_ids,
+            let laidOutIds: string[] = [];
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "layout_canvas_grid",
+                dryRun,
+                expectedPreEditMtime,
+                mutate: (data) => {
+                    const layoutResult = layoutCanvasGrid(data, {
+                        columns,
+                        gap,
+                        originX,
+                        originY,
+                        nodeIds: rawNodeIds ? new Set(rawNodeIds) : undefined,
+                        groupId,
+                        includeGroupNodes,
+                    });
+                    if (typeof layoutResult === "string") return layoutResult;
+                    laidOutIds = layoutResult.laid_out_ids;
+                    return layoutResult.data;
+                },
+                action: "canvas_grid_layout_applied",
+                dryRunAction: "dry_run_layout_canvas_grid",
+                validationErrorPrefix: "Layout produced invalid canvas:",
+                extra: () => ({
+                    laid_out_node_ids: laidOutIds,
                     columns,
                     gap,
                     origin_x: originX,
                     origin_y: originY,
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
-                },
-            };
+                }),
+            });
         },
         requiresConfirmation: true,
     };
@@ -531,109 +479,59 @@ export function vaultUpdateCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (!Array.isArray(rawPatches) || rawPatches.length === 0) {
                 return { success: false, type: "text", content: "`nodes` must be a non-empty array." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
+            let updatedIds: string[] = [];
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "update_canvas_nodes",
+                dryRun,
+                expectedPreEditMtime,
+                mutate: (data) => {
+                    const nodes = [...(data.nodes ?? [])];
+                    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+                    const updatableKeys = new Set([
+                        "text", "file", "url", "label", "color", "x", "y", "width", "height", "subpath",
+                        "background", "backgroundStyle",
+                    ]);
+                    const stringKeys = new Set(["text", "file", "url", "label", "color", "subpath", "background", "backgroundStyle"]);
+                    const ids: string[] = [];
 
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const nodes = [...(parsed.data.nodes ?? [])];
-            const nodeById = new Map(nodes.map((n) => [n.id, n]));
-            const updatableKeys = new Set([
-                "text", "file", "url", "label", "color", "x", "y", "width", "height", "subpath",
-                "background", "backgroundStyle",
-            ]);
-            const stringKeys = new Set(["text", "file", "url", "label", "color", "subpath", "background", "backgroundStyle"]);
-            const updatedIds: string[] = [];
-
-            for (let i = 0; i < rawPatches.length; i++) {
-                const patch = rawPatches[i] as Record<string, unknown>;
-                const nodeId = patch["id"];
-                if (typeof nodeId !== "string" || nodeId.length === 0) {
-                    return { success: false, type: "text", content: `nodes[${i}].id must be a non-empty string.` };
-                }
-                const existing = nodeById.get(nodeId);
-                if (!existing) {
-                    return { success: false, type: "text", content: `Node id '${nodeId}' not found in canvas. Use list_canvas_nodes to list ids.` };
-                }
-                const merged = { ...existing };
-                for (const key of updatableKeys) {
-                    const v = patch[key];
-                    if (v !== undefined) {
-                        if (stringKeys.has(key)) {
-                            if (typeof v === "string") (merged as Record<string, unknown>)[key] = v;
-                        } else {
-                            if (typeof v === "number" && Number.isFinite(v)) (merged as Record<string, unknown>)[key] = v;
+                    for (let i = 0; i < rawPatches.length; i++) {
+                        const patch = rawPatches[i] as Record<string, unknown>;
+                        const nodeId = patch["id"];
+                        if (typeof nodeId !== "string" || nodeId.length === 0) {
+                            return `nodes[${i}].id must be a non-empty string.`;
                         }
+                        const existing = nodeById.get(nodeId);
+                        if (!existing) {
+                            return `Node id '${nodeId}' not found in canvas. Use list_canvas_nodes to list ids.`;
+                        }
+                        const merged = { ...existing };
+                        for (const key of updatableKeys) {
+                            const v = patch[key];
+                            if (v !== undefined) {
+                                if (stringKeys.has(key)) {
+                                    if (typeof v === "string") (merged as Record<string, unknown>)[key] = v;
+                                } else {
+                                    if (typeof v === "number" && Number.isFinite(v)) (merged as Record<string, unknown>)[key] = v;
+                                }
+                            }
+                        }
+                        nodeById.set(nodeId, merged);
+                        ids.push(nodeId);
                     }
-                }
-                nodeById.set(nodeId, merged);
-                updatedIds.push(nodeId);
-            }
 
-            const updatedNodes = nodes.map((n) => nodeById.get(n.id) ?? n);
-            const merged = { ...parsed.data, nodes: updatedNodes };
-
-            const issues = validateCanvas(merged, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Merged canvas validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const serialized = serializeCanvas(merged);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "update_canvas_nodes",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_update_canvas_nodes" : "canvas_nodes_updated",
-                    path,
-                    updated_node_ids: updatedIds,
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
+                    updatedIds = ids;
+                    const updatedNodes = nodes.map((n) => nodeById.get(n.id) ?? n);
+                    return { ...data, nodes: updatedNodes };
                 },
-            };
+                action: "canvas_nodes_updated",
+                dryRunAction: "dry_run_update_canvas_nodes",
+                extra: () => ({ updated_node_ids: updatedIds }),
+            });
         },
         requiresConfirmation: true,
     };
@@ -685,88 +583,35 @@ export function vaultDeleteCanvasNodes(plugin: NoteAssistantPlugin): RegisteredT
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (!Array.isArray(rawNodeIds) || rawNodeIds.length === 0) {
                 return { success: false, type: "text", content: "`node_ids` must be a non-empty array." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const existingIds = new Set((parsed.data.nodes ?? []).map((n) => n.id));
             const toRemove = new Set(rawNodeIds as string[]);
-            const missing = [...toRemove].filter((id) => !existingIds.has(id));
-            if (missing.length > 0) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `Node ids not found: ${missing.join(", ")}.`,
-                };
-            }
-
-            const merged = removeNodesFromCanvas(parsed.data, toRemove);
-            const issues = validateCanvas(merged, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Canvas validation after removal failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const removedEdgesCount =
-                (parsed.data.edges ?? []).length - (merged.edges ?? []).length;
-
-            const serialized = serializeCanvas(merged);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "delete_canvas_nodes",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_delete_canvas_nodes" : "canvas_nodes_deleted",
-                    path,
-                    removed_node_ids: [...toRemove],
-                    auto_removed_edge_count: removedEdgesCount,
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
+            let autoRemovedEdgeCount = 0;
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "delete_canvas_nodes",
+                dryRun,
+                expectedPreEditMtime,
+                validationErrorPrefix: "Canvas validation after removal failed:",
+                mutate: (data) => {
+                    const existingIds = new Set((data.nodes ?? []).map((n) => n.id));
+                    const missing = [...toRemove].filter((id) => !existingIds.has(id));
+                    if (missing.length > 0) {
+                        return `Node ids not found: ${missing.join(", ")}.`;
+                    }
+                    const merged = removeNodesFromCanvas(data, toRemove);
+                    autoRemovedEdgeCount = (data.edges ?? []).length - (merged.edges ?? []).length;
+                    return merged;
                 },
-            };
+                action: "canvas_nodes_deleted",
+                dryRunAction: "dry_run_delete_canvas_nodes",
+                extra: () => ({
+                    removed_node_ids: [...toRemove],
+                    auto_removed_edge_count: autoRemovedEdgeCount,
+                }),
+            });
         },
         requiresConfirmation: true,
     };
@@ -817,84 +662,29 @@ export function vaultDeleteCanvasEdges(plugin: NoteAssistantPlugin): RegisteredT
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (!Array.isArray(rawEdgeIds) || rawEdgeIds.length === 0) {
                 return { success: false, type: "text", content: "`edge_ids` must be a non-empty array." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const existingIds = new Set((parsed.data.edges ?? []).map((e) => e.id));
             const toRemove = new Set(rawEdgeIds as string[]);
-            const missing = [...toRemove].filter((id) => !existingIds.has(id));
-            if (missing.length > 0) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `Edge ids not found: ${missing.join(", ")}.`,
-                };
-            }
-
-            const merged = removeEdgesFromCanvas(parsed.data, toRemove);
-            const issues = validateCanvas(merged, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Canvas validation after removal failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const serialized = serializeCanvas(merged);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "delete_canvas_edges",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_delete_canvas_edges" : "canvas_edges_deleted",
-                    path,
-                    removed_edge_ids: [...toRemove],
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "delete_canvas_edges",
+                dryRun,
+                expectedPreEditMtime,
+                validationErrorPrefix: "Canvas validation after removal failed:",
+                mutate: (data) => {
+                    const existingIds = new Set((data.edges ?? []).map((e) => e.id));
+                    const missing = [...toRemove].filter((id) => !existingIds.has(id));
+                    if (missing.length > 0) {
+                        return `Edge ids not found: ${missing.join(", ")}.`;
+                    }
+                    return removeEdgesFromCanvas(data, toRemove);
                 },
-            };
+                action: "canvas_edges_deleted",
+                dryRunAction: "dry_run_delete_canvas_edges",
+                extra: () => ({ removed_edge_ids: [...toRemove] }),
+            });
         },
         requiresConfirmation: true,
     };
@@ -961,85 +751,31 @@ export function vaultUpdateCanvasEdges(plugin: NoteAssistantPlugin): RegisteredT
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            const canvasExt = requireCanvasExtension(path);
-            if (!canvasExt.ok) {
-                return { success: false, type: "text", content: canvasExt.message };
-            }
             if (!Array.isArray(rawPatches) || rawPatches.length === 0) {
                 return { success: false, type: "text", content: "`edges` must be a non-empty array." };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            const previousMtime = file.stat.mtime;
-            if (expectedPreEditMtime !== undefined && expectedPreEditMtime !== previousMtime) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `\`expected_pre_edit_mtime\` mismatch: expected ${expectedPreEditMtime}, actual ${previousMtime}.`,
-                };
-            }
-
-            const content = await plugin.app.vault.read(file);
-            const parsed = parseCanvasContent(content);
-            if (!parsed.ok) {
-                return { success: false, type: "text", content: parsed.error };
-            }
-
-            const existingIds = new Set((parsed.data.edges ?? []).map((e) => e.id));
-            const patches = rawPatches as Array<{ id: string } & Record<string, unknown>>;
-            const missing = patches.filter((p) => !existingIds.has(p.id)).map((p) => p.id);
-            if (missing.length > 0) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `Edge ids not found: ${missing.join(", ")}. Use list_canvas_edges to list ids.`,
-                };
-            }
-
-            const result = updateEdgesInCanvas(parsed.data, patches as Parameters<typeof updateEdgesInCanvas>[1]);
-
-            const issues = validateCanvas(result.data, makePathResolver(plugin.app));
-            if (hasCanvasErrors(issues)) {
-                const messages = issues.filter((i) => i.severity === "error").map((i) => i.message);
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Merged canvas validation failed:\n" + messages.map((m) => `- ${m}`).join("\n"),
-                };
-            }
-
-            const serialized = serializeCanvas(result.data);
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "update_canvas_edges",
-                    perform: async () => {
-                        await plugin.app.vault.modify(file, serialized);
-                    },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const inspection = inspectCanvasContent(serialized, makePathResolver(plugin.app));
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_update_canvas_edges" : "canvas_edges_updated",
-                    path,
-                    updated_edge_ids: result.updated_ids,
-                    previous_mtime: previousMtime,
-                    new_mtime: dryRun ? previousMtime : file.stat.mtime,
-                    dry_run: dryRun,
-                    valid: inspection.valid,
-                    validation_issues: inspection.validation_issues,
-                    ...inspection.summary,
+            let updatedIds: string[] = [];
+            return applyCanvasMutation(plugin, chatStream, {
+                path,
+                toolName: "update_canvas_edges",
+                dryRun,
+                expectedPreEditMtime,
+                mutate: (data) => {
+                    const existingIds = new Set((data.edges ?? []).map((e) => e.id));
+                    const patches = rawPatches as Array<{ id: string } & Record<string, unknown>>;
+                    const missing = patches.filter((p) => !existingIds.has(p.id)).map((p) => p.id);
+                    if (missing.length > 0) {
+                        return `Edge ids not found: ${missing.join(", ")}. Use list_canvas_edges to list ids.`;
+                    }
+                    const result = updateEdgesInCanvas(data, patches as Parameters<typeof updateEdgesInCanvas>[1]);
+                    updatedIds = result.updated_ids;
+                    return result.data;
                 },
-            };
+                action: "canvas_edges_updated",
+                dryRunAction: "dry_run_update_canvas_edges",
+                extra: () => ({ updated_edge_ids: updatedIds }),
+            });
         },
         requiresConfirmation: true,
     };
