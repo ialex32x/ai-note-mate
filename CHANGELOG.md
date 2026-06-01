@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.4.2
+
+### What's new
+
+- **Regex mode for edits** — `edit_lines` now supports regex matching, so the model can find-and-replace by pattern instead of line numbers.
+- **Anthropic extended thinking** — Claude models with extended thinking now get proper token budgets, so long reasoning isn't cut short.
+- **Session ID in switcher** — The session dropdown now shows each session's short ID, making it easier to tell conversations apart.
+
+### Refinements
+
+- **Unified navigation** — Message jumping and history loading share a single scroll pipeline, eliminating flickers and improving reliability during streaming.
+- **Smoother follow-ups** — Follow-up suggestions behave more predictably while the assistant is still generating a reply.
+
+### Fixes
+
+- **Empty `insert_before`** — Insert-before operations with blank content no longer fail.
+- **Missing file as delete** — When Obsidian reports a file with missing content (e.g. sync conflicts), the tool now treats it as deleted instead of throwing.
+- **Malformed canvas** — Damaged canvas files are now parsed gracefully instead of crashing.
+
+---
+
 ## 1.4.1
 
 ### What's new
