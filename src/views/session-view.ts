@@ -316,13 +316,15 @@ export class SessionView extends ItemView {
                 // so an exhaustiveness check would catch a missing branch.
                 break;
             case 'finish':
-                // When the user was reading a long streaming message
-                // that grew taller than the viewport, keep autoFollow
-                // off so async trailing content (insight card results
-                // rendered after the turn) does not yank the view to
-                // the bottom. Abort / error paths restore immediately
+                // When auto-follow is "parked" — because the user was
+                // reading a long streaming message that outgrew the viewport,
+                // OR because they explicitly jumped to an earlier message —
+                // keep it off so async trailing content (insight card,
+                // follow-up bar rendered after the turn) does not yank the
+                // view to the bottom. The user stays parked until they send a
+                // new message. Abort / error paths restore immediately
                 // because the turn was interrupted.
-                if (!this.scroller.isFollowDisabledByHeight()) {
+                if (!this.scroller.isAutoFollowParked()) {
                     this.scroller.restoreAutoFollow();
                 }
                 this.hideStreamingLoader();
