@@ -14,7 +14,15 @@ import { sanitizeChatMessages } from "./_shared";
 // Constants
 // ─────────────────────────────────────────────
 
-/** Anthropic API version header value */
+/**
+ * Anthropic API version header value.
+ *
+ * `2023-06-01` is the current, required value for the Messages API — it is NOT
+ * outdated. Anthropic has not shipped a newer dated version; subsequent
+ * features are opted into via `anthropic-beta` headers rather than a new
+ * `anthropic-version`. Their own SDKs still send `2023-06-01`. Do not "bump"
+ * this to an invented date — the API rejects unknown versions.
+ */
 const ANTHROPIC_VERSION = "2023-06-01";
 
 /**
@@ -225,7 +233,7 @@ export class AnthropicProvider implements LLMProvider {
         }
 
         // --- parse SSE stream ---
-        yield* this.parseSSEStream(response.body, signal);
+        yield* parseAnthropicSSEStream(response.body, signal);
     }
 
     // ── Message conversion ─────────────────────────────────────────
@@ -388,268 +396,261 @@ export class AnthropicProvider implements LLMProvider {
         }
         return DEFAULT_MAX_TOKENS;
     }
+}
 
-    // ── SSE stream parser ──────────────────────────────────────────
+// ─────────────────────────────────────────────
+// SSE stream parsing (module-level, pure — unit-tested)
+// ─────────────────────────────────────────────
+//
+// These were previously private methods but use no instance state, so
+// they live at module scope: that keeps `createStream` thin and, more
+// importantly, makes the hand-written SSE parser directly unit-testable
+// (see test/anthropic-sse.test.ts) without constructing a provider or
+// mocking the network.
 
-    private async *parseSSEStream(
-        body: ReadableStream<Uint8Array>,
-        signal?: AbortSignal,
-    ): AsyncIterable<StreamChunk> {
-        // Track per-index block types so we know what each delta refers to
-        const blockTypes = new Map<number, string>();
-        const blockToolIds = new Map<number, string>();
-        const blockToolNames = new Map<number, string>();
+/**
+ * Parse the Anthropic Messages SSE byte stream into {@link StreamChunk}s.
+ *
+ * Frames are delimited by a blank line (`\n\n`). The reader can split a
+ * frame across two `read()` calls, so partial data is held in `buffer`
+ * until a full frame is available.
+ *
+ * The only cross-frame state is `promptTokens`: `message_start` reports
+ * input-token usage that the trailing `message_delta` needs to compute an
+ * accurate total. (The previous per-block `Map` bookkeeping was dead — the
+ * payloads are self-describing, so nothing downstream read it.)
+ */
+export async function* parseAnthropicSSEStream(
+    body: ReadableStream<Uint8Array>,
+    signal?: AbortSignal,
+): AsyncIterable<StreamChunk> {
+    let promptTokens = 0;
 
-        let promptTokens = 0;
-        let thinkingSignature: string | undefined;
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
 
-        const reader = body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
+    try {
+        while (true) {
+            if (signal?.aborted) break;
 
-        try {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // SSE frames are separated by double newlines
             while (true) {
-                if (signal?.aborted) break;
+                const frameEnd = buffer.indexOf("\n\n");
+                if (frameEnd === -1) break;
 
-                const { done, value } = await reader.read();
-                if (done) break;
+                const frame = buffer.slice(0, frameEnd);
+                buffer = buffer.slice(frameEnd + 2);
 
-                buffer += decoder.decode(value, { stream: true });
+                const payload = parseSSEFrame(frame);
+                if (!payload) continue;
 
-                // SSE frames are separated by double newlines
-                while (true) {
-                    const frameEnd = buffer.indexOf("\n\n");
-                    if (frameEnd === -1) break;
-
-                    const frame = buffer.slice(0, frameEnd);
-                    buffer = buffer.slice(frameEnd + 2);
-
-                    const payload = this.parseSSEFrame(frame);
-                    if (!payload) continue;
-
-                    const chunk = this.processSSEPayload(
-                        payload,
-                        blockTypes,
-                        blockToolIds,
-                        blockToolNames,
-                        promptTokens,
-                        thinkingSignature,
-                    );
-
-                    if (chunk) {
-                        // Update tracked state from the event that was just processed
-                        if (payload.type === "message_start" && payload.message) {
-                            promptTokens = payload.message.usage.input_tokens;
-                        }
-                        if (payload.type === "content_block_start" && payload.content_block) {
-                            const idx = payload.index!;
-                            blockTypes.set(idx, payload.content_block.type);
-                            if (payload.content_block.id) blockToolIds.set(idx, payload.content_block.id);
-                            if (payload.content_block.name) blockToolNames.set(idx, payload.content_block.name);
-                        }
-                        if (payload.type === "content_block_stop" && payload.index !== undefined) {
-                            blockTypes.delete(payload.index);
-                            blockToolIds.delete(payload.index);
-                            blockToolNames.delete(payload.index);
-                        }
-
-                        yield chunk;
-                    }
+                // message_start carries the prompt-token count the trailing
+                // message_delta needs; capture it before emitting so the
+                // total is accurate regardless of event ordering.
+                if (payload.type === "message_start" && payload.message) {
+                    promptTokens = payload.message.usage.input_tokens;
                 }
+
+                const chunk = processSSEPayload(payload, promptTokens);
+                if (chunk) yield chunk;
             }
-        } finally {
-            reader.releaseLock();
+        }
+    } finally {
+        reader.releaseLock();
+    }
+}
+
+/**
+ * Parse a single SSE frame (lines before `\n\n`).
+ *
+ * Returns the JSON payload from the `data:` line, or null for
+ * empty/ping frames.
+ */
+export function parseSSEFrame(frame: string): SSEEventPayload | null {
+    // SSE frames look like:
+    //   event: content_block_delta
+    //   data: {"type":"content_block_delta",...}
+    //
+    // We only care about the data line; the event type is repeated
+    // inside the JSON as `type` anyway.
+    for (const line of frame.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ")) {
+            const jsonStr = trimmed.slice(6);
+            // Skip empty data (ping frames)
+            if (jsonStr === "" || jsonStr === "{}") return null;
+            try {
+                return JSON.parse(jsonStr) as SSEEventPayload;
+            } catch {
+                console.warn("[anthropic-provider] SSE JSON parse error:", jsonStr.slice(0, 200));
+                return null;
+            }
         }
     }
+    return null;
+}
 
-    /**
-     * Parse a single SSE frame (lines before `\n\n`).
-     *
-     * Returns the JSON payload from the `data:` line, or null for
-     * empty/ping frames.
-     */
-    private parseSSEFrame(frame: string): SSEEventPayload | null {
-        // SSE frames look like:
-        //   event: content_block_delta
-        //   data: {"type":"content_block_delta",...}
-        //
-        // We only care about the data line; the event type is repeated
-        // inside the JSON as `type` anyway.
-        for (const line of frame.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("data: ")) {
-                const jsonStr = trimmed.slice(6);
-                // Skip empty data (ping frames)
-                if (jsonStr === "" || jsonStr === "{}") return null;
-                try {
-                    return JSON.parse(jsonStr) as SSEEventPayload;
-                } catch {
-                    console.warn("[anthropic-provider] SSE JSON parse error:", jsonStr.slice(0, 200));
-                    return null;
-                }
-            }
+/**
+ * Convert a single SSE event payload into a StreamChunk.
+ *
+ * Deltas are emitted as-is (the caller accumulates). Tool-call
+ * start events emit the id + name so the consumer can initialize
+ * its tool-call map; subsequent input_json deltas supply the
+ * arguments piece by piece.
+ *
+ * @param promptTokens Input-token count captured from `message_start`,
+ *   used only to compute the total in the trailing `message_delta`.
+ */
+export function processSSEPayload(
+    payload: SSEEventPayload,
+    promptTokens: number,
+): StreamChunk | null {
+    const type = payload.type;
+
+    // --- message_start ---
+    if (type === "message_start" && payload.message) {
+        return {
+            content: null,
+            reasoningContent: null,
+            toolCallDeltas: null,
+            finishReason: null,
+            usage: {
+                promptTokens: payload.message.usage.input_tokens,
+                completionTokens: 0,
+                totalTokens: payload.message.usage.input_tokens,
+            },
+        };
+    }
+
+    // --- content_block_start ---
+    if (type === "content_block_start" && payload.content_block) {
+        const block = payload.content_block;
+        const index = payload.index!;
+
+        // Tool use block starting
+        if (block.type === "tool_use") {
+            return {
+                content: null,
+                reasoningContent: null,
+                toolCallDeltas: [
+                    {
+                        index,
+                        id: block.id,
+                        function: { name: block.name },
+                    },
+                ],
+                finishReason: null,
+                usage: null,
+            };
         }
+
+        // Thinking block — may carry initial thinking text and signature
+        if (block.type === "thinking") {
+            const result: StreamChunk = {
+                content: null,
+                reasoningContent: block.thinking ?? null,
+                toolCallDeltas: null,
+                finishReason: null,
+                usage: null,
+            };
+            if (block.signature) {
+                result.thoughtSignatures = [block.signature];
+            }
+            return result;
+        }
+
+        // Text block starting — no content yet, don't emit
         return null;
     }
 
-    /**
-     * Convert a single SSE event payload into a StreamChunk.
-     *
-     * Deltas are emitted as-is (the caller accumulates). Tool-call
-     * start events emit the id + name so the consumer can initialize
-     * its tool-call map; subsequent input_json deltas supply the
-     * arguments piece by piece.
-     */
-    private processSSEPayload(
-        payload: SSEEventPayload,
-        _blockTypes: Map<number, string>,
-        _blockToolIds: Map<number, string>,
-        _blockToolNames: Map<number, string>,
-        _promptTokens: number,
-        _thinkingSignature: string | undefined,
-    ): StreamChunk | null {
-        const type = payload.type;
+    // --- content_block_delta ---
+    if (type === "content_block_delta" && payload.delta) {
+        const delta = payload.delta;
 
-        // --- message_start ---
-        if (type === "message_start" && payload.message) {
+        if (delta.type === "text_delta" && delta.text) {
+            return {
+                content: delta.text,
+                reasoningContent: null,
+                toolCallDeltas: null,
+                finishReason: null,
+                usage: null,
+            };
+        }
+
+        if (delta.type === "input_json_delta" && delta.partial_json) {
+            return {
+                content: null,
+                reasoningContent: null,
+                toolCallDeltas: [
+                    {
+                        index: payload.index!,
+                        function: { arguments: delta.partial_json },
+                    },
+                ],
+                finishReason: null,
+                usage: null,
+            };
+        }
+
+        if (delta.type === "thinking_delta" && delta.thinking) {
+            return {
+                content: null,
+                reasoningContent: delta.thinking,
+                toolCallDeltas: null,
+                finishReason: null,
+                usage: null,
+            };
+        }
+
+        if (delta.type === "signature_delta" && delta.signature) {
             return {
                 content: null,
                 reasoningContent: null,
                 toolCallDeltas: null,
                 finishReason: null,
-                usage: {
-                    promptTokens: payload.message.usage.input_tokens,
-                    completionTokens: 0,
-                    totalTokens: payload.message.usage.input_tokens,
-                },
+                usage: null,
+                thoughtSignatures: [delta.signature],
             };
         }
-
-        // --- content_block_start ---
-        if (type === "content_block_start" && payload.content_block) {
-            const block = payload.content_block;
-            const index = payload.index!;
-
-            // Tool use block starting
-            if (block.type === "tool_use") {
-                return {
-                    content: null,
-                    reasoningContent: null,
-                    toolCallDeltas: [
-                        {
-                            index,
-                            id: block.id,
-                            function: { name: block.name },
-                        },
-                    ],
-                    finishReason: null,
-                    usage: null,
-                };
-            }
-
-            // Thinking block — may carry initial thinking text and signature
-            if (block.type === "thinking") {
-                const result: StreamChunk = {
-                    content: null,
-                    reasoningContent: block.thinking ?? null,
-                    toolCallDeltas: null,
-                    finishReason: null,
-                    usage: null,
-                };
-                if (block.signature) {
-                    result.thoughtSignatures = [block.signature];
-                }
-                return result;
-            }
-
-            // Text block starting — no content yet, don't emit
-            return null;
-        }
-
-        // --- content_block_delta ---
-        if (type === "content_block_delta" && payload.delta) {
-            const delta = payload.delta;
-
-            if (delta.type === "text_delta" && delta.text) {
-                return {
-                    content: delta.text,
-                    reasoningContent: null,
-                    toolCallDeltas: null,
-                    finishReason: null,
-                    usage: null,
-                };
-            }
-
-            if (delta.type === "input_json_delta" && delta.partial_json) {
-                return {
-                    content: null,
-                    reasoningContent: null,
-                    toolCallDeltas: [
-                        {
-                            index: payload.index!,
-                            function: { arguments: delta.partial_json },
-                        },
-                    ],
-                    finishReason: null,
-                    usage: null,
-                };
-            }
-
-            if (delta.type === "thinking_delta" && delta.thinking) {
-                return {
-                    content: null,
-                    reasoningContent: delta.thinking,
-                    toolCallDeltas: null,
-                    finishReason: null,
-                    usage: null,
-                };
-            }
-
-            if (delta.type === "signature_delta" && delta.signature) {
-                return {
-                    content: null,
-                    reasoningContent: null,
-                    toolCallDeltas: null,
-                    finishReason: null,
-                    usage: null,
-                    thoughtSignatures: [delta.signature],
-                };
-            }
-        }
-
-        // --- content_block_stop ---
-        // No content to emit, just signals end of a block.
-
-        // --- message_delta ---
-        if (type === "message_delta" && payload.delta && payload.usage) {
-            return {
-                content: null,
-                reasoningContent: null,
-                toolCallDeltas: null,
-                finishReason: payload.delta.stop_reason ?? null,
-                usage: {
-                    promptTokens: _promptTokens,
-                    completionTokens: payload.usage.output_tokens,
-                    totalTokens: _promptTokens + payload.usage.output_tokens,
-                },
-            };
-        }
-
-        // --- message_stop ---
-        // End of stream — no chunk to emit.
-
-        // --- ping / error ---
-        // Ping: ignore. Error: Anthropic sends an SSE `error` event
-        // which is rare but possible. We don't handle it here; the
-        // consumer will notice when the stream ends without a proper
-        // message_stop.
-        if (type === "error" && (payload as unknown as Record<string, unknown>).error) {
-            const err = ((payload as unknown as Record<string, unknown>).error as { message?: string });
-            throw new Error(`Anthropic stream error: ${err.message ?? "unknown error"}`);
-        }
-
-        return null;
     }
+
+    // --- content_block_stop ---
+    // No content to emit, just signals end of a block.
+
+    // --- message_delta ---
+    if (type === "message_delta" && payload.delta && payload.usage) {
+        return {
+            content: null,
+            reasoningContent: null,
+            toolCallDeltas: null,
+            finishReason: payload.delta.stop_reason ?? null,
+            usage: {
+                promptTokens,
+                completionTokens: payload.usage.output_tokens,
+                totalTokens: promptTokens + payload.usage.output_tokens,
+            },
+        };
+    }
+
+    // --- message_stop ---
+    // End of stream — no chunk to emit.
+
+    // --- ping / error ---
+    // Ping: ignore. Error: Anthropic sends an SSE `error` event
+    // which is rare but possible. Surface it as a thrown error so the
+    // consumer doesn't silently treat a failed turn as a clean finish.
+    if (type === "error" && (payload as unknown as Record<string, unknown>).error) {
+        const err = ((payload as unknown as Record<string, unknown>).error as { message?: string });
+        throw new Error(`Anthropic stream error: ${err.message ?? "unknown error"}`);
+    }
+
+    return null;
 }
 
 // ─────────────────────────────────────────────
