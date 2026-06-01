@@ -1977,7 +1977,7 @@ export class SessionView extends ItemView {
             const m = messages[i];
             if (!m) continue;
             if (m.role === 'assistant' && !m.streaming && m.content) {
-                if (this.bubbleList.isAborted(m.id)) break;
+                if (this.bubbleList.isInterrupted(m)) break;
                 target = m;
                 break;
             }

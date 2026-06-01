@@ -3,6 +3,7 @@ import type { BubbleContext } from './bubble-context';
 import {
     createActionsContainer,
     addIconAction,
+    isMessageInterrupted,
     type IconActionOptions,
     ACTION_BTN_CLS,
 } from './action-bar';
@@ -339,7 +340,7 @@ export class ChatBubble {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
                 }
                 // Copy button handled separately
-                if (onExtractInsights && !abortedMessageIds.has(msg.id) && !isBusy) {
+                if (onExtractInsights && !isMessageInterrupted(msg, abortedMessageIds) && !isBusy) {
                     defs.push({ icon: 'lightbulb', label: t('view.extractInsights'), onClick: () => onExtractInsights(msg) });
                 }
                 break;
@@ -426,7 +427,7 @@ export class ChatBubble {
         }
 
         // 5. Aborted indicator (text span, not a button)
-        if (abortedMessageIds.has(msg.id)) {
+        if (isMessageInterrupted(msg, abortedMessageIds)) {
             actions.createEl('span', {
                 cls: 'session-bubble__abort-label',
                 text: t('view.responseStopped'),

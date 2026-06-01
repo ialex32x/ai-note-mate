@@ -15,6 +15,26 @@ import { SpeechController } from './speech-controller';
  */
 const ICON_ACTION_BTN_CLS = 'session-icon-btn session-bubble__action-btn';
 
+/**
+ * Whether a message should be treated as interrupted ("Response stopped").
+ *
+ * True when either:
+ *  - it was aborted live in this session (tracked in `abortedMessageIds`), or
+ *  - it carries the persisted {@link ChatMessage.wasInterrupted} flag.
+ *
+ * The persisted flag is the authoritative signal that survives a reload and
+ * also covers cases the runtime set never captured: thinking-only aborts
+ * (empty content) and stream errors. Deriving the UI state from both keeps the
+ * "stopped" label, insights gating, and follow-up suppression consistent across
+ * live aborts, error paths, and reloaded sessions.
+ */
+export function isMessageInterrupted(
+    msg: ChatMessage,
+    abortedMessageIds: Set<string>,
+): boolean {
+    return msg.wasInterrupted === true || abortedMessageIds.has(msg.id);
+}
+
 /** Options for {@link addIconAction}. */
 export interface IconActionOptions {
     /** Lucide icon name (e.g. 'pencil', 'git-branch'). */
@@ -306,7 +326,7 @@ export function renderActionBar(
     // Mirrors Copy/Speak as a plain icon button (rather than a menu) to
     // stay consistent with the rest of the action bar and remain
     // tap-friendly on mobile.
-    if (onExtractInsights && !abortedMessageIds.has(msg.id) && !opts.isBusy) {
+    if (onExtractInsights && !isMessageInterrupted(msg, abortedMessageIds) && !opts.isBusy) {
         addIconAction(actions, {
             icon: 'lightbulb',
             label: t('view.extractInsights'),
@@ -315,7 +335,7 @@ export function renderActionBar(
     }
 
     // Aborted indicator
-    if (abortedMessageIds.has(msg.id)) {
+    if (isMessageInterrupted(msg, abortedMessageIds)) {
         actions.createEl('span', {
             cls: 'session-bubble__abort-label',
             text: t('view.responseStopped'),

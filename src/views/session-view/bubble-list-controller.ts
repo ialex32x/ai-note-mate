@@ -7,6 +7,7 @@ import type { ScrollController } from './scroll-controller';
 import type { MessageWindowController } from './message-window-controller';
 import type { ErrorBubbleTracker } from './error-bubble';
 import { computeBubbleClasses } from '../../components/bubble/chat-bubble';
+import { isMessageInterrupted } from '../../components/bubble/action-bar';
 
 export interface BubbleListControllerDeps {
     messagesEl: HTMLElement;
@@ -58,9 +59,19 @@ export class BubbleListController {
 
     constructor(private readonly deps: BubbleListControllerDeps) {}
 
-    /** Convenience: check if a message has been aborted. */
+    /** Convenience: check if a message has been aborted (live, this session). */
     isAborted(id: string): boolean {
         return this.abortedMessageIds.has(id);
+    }
+
+    /**
+     * Whether a message is interrupted — either aborted live this session OR
+     * carrying the persisted {@link ChatMessage.wasInterrupted} flag (covers
+     * reloaded sessions, thinking-only aborts, and stream errors). Prefer this
+     * over {@link isAborted} when the full message object is available.
+     */
+    isInterrupted(msg: ChatMessage): boolean {
+        return isMessageInterrupted(msg, this.abortedMessageIds);
     }
 
     /** Clear all tracked state and drop the error-continue-button reference. */
