@@ -312,6 +312,20 @@ export class ScrollController {
         this.scrollToBottomBtn.hide();
     }
 
+    /**
+     * Latch auto-follow off because the user explicitly navigated to a
+     * specific message (jump-to-prev/next-user). Mirrors an upward user
+     * gesture (wheel-up / PageUp): the view should stay at the jump target
+     * and NOT be yanked back to the tail by streaming mutations. Cancels any
+     * pending follow frame and shows the rejoin button while a turn is in
+     * flight so the user can return manually.
+     */
+    suppressAutoFollow(): void {
+        this.autoFollow = false;
+        this.cancelPendingFollowFrame();
+        if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+    }
+
     /** Suppress auto-follow safety-net checks during bulk prepend passes. */
     suspend(): void {
         this.suspendDepth++;

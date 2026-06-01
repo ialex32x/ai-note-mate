@@ -1200,22 +1200,31 @@ export class SessionView extends ItemView {
      * scroll-anchor-restore and scroll-to-target animations.
      */
     private handleJumpToPrevUser(msg: ChatMessage): void {
-        const targetId = this.bubbleList.scrollToPrevUser(msg);
-        if (targetId) {
-            // Pass targetId as both the expansion range and the scroll
-            // target so ensureMessageVisible loads older units AND
-            // scrolls to the target in one pass, skipping the competing
-            // anchor-restore.
-            void this.ensureMessageVisible(targetId, targetId);
-        }
+        this.jumpToUserMessage(this.bubbleList.findPrevUserMessageId(msg));
     }
 
     /** Scroll to the next (following) user message (ID-based). */
     private handleJumpToNextUser(msg: ChatMessage): void {
-        const targetId = this.bubbleList.scrollToNextUser(msg);
-        if (targetId) {
-            void this.ensureMessageVisible(targetId, targetId);
-        }
+        this.jumpToUserMessage(this.bubbleList.findNextUserMessageId(msg));
+    }
+
+    /**
+     * Single entry point for jump-to-user navigation. Always routes through
+     * {@link ensureMessageVisible} so the rendered and not-yet-rendered cases
+     * share one code path:
+     *
+     * - First latch auto-follow OFF. A jump is an explicit "leave the tail"
+     *   gesture; without this, during streaming the MutationObserver would
+     *   immediately re-pin the view to the bottom and undo the jump.
+     * - Then `ensureMessageVisible(targetId, targetId)` expands the lazy
+     *   window if needed and scrolls to the target with a synchronous
+     *   `scrollTop` (+ flash highlight), avoiding the smooth-scroll animation
+     *   that competing mutations can interrupt.
+     */
+    private jumpToUserMessage(targetId: string | null): void {
+        if (!targetId) return;
+        this.scroller.suppressAutoFollow();
+        void this.ensureMessageVisible(targetId, targetId);
     }
 
     /** Returns true if the message has a previous user message in the data model. */

@@ -313,57 +313,6 @@ export class BubbleListController {
     }
 
     /**
-     * Find the nearest preceding user message for the given message
-     * and scroll to its bubble with a flash highlight.
-     *
-     * When the target bubble is not yet in the DOM (outside the rendered
-     * window), returns the target message ID so the caller can expand
-     * the window. Returns null when scrolled successfully or when no
-     * target exists.
-     */
-    scrollToPrevUser(msg: ChatMessage): string | null {
-        return this.scrollToUserBubble(this.findPrevUserMessageId(msg));
-    }
-
-    /**
-     * Find the nearest following user message for the given message
-     * and scroll to its bubble with a flash highlight.
-     *
-     * When the target bubble is not yet in the DOM (outside the rendered
-     * window), returns the target message ID so the caller can expand
-     * the window. Returns null when scrolled successfully or when no
-     * target exists.
-     */
-    scrollToNextUser(msg: ChatMessage): string | null {
-        return this.scrollToUserBubble(this.findNextUserMessageId(msg));
-    }
-
-    /**
-     * Scroll to the bubble for `targetId` with a flash highlight.
-     *
-     * Returns `null` when handled (scrolled, or no target). Returns the
-     * target id when the bubble is NOT in the live DOM — either never
-     * rendered (outside the lazy window) or detached after a tail trim — so
-     * the caller can expand the window and scroll via `ensureMessageVisible`.
-     *
-     * A detached (trimmed) entry is dropped here as a defensive fallback in
-     * case the trim hook missed it; the upcoming prepend re-registers a fresh
-     * element under the same id. Without the `isConnected` check, a stale map
-     * hit would `flashAndScroll` a disconnected node (a silent no-op) and
-     * report success, leaving the user stranded.
-     */
-    private scrollToUserBubble(targetId: string | null): string | null {
-        if (!targetId) return null;
-        const bubble = this.messageBubbles.get(targetId);
-        if (bubble?.isConnected) {
-            flashAndScroll(bubble);
-            return null;
-        }
-        if (bubble) this.messageBubbles.delete(targetId);
-        return targetId;
-    }
-
-    /**
      * Handle an aborted message: mark it, re-render its bubble, and
      * append any trailing system message.
      *
@@ -391,13 +340,4 @@ export class BubbleListController {
         // onAbort) — the view only needs to refresh derived UI here.
         this.deps.updateSessionTitle();
     }
-}
-
-// ── Shared scroll helper ─────────────────────────────────────────────
-
-/** Scroll to a bubble and flash it briefly. */
-function flashAndScroll(target: Element): void {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    target.classList.add('session-bubble--highlight');
-    window.setTimeout(() => target.classList.remove('session-bubble--highlight'), 1700);
 }
