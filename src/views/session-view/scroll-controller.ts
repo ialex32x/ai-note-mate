@@ -87,17 +87,24 @@ export class ScrollController {
     private autoFollow = true;
 
     /**
-     * Set when auto-follow is disabled because the last message grew
-     * taller than the viewport. Once set, the oversized check is
-     * suppressed for the remainder of the turn — when the user
-     * manually scrolls back to the tail, auto-follow resumes and
-     * stays enabled, uninterupted by repeated oversized checks.
+     * "Parked" state: auto-follow is intentionally off and should STAY off
+     * past the end of the current turn (i.e. trailing async content like the
+     * insight card or follow-up bar must not yank the view to the tail).
+     *
+     * Set for two reasons:
+     *   1. the last streaming message grew taller than the viewport
+     *      (see {@link onAsyncContentChanged}); once set, the oversized check
+     *      is suppressed for the remainder of the turn so manually scrolling
+     *      back to the tail resumes follow without being kicked out again; and
+     *   2. the user explicitly jumped to a specific message
+     *      (see {@link suppressAutoFollow}) — they want to stay at the jump
+     *      target until they act again.
      *
      * Cleared at the start of every new turn (via
      * {@link forceScrollToBottom}) and on session switch (via
      * {@link resetScrollIntent}).
      */
-    private followDisabledByHeight = false;
+    private autoFollowParked = false;
 
     /**
      * Non-zero while a programmatic scroll's coalesced `scroll` event is
@@ -275,18 +282,20 @@ export class ScrollController {
      * re-arms the oversized-message guard for the new turn. */
     forceScrollToBottom(): void {
         this.autoFollow = true;
-        this.followDisabledByHeight = false;
+        this.autoFollowParked = false;
         this.programmaticScrollToBottom();
         this.scrollToBottomBtn.hide();
     }
 
-    /** Whether auto-follow was suppressed because the last message grew
-     * taller than the viewport. When true, {@link restoreAutoFollow}
-     * should be skipped on stream finish so the user can stay at their
-     * current reading position without being yanked to the bottom by
-     * async trailing content (e.g. insight card results). */
-    isFollowDisabledByHeight(): boolean {
-        return this.followDisabledByHeight;
+    /** Whether auto-follow is "parked" — intentionally off and meant to
+     * persist past the end of the turn (because the last message grew taller
+     * than the viewport, or the user jumped to a specific message). When
+     * true, {@link restoreAutoFollow} should be skipped on stream finish so
+     * the user stays at their current reading position instead of being
+     * yanked to the bottom by async trailing content (e.g. insight card
+     * results, follow-up bar). */
+    isAutoFollowParked(): boolean {
+        return this.autoFollowParked;
     }
 
     /**
@@ -294,7 +303,7 @@ export class ScrollController {
      * (or the safety-net observers) will pick it up. Called on stream
      * finish / abort / error.
      *
-     * Note: callers should check {@link isFollowDisabledByHeight} on
+     * Note: callers should check {@link isAutoFollowParked} on
      * normal finish — when the user is reading a long streaming message
      * they should not be forced back to the tail. Abort / error paths
      * still call this unconditionally because the turn was interrupted.
@@ -308,7 +317,7 @@ export class ScrollController {
      * cleared). Used on session switch. */
     resetScrollIntent(): void {
         this.autoFollow = true;
-        this.followDisabledByHeight = false;
+        this.autoFollowParked = false;
         this.scrollToBottomBtn.hide();
     }
 
@@ -322,6 +331,10 @@ export class ScrollController {
      */
     suppressAutoFollow(): void {
         this.autoFollow = false;
+        // Park: stay at the jump target even after the turn finishes, until
+        // the user sends a new message (forceScrollToBottom) or switches
+        // sessions (resetScrollIntent).
+        this.autoFollowParked = true;
         this.cancelPendingFollowFrame();
         if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
     }
@@ -397,11 +410,11 @@ export class ScrollController {
             //
             // The check is armed at the start of each turn and fires
             // exactly once per oversized message. Once fired,
-            // `followDisabledByHeight` stays set so that if the user
+            // `autoFollowParked` stays set so that if the user
             // manually scrolls to the tail to resume auto-follow,
             // subsequent tokens won't immediately kick them out again.
-            if (!this.followDisabledByHeight && this.isLastMessageOversized()) {
-                this.followDisabledByHeight = true;
+            if (!this.autoFollowParked && this.isLastMessageOversized()) {
+                this.autoFollowParked = true;
                 this.autoFollow = false;
                 if (this.isStreamingProvider()) {
                     this.scrollToBottomBtn.show();
