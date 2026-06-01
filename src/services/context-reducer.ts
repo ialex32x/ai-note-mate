@@ -2112,7 +2112,7 @@ export function createChatCompletion(
             );
         case "anthropic":
             return createAnthropicCompletion(
-                { apiKey: modelConfig.apiKey, model: modelConfig.model },
+                { baseURL: modelConfig.baseURL, apiKey: modelConfig.apiKey, model: modelConfig.model },
                 inputMessages,
                 signal,
             );
