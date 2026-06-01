@@ -490,7 +490,18 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
 
             // Apply back-to-front so each splice doesn't shift earlier indices.
             // Zero-width inserts (from === to) splice with deleteCount=0 → pure insertion.
-            const sortedDesc = [...normalised].sort((a, b) => b.from - a.from || b.to - a.to);
+            //
+            // Tie-break on descending input index for edits that share BOTH
+            // `from` and `to`: only multiple zero-width inserts targeting the
+            // same line can collide this way (ranged edits are kept disjoint by
+            // detectOverlap). Splicing them at the same index back-to-front
+            // would otherwise reverse them — applying the higher input index
+            // first lets the lower one land in front, so the inserted lines end
+            // up in the caller's original order (and match the order reported
+            // in `affected_regions`, which is computed input-order ascending).
+            const sortedDesc = [...normalised].sort(
+                (a, b) => b.from - a.from || b.to - a.to || b.index - a.index,
+            );
             const working = lines.slice();
             for (const ed of sortedDesc) {
                 const replacementLines = ed.content === "" && ed.from < ed.to
