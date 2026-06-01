@@ -1392,6 +1392,12 @@ export class SessionView extends ItemView {
         this.streamingLoader.reattachAfterEmpty();
         // Clear bubble map + aborted-id set + drop continue-button ref
         this.bubbleList?.clear();
+        // The bubbles are gone from the DOM, but their streaming controllers
+        // (throttle timers + pending render state) live in the renderer's map
+        // until explicitly disposed. Release them here so a session switch
+        // doesn't leak one controller per streamed message until view unload;
+        // they are recreated on demand when the next session replays.
+        this.bubbleRenderer?.disposeAllControllers();
 
         this.cmInput.clear();
         this.scrollToBottomBtn.hide();

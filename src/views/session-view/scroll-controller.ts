@@ -121,7 +121,22 @@ export class ScrollController {
     private mutationObserver: MutationObserver | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private viewportResizeListener: (() => void) | null = null;
-    private boundKeydown: ((e: KeyboardEvent) => void) | null = null;
+
+    /**
+     * Teardown callbacks for every DOM event listener registered in
+     * {@link attach}. Populated via {@link addListener} so {@link detach}
+     * can remove all of them — not just a hand-picked subset — and leave no
+     * listener holding this controller (and its `messagesEl`) alive past the
+     * view's lifetime.
+     */
+    private listenerCleanups: Array<() => void> = [];
+
+    /**
+     * Handle for the 500 ms guard-release timer armed by
+     * {@link handleButtonClick}. Tracked so {@link detach} can cancel a
+     * pending one instead of letting it fire against a torn-down view.
+     */
+    private buttonClickTimeout = 0;
 
     /** Pending RAF handle for {@link scheduleAsyncCheck}; `0` when none. */
     private pendingFollowFrame = 0;
@@ -146,18 +161,20 @@ export class ScrollController {
     attach(): void {
         setIcon(this.scrollToBottomBtn, 'chevrons-down');
         this.scrollToBottomBtn.hide();
-        this.scrollToBottomBtn.addEventListener('click', () => this.handleButtonClick());
-        this.messagesEl.addEventListener('scroll', () => this.onMessagesScroll());
+        this.addListener(this.scrollToBottomBtn, 'click', () => this.handleButtonClick());
+        this.addListener(this.messagesEl, 'scroll', () => this.onMessagesScroll());
 
-        this.messagesEl.addEventListener(
+        this.addListener(
+            this.messagesEl,
             'wheel',
-            (e: WheelEvent) => this.onUserWheel(e),
+            (e) => this.onUserWheel(e),
             { passive: true },
         );
 
-        this.messagesEl.addEventListener(
+        this.addListener(
+            this.messagesEl,
             'touchstart',
-            (e: TouchEvent) => {
+            (e) => {
                 const touch = e.touches[0];
                 if (!touch) return;
                 this.touchStartY = touch.clientY;
@@ -169,9 +186,10 @@ export class ScrollController {
             },
             { passive: true },
         );
-        this.messagesEl.addEventListener(
+        this.addListener(
+            this.messagesEl,
             'touchmove',
-            (e: TouchEvent) => this.onUserTouchMove(e),
+            (e) => this.onUserTouchMove(e),
             { passive: true },
         );
 
@@ -181,8 +199,7 @@ export class ScrollController {
         if (!this.messagesEl.hasAttribute('tabindex')) {
             this.messagesEl.setAttribute('tabindex', '-1');
         }
-        this.boundKeydown = (e: KeyboardEvent) => this.onUserKey(e);
-        this.messagesEl.addEventListener('keydown', this.boundKeydown);
+        this.addListener(this.messagesEl, 'keydown', (e) => this.onUserKey(e));
 
         // MutationObserver: catches every DOM mutation under messagesEl
         // (new bubble append, streaming markdown replaceChildren, late
@@ -230,15 +247,38 @@ export class ScrollController {
             window.cancelAnimationFrame(this.pendingFollowFrame);
             this.pendingFollowFrame = 0;
         }
+        if (this.buttonClickTimeout !== 0) {
+            window.clearTimeout(this.buttonClickTimeout);
+            this.buttonClickTimeout = 0;
+        }
         const vv = window.visualViewport;
         if (vv && this.viewportResizeListener) {
             vv.removeEventListener('resize', this.viewportResizeListener);
             this.viewportResizeListener = null;
         }
-        if (this.boundKeydown) {
-            this.messagesEl.removeEventListener('keydown', this.boundKeydown);
-            this.boundKeydown = null;
-        }
+        // Remove every DOM listener registered in attach() (click / scroll /
+        // wheel / touchstart / touchmove / keydown) so none of them keep this
+        // controller — and the message list element — alive after teardown.
+        for (const cleanup of this.listenerCleanups) cleanup();
+        this.listenerCleanups = [];
+    }
+
+    /**
+     * Register a DOM event listener and record its teardown so {@link detach}
+     * can remove it. Using the same registration path for every listener
+     * guarantees attach/detach symmetry — adding a new listener can no longer
+     * silently leak by forgetting a matching `removeEventListener`.
+     */
+    private addListener<K extends keyof HTMLElementEventMap>(
+        target: HTMLElement,
+        type: K,
+        handler: (e: HTMLElementEventMap[K]) => void,
+        options?: AddEventListenerOptions,
+    ): void {
+        target.addEventListener(type, handler as EventListener, options);
+        this.listenerCleanups.push(
+            () => target.removeEventListener(type, handler as EventListener, options),
+        );
     }
 
     isNearBottom(): boolean {
@@ -474,8 +514,11 @@ export class ScrollController {
         });
         // Smooth scroll dispatches many scroll events across its
         // animation; cover the window generously before allowing
-        // user-gesture writes again.
-        window.setTimeout(() => {
+        // user-gesture writes again. Tracked so detach() can cancel a
+        // pending timer rather than let it fire against a torn-down view.
+        if (this.buttonClickTimeout !== 0) window.clearTimeout(this.buttonClickTimeout);
+        this.buttonClickTimeout = window.setTimeout(() => {
+            this.buttonClickTimeout = 0;
             this.programmaticScrollGuard = Math.max(0, this.programmaticScrollGuard - 1);
         }, 500);
     }

@@ -442,9 +442,18 @@ export class BubbleRenderer extends Component {
     }
 
     /**
-     * Dispose all active streaming controllers.
+     * Dispose all active streaming controllers and forget them.
+     *
+     * Public so the session view can call it from `clearViewDOM()` on every
+     * session switch / new-chat / clear — not just on view teardown. Each
+     * controller owns a throttle timer and pending render state; emptying
+     * `messagesEl` removes their target bubbles but leaves the controllers
+     * (and their timers) alive in this map until the view unloads. Disposing
+     * them here keeps the lifetime tied to the DOM they render into. The
+     * controllers are recreated on demand by {@link getOrCreateController}
+     * when the next session replays, so this is safe to call repeatedly.
      */
-    private disposeAllControllers(): void {
+    disposeAllControllers(): void {
         for (const [, controller] of this.streamingControllers) {
             controller.dispose();
         }
