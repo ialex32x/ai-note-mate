@@ -1,7 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { isFailure, requireFile } from "../_shared";
+import { checkRegexSafety, isFailure, requireFile } from "../_shared";
 import {
     formatFindSectionError,
     resolveHeadingPathToRange,
@@ -256,6 +256,10 @@ function normaliseReplacement(
             } catch (err: unknown) {
                 const msg = err instanceof Error ? err.message : String(err);
                 return `replacements[${index}].pattern is not a valid regex: ${msg}.`;
+            }
+            const unsafe = checkRegexSafety(pattern);
+            if (unsafe) {
+                return `replacements[${index}].pattern rejected: ${unsafe}`;
             }
         }
 

@@ -1,7 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "../_shared";
+import { checkRegexSafety, isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "../_shared";
 import {
     formatFindSectionError,
     normalizeHeadingPathArg,
@@ -224,6 +224,14 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             if (useRegex) {
                 for (let i = 0; i < queries.length; i++) {
                     const q = queries[i]!;
+                    const unsafe = checkRegexSafety(q);
+                    if (unsafe) {
+                        return {
+                            success: false,
+                            type: "text",
+                            content: `Regex in queries[${i}] ('${q}') rejected: ${unsafe}`,
+                        };
+                    }
                     let regex: RegExp;
                     try {
                         regex = new RegExp(q, caseSensitive ? "" : "i");

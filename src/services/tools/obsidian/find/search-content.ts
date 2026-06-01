@@ -1,6 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
+import { checkRegexSafety } from "../_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: search_content
@@ -78,6 +79,14 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
             // Build matcher
             let matchLine: (line: string) => boolean;
             if (useRegex) {
+                const unsafe = checkRegexSafety(query);
+                if (unsafe) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `Regex query rejected: ${unsafe}`,
+                    };
+                }
                 let regex: RegExp;
                 try {
                     regex = new RegExp(query, caseSensitive ? "g" : "gi");

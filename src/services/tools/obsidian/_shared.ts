@@ -363,3 +363,43 @@ export async function ensureParentFolder(app: App, path: string): Promise<void> 
         await app.vault.createFolder(parentPath);
     }
 }
+
+/** Maximum accepted length of a user-supplied regex pattern. */
+const MAX_REGEX_PATTERN_LENGTH = 1000;
+
+/** An unbounded quantifier: `*`, `+`, or `{n,}` (no upper limit). */
+const UNBOUNDED_QUANTIFIER = String.raw`(?:[*+]|\{\d+,\})`;
+
+/**
+ * Detects the canonical catastrophic-backtracking shape: an unbounded quantifier
+ * that closes a group, immediately followed by another unbounded quantifier on
+ * that group — e.g. `(a+)+`, `(\w*)*`, `([a-z]+){2,}`.
+ */
+const NESTED_QUANTIFIER_RE = new RegExp(
+    `${UNBOUNDED_QUANTIFIER}\\)${UNBOUNDED_QUANTIFIER}`,
+);
+
+/**
+ * Lightweight ReDoS guard for user-supplied regex patterns.
+ *
+ * JavaScript regexes cannot be interrupted once matching starts, so instead of a
+ * timeout (which would require a worker thread — too heavy for mobile) we reject
+ * the patterns that realistically freeze the main thread *before* compiling them:
+ *   1. patterns longer than {@link MAX_REGEX_PATTERN_LENGTH} characters, and
+ *   2. nested unbounded quantifiers (the classic exponential-backtracking shape).
+ *
+ * This is a pragmatic heuristic, not a proof of safety. Returns a human-readable
+ * error message when the pattern looks unsafe, or `null` when it passes.
+ */
+export function checkRegexSafety(pattern: string): string | null {
+    if (pattern.length > MAX_REGEX_PATTERN_LENGTH) {
+        return `Regex pattern is too long (${pattern.length} > ${MAX_REGEX_PATTERN_LENGTH} characters).`;
+    }
+    if (NESTED_QUANTIFIER_RE.test(pattern)) {
+        return (
+            "Regex pattern has nested unbounded quantifiers (e.g. `(a+)+`) that can cause " +
+            "catastrophic backtracking and freeze the app. Simplify the pattern or use literal (non-regex) mode."
+        );
+    }
+    return null;
+}
