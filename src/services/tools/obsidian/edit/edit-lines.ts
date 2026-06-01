@@ -533,7 +533,9 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             // the running offset trivially correct, since detectOverlap has
             // already ensured disjointness for ranged edits, and zero-width
             // inserts always stay correct.
-            const sortedAsc = [...normalised].sort((a, b) => a.from - b.from || a.to - b.to);
+            const sortedAsc = [...normalised].sort(
+                (a, b) => a.from - b.from || a.to - b.to || a.index - b.index,
+            );
             const totalNew = working.length;
             const editWindows: EditWindow[] = [];
             let cumulativeDelta = 0;
