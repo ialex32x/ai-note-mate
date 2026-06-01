@@ -44,6 +44,19 @@ type AnthropicContentBlock =
     | { type: "tool_result"; tool_use_id: string; content: string | Array<{ type: "text"; text: string }> }
     | { type: "thinking"; thinking: string; signature: string };
 
+/**
+ * A `user` message whose content is exclusively `tool_result` blocks. Used to
+ * decide whether the next `tool_result` should be merged into the previous turn
+ * (parallel tool calls) rather than emitted as a separate `user` message.
+ */
+function isToolResultOnlyUserMessage(msg: AnthropicMessageParam): boolean {
+    return (
+        msg.role === "user" &&
+        msg.content.length > 0 &&
+        msg.content.every((block) => block.type === "tool_result")
+    );
+}
+
 interface AnthropicToolDef {
     name: string;
     description: string;
@@ -285,16 +298,22 @@ export class AnthropicProvider implements LLMProvider {
 
                 result.push({ role: "assistant", content });
             } else if (msg.role === "tool_result") {
-                result.push({
-                    role: "user",
-                    content: [
-                        {
-                            type: "tool_result",
-                            tool_use_id: msg.toolCallId ?? "",
-                            content: msg.content,
-                        },
-                    ],
-                });
+                const block: AnthropicContentBlock = {
+                    type: "tool_result",
+                    tool_use_id: msg.toolCallId ?? "",
+                    content: msg.content,
+                };
+                // Anthropic requires the results of parallel tool calls to live in a
+                // single `user` message (one `tool_result` block per call). Merge into
+                // the preceding message when it is a tool-result-only `user` turn so
+                // consecutive `tool_result` messages don't produce back-to-back `user`
+                // turns, which the API rejects with a 400.
+                const prev = result[result.length - 1];
+                if (prev && isToolResultOnlyUserMessage(prev)) {
+                    prev.content.push(block);
+                } else {
+                    result.push({ role: "user", content: [block] });
+                }
             }
         }
 
