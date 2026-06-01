@@ -68,10 +68,32 @@ function normaliseEdit(edit: unknown, index: number, totalLines: number): Normal
     // Accept common LLM aliases (start → start_line, end → end_line)
     const start = e["start_line"] ?? e["start"];
     const end = e["end_line"] ?? e["end"];
-    const content = e["content"];
+    const rawContent = e["content"];
 
-    if (typeof content !== "string") {
-        return `edits[${index}]: content must be a string.`;
+    let content: string;
+    if (typeof rawContent === "string") {
+        content = rawContent;
+    } else if (
+        rawContent === undefined ||
+        rawContent === null
+    ) {
+        // Gracefully handle common LLM mistakes where content is missing:
+        // - {start_line, end_line} w/o content/op → infer delete
+        // - {start_line, end_line, op: "delete"} w/o content → infer delete
+        // Only infer when the field is truly absent (undefined / null), not
+        // when it's a wrong type (number, boolean, array, etc.) — those are
+        // real errors that should not be silently swallowed as deletion.
+        const rawOp = e["op"];
+        if (
+            (typeof rawOp === "string" && rawOp === "delete") ||
+            Number.isInteger(end)
+        ) {
+            content = "";
+        } else {
+            return `edits[${index}]: content must be a string.`;
+        }
+    } else {
+        return `edits[${index}]: content must be a string (got ${typeof rawContent}).`;
     }
     if (!Number.isInteger(start)) {
         return `edits[${index}]: start_line must be an integer.`;
