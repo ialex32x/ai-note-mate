@@ -759,6 +759,11 @@ export class SessionView extends ItemView {
             chat: () => this.chat,
             updateSessionTitle: () => this.statusController.updateTitle(),
         });
+
+        // When the window controller trims the oldest rendered bubbles, drop
+        // their (now detached) entries from the bubble map so jump navigation
+        // doesn't resolve a stale node.
+        this.messageWindow.setOnUnitsTrimmed((ids) => this.bubbleList.dropFromMap(ids));
     }
 
     /**

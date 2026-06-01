@@ -71,6 +71,22 @@ export class BubbleListController {
     }
 
     /**
+     * Drop tracked entries for display units removed from the DOM by the
+     * message-window controller's tail-trim. The DOM nodes are already gone;
+     * here we only forget the stale map entries (which would otherwise point
+     * at detached nodes and break jump navigation) and free their streaming
+     * controllers. Trimmed units are always the oldest rendered messages, so
+     * they are never the actively-streaming tail.
+     */
+    dropFromMap(ids: string[]): void {
+        for (const id of ids) {
+            if (this.messageBubbles.delete(id)) {
+                this.deps.bubbleRenderer.retireStreamingController(id);
+            }
+        }
+    }
+
+    /**
      * Remove a bubble from the DOM and drop it from the tracked map.
      * Used when an ephemeral assistant bubble (e.g. thinking-only on a
      * pure tool-call turn) is retired from history without a full re-render.
@@ -306,14 +322,7 @@ export class BubbleListController {
      * target exists.
      */
     scrollToPrevUser(msg: ChatMessage): string | null {
-        const targetId = this.findPrevUserMessageId(msg);
-        if (!targetId) return null;
-        const bubble = this.messageBubbles.get(targetId);
-        if (bubble) {
-            flashAndScroll(bubble);
-            return null;
-        }
-        return targetId;
+        return this.scrollToUserBubble(this.findPrevUserMessageId(msg));
     }
 
     /**
@@ -326,13 +335,31 @@ export class BubbleListController {
      * target exists.
      */
     scrollToNextUser(msg: ChatMessage): string | null {
-        const targetId = this.findNextUserMessageId(msg);
+        return this.scrollToUserBubble(this.findNextUserMessageId(msg));
+    }
+
+    /**
+     * Scroll to the bubble for `targetId` with a flash highlight.
+     *
+     * Returns `null` when handled (scrolled, or no target). Returns the
+     * target id when the bubble is NOT in the live DOM — either never
+     * rendered (outside the lazy window) or detached after a tail trim — so
+     * the caller can expand the window and scroll via `ensureMessageVisible`.
+     *
+     * A detached (trimmed) entry is dropped here as a defensive fallback in
+     * case the trim hook missed it; the upcoming prepend re-registers a fresh
+     * element under the same id. Without the `isConnected` check, a stale map
+     * hit would `flashAndScroll` a disconnected node (a silent no-op) and
+     * report success, leaving the user stranded.
+     */
+    private scrollToUserBubble(targetId: string | null): string | null {
         if (!targetId) return null;
         const bubble = this.messageBubbles.get(targetId);
-        if (bubble) {
+        if (bubble?.isConnected) {
             flashAndScroll(bubble);
             return null;
         }
+        if (bubble) this.messageBubbles.delete(targetId);
         return targetId;
     }
 

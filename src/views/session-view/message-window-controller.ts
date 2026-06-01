@@ -22,8 +22,19 @@ export class MessageWindowController {
     private sentinelEl: HTMLElement | null = null;
     private isLoadingOlder = false;
     private onLoadOlder: (() => void) | null = null;
+    private onUnitsTrimmed: ((removedMessageIds: string[]) => void) | null = null;
 
     constructor(private readonly messagesEl: HTMLElement) {}
+
+    /**
+     * Register a callback invoked with the message IDs of the display units
+     * removed from the DOM by {@link trimTail}. The bubble-list controller
+     * uses this to drop the corresponding entries from its `messageBubbles`
+     * map so jump navigation never resolves a detached (trimmed) node.
+     */
+    setOnUnitsTrimmed(cb: (removedMessageIds: string[]) => void): void {
+        this.onUnitsTrimmed = cb;
+    }
 
     reset(): void {
         this.allUnits = [];
@@ -105,6 +116,7 @@ export class MessageWindowController {
         const toRemove = Math.min(count, this.renderedCount);
         if (toRemove <= 0) return 0;
 
+        const oldStart = this.renderedStart;
         const anchor = this.getPrependAnchor();
         let el: ChildNode | null = anchor;
         let unitsRemoved = 0;
@@ -133,6 +145,17 @@ export class MessageWindowController {
         }
 
         this.renderedStart += unitsRemoved;
+
+        // Notify the bubble-list controller which message IDs left the DOM so
+        // it can drop their (now detached) entries from `messageBubbles`.
+        // The removed units are the oldest rendered slice; one DisplayUnit
+        // maps to exactly one `.session-bubble`, so the slice aligns with the
+        // nodes removed above.
+        if (unitsRemoved > 0 && this.onUnitsTrimmed) {
+            const removed = this.allUnits.slice(oldStart, oldStart + unitsRemoved);
+            this.onUnitsTrimmed(removed.map(u => u.msg.id));
+        }
+
         this.updateSentinel();
         return unitsRemoved;
     }
