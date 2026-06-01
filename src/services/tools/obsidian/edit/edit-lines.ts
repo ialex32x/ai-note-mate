@@ -179,8 +179,17 @@ function detectOverlap(edits: NormalisedEdit[]): string | null {
     return null;
 }
 
-/** Number of context lines to include on each side of an affected region. */
-const AFFECTED_CONTEXT_LINES = 3;
+/**
+ * Number of context lines to include on each side of an affected region.
+ *
+ * Tuned to 15 from the original 3 after analysis of session-226 showed that
+ * 3 lines was insufficient for the AI to detect boundary issues (missed
+ * deletions, duplicated content, broken code-fence integrity) in complex
+ * Markdown structures.  15 lines (~80 chars each ≈ 2.4 KB per region) gives
+ * the model enough surrounding structure to self-correct without a full
+ * re-read, while keeping multi-edit payloads under budget.
+ */
+const AFFECTED_CONTEXT_LINES = 15;
 
 /**
  * Per-edit entry inside an `AffectedRegion`. `input_index` lets the model map
@@ -510,15 +519,43 @@ export function vaultEditLines(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             // Summarise applied edits in input order for clarity.
+            // Also compute the post-edit boundary lines so the model can
+            // quickly verify that the edit didn't accidentally eat or
+            // leave behind adjacent structural elements.
+            const windowByInputIdx = new Map<number, EditWindow>();
+            for (const w of editWindows) {
+                windowByInputIdx.set(w.ed.index, w);
+            }
             const applied = normalised.map((ed) => {
                 const replaced = ed.to - ed.from;
                 const inserted = ed.content === "" ? 0 : ed.content.split("\n").length;
+                const w = windowByInputIdx.get(ed.index);
+                const boundary: {
+                    before: string | null;
+                    after: string | null;
+                } = { before: null, after: null };
+                if (w) {
+                    const newFrom = w.newFrom;
+                    const newToExcl = w.newToExcl;
+                    // Line immediately before the edit's new content in the result
+                    if (newFrom > 0 && newFrom - 1 < working.length) {
+                        const line = working[newFrom - 1]!;
+                        // Truncate very long lines for readability (128 chars)
+                        boundary.before = line.length > 128 ? line.slice(0, 125) + "..." : line;
+                    }
+                    // Line immediately after the edit in the result
+                    if (newToExcl < working.length) {
+                        const line = working[newToExcl]!;
+                        boundary.after = line.length > 128 ? line.slice(0, 125) + "..." : line;
+                    }
+                }
                 return {
                     kind: ed.op,
                     start_line: ed.raw.start_line,
                     ...(ed.op !== "insert_before" ? { end_line: ed.raw.end_line } : {}),
                     replaced_lines_count: replaced,
                     new_lines_count: inserted,
+                    boundary,
                 };
             });
 
