@@ -34,39 +34,41 @@ export function vaultRenameTag(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
-        schema: {
+            schema: {
             type: "function",
             function: {
                 name: "rename_tag",
                 description:
-                    "Vault-wide tag rename. Rewrites both inline `#tag` occurrences and YAML " +
+                    "Vault-wide tag rename or removal. Rewrites both inline `#tag` occurrences and YAML " +
                     "frontmatter tag entries (under `tags` / `tag`) atomically per file. Inline " +
                     "replacements use the metadata cache's precise offsets, so they cannot touch " +
                     "neighbouring tokens like `#X-foo` when renaming `#X`. With `include_descendants`, " +
-                    "`#X/alpha` is also renamed to `#Y/alpha` (sub-path preserved). Always run once " +
-                    "with `dry_run=true` first to preview impact.",
+                    "`#X/alpha` is also affected (renamed to `#Y/alpha` or removed). " +
+                    "Always run once with `dry_run=true` first to preview impact.",
                 parameters: {
                     type: "object",
                     properties: {
                         old_tag: {
                             type: "string",
                             description:
-                                "The existing tag to rename, with or without the leading '#'. " +
+                                "The existing tag to rename or remove, with or without the leading '#'. " +
                                 "Example: 'project' or '#project'.",
                         },
                         new_tag: {
                             type: "string",
                             description:
                                 "The new tag name, with or without the leading '#'. " +
-                                "Must be a non-empty, valid tag identifier (no whitespace, quotes, or YAML special characters). " +
+                                "Omit or pass an empty string to remove the tag vault-wide instead of renaming it. " +
+                                "When renaming, must be a valid tag identifier (no whitespace, quotes, or YAML special characters). " +
                                 "Example: 'work/project' or '#work/project'.",
                         },
                         include_descendants: {
                             type: "boolean",
                             description:
-                                "If true, also rename every nested sub-tag, preserving the sub-path " +
-                                "(e.g. old_tag='project', new_tag='work' will rewrite '#project/alpha' to '#work/alpha'). " +
-                                "Defaults to false (rename the exact tag only).",
+                                "If true, also affect every nested sub-tag, preserving the sub-path " +
+                                "for renames (e.g. old_tag='project', new_tag='work' will rewrite '#project/alpha' to '#work/alpha') " +
+                                "or removing descendants when deleting. " +
+                                "Defaults to false (affect the exact tag only).",
                         },
                         dry_run: {
                             type: "boolean",
@@ -75,32 +77,42 @@ export function vaultRenameTag(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "Defaults to false. Strongly recommended to run once with dry_run=true first.",
                         },
                     },
-                    required: ["old_tag", "new_tag"],
+                    required: ["old_tag"],
                 },
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
             const oldBare = normaliseTagName(args["old_tag"] as string);
-            const newBare = normaliseTagName(args["new_tag"] as string);
             const includeDescendants = (args["include_descendants"] as boolean) ?? false;
             const dryRun = (args["dry_run"] as boolean) ?? false;
 
             if (oldBare === null) {
                 return { success: false, type: "text", content: "old_tag must be a non-empty, valid tag name." };
             }
-            if (newBare === null) {
-                return { success: false, type: "text", content: "new_tag must be a non-empty, valid tag name." };
-            }
-            if (oldBare === newBare) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `old_tag and new_tag are identical ('${oldBare}'); nothing to rename.`,
-                };
+
+            // new_tag omitted or empty → vault-wide remove mode
+            const newRaw = (args["new_tag"] as string | undefined)?.trim();
+            const isRemove = !newRaw;
+
+            let newBare: string | null = null;
+            if (!isRemove) {
+                newBare = normaliseTagName(newRaw);
+                if (newBare === null) {
+                    return { success: false, type: "text", content: "new_tag must be a non-empty, valid tag name." };
+                }
+                if (oldBare === newBare) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `old_tag and new_tag are identical ('${oldBare}'); nothing to rename.`,
+                    };
+                }
             }
 
-            const op: TagOp = { kind: "rename", oldBare, newBare, includeDescendants };
+            const op: TagOp = isRemove
+                ? { kind: "remove", targetBares: [oldBare], includeDescendants }
+                : { kind: "rename", oldBare, newBare: newBare!, includeDescendants };
 
             // Identify all candidate files via the metadata cache.
             // A file is a candidate if any of its tags equals '#oldBare' (or starts with '#oldBare/' when descendants are included).
@@ -177,21 +189,26 @@ export function vaultRenameTag(plugin: NoteAssistantPlugin): RegisteredTool {
                 }
             }
 
+            const baseResult = {
+                action: dryRun
+                    ? (isRemove ? "dry_run_remove_tag" : "dry_run_rename_tag")
+                    : (isRemove ? "tag_removed" : "tag_renamed"),
+                old_tag: oldHash,
+                include_descendants: includeDescendants,
+                dry_run: dryRun,
+                files_changed: fileResults.length,
+                total_inline_replacements: totalInline,
+                total_frontmatter_replacements: totalFrontmatter,
+                files: fileResults,
+                ...(skipped.length > 0 ? { skipped } : {}),
+            };
+
             return {
                 success: true,
                 type: "object",
-                content: {
-                    action: dryRun ? "dry_run_rename_tag" : "tag_renamed",
-                    old_tag: oldHash,
-                    new_tag: "#" + newBare,
-                    include_descendants: includeDescendants,
-                    dry_run: dryRun,
-                    files_changed: fileResults.length,
-                    total_inline_replacements: totalInline,
-                    total_frontmatter_replacements: totalFrontmatter,
-                    files: fileResults,
-                    ...(skipped.length > 0 ? { skipped } : {}),
-                },
+                content: isRemove
+                    ? baseResult
+                    : { ...baseResult, new_tag: "#" + newBare },
             };
         },
         requiresConfirmation: true,

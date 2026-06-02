@@ -140,7 +140,7 @@ You have access to long-term Memory via the \`memory_store\` and \`memory_delete
 
 export const VAULT_HARD_RULES = `## Vault hard rules
 - Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use the \`*_files_tags\` family: \`add_files_tags\` (add tags), \`remove_files_tags\` (remove tags), \`set_files_tags\` (replace frontmatter tags with an exact list). Never simulate tag edits via \`replace_text\` / \`edit_lines\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that these tools preserve.
-- Vault-wide tag rename → \`rename_tag\`.
+- Vault-wide tag rename or removal → \`rename_tag\`. Omit \`new_tag\` (or pass an empty string) to delete the tag from the entire vault.
 - Non-tag YAML frontmatter edits (status, due_date, aliases, custom keys, …) MUST use \`edit_files_frontmatter\`. Never simulate via \`replace_text\` / \`edit_lines\` against the YAML region — text-level rewrites corrupt structure, quoting, and multi-line values.
 - Move / rename / relocate / archive a file or folder → \`rename_or_move_file\` is the ONLY correct tool. Never simulate via \`create_file\` at a new path + \`delete_files\` on the old path; that route silently breaks every incoming wikilink.
 - You CANNOT open, reveal, or focus a file in the Obsidian UI via tools — there is no such capability. When the user should view something (note, canvas, attachment), say so in your reply with a wiki-link \`[[path/to/file]]\` (omit \`.md\` / \`.canvas\` extensions). Do NOT call \`create_file\` or any other write tool just to "help them open" or "link to" something you already created.
@@ -149,7 +149,7 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - \`create_file\` is for NEW files only. It refuses if the path already exists — do NOT use it to overwrite. To change an existing file, pick by intent (see "Picking the right edit tool" below).
 - Multiple edits to the SAME file MUST be submitted in ONE call. \`replace_text\` takes a \`replacements\` array; \`edit_lines\` takes an \`edits\` array. Both match against the file's pre-edit snapshot and apply atomically. Splitting them across calls means later calls run on shifted content and either miss their target or hit unintended text.
 - Picking the right edit tool for a single file:
-    - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide).
+    - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
     - Non-tag frontmatter → \`edit_files_frontmatter\`.
     - \`create_file\` is STRICTLY for files that do NOT yet exist. For ANY modification to an existing file (adding, rewriting, removing, restructuring, etc.), pick the right edit tool below — never use \`create_file\`.
     - Known line range to rewrite, delete, or insert before → \`edit_lines\` (use \`op: "insert_before"\` for insertion; omit \`op\` for replace/delete — auto-detected from content).
