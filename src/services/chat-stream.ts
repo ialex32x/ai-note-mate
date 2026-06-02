@@ -1062,18 +1062,24 @@ export class ChatStream implements IChatAgent {
             { role: 'user' as const, content: userInput },
         ];
 
-        const content = await createChatCompletion(modelConfig, contextMessages);
-        const trimmed = content.trim();
+        try {
+            const content = await createChatCompletion(modelConfig, contextMessages);
+            const trimmed = content.trim();
 
-        // Update the side-turn with the real reply
-        sideTurn.assistantMessage = {
-            ...sideTurn.assistantMessage,
-            content: trimmed,
-            timestamp: Date.now(),
-        };
-        sideTurn.loading = false;
+            // Update the side-turn with the real reply
+            sideTurn.assistantMessage = {
+                ...sideTurn.assistantMessage,
+                content: trimmed,
+                timestamp: Date.now(),
+            };
+            sideTurn.loading = false;
 
-        return sideTurn.assistantMessage;
+            return sideTurn.assistantMessage;
+        } catch {
+            // Remove the orphaned loading placeholder on failure
+            this._quickAskTurns = this._quickAskTurns.filter(t => t !== sideTurn);
+            throw new Error('QuickAsk: LLM call failed');
+        }
     }
 
     /** Get all QuickAsk side-turns (shallow-cloned for safety). */

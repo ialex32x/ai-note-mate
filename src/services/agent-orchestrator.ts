@@ -986,6 +986,7 @@ export class AgentOrchestrator implements IChatAgent {
         this._mainAgent.clearHistory();
         this._subAgentLogs = [];
         this._subAgentMessages.clear();
+        this._quickAskTurns = [];
         this._totalSubAgentTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
         this._subAgentTokenUsagePerAgent.clear();
         // Reset the per-turn router caches and the sticky-on-history
@@ -1107,17 +1108,22 @@ export class AgentOrchestrator implements IChatAgent {
             { role: 'user' as const, content: userInput },
         ];
 
-        const content = await createChatCompletion(modelConfig, contextMessages);
-        const trimmed = content.trim();
+        try {
+            const content = await createChatCompletion(modelConfig, contextMessages);
+            const trimmed = content.trim();
 
-        sideTurn.assistantMessage = {
-            ...sideTurn.assistantMessage,
-            content: trimmed,
-            timestamp: Date.now(),
-        };
-        sideTurn.loading = false;
+            sideTurn.assistantMessage = {
+                ...sideTurn.assistantMessage,
+                content: trimmed,
+                timestamp: Date.now(),
+            };
+            sideTurn.loading = false;
 
-        return sideTurn.assistantMessage;
+            return sideTurn.assistantMessage;
+        } catch {
+            this._quickAskTurns = this._quickAskTurns.filter(t => t !== sideTurn);
+            throw new Error('QuickAsk: LLM call failed');
+        }
     }
 
     getQuickAskTurns(): QuickAskTurn[] {
