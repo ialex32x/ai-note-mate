@@ -569,6 +569,15 @@ export const ja: Record<string, string> = {
 	'view.checkpointOneFile': '1 ファイル',
 	'view.checkpointFileCount': '{count} ファイル',
 
+	// ── QuickAsk (追問) ────────────────────────────────────
+	'view.quickAsk': '追問',
+	'view.quickAskTitle': '追問',
+	'view.quickAskPlaceholder': '質問を入力...',
+	'view.quickAskSend': '送信',
+	'view.quickAskClose': '閉じる',
+	'view.quickAskWaiting': '返信を待っています...',
+	'view.quickAskFailed': '追問リクエストに失敗しました。',
+
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使い方のヒント',
 	'tips.empty': '今のところヒントはありません。引き続き探索してみてください！',

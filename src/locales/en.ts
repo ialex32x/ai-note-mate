@@ -568,6 +568,15 @@ Write the result directly into the note — do not reply with the edited text in
 	'view.checkpointOneFile': '1 file',
 	'view.checkpointFileCount': '{count} files',
 
+	// ── QuickAsk (追问) ────────────────────────────────────
+	'view.quickAsk': 'QuickAsk',
+	'view.quickAskTitle': 'QuickAsk',
+	'view.quickAskPlaceholder': 'Type your question...',
+	'view.quickAskSend': 'Send',
+	'view.quickAskClose': 'Close',
+	'view.quickAskWaiting': 'Waiting for reply...',
+	'view.quickAskFailed': 'QuickAsk request failed.',
+
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': 'Usage tips',
 	'tips.empty': 'No tips right now. Keep exploring!',

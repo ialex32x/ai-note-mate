@@ -568,6 +568,15 @@ export const zhCN: Record<string, string> = {
 	'view.checkpointOneFile': '1 个文件',
 	'view.checkpointFileCount': '{count} 个文件',
 
+	// ── QuickAsk (追问) ────────────────────────────────────
+	'view.quickAsk': '追问',
+	'view.quickAskTitle': '追问',
+	'view.quickAskPlaceholder': '输入追问内容...',
+	'view.quickAskSend': '发送',
+	'view.quickAskClose': '关闭',
+	'view.quickAskWaiting': '等待回复中...',
+	'view.quickAskFailed': '追问请求失败。',
+
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使用提示',
 	'tips.empty': '暂无提示，继续探索吧！',

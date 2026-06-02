@@ -22,9 +22,12 @@ import {
     ToolCallResult,
     IChatAgent,
     AgentTokenBreakdown,
+    QuickAskTurn,
+    QUICK_ASK_SYSTEM_PROMPT,
     type ToolFilterOptions,
 } from "./chat-stream";
 import type { ConversationSummary } from "./context-reducer";
+import { createChatCompletion } from "./context-reducer";
 import type {
     LLMProvider,
     TokenUsage,
@@ -43,6 +46,7 @@ import {
     buildSubAgentCandidateTexts,
 } from "./sub-agent-router";
 import { buildDelegationSystemPrompt, type SubAgentDescriptor } from "./prompts/session-prompts";
+import { generateId } from "../settings/defaults";
 
 // Re-export sub-agent types for external consumers
 export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
@@ -595,6 +599,9 @@ export class AgentOrchestrator implements IChatAgent {
      */
     private _subAgentMessages: Map<string, ChatMessage[]> = new Map();
 
+    /** QuickAsk side-turns anchored to specific assistant messages. */
+    private _quickAskTurns: QuickAskTurn[] = [];
+
     /** Execution logs from sub-agents (for UI display, not persisted) */
     private _subAgentLogs: SubAgentExecutionLog[] = [];
 
@@ -1047,7 +1054,81 @@ export class AgentOrchestrator implements IChatAgent {
         }
     }
 
+    // ── QuickAsk side-turns ─────────────────────────────────────────────────
+
     /**
+     * Execute a QuickAsk side-turn. Delegates to the main agent's
+     * ChatStream which owns the message history needed to build the
+     * context window.
+     */
+    async promptQuickAsk(
+        parentMessageId: string,
+        userInput: string,
+        modelConfig: MinimalModelConfig,
+    ): Promise<ChatMessage> {
+        // Find the parent assistant message
+        const parentMsg = this._mainAgent.messages.find(m => m.id === parentMessageId);
+        if (!parentMsg || parentMsg.role !== 'assistant') {
+            throw new Error('QuickAsk: parent message not found or not an assistant message');
+        }
+
+        const userMsg: ChatMessage = {
+            id: generateId(),
+            role: 'user',
+            content: userInput,
+            streaming: false,
+            timestamp: Date.now(),
+            quickAsk: { parentMessageId },
+        };
+
+        const sideTurn: QuickAskTurn = {
+            parentMessageId,
+            userMessage: userMsg,
+            assistantMessage: {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                streaming: false,
+                timestamp: Date.now(),
+                quickAsk: { parentMessageId },
+            },
+            loading: true,
+        };
+        this._quickAskTurns.push(sideTurn);
+
+        const parentTurn = parentMsg.turn ?? 0;
+        const turnMessages = this._mainAgent.messages.filter(
+            m => m.turn === parentTurn && (m.role === 'user' || m.role === 'assistant'),
+        );
+
+        const contextMessages = [
+            { role: 'system' as const, content: QUICK_ASK_SYSTEM_PROMPT },
+            ...turnMessages.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user' as const, content: userInput },
+        ];
+
+        const content = await createChatCompletion(modelConfig, contextMessages);
+        const trimmed = content.trim();
+
+        sideTurn.assistantMessage = {
+            ...sideTurn.assistantMessage,
+            content: trimmed,
+            timestamp: Date.now(),
+        };
+        sideTurn.loading = false;
+
+        return sideTurn.assistantMessage;
+    }
+
+    getQuickAskTurns(): QuickAskTurn[] {
+        return this._quickAskTurns.map(t => ({ ...t }));
+    }
+
+    restoreQuickAskTurns(turns: QuickAskTurn[]): void {
+        this._quickAskTurns = turns.map(t => ({ ...t }));
+    }
+
+        /**
      * Walk the main agent's message history and rebuild
      * {@link _usedSubAgentNames} from any `delegate_task` tool_call
      * entries we find. Used after {@link restoreState} so a restored

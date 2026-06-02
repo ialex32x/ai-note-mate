@@ -126,6 +126,17 @@ export class BubbleRenderer extends Component {
         private canJumpToPrevUser?: (msg: ChatMessage) => boolean,
         /** Returns true when the given message has a next user message to jump to (ID-based). */
         private canJumpToNextUser?: (msg: ChatMessage) => boolean,
+        /**
+         * Optional callback for QuickAsk (追问). Fired when the user clicks
+         * the "Ask follow-up" button on an assistant bubble.
+         */
+        private onQuickAsk?: (msg: ChatMessage) => void,
+        /**
+         * Optional getter: returns the set of message IDs that already
+         * have QuickAsk side-turn data. Called at each render; the Set
+         * is rebuilt lazily by the host so it stays current.
+         */
+        private getQuickAskMessageIds?: () => Set<string>,
     ) {
         super();
         this.ctx = {
@@ -174,6 +185,7 @@ export class BubbleRenderer extends Component {
         abortedMessageIds?: Set<string>;
         pendingConfirmations?: Map<string, (approved: boolean) => void>;
         isBusy?: boolean;
+        hasQuickAskData?: boolean;
     }): ChatBubbleOptions {
         return {
             ...overrides,
@@ -185,6 +197,8 @@ export class BubbleRenderer extends Component {
             onJumpToNextUser: this.onJumpToNextUser,
             canJumpToPrevUser: this.canJumpToPrevUser,
             canJumpToNextUser: this.canJumpToNextUser,
+            onQuickAsk: this.onQuickAsk,
+            hasQuickAskData: overrides.hasQuickAskData ?? false,
         };
     }
 
@@ -270,7 +284,10 @@ export class BubbleRenderer extends Component {
         }
 
         // Full re-render via ChatBubble
-        const bubbleOpts = this.buildBubbleOpts(options);
+        const bubbleOpts = this.buildBubbleOpts({
+            ...options,
+            hasQuickAskData: this.getQuickAskMessageIds ? this.getQuickAskMessageIds().has(msg.id) : false,
+        });
         ChatBubble.renderInto(bubble, this.ctx, msg, bubbleOpts);
 
         // For assistant messages, handle content rendering

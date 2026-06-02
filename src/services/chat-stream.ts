@@ -1,4 +1,4 @@
-import { ContextReducer, ConversationSummary, estimateTokens, type ContextReduceOptions } from "./context-reducer";
+import { ContextReducer, ConversationSummary, estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
 // Re-export ConversationSummary for external consumers (e.g., SessionManager)
 export type { ConversationSummary } from "./context-reducer";
 // Re-export ContextReduceOptions so callers can construct the per-profile
@@ -45,6 +45,18 @@ Requirements:
 - Language: Match the language of the conversation
 - Format: Plain text, preferrably 2-4 sentences
 `;
+
+/**
+ * System prompt used for QuickAsk (追问) side-turn completions.
+ * The model is instructed to answer a follow-up question about a specific
+ * previous reply concisely, without re-answering the original question.
+ */
+export const QUICK_ASK_SYSTEM_PROMPT = `\
+You are a helpful assistant answering a follow-up question about a previous response.
+
+Context: the user is asking a follow-up question about a specific AI reply in a longer conversation.
+Answer ONLY the follow-up question concisely. Do NOT re-answer the original question.
+Keep your response focused and brief.`;
 
 
 
@@ -161,6 +173,39 @@ export interface ChatMessage {
      * persisted.
      */
     retireBubble?: boolean;
+    /**
+     * Quick-ask side-turn marker. When present, this message is part of a
+     * QuickAsk (追问) side conversation anchored to an existing assistant
+     * message. The UI uses this to:
+     *  - Render side-turn bubbles with a distinct visual style inside the
+     *    QuickAsk panel.
+     *  - Suppress the "QuickAsk" button on side-turn assistant replies
+     *    (one-level depth enforcement).
+     */
+    quickAsk?: {
+        /** ID of the assistant message being asked about */
+        parentMessageId: string;
+    };
+}
+
+/**
+ * A single QuickAsk (追问) side-turn: a user's follow-up question
+ * about a specific assistant message and the AI's answer.
+ *
+ * Side-turns are stored separately from the main conversation flow
+ * (`messages[]`) and are rendered in a standalone panel rather than
+ * inline in the chat. They use a simple non-streaming LLM call with
+ * no tools or sub-agent capability.
+ */
+export interface QuickAskTurn {
+    /** ID of the assistant message being asked about */
+    parentMessageId: string;
+    /** The user's follow-up question */
+    userMessage: ChatMessage;
+    /** The AI's answer */
+    assistantMessage: ChatMessage;
+    /** True while awaiting the AI response */
+    loading?: boolean;
 }
 
 /** Appended to assistant API content when {@link ChatMessage.wasInterrupted} is set. */
@@ -812,6 +857,25 @@ export interface IChatAgent {
      * Called when loading a session from disk.
      */
     restoreAgentTokenBreakdown?(breakdown: AgentTokenBreakdown): void;
+
+    // ── QuickAsk side-turns (追问) ──
+
+    /**
+     * Execute a QuickAsk side-turn: a simple, non-streaming, tool-free
+     * LLM call anchored to a specific assistant message. Returns the
+     * assistant's reply ChatMessage.
+     */
+    promptQuickAsk?(
+        parentMessageId: string,
+        userInput: string,
+        modelConfig: MinimalModelConfig,
+    ): Promise<ChatMessage>;
+
+    /** Get all QuickAsk side-turns for this session. */
+    getQuickAskTurns?(): QuickAskTurn[];
+
+    /** Restore QuickAsk side-turns from persisted data. */
+    restoreQuickAskTurns?(turns: QuickAskTurn[]): void;
 }
 
 // ─────────────────────────────────────────────
@@ -854,6 +918,8 @@ export class ChatStream implements IChatAgent {
     private _currentTurn: number = 0;
     /** Separate storage for conversation summaries (kept out of original messages for clean UI) */
     private _summaries: ConversationSummary[] = [];
+    /** QuickAsk side-turns anchored to specific assistant messages */
+    private _quickAskTurns: QuickAskTurn[] = [];
     /**
      * The assistant message currently being streamed by `_processStream`.
      * Lets abort/error paths commit partial text into `_messages` so the
@@ -935,6 +1001,91 @@ export class ChatStream implements IChatAgent {
         return [...this._summaries];
     }
 
+    // ── QuickAsk side-turns ─────────────────────────────────────────────────
+
+    /**
+     * Execute a QuickAsk side-turn: a simple, non-streaming, tool-free
+     * LLM completion anchored to a specific assistant message.
+     *
+     * Constructs a minimal context from the parent message's turn, then
+     * calls {@link createChatCompletion} (the same single-turn path used
+     * by the summarizer, title generator, and insight extractor).
+     *
+     * @returns The assistant's reply as a ChatMessage.
+     */
+    async promptQuickAsk(
+        parentMessageId: string,
+        userInput: string,
+        modelConfig: MinimalModelConfig,
+    ): Promise<ChatMessage> {
+        // Find the parent assistant message
+        const parentMsg = this._messages.find(m => m.id === parentMessageId);
+        if (!parentMsg || parentMsg.role !== 'assistant') {
+            throw new Error('QuickAsk: parent message not found or not an assistant message');
+        }
+
+        // Build the user-side ChatMessage
+        const userMsg: ChatMessage = {
+            id: generateId(),
+            role: 'user',
+            content: userInput,
+            streaming: false,
+            timestamp: Date.now(),
+            quickAsk: { parentMessageId },
+        };
+
+        // Create a loading placeholder SideTurn
+        const sideTurn: QuickAskTurn = {
+            parentMessageId,
+            userMessage: userMsg,
+            assistantMessage: {
+                id: generateId(),
+                role: 'assistant',
+                content: '',
+                streaming: false,
+                timestamp: Date.now(),
+                quickAsk: { parentMessageId },
+            },
+            loading: true,
+        };
+        this._quickAskTurns.push(sideTurn);
+
+        // Build minimal context: the parent message's turn only
+        const parentTurn = parentMsg.turn ?? 0;
+        const turnMessages = this._messages.filter(
+            m => m.turn === parentTurn && (m.role === 'user' || m.role === 'assistant'),
+        );
+
+        const contextMessages = [
+            { role: 'system' as const, content: QUICK_ASK_SYSTEM_PROMPT },
+            ...turnMessages.map(m => ({ role: m.role, content: m.content })),
+            { role: 'user' as const, content: userInput },
+        ];
+
+        const content = await createChatCompletion(modelConfig, contextMessages);
+        const trimmed = content.trim();
+
+        // Update the side-turn with the real reply
+        sideTurn.assistantMessage = {
+            ...sideTurn.assistantMessage,
+            content: trimmed,
+            timestamp: Date.now(),
+        };
+        sideTurn.loading = false;
+
+        return sideTurn.assistantMessage;
+    }
+
+    /** Get all QuickAsk side-turns (shallow-cloned for safety). */
+    getQuickAskTurns(): QuickAskTurn[] {
+        return this._quickAskTurns.map(t => ({ ...t }));
+    }
+
+    /** Restore QuickAsk side-turns from persisted session data. */
+    restoreQuickAskTurns(turns: QuickAskTurn[]): void {
+        this._quickAskTurns = turns.map(t => ({ ...t }));
+    }
+
     // ── Public methods ──────────────────────────────────────────────────────
 
     /**
@@ -947,6 +1098,7 @@ export class ChatStream implements IChatAgent {
     clearHistory(): void {
         this._messages = [];
         this._summaries = [];
+        this._quickAskTurns = [];
         this._state = "idle";
         this._abortController = null;
         this._sessionTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };

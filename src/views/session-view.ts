@@ -27,6 +27,7 @@ import {
     FollowUpBar,
     InsightCard,
     TodoPanel,
+    QuickAskPanel,
 } from '../components/session';
 import { extractSuggestions, type SuggestedAction } from '../services/suggestions';
 import {
@@ -193,6 +194,8 @@ export class SessionView extends ItemView {
      * {@link hydrateRuntimeFromDisk}.
      */
     private todoPanel!: TodoPanel;
+    /** QuickAsk side-inquiry floating panel. */
+    private quickAskPanel!: QuickAskPanel;
 
     constructor(leaf: WorkspaceLeaf, plugin: NoteAssistantPlugin) {
         super(leaf);
@@ -694,6 +697,8 @@ export class SessionView extends ItemView {
             (msg) => { void this.handleJumpToNextUser(msg); },
             (msg) => this.canJumpToPrevUser(msg),
             (msg) => this.canJumpToNextUser(msg),
+            (msg) => { void this.handleQuickAskRequest(msg); },
+            () => new Set((this.runtime?.quickAskTurns ?? []).map(t => t.parentMessageId)),
         );
         this.addChild(this.bubbleRenderer);
 
@@ -799,6 +804,16 @@ export class SessionView extends ItemView {
         // see what the LLM is working on next.
         const todoPanelHost = root.createEl('div', { cls: 'session-todo-panel-host' });
         this.todoPanel = new TodoPanel(todoPanelHost);
+
+        // QuickAsk panel — mounted on body with position:fixed, never
+        // interferes with session view scroll layout.
+        this.quickAskPanel = new QuickAskPanel(
+            (messageId) => this.bubbleList.messageBubbles.get(messageId),
+            () => this.runtime?.quickAskTurns ?? [],
+            async (parentMessageId, input) => {
+                await this.handleQuickAskSubmit(parentMessageId, input);
+            },
+        );
 
         // ── Input container ───────────────────────────────────────────────────────
         const inputContainer = root.createEl('div', { cls: 'session-input-container' });
@@ -1341,6 +1356,76 @@ export class SessionView extends ItemView {
         }
     }
 
+    // ── QuickAsk handlers ─────────────────────────────────────────────────
+
+    /** Check if a given assistant message already has QuickAsk side-turn data. */
+    private hasQuickAskData(msg: ChatMessage): boolean {
+        const quickAskTurns = this.runtime?.quickAskTurns ?? [];
+        return quickAskTurns.some(t => t.parentMessageId === msg.id);
+    }
+
+    /**
+     * Re-render the parent bubble after a QuickAsk completes so the button
+     * picks up the active (orange) state.
+     */
+    private refreshParentBubble(parentMessageId: string, chat: IChatAgent): void {
+        const bubble = this.bubbleList.messageBubbles.get(parentMessageId);
+        if (!bubble) return;
+        const msg = chat.messages.find(m => m.id === parentMessageId);
+        if (msg) {
+            this.bubbleList.updateContent(bubble, msg);
+        }
+    }
+
+    /**
+     * Toggle the QuickAsk panel for a given assistant message.
+     * If already showing for this message, hide; otherwise show.
+     */
+    private handleQuickAskRequest(msg: ChatMessage): void {
+        if (this.quickAskPanel.activeMessageId === msg.id) {
+            this.quickAskPanel.hide();
+        } else {
+            this.quickAskPanel.show(msg.id);
+        }
+    }
+
+    /**
+     * Execute a QuickAsk submission: call promptQuickAsk on the chat
+     * agent with a summarizer-model config, then persist.
+     */
+    private async handleQuickAskSubmit(
+        parentMessageId: string,
+        input: string,
+    ): Promise<void> {
+        const runtime = this.runtime;
+        if (!runtime) return;
+
+        const chat = runtime.chat;
+        if (!chat.promptQuickAsk) return;
+
+        const summarizerConfig = createSummarizerConfig(this.plugin);
+        if (!summarizerConfig) {
+            new Notice(t('view.noSummarizerConfigured'));
+            return;
+        }
+
+        try {
+            await chat.promptQuickAsk(parentMessageId, input, summarizerConfig);
+            // Refresh the panel now that side-turn data has been updated
+            this.quickAskPanel.refresh();
+            // Re-render the parent bubble so the QuickAsk button turns orange
+            this.refreshParentBubble(parentMessageId, chat);
+            // Persist side-turns to in-memory cache
+            await runtime.persist();
+            // Flush to disk immediately — QuickAsk is not a turn, so the
+            // normal turn-finish saveToCache trigger won't fire for it.
+            await this.plugin.sessionManager.saveToCache();
+        } catch (err) {
+            console.error('[SessionView] QuickAsk submission failed:', err);
+            new Notice(t('view.quickAskFailed'));
+        }
+    }
+
     /**
      * Detach the view's listener from the currently bound runtime and
      * hand it back to the pool. The pool decides whether to keep the
@@ -1468,6 +1553,13 @@ export class SessionView extends ItemView {
         if (subAgentMessages && Object.keys(subAgentMessages).length > 0
                 && typeof chat.restoreSubAgentMessages === 'function') {
             chat.restoreSubAgentMessages(subAgentMessages);
+        }
+
+        // QuickAsk side-turns (v6+ sessions only).
+        const quickAskTurns = this.sessionManager.getQuickAskTurns();
+        if (quickAskTurns && quickAskTurns.length > 0
+                && typeof chat.restoreQuickAskTurns === 'function') {
+            chat.restoreQuickAskTurns(quickAskTurns);
         }
 
         // Per-agent token usage breakdown (v3+ sessions only). Must be

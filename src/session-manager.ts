@@ -1,5 +1,5 @@
 import type { App } from 'obsidian';
-import type { ChatMessage, ConversationSummary, AgentTokenBreakdown } from './services/chat-stream';
+import type { ChatMessage, ConversationSummary, AgentTokenBreakdown, QuickAskTurn } from './services/chat-stream';
 import type { TokenUsage } from './services/llm-provider';
 import type { InsightCardState } from './services/insights';
 import type { TodoState } from './services/tools/todo-state';
@@ -51,8 +51,10 @@ interface SessionMessagesFile {
      *           was set (so old plans render in the panel without
      *           losing data).
      *       New writes always emit v5 once todos are involved.
+     * - v6: adds `quickAskTurns` (QuickAsk side-conversation pairs persisted
+     *       separately from the main message flow).
      */
-    version: 1 | 2 | 3 | 4 | 5;
+    version: 1 | 2 | 3 | 4 | 5 | 6;
     id: string;
     messages: ChatMessage[];
     /** Conversation summaries for context compression (persisted separately from messages) */
@@ -77,6 +79,13 @@ interface SessionMessagesFile {
      * as "no todos" by the loader.
      */
     todos?: TodoState;
+    /**
+     * QuickAsk side-turns persisted separately from the main message
+     * flow. Each entry is a user→assistant question/answer pair
+     * anchored to a specific assistant message. Absent in v1-v5
+     * files (treated as empty). Added in v6.
+     */
+    quickAskTurns?: QuickAskTurn[];
 }
 
 /** List file content (stored in sessions/list.json) */
@@ -120,6 +129,8 @@ export class SessionManager {
      * sentinel empty state from this map.
      */
     private todosCache: Map<string, TodoState> = new Map();
+    /** Loaded QuickAsk side-turns cache, keyed by sessionId (v6+). */
+    private quickAskTurnsCache: Map<string, QuickAskTurn[]> = new Map();
     /** Set of session IDs whose messages have been loaded */
     private loadedMessages: Set<string> = new Set();
 
@@ -340,6 +351,14 @@ export class SessionManager {
         this.setSessionTodos(sessionId, undefined);
     }
 
+    /**
+     * Get QuickAsk side-turns for the active session. Returns `undefined`
+     * when nothing is on file (session predates v6 or has no side-turns).
+     */
+    getQuickAskTurns(): QuickAskTurn[] | undefined {
+        return this.quickAskTurnsCache.get(this._activeSessionId);
+    }
+
     /** Get the first user message content from the active session */
     getFirstUserMessage(): string | null {
         const messages = this.messagesCache.get(this._activeSessionId);
@@ -366,6 +385,7 @@ export class SessionManager {
         subAgentMessages?: Record<string, ChatMessage[]>,
         agentTokenBreakdown?: AgentTokenBreakdown,
         todos?: TodoState,
+        quickAskTurns?: QuickAskTurn[],
     ): Promise<void> {
         const meta = this.metadataMap.get(sessionId);
         if (!meta) return;
@@ -413,6 +433,16 @@ export class SessionManager {
         // independent from the cache.
         if (todos !== undefined) {
             this.setSessionTodos(sessionId, todos);
+        }
+
+        // Update side-turns cache (undefined means "no change";
+        // pass an empty array to explicitly clear).
+        if (quickAskTurns !== undefined) {
+            if (quickAskTurns.length > 0) {
+                this.quickAskTurnsCache.set(sessionId, quickAskTurns.map(t => ({ ...t })));
+            } else {
+                this.quickAskTurnsCache.delete(sessionId);
+            }
         }
 
         // Update firstUserMessage if not already set
@@ -552,6 +582,8 @@ export class SessionManager {
         this.agentTokenBreakdownCache.delete(id);
         // Clean up TODO state cache
         this.todosCache.delete(id);
+        // Clean up side-turns cache
+        this.quickAskTurnsCache.delete(id);
 
         // If deleted session was active, switch to another session
         if (wasActive) {
@@ -677,7 +709,7 @@ export class SessionManager {
                 const content = await adapter.read(msgPath);
                 const data = JSON.parse(content) as SessionMessagesFile;
 
-                if ((data.version === 1 || data.version === 2 || data.version === 3 || data.version === 4 || data.version === 5) && data.id === id) {
+                if ((data.version === 1 || data.version === 2 || data.version === 3 || data.version === 4 || data.version === 5 || data.version === 6) && data.id === id) {
                     this.messagesCache.set(id, data.messages);
                     // Load summaries if present (for context compression)
                     if (data.summaries && Array.isArray(data.summaries)) {
@@ -745,6 +777,14 @@ export class SessionManager {
                                 : Date.now(),
                         });
                     }
+                    // Load QuickAsk side-turns (v6+ only). Validate shape
+                    // defensively so a corrupt or partial file can't poison
+                    // the UI.
+                    if (data.quickAskTurns
+                        && Array.isArray(data.quickAskTurns)
+                        && data.quickAskTurns.length > 0) {
+                        this.quickAskTurnsCache.set(id, data.quickAskTurns.map(t => ({ ...t })));
+                    }
                 } else {
                     console.warn('[SessionManager] Invalid messages file format:', id);
                     this.messagesCache.set(id, []);
@@ -789,6 +829,9 @@ export class SessionManager {
             // Get TODO state for this session (may be absent / empty)
             const todos = this.todosCache.get(id);
             const hasTodoData = !!todos && todos.items.length > 0;
+            // Get QuickAsk side-turns for this session (v6+)
+            const quickAskTurns = this.quickAskTurnsCache.get(id);
+            const hasQuickAskTurnsData = !!quickAskTurns && quickAskTurns.length > 0;
 
             // Pick the minimal schema version that encodes all present
             // fields. Newer fields force the version up so older builds
@@ -800,13 +843,15 @@ export class SessionManager {
             // `displayContent`). Writing v4 with v5-shaped items would
             // tag the file with the wrong schema and silently confuse
             // any future reader that took the version literally.
-            const version: 1 | 2 | 3 | 4 | 5 = hasTodoData
-                ? 5
-                : hasBreakdownData
-                    ? 3
-                    : hasSubAgentData
-                        ? 2
-                        : 1;
+            const version: 1 | 2 | 3 | 4 | 5 | 6 = hasQuickAskTurnsData
+                ? 6
+                : hasTodoData
+                    ? 5
+                    : hasBreakdownData
+                        ? 3
+                        : hasSubAgentData
+                            ? 2
+                            : 1;
 
             const data: SessionMessagesFile = {
                 version,
@@ -816,6 +861,7 @@ export class SessionManager {
                 subAgentMessages: hasSubAgentData ? subAgentMessages : undefined,
                 agentTokenBreakdown: hasBreakdownData ? agentTokenBreakdown : undefined,
                 todos: hasTodoData ? todos : undefined,
+                quickAskTurns: hasQuickAskTurnsData ? quickAskTurns : undefined,
             };
 
             const msgPath = `${this.sessionsDir}/${id}.json`;
@@ -870,6 +916,7 @@ export class SessionManager {
             this.subAgentMessagesCache.clear();
             this.agentTokenBreakdownCache.clear();
             this.todosCache.clear();
+            this.quickAskTurnsCache.clear();
             this.loadedMessages.clear();
 
             for (const meta of data.sessions) {

@@ -1,4 +1,4 @@
-import type { IChatAgent, ChatMessage } from '../chat-stream';
+import type { IChatAgent, ChatMessage, QuickAskTurn } from '../chat-stream';
 import type { SessionManager } from '../../session-manager';
 import { ArtifactStore, type ArtifactStoreOptions } from '../artifact-store';
 import type { InsightCardState } from '../insights';
@@ -388,6 +388,15 @@ export class SessionRuntime {
             }
         }
 
+        // Snapshot side-turns from chat agent (canonical source)
+        let quickAskTurns: QuickAskTurn[] | undefined;
+        if (typeof chat.getQuickAskTurns === 'function') {
+            const turns = chat.getQuickAskTurns();
+            if (turns.length > 0) {
+                quickAskTurns = turns;
+            }
+        }
+
         await this.sessionManager.saveSession(
             this.sessionId,
             chat.messages,
@@ -396,7 +405,33 @@ export class SessionRuntime {
             subAgentMessagesObj,
             chat.agentTokenBreakdown,
             this._todoState,
+            quickAskTurns,
         );
+    }
+
+    // ── QuickAsk side-turns ──────────────────────────────────────────
+
+    /**
+     * Read-only snapshot of all side-turns.
+     * Proxies to the chat agent's own copy (the canonical source),
+     * NOT a separately-maintained runtime copy.
+     */
+    get quickAskTurns(): ReadonlyArray<QuickAskTurn> {
+        if (this._chat?.getQuickAskTurns) {
+            return this._chat.getQuickAskTurns();
+        }
+        return [];
+    }
+
+    /**
+     * Restore side-turns from persisted session data.
+     * Delegates to the chat agent so the single source of truth stays
+     * consistent between runtime persist and UI reads.
+     */
+    restoreQuickAskTurnsFromPersistence(turns: QuickAskTurn[]): void {
+        if (this._chat?.restoreQuickAskTurns) {
+            this._chat.restoreQuickAskTurns(turns);
+        }
     }
 
     // ── TODO list state ──────────────────────────────────────────────

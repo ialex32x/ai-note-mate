@@ -56,6 +56,10 @@ export interface ChatBubbleOptions {
     canJumpToNextUser?: (msg: ChatMessage) => boolean;
     /** Host callback for insight extraction (assistant bubbles). */
     onExtractInsights?: (msg: ChatMessage) => void;
+    /** Host callback for QuickAsk (追问) on assistant bubbles. */
+    onQuickAsk?: (msg: ChatMessage) => void;
+    /** Whether this assistant message already has QuickAsk data (to show active state). */
+    hasQuickAskData?: boolean;
 }
 
 // ── Role label lookup ─────────────────────────────────────────────────
@@ -200,6 +204,8 @@ export class ChatBubble {
             onJumpToPrevUser,
             onJumpToNextUser,
             onExtractInsights,
+            onQuickAsk,
+            hasQuickAskData,
             canJumpToPrevUser,
             canJumpToNextUser,
         } = opts;
@@ -276,6 +282,8 @@ export class ChatBubble {
             abortedMessageIds,
             speechController,
             onExtractInsights,
+            onQuickAsk,
+            hasQuickAskData,
             isBusy,
             onJumpToPrevUser,
             onJumpToNextUser,
@@ -300,7 +308,7 @@ export class ChatBubble {
         msg: ChatMessage,
         opts: Pick<
             ChatBubbleOptions,
-            'abortedMessageIds' | 'onExtractInsights'
+            'abortedMessageIds' | 'onExtractInsights' | 'onQuickAsk' | 'hasQuickAskData'
             | 'isBusy' | 'onJumpToPrevUser' | 'onJumpToNextUser'
             | 'onEdit' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
@@ -308,6 +316,8 @@ export class ChatBubble {
         const {
             abortedMessageIds = new Set(),
             onExtractInsights,
+            onQuickAsk,
+            hasQuickAskData,
             isBusy = false,
             onJumpToPrevUser,
             onJumpToNextUser,
@@ -343,6 +353,15 @@ export class ChatBubble {
                 if (onExtractInsights && !isMessageInterrupted(msg, abortedMessageIds) && !isBusy) {
                     defs.push({ icon: 'lightbulb', label: t('view.extractInsights'), onClick: () => onExtractInsights(msg) });
                 }
+                // QuickAsk: only for non-side-turn assistant messages
+                if (onQuickAsk && !msg.quickAsk) {
+                    defs.push({
+                        icon: 'message-circle-question',
+                        label: t('view.quickAsk'),
+                        onClick: () => onQuickAsk(msg),
+                        extraCls: hasQuickAskData ? 'session-bubble__action-btn--active' : undefined,
+                    });
+                }
                 break;
             }
             case 'tool_call': {
@@ -366,7 +385,7 @@ export class ChatBubble {
         msg: ChatMessage,
         opts: Pick<
             ChatBubbleOptions,
-            'abortedMessageIds' | 'speechController' | 'onExtractInsights'
+            'abortedMessageIds' | 'speechController' | 'onExtractInsights' | 'onQuickAsk' | 'hasQuickAskData'
             | 'isBusy' | 'onJumpToPrevUser' | 'onJumpToNextUser'
             | 'onEdit' | 'onBranch' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,

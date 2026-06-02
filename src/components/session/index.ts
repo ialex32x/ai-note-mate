@@ -9,3 +9,4 @@ export { FollowUpBar } from './follow-up-bar';
 export type { FollowUpPickHandler } from './follow-up-bar';
 export { InsightCard } from './insight-card';
 export { TodoPanel } from './todo-panel';
+export { QuickAskPanel } from './quick-ask-panel';

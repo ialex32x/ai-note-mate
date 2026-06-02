@@ -568,6 +568,15 @@ export const zhTW: Record<string, string> = {
 	'view.checkpointOneFile': '1 個檔案',
 	'view.checkpointFileCount': '{count} 個檔案',
 
+	// ── QuickAsk (追問) ────────────────────────────────────
+	'view.quickAsk': '追問',
+	'view.quickAskTitle': '追問',
+	'view.quickAskPlaceholder': '輸入追問內容...',
+	'view.quickAskSend': '發送',
+	'view.quickAskClose': '關閉',
+	'view.quickAskWaiting': '等待回覆中...',
+	'view.quickAskFailed': '追問請求失敗。',
+
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使用提示',
 	'tips.empty': '目前沒有提示，繼續探索吧！',

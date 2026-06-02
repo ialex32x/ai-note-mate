@@ -569,6 +569,15 @@ export const ko: Record<string, string> = {
 	'view.checkpointOneFile': '1개 파일',
 	'view.checkpointFileCount': '{count}개 파일',
 
+	// ── QuickAsk (추가 질문) ──────────────────────────────
+	'view.quickAsk': '추가 질문',
+	'view.quickAskTitle': '추가 질문',
+	'view.quickAskPlaceholder': '질문을 입력하세요...',
+	'view.quickAskSend': '보내기',
+	'view.quickAskClose': '닫기',
+	'view.quickAskWaiting': '답변을 기다리는 중...',
+	'view.quickAskFailed': '추가 질문 요청에 실패했습니다.',
+
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '사용 팁',
 	'tips.empty': '지금은 팁이 없습니다. 계속 탐색해 보세요!',
