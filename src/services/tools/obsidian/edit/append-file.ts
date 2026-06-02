@@ -34,7 +34,11 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         },
                         content: {
                             type: "string",
-                            description: "Text to append to the file.",
+                            description:
+                                "Text to append to the file. " +
+                                "CRITICAL: This tool does NOT automatically add a newline before the appended content. " +
+                                "If you intend the content to begin on a new line (e.g. a new heading, paragraph, or list item), " +
+                                "you MUST include a leading '\\n' in this parameter — otherwise it will be glued to the end of the last line.",
                         },
                     },
                     required: ["path", "content"],
