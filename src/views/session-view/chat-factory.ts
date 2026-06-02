@@ -364,9 +364,10 @@ export function createChatAgent(
             callbacks.onError(err);
         },
         // Only provide onConfirmToolCall in "always" mode. In "auto" mode
-        // we deliberately omit the callback so ChatStream skips the whole
+        // we deliberately omit the callback so ChatStream (main and
+        // sub-agents — see SubAgent + AgentOrchestrator) skips the whole
         // pending → allowed flow — otherwise the UI would briefly render
-        // an Allow button even though no user approval is actually needed.
+        // an Allow / Allowed badge even though no user approval is needed.
         ...(plugin.settings.toolConfirmMode === 'always' && callbacks.onConfirmToolCall ? {
             onConfirmToolCall: ({ messageId, signal }: { messageId: string; signal?: AbortSignal }) => {
                 if (!callbacks.generationMatches()) {

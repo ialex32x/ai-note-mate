@@ -698,8 +698,14 @@ export class AgentOrchestrator implements IChatAgent {
 
         // Create sub-agents from config FIRST so the onToolCall fallback below
         // can inspect `this._subAgents` when the main ChatStream invokes it.
+        const subAgentToolConfirmationEnabled = !!config.onConfirmToolCall;
         for (const subConfig of config.subAgents) {
-            this._subAgents.set(subConfig.name, new SubAgent(subConfig));
+            this._subAgents.set(
+                subConfig.name,
+                new SubAgent(subConfig, {
+                    toolConfirmationEnabled: subAgentToolConfirmationEnabled,
+                }),
+            );
         }
 
         // Capture the caller-supplied suffix (if any) so the wrapped

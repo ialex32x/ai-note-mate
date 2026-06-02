@@ -163,10 +163,23 @@ export class SubAgent {
      */
     private _currentResultStore: HandoffStore | null = null;
 
-    constructor(config: SubAgentConfig) {
+    /**
+     * Mirrors the main agent's `toolConfirmMode === 'always'` gate: when
+     * false, the inner ChatStream omits `onConfirmToolCall` so tools with
+     * `requiresConfirmation` auto-run without writing `confirmationState`
+     * (no misleading "Allowed" badge in the UI). Set by the orchestrator
+     * from `!!config.onConfirmToolCall` at construction time.
+     */
+    private readonly _toolConfirmationEnabled: boolean;
+
+    constructor(
+        config: SubAgentConfig,
+        options?: { toolConfirmationEnabled?: boolean },
+    ) {
         this.name = config.name;
         this.description = config.description;
         this._config = config;
+        this._toolConfirmationEnabled = options?.toolConfirmationEnabled ?? false;
     }
 
     /** Get routing keywords for this sub-agent */
@@ -530,16 +543,24 @@ export class SubAgent {
                 });
                 this._currentExecToolCallEndHandler?.(this.name, args.toolName, args.toolArgs, args.result, args.isError);
             },
-            onConfirmToolCall: (confirmArgs) => {
-                // Forward confirmation requests to the main agent's UI.
-                // If no handler is wired (e.g. single-agent tests), default to approve
-                // to preserve previous behaviour.
-                const handler = this._currentExecConfirmToolCall;
-                if (!handler) {
-                    return Promise.resolve(true);
-                }
-                return handler(confirmArgs);
-            },
+            // Only wire confirmation when the main session is in "always"
+            // mode (see chat-factory.ts). Omitting the callback matches the
+            // main ChatStream and prevents auto-approved sub-agent tools from
+            // setting confirmationState → "Allowed" badges.
+            ...(this._toolConfirmationEnabled ? {
+                onConfirmToolCall: (confirmArgs: {
+                    toolName: string;
+                    toolArgs: Record<string, unknown>;
+                    messageId: string;
+                    signal?: AbortSignal;
+                }) => {
+                    const handler = this._currentExecConfirmToolCall;
+                    if (!handler) {
+                        return Promise.resolve(true);
+                    }
+                    return handler(confirmArgs);
+                },
+            } : {}),
         });
 
         // Register all tools for this sub-agent
