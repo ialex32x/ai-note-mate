@@ -23,7 +23,10 @@ interface RenameTagFileResult {
 }
 
 /**
- * Rename a tag (and optionally its descendants) across every markdown note in the vault.
+ * Rename or remove a tag (and optionally its descendants) across every markdown note in the vault.
+ *
+ * When `new_tag` is provided, the tag is renamed. When `new_tag` is omitted or empty, the tag
+ * is removed vault-wide (both inline `#tag` occurrences and YAML frontmatter entries).
  *
  * Inline `#tag` references are rewritten using the precise offsets reported by Obsidian's
  * metadata cache, which avoids the boundary / partial-word pitfalls of plain text replacement.
