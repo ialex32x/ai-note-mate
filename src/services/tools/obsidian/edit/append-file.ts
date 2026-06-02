@@ -21,7 +21,9 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "Append text to the end of an existing file in the vault. " +
                     "If the file does not exist, it will be created. " +
                     "Use this when the user wants to add, append, or write more content to a note " +
-                    "without overwriting existing content.",
+                    "without overwriting existing content. " +
+                    "The tool ensures the appended content starts on its own line " +
+                    "(you do NOT need to include a leading newline in the content).",
                 parameters: {
                     type: "object",
                     properties: {
@@ -34,11 +36,7 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
                         },
                         content: {
                             type: "string",
-                            description:
-                                "Text to append to the file. " +
-                                "CRITICAL: This tool does NOT automatically add a newline before the appended content. " +
-                                "If you intend the content to begin on a new line (e.g. a new heading, paragraph, or list item), " +
-                                "you MUST include a leading '\\n' in this parameter — otherwise it will be glued to the end of the last line.",
+                            description: "Text to append to the file.",
                         },
                     },
                     required: ["path", "content"],
@@ -53,11 +51,15 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const file = plugin.app.vault.getAbstractFileByPath(path);
 
             if (file instanceof TFile) {
+                const existing = await plugin.app.vault.read(file);
+                const needNewline = existing.length > 0 && !existing.endsWith("\n");
+                const finalContent = needNewline ? "\n" + content : content;
+
                 const lockErr = await runVaultMutation(plugin, chatStream, {
                     kind: "modify",
                     path,
                     toolName: "append_file",
-                    perform: async () => { await plugin.app.vault.append(file, content); },
+                    perform: async () => { await plugin.app.vault.append(file, finalContent); },
                 });
                 if (lockErr) return lockErr;
                 return { success: true, type: "object", content: { action: "appended", path } };
