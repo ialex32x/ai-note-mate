@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.3
+
+### What's new
+
+- **QuickAsk side-turn** — Continue asking from any assistant reply with a new side-turn prompt, plus a delete button to remove individual turns.
+- **Vault-wide tag removal** — `rename_tag` now accepts an empty `new_tag` to remove a tag vault-wide instead of erroring.
+- **Checkpoint accordion** — File lists in checkpoint cards now collapse when there are many files, keeping the review view tidy.
+- **Cleaner handoff context** — Sub-agent handoff data is now split into seed and result stores to reduce parameter-passing issues with the LLM.
+
+### Fixes
+
+- **Append-file newline** — Content appended to files now auto-prepends a newline when needed, matching what the tool description promises.
+
+---
+
 ## 1.4.2
 
 ### What's new
