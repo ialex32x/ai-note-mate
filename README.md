@@ -69,6 +69,12 @@ Turn on **Memory** under **Settings → Note Mate → Memory** when you want the
 
 ![ai-memory](readme-assets/ai-memory.png)
 
+### QuickAsk
+
+Click the **Ask** button on any assistant bubble to open a floating panel for a follow-up question—one shot, no tools, no streaming. The side conversation stays anchored to that message without adding to the main context, so you can dig deeper into a single reply without derailing the session.
+
+![quick-ask](readme-assets/quick-ask.png)
+
 ### Models and accounts
 
 Add your own keys: **OpenAI-compatible** endpoints (including OpenAI, Azure OpenAI, and comparable hosts), **Anthropic (Claude)**, **Google Gemini**, and saved **profiles** so switching models isn't rewriting forms each time. Vendor logos and model icons in the profile picker make it easy to spot what you're using.
