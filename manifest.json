@@ -1,7 +1,7 @@
 {
 	"id": "ai-note-mate",
 	"name": "Note Mate",
-	"version": "1.4.2",
+	"version": "1.4.3",
 	"minAppVersion": "1.11.4",
 	"description": "A vault-connected sidebar assistant: persistent chat that searches and drafts with you, in-editor rewrite and explain shortcuts, plus checkpoints so you review or rewind AI edits cleanly.",
 	"author": "ialex32x",
