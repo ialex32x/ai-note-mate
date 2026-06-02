@@ -573,8 +573,6 @@ export const ja: Record<string, string> = {
 	'view.quickAsk': '追問',
 	'view.quickAskTitle': '追問',
 	'view.quickAskPlaceholder': '質問を入力...',
-	'view.quickAskSend': '送信',
-	'view.quickAskClose': '閉じる',
 	'view.quickAskWaiting': '返信を待っています...',
 	'view.quickAskFailed': '追問リクエストに失敗しました。',
 

@@ -572,8 +572,6 @@ export const zhTW: Record<string, string> = {
 	'view.quickAsk': '追問',
 	'view.quickAskTitle': '追問',
 	'view.quickAskPlaceholder': '輸入追問內容...',
-	'view.quickAskSend': '發送',
-	'view.quickAskClose': '關閉',
 	'view.quickAskWaiting': '等待回覆中...',
 	'view.quickAskFailed': '追問請求失敗。',
 

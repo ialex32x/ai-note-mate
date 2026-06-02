@@ -1134,6 +1134,13 @@ export class AgentOrchestrator implements IChatAgent {
         this._quickAskTurns = turns.map(t => ({ ...t }));
     }
 
+    /** Remove a QuickAsk turn by parent message ID. */
+    removeQuickAskTurn(parentMessageId: string): void {
+        this._quickAskTurns = this._quickAskTurns.filter(
+            t => t.parentMessageId !== parentMessageId,
+        );
+    }
+
         /**
      * Walk the main agent's message history and rebuild
      * {@link _usedSubAgentNames} from any `delegate_task` tool_call

@@ -813,6 +813,7 @@ export class SessionView extends ItemView {
             async (parentMessageId, input) => {
                 await this.handleQuickAskSubmit(parentMessageId, input);
             },
+            (parentMessageId) => { void this.handleQuickAskDelete(parentMessageId); },
         );
 
         // ── Input container ───────────────────────────────────────────────────────
@@ -1357,6 +1358,24 @@ export class SessionView extends ItemView {
     }
 
     // ── QuickAsk handlers ─────────────────────────────────────────────────
+
+    /**
+     * Delete a QuickAsk turn and re-render the parent bubble
+     * to remove the active button state.
+     */
+    private async handleQuickAskDelete(parentMessageId: string): Promise<void> {
+        const runtime = this.runtime;
+        if (!runtime) return;
+        const chat = runtime.chat;
+        if (!chat.removeQuickAskTurn) return;
+
+        chat.removeQuickAskTurn(parentMessageId);
+        await runtime.persist();
+        await this.plugin.sessionManager.saveToCache();
+
+        // Re-render the parent bubble to drop the orange underline
+        this.refreshParentBubble(parentMessageId, chat);
+    }
 
     /** Check if a given assistant message already has QuickAsk side-turn data. */
     private hasQuickAskData(msg: ChatMessage): boolean {

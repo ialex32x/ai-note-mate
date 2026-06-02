@@ -876,6 +876,9 @@ export interface IChatAgent {
 
     /** Restore QuickAsk side-turns from persisted data. */
     restoreQuickAskTurns?(turns: QuickAskTurn[]): void;
+
+    /** Remove a QuickAsk turn by parent message ID. */
+    removeQuickAskTurn?(parentMessageId: string): void;
 }
 
 // ─────────────────────────────────────────────
@@ -1090,6 +1093,13 @@ export class ChatStream implements IChatAgent {
     /** Restore QuickAsk side-turns from persisted session data. */
     restoreQuickAskTurns(turns: QuickAskTurn[]): void {
         this._quickAskTurns = turns.map(t => ({ ...t }));
+    }
+
+    /** Remove a QuickAsk turn by parent message ID. */
+    removeQuickAskTurn(parentMessageId: string): void {
+        this._quickAskTurns = this._quickAskTurns.filter(
+            t => t.parentMessageId !== parentMessageId,
+        );
     }
 
     // ── Public methods ──────────────────────────────────────────────────────

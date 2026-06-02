@@ -572,8 +572,6 @@ Write the result directly into the note — do not reply with the edited text in
 	'view.quickAsk': 'QuickAsk',
 	'view.quickAskTitle': 'QuickAsk',
 	'view.quickAskPlaceholder': 'Type your question...',
-	'view.quickAskSend': 'Send',
-	'view.quickAskClose': 'Close',
 	'view.quickAskWaiting': 'Waiting for reply...',
 	'view.quickAskFailed': 'QuickAsk request failed.',
 

@@ -573,8 +573,6 @@ export const ko: Record<string, string> = {
 	'view.quickAsk': '추가 질문',
 	'view.quickAskTitle': '추가 질문',
 	'view.quickAskPlaceholder': '질문을 입력하세요...',
-	'view.quickAskSend': '보내기',
-	'view.quickAskClose': '닫기',
 	'view.quickAskWaiting': '답변을 기다리는 중...',
 	'view.quickAskFailed': '추가 질문 요청에 실패했습니다.',
 

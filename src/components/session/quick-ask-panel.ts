@@ -1,4 +1,4 @@
-import { setIcon, setTooltip } from 'obsidian';
+import { setIcon } from 'obsidian';
 import type { ChatMessage, QuickAskTurn } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { BUBBLE_BASE_CLS, computeBubbleClasses } from '../bubble/chat-bubble';
@@ -32,6 +32,7 @@ export class QuickAskPanel {
         private getMessageBubbleEl: (messageId: string) => HTMLElement | undefined,
         private getQuickAskTurns: () => ReadonlyArray<QuickAskTurn>,
         private onSubmit: (parentMessageId: string, input: string) => Promise<void>,
+        private onDelete: (parentMessageId: string) => void,
     ) {}
 
     show(messageId: string): void {
@@ -85,12 +86,31 @@ export class QuickAskPanel {
         const titleIcon = titleEl.createEl('span', { cls: 'session-quick-ask-panel__title-icon' });
         setIcon(titleIcon, 'message-circle-question');
         titleEl.appendText(' ' + t('view.quickAskTitle'));
-        const closeBtn = header.createEl('button', {
+
+        // Button group (delete + close)
+        const btnGroup = header.createEl('div', { cls: 'session-quick-ask-panel__header-actions' });
+
+        if (this._activeMessageId && (this._state === 'result' || this._state === 'loading')) {
+            const deleteBtn = btnGroup.createEl('button', {
+                cls: 'session-quick-ask-panel__delete clickable-icon',
+                attr: { type: 'button' },
+            });
+            setIcon(deleteBtn, 'trash-2');
+            deleteBtn.addEventListener('click', (e: MouseEvent) => {
+                e.stopPropagation();
+                const id = this._activeMessageId;
+                if (id) {
+                    this.hide();
+                    this.onDelete(id);
+                }
+            });
+        }
+
+        const closeBtn = btnGroup.createEl('button', {
             cls: 'session-quick-ask-panel__close clickable-icon',
-            attr: { 'aria-label': t('view.quickAskClose'), type: 'button' },
+            attr: { type: 'button' },
         });
         setIcon(closeBtn, 'x');
-        setTooltip(closeBtn, t('view.quickAskClose'));
         closeBtn.addEventListener('click', () => this.hide());
 
         // Body
@@ -115,10 +135,10 @@ export class QuickAskPanel {
 
         const actions = wrapper.createEl('div', { cls: 'session-quick-ask-panel__actions' });
         const sendBtn = actions.createEl('button', {
-            cls: 'session-quick-ask-panel__send-btn mod-cta',
-            text: t('view.quickAskSend'),
+            cls: 'session-quick-ask-panel__send-btn clickable-icon',
             attr: { type: 'button' },
         });
+        setIcon(sendBtn, 'send');
         sendBtn.addEventListener('click', (e: MouseEvent) => {
             e.stopPropagation();
             const input = this.textareaEl?.value.trim();

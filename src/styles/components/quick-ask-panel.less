@@ -5,7 +5,7 @@
     z-index: 100;
     width: 420px;
     max-height: 400px;
-    overflow-y: auto;
+    overflow: visible;
     background: var(--background-primary);
     border: 1px solid var(--background-modifier-border);
     border-radius: 8px;
@@ -40,7 +40,14 @@
         align-items: center;
     }
 
-    &__close {
+    &__header-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    &__close,
+    &__delete {
         cursor: pointer;
         opacity: 0.6;
 
@@ -52,6 +59,8 @@
     &__body {
         padding: 12px;
         overflow-y: auto;
+        flex: 1;
+        min-height: 0;
     }
 
     &__input-wrapper {
@@ -83,8 +92,11 @@
     }
 
     &__send-btn {
-        padding: 6px 16px;
-        font-size: 13px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
     }
 
     &__loading {

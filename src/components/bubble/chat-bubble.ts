@@ -353,8 +353,8 @@ export class ChatBubble {
                 if (onExtractInsights && !isMessageInterrupted(msg, abortedMessageIds) && !isBusy) {
                     defs.push({ icon: 'lightbulb', label: t('view.extractInsights'), onClick: () => onExtractInsights(msg) });
                 }
-                // QuickAsk: only for non-side-turn assistant messages
-                if (onQuickAsk && !msg.quickAsk) {
+                // QuickAsk: only for non-side-turn, non-sub-agent assistant messages
+                if (onQuickAsk && !msg.quickAsk && !msg.subAgent) {
                     defs.push({
                         icon: 'message-circle-question',
                         label: t('view.quickAsk'),
