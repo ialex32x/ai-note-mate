@@ -566,6 +566,8 @@ export const ja: Record<string, string> = {
 	'view.checkpointDiscardAll': 'すべて破棄',
 	'view.checkpointAcceptAllHint': '最新の保留中チェックポイントを承認します。それより前の保留中もまとめて承認されます。',
 	'view.checkpointDiscardAllHint': '最も古い保留中チェックポイントを破棄します。それより後の保留中もまとめて破棄され、スナップショットから復元されます。',
+	'view.checkpointOneFile': '1 ファイル',
+	'view.checkpointFileCount': '{count} ファイル',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使い方のヒント',

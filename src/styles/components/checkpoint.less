@@ -154,6 +154,36 @@
     display: flex;
     align-items: center;
     gap: @spacing-sm;
+    cursor: pointer;
+    user-select: none;
+
+    // Chevron icon — rotates on expand/collapse.
+    .checkpoint-section__chevron {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 14px;
+        color: @text-faint;
+        transition: transform @duration-fast;
+
+        svg {
+            .icon-size(12px);
+        }
+    }
+}
+
+// Collapsed state: hide file list.
+.checkpoint-section--collapsed .checkpoint-section__files {
+    display: none;
+}
+
+.checkpoint-section__file-count {
+    flex: 0 0 auto;
+    font-size: 0.78em;
+    color: @text-faint;
+    white-space: nowrap;
 }
 
 .checkpoint-section__status {

@@ -565,6 +565,8 @@ export const zhCN: Record<string, string> = {
 	'view.checkpointDiscardAll': '全部丢弃',
 	'view.checkpointAcceptAllHint': '接受最新的待处理检查点，同时接受其之前的所有待处理检查点。',
 	'view.checkpointDiscardAllHint': '丢弃最早的待处理检查点，同时丢弃其之后的所有待处理检查点，并从快照还原文件。',
+	'view.checkpointOneFile': '1 个文件',
+	'view.checkpointFileCount': '{count} 个文件',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '使用提示',

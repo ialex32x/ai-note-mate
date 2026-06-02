@@ -143,6 +143,8 @@ export function createCheckpointSelector(
 
     let runtime: SessionRuntime | undefined;
     let detachChange: (() => void) | undefined;
+    /** Currently expanded checkpoint section id (accordion — only one open at a time). */
+    let expandedCheckpointId: string | null = null;
 
     const updateButtonText = () => {
         const cps = runtime?.checkpointStore.checkpoints ?? [];
@@ -250,11 +252,14 @@ export function createCheckpointSelector(
     };
 
     const renderCheckpoint = (host: HTMLElement, cp: Checkpoint): void => {
+        const isExpanded = expandedCheckpointId === cp.id;
         const section = host.createEl('div', {
-            cls: `session-dropdown-section checkpoint-section checkpoint-section--${cp.status}`,
+            cls: `session-dropdown-section checkpoint-section checkpoint-section--${cp.status}${
+                isExpanded ? '' : ' checkpoint-section--collapsed'
+            }`,
         });
 
-        // Header row: status badge + title + icon actions, all on one line.
+        // Header row: status badge + expand chevron + title + icon actions, all on one line.
         const header = section.createEl('div', { cls: 'checkpoint-section__header' });
         const statusBadge = header.createEl('span', {
             cls: `checkpoint-section__status checkpoint-section__status--${cp.status}`,
@@ -264,6 +269,15 @@ export function createCheckpointSelector(
 
         const title = header.createEl('span', { cls: 'checkpoint-section__title' });
         title.setText(formatCheckpointTitle(cp));
+
+        // File count badge (e.g. "3 files").
+        const fileCountEl = header.createEl('span', { cls: 'checkpoint-section__file-count' });
+        const fc = cp.files.size;
+        fileCountEl.setText(fc === 1 ? t('view.checkpointOneFile') : t('view.checkpointFileCount', { count: fc }));
+
+        // Expand/collapse chevron — rotates based on expanded state.
+        const chevron = header.createEl('span', { cls: 'checkpoint-section__chevron' });
+        setIcon(chevron, isExpanded ? 'chevron-down' : 'chevron-right');
 
         const actions = header.createEl('span', { cls: 'checkpoint-section__actions' });
 
@@ -358,6 +372,24 @@ export function createCheckpointSelector(
                 renderFileEntry(fileList, entry);
             }
         }
+
+        // Accordion toggle: click header to expand/collapse the file list.
+        // Only one checkpoint is expanded at a time.
+        header.addEventListener('click', (e) => {
+            // Don't toggle when the user clicks an action button.
+            if (e.target instanceof HTMLElement && e.target.closest('.checkpoint-section__action-btn')) {
+                return;
+            }
+            e.stopPropagation();
+            if (expandedCheckpointId === cp.id) {
+                // Collapse the currently expanded one.
+                expandedCheckpointId = null;
+            } else {
+                // Expand this one (and implicitly collapse any other via rebuild).
+                expandedCheckpointId = cp.id;
+            }
+            rebuildDropdown();
+        });
     };
 
     const rebuildDropdown = () => {

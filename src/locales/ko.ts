@@ -566,6 +566,8 @@ export const ko: Record<string, string> = {
 	'view.checkpointDiscardAll': '모두 취소',
 	'view.checkpointAcceptAllHint': '가장 최근의 대기 중 체크포인트를 수락합니다. 그보다 이전의 대기 중 체크포인트도 함께 수락됩니다.',
 	'view.checkpointDiscardAllHint': '가장 오래된 대기 중 체크포인트를 취소합니다. 그보다 이후의 대기 중 체크포인트도 함께 취소되며 스냅샷으로 복원됩니다.',
+	'view.checkpointOneFile': '1개 파일',
+	'view.checkpointFileCount': '{count}개 파일',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': '사용 팁',

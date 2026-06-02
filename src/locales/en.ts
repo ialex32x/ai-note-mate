@@ -565,6 +565,8 @@ Write the result directly into the note — do not reply with the edited text in
 	'view.checkpointDiscardAll': 'Discard all',
 	'view.checkpointAcceptAllHint': 'Accepts the newest pending checkpoint, which accepts every earlier pending checkpoint too.',
 	'view.checkpointDiscardAllHint': 'Discards the oldest pending checkpoint, which discards every later pending checkpoint and restores from snapshots.',
+	'view.checkpointOneFile': '1 file',
+	'view.checkpointFileCount': '{count} files',
 
 	// ── Usage tips (input toolbar popover) ───────────────
 	'tips.tooltip': 'Usage tips',
