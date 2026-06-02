@@ -22,8 +22,8 @@ export function vaultAppendFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "If the file does not exist, it will be created. " +
                     "Use this when the user wants to add, append, or write more content to a note " +
                     "without overwriting existing content. " +
-                    "The tool ensures the appended content starts on its own line " +
-                    "(you do NOT need to include a leading newline in the content).",
+                    "The appended content is automatically placed on its own line — " +
+                    "just provide the content body directly.",
                 parameters: {
                     type: "object",
                     properties: {
