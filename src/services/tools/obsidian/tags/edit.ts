@@ -1,7 +1,8 @@
 import { TFile } from "obsidian";
 import type NoteAssistantPlugin from "../../../../main";
-import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
+import type { ChatStream, RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
+import { runVaultMutation } from "../../../vault/mutator";
 import { isFailure, requireFile } from "../_shared";
 import {
     collectTagsForFile,
@@ -40,6 +41,8 @@ interface SharedExecParams {
     actionName: string;
     /** The underlying operation. */
     opName: "add" | "remove" | "set";
+    /** Chat stream for checkpoint integration. */
+    chatStream: ChatStream | undefined;
     /** Already-validated array of vault-relative paths. */
     paths: string[];
     /** Tag names (with or without '#') — validated inside executeTagsEdit. */
@@ -123,19 +126,8 @@ async function executeTagsEdit(
 
             if (tagsToAdd.length > 0) {
                 if (location === "frontmatter" || location === "both") {
-                    if (!dryRun) {
-                        try {
-                            await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                                frontmatterChanges = addTagsToFrontmatter(fm, tagsToAdd);
-                            });
-                        } catch (err) {
-                            skipped.push({
-                                path: file.path,
-                                reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
-                            });
-                            continue;
-                        }
-                    } else {
+                    // Pre-compute count on clone (same for dry-run and write)
+                    {
                         const cache = plugin.app.metadataCache.getFileCache(file);
                         const fm = cache?.frontmatter;
                         const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
@@ -147,21 +139,69 @@ async function executeTagsEdit(
                         }
                         frontmatterChanges = addTagsToFrontmatter(fmClone, tagsToAdd);
                     }
+
+                    if (!dryRun && frontmatterChanges > 0) {
+                        try {
+                            const lockErr = await runVaultMutation(plugin, params.chatStream, {
+                                kind: "modify",
+                                path: file.path,
+                                toolName: actionName,
+                                perform: async () => {
+                                    await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                                        addTagsToFrontmatter(fm, tagsToAdd);
+                                    });
+                                },
+                            });
+                            if (lockErr) {
+                                skipped.push({ path: file.path, reason: lockErr.content as string });
+                                frontmatterChanges = 0;
+                            }
+                        } catch (err) {
+                            skipped.push({
+                                path: file.path,
+                                reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
+                            });
+                            frontmatterChanges = 0;
+                        }
+                    }
                 }
                 if (location === "inline") {
+                    inlineChanges = tagsToAdd.length;
+
                     if (!dryRun) {
                         const content = await plugin.app.vault.read(file);
                         const sep = content.length === 0 || content.endsWith("\n") ? "" : "\n";
                         const line = tagsToAdd.map((t) => "#" + t).join(" ");
-                        await plugin.app.vault.modify(file, content + sep + line + "\n");
+                        try {
+                            const lockErr = await runVaultMutation(plugin, params.chatStream, {
+                                kind: "modify",
+                                path: file.path,
+                                toolName: actionName,
+                                perform: async () => {
+                                    await plugin.app.vault.modify(file, content + sep + line + "\n");
+                                },
+                            });
+                            if (lockErr) {
+                                skipped.push({ path: file.path, reason: lockErr.content as string });
+                                inlineChanges = 0;
+                            }
+                        } catch (err) {
+                            skipped.push({
+                                path: file.path,
+                                reason: `vault.modify failed: ${(err as Error)?.message ?? String(err)}`,
+                            });
+                            inlineChanges = 0;
+                        }
                     }
-                    inlineChanges = tagsToAdd.length;
                 }
             }
         }
 
         // ────────────────── REMOVE ──────────────────
         else if (opName === "remove") {
+            let inlineNewContent: string | undefined;
+
+            // Pre-compute inline
             if (location === "inline" || location === "both") {
                 const cache = plugin.app.metadataCache.getFileCache(file);
                 const inlineCacheEntries = (cache?.tags ?? []).map((entry) => ({
@@ -173,43 +213,64 @@ async function executeTagsEdit(
                     const content = await plugin.app.vault.read(file);
                     const { newContent, count } = rewriteInlineTags(content, inlineCacheEntries, removeOp!);
                     inlineChanges = count;
-                    if (count > 0 && !dryRun) {
-                        await plugin.app.vault.modify(file, newContent);
-                    }
+                    if (count > 0) inlineNewContent = newContent;
                 }
             }
 
+            // Pre-compute frontmatter on clone (same for dry-run and write)
+            let needsRemoveFm = false;
             if (location === "frontmatter" || location === "both") {
-                if (dryRun) {
-                    const cache = plugin.app.metadataCache.getFileCache(file);
-                    const fm = cache?.frontmatter;
-                    if (fm) {
-                        const fmClone: Record<string, unknown> = { ...fm };
-                        for (const key of ["tags", "tag"]) {
-                            const v = (fm as Record<string, unknown>)[key];
-                            if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
-                        }
-                        frontmatterChanges = rewriteFrontmatterTags(fmClone, removeOp!);
+                const cache = plugin.app.metadataCache.getFileCache(file);
+                const fm = cache?.frontmatter;
+                if (fm) {
+                    const fmClone: Record<string, unknown> = { ...fm };
+                    for (const key of ["tags", "tag"]) {
+                        const v = (fm as Record<string, unknown>)[key];
+                        if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                     }
-                } else {
-                    try {
-                        await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                            frontmatterChanges = rewriteFrontmatterTags(fm, removeOp!);
-                        });
-                    } catch (err) {
-                        skipped.push({
-                            path: file.path,
-                            reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
-                        });
-                        continue;
+                    frontmatterChanges = rewriteFrontmatterTags(fmClone, removeOp!);
+                    needsRemoveFm = frontmatterChanges > 0;
+                }
+            }
+
+            // Execute via checkpoint gateway (inline + frontmatter in one call)
+            if (!dryRun && (inlineNewContent !== undefined || needsRemoveFm)) {
+                try {
+                    const lockErr = await runVaultMutation(plugin, params.chatStream, {
+                        kind: "modify",
+                        path: file.path,
+                        toolName: actionName,
+                        perform: async () => {
+                            if (inlineNewContent !== undefined) {
+                                await plugin.app.vault.modify(file, inlineNewContent);
+                            }
+                            if (needsRemoveFm) {
+                                await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                                    rewriteFrontmatterTags(fm, removeOp!);
+                                });
+                            }
+                        },
+                    });
+                    if (lockErr) {
+                        skipped.push({ path: file.path, reason: lockErr.content as string });
+                        inlineChanges = 0;
+                        frontmatterChanges = 0;
                     }
+                } catch (err) {
+                    skipped.push({
+                        path: file.path,
+                        reason: `Mutation failed: ${(err as Error)?.message ?? String(err)}`,
+                    });
+                    inlineChanges = 0;
+                    frontmatterChanges = 0;
                 }
             }
         }
 
         // ────────────────── SET ──────────────────
         else if (opName === "set") {
-            if (dryRun) {
+            // Pre-compute count on clone (same for dry-run and write)
+            {
                 const cache = plugin.app.metadataCache.getFileCache(file);
                 const fm = cache?.frontmatter as Record<string, unknown> | undefined;
                 const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
@@ -220,17 +281,30 @@ async function executeTagsEdit(
                     }
                 }
                 frontmatterChanges = setFrontmatterTags(fmClone, uniqueBareTags);
-            } else {
+            }
+
+            if (!dryRun && frontmatterChanges > 0) {
                 try {
-                    await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                        frontmatterChanges = setFrontmatterTags(fm, uniqueBareTags);
+                    const lockErr = await runVaultMutation(plugin, params.chatStream, {
+                        kind: "modify",
+                        path: file.path,
+                        toolName: actionName,
+                        perform: async () => {
+                            await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                                setFrontmatterTags(fm, uniqueBareTags);
+                            });
+                        },
                     });
+                    if (lockErr) {
+                        skipped.push({ path: file.path, reason: lockErr.content as string });
+                        frontmatterChanges = 0;
+                    }
                 } catch (err) {
                     skipped.push({
                         path: file.path,
                         reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
                     });
-                    continue;
+                    frontmatterChanges = 0;
                 }
             }
         }
@@ -335,7 +409,7 @@ export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             // Accept singular aliases (common LLM slip).
             let rawPaths = args["paths"];
             if (!rawPaths && typeof args["path"] === "string") {
@@ -364,6 +438,7 @@ export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
             return executeTagsEdit(plugin, {
                 actionName: "add_files_tags",
                 opName: "add",
+                chatStream,
                 paths,
                 rawTags,
                 location: rawLocation,
@@ -446,7 +521,7 @@ export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredToo
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             // Accept singular aliases (common LLM slip).
             let rawPaths = args["paths"];
             if (!rawPaths && typeof args["path"] === "string") {
@@ -476,6 +551,7 @@ export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredToo
             return executeTagsEdit(plugin, {
                 actionName: "remove_files_tags",
                 opName: "remove",
+                chatStream,
                 paths,
                 rawTags,
                 location: rawLocation,
@@ -541,7 +617,7 @@ export function vaultSetFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             // Accept singular aliases (common LLM slip).
             let rawPaths = args["paths"];
             if (!rawPaths && typeof args["path"] === "string") {
@@ -564,6 +640,7 @@ export function vaultSetFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
             return executeTagsEdit(plugin, {
                 actionName: "set_files_tags",
                 opName: "set",
+                chatStream,
                 paths,
                 rawTags,
                 location: "frontmatter", // set always operates on frontmatter only

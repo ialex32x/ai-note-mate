@@ -1,6 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
+import { runVaultMutation } from "../../../vault/mutator";
 import {
     collectTagsForFile,
     normaliseTagName,
@@ -85,7 +86,7 @@ export function vaultRenameTag(plugin: NoteAssistantPlugin): RegisteredTool {
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const oldBare = normaliseTagName(args["old_tag"] as string);
             const includeDescendants = (args["include_descendants"] as boolean) ?? false;
             const dryRun = (args["dry_run"] as boolean) ?? false;
@@ -141,43 +142,64 @@ export function vaultRenameTag(plugin: NoteAssistantPlugin): RegisteredTool {
                     to: entry.position.end.offset,
                 }));
 
-                // ─── Inline pass ───────────────────────────────────────────────
+                // ─── Pre-compute inline changes ───────────────────────────────
                 let inlineCount = 0;
+                let inlineNewContent: string | undefined;
                 if (inlineCacheEntries.length > 0) {
                     const content = await plugin.app.vault.read(file);
-                    const { newContent, count } = rewriteInlineTags(content, inlineCacheEntries, op);
-                    inlineCount = count;
-                    if (count > 0 && !dryRun) {
-                        await plugin.app.vault.modify(file, newContent);
-                    }
+                    const result = rewriteInlineTags(content, inlineCacheEntries, op);
+                    inlineCount = result.count;
+                    if (result.count > 0) inlineNewContent = result.newContent;
                 }
 
-                // ─── Frontmatter pass ──────────────────────────────────────────
-                // Note: we run the frontmatter pass even on dry_run, but pre-compute the count without writing.
+                // ─── Pre-compute frontmatter changes (clone — safe for both dry-run and write) ──
                 let frontmatterCount = 0;
-
-                if (dryRun) {
-                    // Compute count without mutating the file, by inspecting the cached frontmatter snapshot.
+                let needsFrontmatter = false;
+                {
                     const fm = cache?.frontmatter;
                     if (fm) {
-                        // Clone shallowly so the simulated rewrite does not mutate the live cache.
                         const fmClone: Record<string, unknown> = { ...fm };
                         for (const key of ["tags", "tag"]) {
                             const v = (fm as Record<string, unknown>)[key];
                             if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                         }
                         frontmatterCount = rewriteFrontmatterTags(fmClone, op);
+                        needsFrontmatter = frontmatterCount > 0;
                     }
-                } else {
+                }
+
+                const hasChanges = inlineCount > 0 || needsFrontmatter;
+
+                // ─── Execute via checkpoint gateway ───────────────────────────
+                if (hasChanges && !dryRun) {
                     try {
-                        await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
-                            frontmatterCount = rewriteFrontmatterTags(fm, op);
+                        const lockErr = await runVaultMutation(plugin, chatStream, {
+                            kind: "modify",
+                            path: file.path,
+                            toolName: "rename_tag",
+                            perform: async () => {
+                                if (inlineNewContent !== undefined) {
+                                    await plugin.app.vault.modify(file, inlineNewContent);
+                                }
+                                if (needsFrontmatter) {
+                                    await plugin.app.fileManager.processFrontMatter(file, (fm: Record<string, unknown>) => {
+                                        rewriteFrontmatterTags(fm, op);
+                                    });
+                                }
+                            },
                         });
+                        if (lockErr) {
+                            skipped.push({ path: file.path, reason: lockErr.content as string });
+                            inlineCount = 0;
+                            frontmatterCount = 0;
+                        }
                     } catch (err) {
                         skipped.push({
                             path: file.path,
-                            reason: `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`,
+                            reason: `Mutation failed: ${(err as Error)?.message ?? String(err)}`,
                         });
+                        inlineCount = 0;
+                        frontmatterCount = 0;
                     }
                 }
 
