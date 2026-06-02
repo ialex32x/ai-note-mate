@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
     createHandoffTools,
+    createResultTools,
     validateSerializable,
     estimateValueSize,
     type HandoffStore,
@@ -11,40 +12,53 @@ import type { ChatStream, RegisteredTool, ToolCallResult } from "../src/services
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Build a triple of fresh handoff tools bound to the given store. Sub-
- * agents register all three; tests just need to pick the right one per
- * scenario.
- */
-function tools(store: HandoffStore | (() => HandoffStore | null)): {
-    write: RegisteredTool;
+function readAndListTools(store: HandoffStore | (() => HandoffStore | null)): {
     read: RegisteredTool;
     list: RegisteredTool;
 } {
-    const [write, read, list] = createHandoffTools(store);
-    return { write, read, list };
+    const [read, list] = createHandoffTools(store);
+    return { read, list };
 }
 
-/**
- * Run the write tool's `exec` with a fresh store. The tool never touches
- * the ChatStream argument, so we pass `undefined` cast to `ChatStream`.
- */
-async function runWrite(
+function writeTools(store: HandoffStore | (() => HandoffStore | null)): {
+    writeScalar: RegisteredTool;
+    writeArray: RegisteredTool;
+    writeObject: RegisteredTool;
+} {
+    const [writeScalar, writeArray, writeObject] = createResultTools(store);
+    return { writeScalar, writeArray, writeObject };
+}
+
+async function runWriteScalar(
     store: HandoffStore,
     args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-    return tools(store).write.exec(undefined as unknown as ChatStream, args);
+    return writeTools(store).writeScalar.exec(undefined as unknown as ChatStream, args);
+}
+
+async function runWriteArray(
+    store: HandoffStore,
+    args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+    return writeTools(store).writeArray.exec(undefined as unknown as ChatStream, args);
+}
+
+async function runWriteObject(
+    store: HandoffStore,
+    args: Record<string, unknown>,
+): Promise<ToolCallResult> {
+    return writeTools(store).writeObject.exec(undefined as unknown as ChatStream, args);
 }
 
 async function runRead(
     store: HandoffStore,
     args: Record<string, unknown>,
 ): Promise<ToolCallResult> {
-    return tools(store).read.exec(undefined as unknown as ChatStream, args);
+    return readAndListTools(store).read.exec(undefined as unknown as ChatStream, args);
 }
 
 async function runList(store: HandoffStore): Promise<ToolCallResult> {
-    return tools(store).list.exec(undefined as unknown as ChatStream, {});
+    return readAndListTools(store).list.exec(undefined as unknown as ChatStream, {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -138,88 +152,163 @@ describe("estimateValueSize", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// write_handoff
+// write_result (scalar)
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe("write_handoff tool", () => {
-    it("stores a value under a key", async () => {
+describe("write_result tool (scalar)", () => {
+    it("stores a string", async () => {
         const store: HandoffStore = new Map();
-        const result = await runWrite(store, {
-            key: "result",
-            value: { a: 1, b: ["x"] },
-        });
+        const result = await runWriteScalar(store, { key: "path", value: "/docs/a.md" });
         expect(result.success).toBe(true);
-        expect(result.type).toBe("object");
-        expect(result.content).toEqual({ ok: true, key: "result" });
-        expect(store.get("result")).toEqual({ a: 1, b: ["x"] });
+        expect(result.content).toEqual({ ok: true, key: "path" });
+        expect(store.get("path")).toBe("/docs/a.md");
+    });
+
+    it("stores a number", async () => {
+        const store: HandoffStore = new Map();
+        await runWriteScalar(store, { key: "count", value: 5 });
+        expect(store.get("count")).toBe(5);
+    });
+
+    it("stores a boolean", async () => {
+        const store: HandoffStore = new Map();
+        await runWriteScalar(store, { key: "flag", value: true });
+        expect(store.get("flag")).toBe(true);
+    });
+
+    it("stores explicit null", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteScalar(store, { key: "k", value: null });
+        expect(r.success).toBe(true);
+        expect(store.get("k")).toBeNull();
+    });
+
+    it("rejects objects (must use write_result_object)", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteScalar(store, { key: "k", value: { a: 1 } });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/write_result_object/i);
+        expect(store.size).toBe(0);
+    });
+
+    it("rejects arrays (must use write_result_array)", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteScalar(store, { key: "k", value: [1, 2] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/write_result_array/i);
+        expect(store.size).toBe(0);
+    });
+
+    it("rejects NaN/Infinity", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteScalar(store, { key: "k", value: NaN });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/NaN|Infinity/i);
+        expect(store.size).toBe(0);
     });
 
     it("trims the key", async () => {
         const store: HandoffStore = new Map();
-        await runWrite(store, { key: "  result  ", value: 1 });
-        expect(store.has("result")).toBe(true);
-        expect(store.has("  result  ")).toBe(false);
+        await runWriteScalar(store, { key: "  path  ", value: "x" });
+        expect(store.has("path")).toBe(true);
+        expect(store.has("  path  ")).toBe(false);
     });
 
     it("overwrites silently on duplicate key", async () => {
         const store: HandoffStore = new Map();
-        await runWrite(store, { key: "k", value: 1 });
-        const second = await runWrite(store, { key: "k", value: 2 });
+        await runWriteScalar(store, { key: "k", value: "a" });
+        const second = await runWriteScalar(store, { key: "k", value: "b" });
         expect(second.success).toBe(true);
-        expect(store.get("k")).toBe(2);
+        expect(store.get("k")).toBe("b");
         expect(store.size).toBe(1);
     });
 
     it("rejects missing key", async () => {
         const store: HandoffStore = new Map();
-        const r = await runWrite(store, { value: 1 });
+        const r = await runWriteScalar(store, { value: "x" });
         expect(r.success).toBe(false);
         expect(String(r.content)).toMatch(/key.*required/i);
         expect(store.size).toBe(0);
     });
 
-    it("rejects empty/whitespace key", async () => {
+    it("rejects missing value", async () => {
         const store: HandoffStore = new Map();
-        const r = await runWrite(store, { key: "   ", value: 1 });
+        const r = await runWriteScalar(store, { key: "k" });
         expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/value.*required/i);
+        expect(store.size).toBe(0);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// write_result_array
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("write_result_array tool", () => {
+    it("stores an array", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteArray(store, { key: "paths", value: ["a.md", "b.md"] });
+        expect(r.success).toBe(true);
+        expect(store.get("paths")).toEqual(["a.md", "b.md"]);
+    });
+
+    it("rejects non-array values", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteArray(store, { key: "paths", value: "not-an-array" });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/array/i);
         expect(store.size).toBe(0);
     });
 
-    it("rejects missing value (vs. explicit null which is allowed)", async () => {
+    it("rejects arrays with non-serializable elements", async () => {
         const store: HandoffStore = new Map();
-        const missing = await runWrite(store, { key: "k" });
-        expect(missing.success).toBe(false);
-        expect(String(missing.content)).toMatch(/value.*required/i);
+        const r = await runWriteArray(store, { key: "bad", value: [new Date()] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/not JSON-serializable/i);
         expect(store.size).toBe(0);
+    });
+});
 
-        const explicitNull = await runWrite(store, { key: "k", value: null });
-        expect(explicitNull.success).toBe(true);
-        expect(store.get("k")).toBeNull();
+// ─────────────────────────────────────────────────────────────────────────────
+// write_result_object
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("write_result_object tool", () => {
+    it("stores a plain object", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "diff", value: { before: "old", after: "new" } });
+        expect(r.success).toBe(true);
+        expect(store.get("diff")).toEqual({ before: "old", after: "new" });
     });
 
-    it("rejects non-serializable values without polluting the store", async () => {
+    it("rejects null", async () => {
         const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "k", value: null });
+        expect(r.success).toBe(false);
+    });
 
-        const cases: unknown[] = [
-            () => 1,
-            new Date(),
-            new Map(),
-            new Set(),
-            BigInt(1),
-            NaN,
-        ];
+    it("rejects arrays (must use write_result_array)", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "k", value: [1, 2] });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/write_result_array/i);
+    });
+
+    it("rejects non-serializable values", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "bad", value: { fn: () => 1 } });
+        expect(r.success).toBe(false);
+        expect(String(r.content)).toMatch(/not JSON-serializable/i);
+        expect(store.size).toBe(0);
+    });
+
+    it("rejects Date, Map, Set, BigInt inside objects", async () => {
+        const store: HandoffStore = new Map();
+        const cases: unknown[] = [new Date(), new Map(), new Set(), BigInt(1)];
         for (const v of cases) {
-            const r = await runWrite(store, { key: "bad", value: v });
+            const r = await runWriteObject(store, { key: "bad", value: { inner: v } });
             expect(r.success).toBe(false);
-            expect(String(r.content)).toMatch(/not JSON-serializable/i);
         }
-
-        // Circular ref
-        const cyc: Record<string, unknown> = {};
-        cyc["self"] = cyc;
-        const cycResult = await runWrite(store, { key: "bad", value: cyc });
-        expect(cycResult.success).toBe(false);
-
         expect(store.size).toBe(0);
     });
 });
@@ -242,7 +331,7 @@ describe("read_handoff tool — single", () => {
             paths: ["a/b.md", "c.md"],
             meta: { count: 2, nested: [1, null, "x"] },
         };
-        await runWrite(store, { key: "result", value });
+        await runWriteObject(store, { key: "result", value });
         const got = await runRead(store, { key: "result" });
         expect(got.content).toEqual({ value });
     });
@@ -429,8 +518,8 @@ describe("list_handoff tool", () => {
 
     it("enumerates keys with size estimates", async () => {
         const store: HandoffStore = new Map();
-        await runWrite(store, { key: "result", value: { a: 1 } });
-        await runWrite(store, { key: "candidates", value: [1, 2, 3] });
+        await runWriteObject(store, { key: "result", value: { a: 1 } });
+        await runWriteArray(store, { key: "candidates", value: [1, 2, 3] });
 
         const r = await runList(store);
         expect(r.success).toBe(true);
@@ -453,48 +542,48 @@ describe("list_handoff tool", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("handoff tools — getter-based store source", () => {
-    it("resolves the store dynamically per call", async () => {
+    it("resolves the store dynamically per call (write_result)", async () => {
         let current: HandoffStore | null = new Map();
-        const { write } = tools(() => current);
+        const { writeScalar } = writeTools(() => current);
 
-        await write.exec(undefined as unknown as ChatStream, {
-            key: "result",
-            value: 1,
+        await writeScalar.exec(undefined as unknown as ChatStream, {
+            key: "path",
+            value: "a.md",
         });
-        expect(current!.get("result")).toBe(1);
+        expect(current!.get("path")).toBe("a.md");
 
         // Swap stores between calls (simulating a new dispatch on a reused
         // ChatStream).
         const next: HandoffStore = new Map();
         current = next;
-        await write.exec(undefined as unknown as ChatStream, {
-            key: "result",
-            value: 2,
+        await writeScalar.exec(undefined as unknown as ChatStream, {
+            key: "path",
+            value: "b.md",
         });
-        expect(next.get("result")).toBe(2);
+        expect(next.get("path")).toBe("b.md");
     });
 
     it("returns a clear error when the getter resolves to null (write)", async () => {
-        const { write } = tools(() => null);
-        const r = await write.exec(undefined as unknown as ChatStream, {
-            key: "result",
-            value: 1,
+        const { writeScalar } = writeTools(() => null);
+        const r = await writeScalar.exec(undefined as unknown as ChatStream, {
+            key: "path",
+            value: "x",
         });
         expect(r.success).toBe(false);
         expect(String(r.content)).toMatch(/outside an active task/i);
     });
 
     it("returns a clear error when the getter resolves to null (read)", async () => {
-        const { read } = tools(() => null);
+        const { read } = readAndListTools(() => null);
         const r = await read.exec(undefined as unknown as ChatStream, {
-            key: "result",
+            key: "path",
         });
         expect(r.success).toBe(false);
         expect(String(r.content)).toMatch(/outside an active task/i);
     });
 
     it("returns a clear error when the getter resolves to null (list)", async () => {
-        const { list } = tools(() => null);
+        const { list } = readAndListTools(() => null);
         const r = await list.exec(undefined as unknown as ChatStream, {});
         expect(r.success).toBe(false);
         expect(String(r.content)).toMatch(/outside an active task/i);

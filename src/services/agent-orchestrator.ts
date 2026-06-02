@@ -179,10 +179,18 @@ export interface BuildDelegatePayloadOptions {
 
 /**
  * Build the envelope returned to the main agent for a successful
- * `delegate_task` invocation. The store is read once and never retained
- * (the orchestrator drops its reference immediately after this call).
+ * `delegate_task` invocation. Reads from the RESULT store only —
+ * seed entries (main → sub) live in a separate map and are never
+ * part of this envelope.
  *
- * Three size buckets, applied per (key, value) pair:
+ * Result assembly: when the store contains a key literally named
+ * `"result"`, it becomes `payload.result` directly (backward compat
+ * with the old single-`write_handoff` convention). Otherwise, ALL
+ * store entries are assembled into a single `payload.result` object.
+ * The sub-agent simply writes flat keys (path, strategy, count, …)
+ * via multiple `write_result` calls; this function does the rest.
+ *
+ * Three size buckets, applied per (key, value) pair: ...
  *
  *   1. `size ≤ HANDOFF_VALUE_MAX_BYTES` (32 KB) — value is inlined as
  *      `payload.result` (for key `"result"`) or `payload.extras[key]`
@@ -230,14 +238,17 @@ export function buildDelegatePayload(
     let artifacts: Record<string, ArtifactRef> | undefined;
     let resultRetained = false;
     /**
-     * The original `result` value, captured BEFORE bucket-routing, so the
-     * validator can run against the structured shape regardless of which
-     * bucket the value ended up in (inline or artifact). `undefined`
-     * means "no result key was written" (different from "result was
-     * literally `undefined`" — write_handoff rejects `undefined`
-     * at write-time, so the ambiguity cannot arise).
+     * The canonical result value. When the store contains a `"result"` key
+     * (backward compat), this is its value. Otherwise, all store entries
+     * are assembled into a single object and that becomes the result.
+     * `undefined` means the store is empty — no structured output.
      */
     let originalResult: unknown;
+    /**
+     * Accumulator for the "assemble from flat keys" path. Only populated
+     * when there is NO `"result"` key.
+     */
+    let assembledResult: Record<string, unknown> | undefined;
 
     // Promotion is only enabled when both knobs are supplied. The
     // store-without-callId path is treated identically to no-store: we
@@ -251,10 +262,13 @@ export function buildDelegatePayload(
     const storeRef = promotionEnabled ? options.artifactStore! : null;
     const callId = promotionEnabled ? options.delegateCallId! : null;
 
+    let hasExplicitResultKey = false;
+
     for (const [key, value] of store.entries()) {
         const size = estimateValueSize(value);
 
         if (key === "result") {
+            hasExplicitResultKey = true;
             originalResult = value;
         }
 
@@ -307,6 +321,29 @@ export function buildDelegatePayload(
         omitted ??= {};
         omitted[`${key}_omitted`] = true;
         omitted[`${key}_size`] = size;
+    }
+
+    // Assemble: when there is no explicit "result" key but the store has
+    // other entries, package them all into `payload.result` as one object.
+    // The sub-agent writes flat keys (path, strategy, edits_applied, …);
+    // the main agent sees one `result` object. Backward-compat: if
+    // `"result"` was written directly, it's already in `payload.result`.
+    if (!hasExplicitResultKey && extras) {
+        // Move everything from extras into the assembled result object.
+        assembledResult = { ...extras };
+        // Size-check: the assembled result as JSON must fit the inline cap.
+        // Individual entries already passed the per-key cap above; this
+        // checks the combined payload.
+        const assembledSize = estimateValueSize(assembledResult);
+        if (assembledSize <= HANDOFF_VALUE_MAX_BYTES) {
+            payload.result = assembledResult;
+            resultRetained = true;
+            originalResult = assembledResult;
+            extras = undefined; // all consumed
+        }
+        // If the assembled result exceeds HANDOFF_VALUE_MAX_BYTES, leave
+        // entries in `extras` individually — they were each checked above
+        // and are either inlined or promoted to artifacts separately.
     }
 
     // Text overflow: promote the sub-agent's text reply to the artifact
@@ -431,7 +468,7 @@ export class InvalidDelegateInputError extends Error {
  * would treat `inputs.X` prose as a separate concept from the handoff
  * store and either skip the read or mis-spell the key).
  *
- * Validation rules (mirrored from write_handoff so the main → sub
+ * Validation rules (mirrored from the write result tools so the main → sub
  * direction has the same safety guarantees as the sub → main
  * direction):
  *  - `seed` may be `undefined` / `null` / an empty object → returns an
@@ -466,9 +503,9 @@ export function buildInitialStore(seed?: Record<string, unknown> | null): Handof
     }
 
     for (const [key, value] of Object.entries(seed)) {
-        // Same key constraints write_handoff enforces internally — keep
-        // them aligned so a key accepted at seed time is also a legal key
-        // for the sub-agent's later `write_handoff` overwrites.
+        // Same key constraints the write_result tools enforce internally —
+        // keep them aligned so a key accepted at seed time is also a legal
+        // key for the sub-agent's later `write_result` calls.
         if (key.length === 0) {
             throw new InvalidDelegateInputError(`\`handoff\` contains an empty key.`);
         }
@@ -1184,6 +1221,12 @@ export class AgentOrchestrator implements IChatAgent {
             };
         }
 
+        // Per-dispatch result store — fresh empty map the sub-agent
+        // populates via write_result / write_result_array /
+        // write_result_object. Completely separate from the seed store
+        // so there is zero risk of seed/output key collision.
+        const resultStore: HandoffStore = new Map();
+
         // Sticky-on-history bookkeeping: once a sub-agent has been
         // dispatched at this conversation, the router unions its name
         // back into every future turn's shortlist so the model never
@@ -1204,14 +1247,14 @@ export class AgentOrchestrator implements IChatAgent {
             this._subAgentMessages.set(parentToolCallId, []);
         }
 
-        // Per-dispatch handoff store ownership reminder:
-        //   - main → sub: pre-populated above by `buildInitialStore(handoff)`,
+        // Per-dispatch stores — two independent maps:
+        //   - seed store (main → sub): pre-populated by `buildInitialStore(handoff)`,
         //     readable by the sub-agent via `read_handoff` / `list_handoff`.
-        //   - sub → main: the sub-agent further writes into the same store
-        //     via `write_handoff`; on success we read it back via
-        //     `buildDelegatePayload`.
-        // The store lives ONLY for this call. No global state, no
-        // cross-dispatch leakage.
+        //   - result store (sub → main): initially empty, populated by the
+        //     sub-agent via `write_result` / `write_result_array` /
+        //     `write_result_object`; read back via `buildDelegatePayload`.
+        // Both stores live ONLY for this call. No global state, no
+        // cross-dispatch leakage. Zero risk of seed/output key collision.
 
         try {
             const result = await subAgent.execute(task, {
@@ -1224,6 +1267,7 @@ export class AgentOrchestrator implements IChatAgent {
                 context: taskContext,
                 parentToolCallId,
                 handoffStore,
+                resultStore,
                 // Forward the main agent's contextTag so vault-mutation side
                 // effects performed by this sub-agent are attributed back to
                 // the same session as the main conversation.
@@ -1281,11 +1325,13 @@ export class AgentOrchestrator implements IChatAgent {
             }
 
             // Build the structured envelope that carries both the sub-agent's
-            // text summary AND any values it handed off via write_handoff.
+            // text summary AND any values it handed off via write_result.
             // This is the main agent's only view into the sub-agent's
             // structured output — `text` alone matches the pre-handoff
-            // behaviour (and is what the LLM gets when no write_handoff
-            // happened), `result` / `extras` carry typed payload when present.
+            // behaviour (and is what the LLM gets when no write_result
+            // calls happened), `result` / `extras` carry typed payload when
+            // present. We read from the RESULT store (sub → main), not the
+            // seed store (main → sub).
             //
             // We JSON-stringify here because `tool_result.type === "text"`
             // is a string-typed channel; the main agent's prompt instructs
@@ -1303,7 +1349,7 @@ export class AgentOrchestrator implements IChatAgent {
             // promotion is silently skipped and the legacy `omitted`
             // path absorbs the value. See `BuildDelegatePayloadOptions`
             // for the exact mutual-presence requirement.
-            const payload = buildDelegatePayload(result.summary, handoffStore, agentName, {
+            const payload = buildDelegatePayload(result.summary, resultStore, agentName, {
                 artifactStore: this._config.getArtifactStore?.() ?? null,
                 delegateCallId: parentToolCallId,
             });
@@ -1508,7 +1554,7 @@ export class AgentOrchestrator implements IChatAgent {
                             handoff: {
                                 type: "object",
                                 description:
-                                    `Initial seed of the sub-agent's handoff store. Each (key, value) pair is pre-loaded so the sub-agent can read it via \`read_handoff({key:"..."})\` or \`read_handoff({keys:[...]})\` / \`list_handoff()\` at the start of its turn. The SAME store is then written back to by the sub-agent via its own \`write_handoff\` calls; you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope. There is ONE channel ("handoff"), two directions — not two separate concepts. ` +
+                                    `Initial seed of the sub-agent's SEED store (separate from the result store the sub-agent writes to). Each (key, value) pair is pre-loaded so the sub-agent can read it via \`read_handoff({key:"..."})\` or \`read_handoff({keys:[...]})\` / \`list_handoff()\` at the start of its turn. The sub-agent's RESULT store (where it writes via \`write_result\` / \`write_result_array\` / \`write_result_object\`) is a completely independent map — seed and result keys never collide. ` +
                                     `Use this for data the sub-agent will consume programmatically — file paths, lists of paths, prior results, focus strings, constraints, configuration. Do NOT duplicate the same data in the \`task\` prose. ` +
                                     `Values MUST be JSON-serializable (string / number / boolean / null / plain array / plain object); each value's serialized size MUST be ≤ 32 KB. ` +
                                     `By convention, the key \`source\` is a good default for "the thing the sub-agent should operate on" (e.g. a path or a list of paths).`,

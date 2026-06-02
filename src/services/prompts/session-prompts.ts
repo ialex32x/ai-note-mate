@@ -363,7 +363,7 @@ If \`result.warnings\` contains a structural follow-up (e.g. "file also needs to
 
 const DELEGATION_SHARED_HANDOFF_AND_ENVELOPE = `
 ### Passing structured data to a sub-agent via \`handoff\`
-\`delegate_task\` accepts an optional \`handoff\` argument: an object whose keys are pre-loaded into the sub-agent's handoff store before it runs. The sub-agent reads them via its own \`read_handoff\` / \`list_handoff\` tools and writes its structured result back into the SAME store via \`write_handoff\` (you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope). One channel, two directions — NOT two separate concepts.
+\`delegate_task\` accepts an optional \`handoff\` argument: an object whose keys are pre-loaded into the sub-agent's SEED store before it runs. The sub-agent reads them via its own \`read_handoff\` / \`list_handoff\` tools. It writes its structured result into a SEPARATE result store via \`write_result\` / \`write_result_array\` / \`write_result_object\` tools (you receive those writes as \`result\` / \`extras\` / \`artifacts\` in the tool_result envelope). Two stores, two directions — seed and result are completely independent.
 
   delegate_task({ "agent": "<sub-agent-name>", "task": "summarize each note in the \`source\` key", "handoff": { "source": ["a/b.md", "c.md"], "max_words": 80 } })
 
@@ -382,7 +382,7 @@ The \`delegate_task\` tool_result is a JSON-encoded envelope of the form:
 
 - \`result\` — the structured value the sub-agent produced. Prefer this for any downstream tool call or programmatic decision. If \`result\` is absent, fall back to \`text\` or to \`artifacts.result\` (see below).
 - \`text\` — a human-facing summary. Use it for explanation to the user, not as the source of structured data.
-- \`extras\` — additional auxiliary fields the sub-agent wrote via \`write_handoff\` (validator notes, supplementary indices, etc.). Read by key; never required.
+- \`extras\` — additional auxiliary fields the sub-agent wrote via \`write_result\` (validator notes, supplementary indices, etc.). Read by key; never required.
 - \`artifacts\` — a map keyed by **field name** (\`"result"\` or an extras key). Each entry's \`key\` is an opaque artifact-store handle (e.g. \`"auto:tc-123:result"\`) — pass it verbatim to \`recall_artifact({ key: "<store-handle>" })\` to fetch the full content. \`size\` is the original byte size; \`preview\` is the first ~200 chars of the JSON-stringified value for orientation; \`reason\` is \`"oversize"\` (the value was too big to inline at envelope time) or \`"shrunk"\` (the value was inline but later spilled to keep your context lean). Do NOT re-call \`delegate_task\` just to read an artifact again — re-running the sub-agent costs tokens and may produce different output.
 - \`omitted\` — present when a value the sub-agent produced was dropped entirely. Each field appears as \`<key>_omitted: true\` plus \`<key>_size: <bytes>\`, and (when the drop was because the value exceeded the artifact store cap) an additional \`<key>_too_large_for_store: true\` flag. Dropped content is **not** recoverable via \`recall_artifact\`. If you need that data, re-delegate with a narrower scope (e.g. ask for a specific section, smaller result set, or a digest instead of the raw bytes) — do not retry the same call hoping for a different outcome.
 

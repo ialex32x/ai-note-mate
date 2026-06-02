@@ -1,46 +1,43 @@
 /**
  * handoff-toolcall.ts
  *
- * Built-in tools that give a sub-agent a small, in-process key/value store
- * shared with its dispatcher (the main agent's orchestrator). The
- * sub-agent uses it to RECEIVE seed inputs from the main agent
- * (`read_handoff` / `list_handoff`) and to RETURN structured data
- * alongside its final text reply (`write_handoff`), so the main agent
- * can consume the result programmatically instead of re-parsing the
- * sub-agent's prose.
+ * Built-in tools that give a sub-agent access to two in-process key/value
+ * stores shared with its dispatcher (the main agent's orchestrator):
  *
- * The store models the BATON in a handoff:
- *   main agent --[delegate_task with seed]--> sub-agent
- *   sub-agent --[write_handoff(key="result", ...)]--> main agent
+ *   SEED store (read_handoff / list_handoff):
+ *     The main agent pre-loads data via `delegate_task`'s `handoff` arg.
+ *     The sub-agent reads it at the start of its turn. Read-only from the
+ *     sub-agent's perspective; the orchestrator owns the seed lifecycle.
  *
- * One channel, two directions, per-dispatch lifecycle — created by the
- * orchestrator before `execute()`, snapshotted at completion, then
- * discarded. Nothing is global.
+ *   RESULT store (write_result / write_result_array / write_result_object):
+ *     The sub-agent writes structured output here BEFORE its final text
+ *     reply. The orchestrator reads this store after completion and
+ *     assembles the delegate envelope. Write-only from the sub-agent's
+ *     perspective.
  *
- * Historical note: these three tools used to be a single multiplexed
- * `exchange({op: 'put' | 'get' | 'list', ...})` tool. The `op`-as-
- * parameter design suffered from a stubborn class of LLM mistakes
- * where models would invent OOP-style calls (`exchange.put(...)`) or
- * omit `op` entirely because the tool name itself was a noun ("the
- * exchange"), not an action. Splitting into three verb-named tools
- * aligned with the broader `verb_noun` tool naming used throughout
- * the project (`read_file`, `write_file`, `grep_file`, ...) and
- * eliminated that whole error mode.
+ * Two separate maps — no shared namespace, no key collision between
+ * seed and result. The per-dispatch lifecycle is the same: both stores
+ * are created by the orchestrator before `execute()`, snapshotted at
+ * completion, then discarded. Nothing is global.
  *
- * Convention (documented in prompts, NOT enforced in code):
- * - `result` — the canonical structured return value the main agent
- *   consumes automatically.
- * - any other key — auxiliary payload (`candidates`, `warnings`,
- *   `debug`, ...).
+ * Why split from the old `write_handoff` (which accepted any JSON value):
+ *   Models frequently fail to produce correctly-nested complex JSON
+ *   objects inside a function-call argument. Splitting value-type
+ *   constraints across three tools (`write_result` for scalars,
+ *   `write_result_array` for arrays, `write_result_object` for flat
+ *   objects) lets the model build structured returns from small,
+ *   independently correct pieces instead of one fragile nested whole.
  *
- * Values must be JSON-serializable: string / number / boolean / null /
- * plain array / plain object. Functions, class instances, circular
- * refs, `Date`, `Map`, `Set`, `BigInt` are rejected at `write` time so
- * the model gets an immediate, actionable error.
+ * Historical note: these tools used to be a single multiplexed
+ * `exchange({op: 'put' | 'get' | 'list', ...})` tool. That was split
+ * into three verb-named tools to eliminate LLM mistakes. Now the write
+ * side is further split by value type so the schema constraint itself
+ * prevents nesting — the model simply cannot put an object into
+ * `write_result`, so it must use `write_result_object` instead.
  *
- * The tools are registered ONLY on sub-agents (the main agent never
- * reads or writes the store directly; the orchestrator handles main-
- * side access).
+ * All tools are registered ONLY on sub-agents (the main agent never
+ * reads or writes either store directly; the orchestrator handles
+ * main-side access).
  */
 
 import type { RegisteredTool, ToolCallResult } from "../chat-stream";
@@ -61,6 +58,15 @@ export type HandoffStore = Map<string, unknown>;
  * instead of crashing.
  */
 export type HandoffStoreSource = HandoffStore | (() => HandoffStore | null);
+
+/**
+ * The RESULT store is semantically identical to `HandoffStore` but
+ * carries output data (sub → main direction). Defined as a separate
+ * type for clarity — the seed store and result store MUST be distinct
+ * `Map` instances with no shared namespace.
+ */
+export type ResultStore = HandoffStore;
+export type ResultStoreSource = HandoffStoreSource;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Validation
@@ -168,12 +174,15 @@ export function estimateValueSize(value: unknown): number {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool factory
+// Tool factories
 // ─────────────────────────────────────────────────────────────────────────────
 
-const WRITE_TOOL_NAME = "write_handoff";
 const READ_TOOL_NAME = "read_handoff";
 const LIST_TOOL_NAME = "list_handoff";
+
+const WRITE_SCALAR_TOOL_NAME = "write_result";
+const WRITE_ARRAY_TOOL_NAME = "write_result_array";
+const WRITE_OBJECT_TOOL_NAME = "write_result_object";
 
 /**
  * Upper bound on `keys.length` for a batch `read_handoff`. The store is
@@ -186,14 +195,6 @@ const LIST_TOOL_NAME = "list_handoff";
  */
 const READ_KEYS_HARD_LIMIT = 32;
 
-const WRITE_TOOL_DESCRIPTION =
-    "Hand off a structured value to the main agent through the per-dispatch handoff store. " +
-    "After completing your task, call write_handoff({key:'result', value:<your structured result>}) " +
-    "BEFORE producing your final text reply — the main agent reads `result` programmatically, " +
-    "not your prose. Use other key names for auxiliary payload (warnings, candidates, debug info). " +
-    "Values must be JSON-serializable (string, number, boolean, null, plain array, or plain object). " +
-    "Functions, Date, Map, Set, BigInt, and class instances are not allowed.";
-
 const READ_TOOL_DESCRIPTION =
     "Read seed values the main agent handed off to you for this dispatch. Your task prose " +
     "names the keys you should expect (e.g. \"the `path` key\", \"the `query` key\"); those " +
@@ -203,96 +204,51 @@ const READ_TOOL_DESCRIPTION =
     "read_handoff({key:'...'}) only when you genuinely need exactly one value.";
 
 const LIST_TOOL_DESCRIPTION =
-    "Enumerate the keys currently in the per-dispatch handoff store, with approximate sizes. " +
+    "Enumerate the keys currently in the per-dispatch seed store, with approximate sizes. " +
     "Fallback for the rare case where you suspect the main agent has pre-loaded keys not " +
     "in your sub-agent's expected set. In normal operation your workflow's expected key " +
     "set is authoritative — use read_handoff with explicit keys instead.";
 
+const WRITE_SCALAR_DESCRIPTION =
+    "Write a scalar result value (string, number, boolean, or null) to the result store. " +
+    "After completing your task, call the write_result tools BEFORE producing your final " +
+    "text reply — the main agent reads the result store programmatically, not your prose. " +
+    "Use write_result for simple scalar values (paths, counts, flags). " +
+    "For arrays use write_result_array. For structured objects use write_result_object.";
+
+const WRITE_ARRAY_DESCRIPTION =
+    "Write an array to the result store. Use this for list values like warnings, " +
+    "candidate paths, or matched items. The array elements must be JSON-serializable. " +
+    "For simple scalar values use write_result. For structured objects use write_result_object.";
+
+const WRITE_OBJECT_DESCRIPTION =
+    "Write a structured object to the result store. Use this when you need to return " +
+    "multiple related fields together (e.g. a diff sample with before_excerpt and " +
+    "after_excerpt). The object values must be JSON-serializable. IMPORTANT: prefer " +
+    "using multiple write_result calls for individual scalar fields (path, strategy, " +
+    "edits_applied) rather than packing everything into one object — the main agent " +
+    "assembles all result-store entries into a single structured return. Reserve " +
+    "write_result_object for when several fields truly belong together as one unit.";
+
 /**
- * Build the three handoff tools (`write_handoff`, `read_handoff`,
- * `list_handoff`) bound to a shared store source.
+ * Build the two READ-SIDE handoff tools (`read_handoff`, `list_handoff`)
+ * bound to a seed store source.
  *
- * Returned as a tuple so callers can register all three in one
- * destructured statement without depending on a particular field name.
+ * These give the sub-agent access to data the main agent pre-loaded via
+ * `delegate_task`'s `handoff` argument. The tools are always-on
+ * (`ondemand: false`) because the whole point of a sub-agent is to
+ * consume structured inputs and return structured outputs — they must
+ * be visible on every turn regardless of topical drift.
  *
- * @param source either a `HandoffStore` (when the tools are registered
- *   for a single execution) or a getter `() => HandoffStore | null`
- *   (when the tools are registered once on a long-lived ChatStream
- *   that is reused across many executions, each with its own store).
+ * @param source either a `HandoffStore` or a getter `() => HandoffStore | null`
+ *   (when the tools are registered once on a long-lived ChatStream).
  */
 export function createHandoffTools(
     source: HandoffStoreSource,
-): readonly [RegisteredTool, RegisteredTool, RegisteredTool] {
+): readonly [RegisteredTool, RegisteredTool] {
     const resolveStore = typeof source === "function"
         ? source
         : () => source;
-
-    // ALWAYS-ON: these are control-plane tools, not content tools.
-    //
-    // We previously had `ondemand: true` on the multiplexed `exchange`
-    // tool, relying on the embedding-based tool filter to surface it
-    // only when the model's query was topically similar to the
-    // description. That was wrong for two independent reasons that
-    // compounded into a hard bug:
-    //
-    //   1) The description is generic ("read/write a key-value store"),
-    //      so its embedding score against typical sub-agent prompts
-    //      ("read this file", "search for X") is low — and it kept
-    //      being dropped from `filteredTools`.
-    //   2) Sub-agents have *no* `onToolCall` fallback wired into their
-    //      ChatStream. When the model called the tool from system-
-    //      prompt memory after the filter had dropped it, the dispatch
-    //      loop in chat-stream.ts threw an "unhandled tool" error
-    //      mid-turn, leaving the tool_call bubble visibly stuck at `…`
-    //      forever (the `_finalizeStuckToolCallMessages` safety net
-    //      now catches this and logs a console.warn, but the
-    //      underlying gap is here).
-    //
-    // The whole point of every sub-agent's `execute()` is to RETURN
-    // STRUCTURED DATA via these tools — see `sub-agent-prompts.ts` —
-    // so they must be visible on every single turn, regardless of how
-    // the conversation has drifted topically. The schemas are small
-    // so the token cost of having them always on is negligible
-    // compared to the cost of silently dropping the agent's only
-    // structured-return channel.
-    const writeTool: RegisteredTool = {
-        ondemand: false,
-        capabilities: [],
-        requiresConfirmation: false,
-        schema: {
-            type: "function",
-            function: {
-                name: WRITE_TOOL_NAME,
-                description: WRITE_TOOL_DESCRIPTION,
-                parameters: {
-                    type: "object",
-                    properties: {
-                        key: {
-                            type: "string",
-                            description:
-                                "Key name. Use 'result' for the canonical structured return " +
-                                "value the main agent consumes automatically; use other names " +
-                                "for auxiliary payload (warnings, candidates, debug info).",
-                        },
-                        value: {
-                            description:
-                                "Value to hand off. Must be JSON-serializable: string, " +
-                                "number (finite), boolean, null, plain array, or plain object. " +
-                                "Disallowed: undefined, NaN/Infinity, BigInt, function, symbol, " +
-                                "Date, Map, Set, RegExp, Error, binary buffers, class instances, " +
-                                "circular references.",
-                        },
-                    },
-                    required: ["key", "value"],
-                },
-            },
-        },
-        exec: async (_chatStream, args): Promise<ToolCallResult> => {
-            const store = resolveStore();
-            if (!store) return noStoreError(WRITE_TOOL_NAME);
-            return execWrite(store, args);
-        },
-    };
 
     const readTool: RegisteredTool = {
         ondemand: false,
@@ -358,30 +314,214 @@ export function createHandoffTools(
         },
     };
 
-    return [writeTool, readTool, listTool] as const;
+    return [readTool, listTool] as const;
+}
+
+/**
+ * Build the three WRITE-SIDE result tools (`write_result`,
+ * `write_result_array`, `write_result_object`) bound to a result
+ * store source.
+ *
+ * The sub-agent writes structured output into the result store BEFORE
+ * its final text reply. The orchestrator reads this store after
+ * completion to assemble the delegate envelope. The three tools differ
+ * ONLY in what value type they accept:
+ *
+ *   - `write_result`: scalar (string / number / boolean / null)
+ *   - `write_result_array`: array
+ *   - `write_result_object`: plain object
+ *
+ * This split is intentional: by constraining the value type at the
+ * schema level, we prevent the model from constructing deeply nested
+ * JSON inside a single function-call argument — the primary failure
+ * mode of the old `write_handoff`. Instead the model builds structured
+ * returns from small, independently correct pieces.
+ *
+ * @param source either a `HandoffStore` or a getter `() => HandoffStore | null`.
+ */
+export function createResultTools(
+    source: ResultStoreSource,
+): readonly [RegisteredTool, RegisteredTool, RegisteredTool] {
+    const resolveStore = typeof source === "function"
+        ? source
+        : () => source;
+
+    // ALWAYS-ON: these are control-plane tools. See rationale in
+    // `createHandoffTools` — the same logic applies: every sub-agent
+    // must return structured data.
+    const writeScalarTool: RegisteredTool = {
+        ondemand: false,
+        capabilities: [],
+        requiresConfirmation: false,
+        schema: {
+            type: "function",
+            function: {
+                name: WRITE_SCALAR_TOOL_NAME,
+                description: WRITE_SCALAR_DESCRIPTION,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        key: {
+                            type: "string",
+                            description:
+                                "Key name for this result entry. Use descriptive names " +
+                                "(path, strategy, edits_applied, focus, count, etc.). " +
+                                "The main agent receives all result-store entries as a " +
+                                "single assembled object.",
+                        },
+                        value: {
+                            type: ["string", "number", "boolean", "null"],
+                            description:
+                                "Scalar value. Accepts only string, number (finite), " +
+                                "boolean, or null. For arrays use write_result_array. " +
+                                "For objects use write_result_object.",
+                        },
+                    },
+                    required: ["key", "value"],
+                },
+            },
+        },
+        exec: async (_chatStream, args): Promise<ToolCallResult> => {
+            const store = resolveStore();
+            if (!store) return noStoreError(WRITE_SCALAR_TOOL_NAME);
+            return execWriteScalar(store, args);
+        },
+    };
+
+    const writeArrayTool: RegisteredTool = {
+        ondemand: false,
+        capabilities: [],
+        requiresConfirmation: false,
+        schema: {
+            type: "function",
+            function: {
+                name: WRITE_ARRAY_TOOL_NAME,
+                description: WRITE_ARRAY_DESCRIPTION,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        key: {
+                            type: "string",
+                            description: "Key name for this result entry.",
+                        },
+                        value: {
+                            type: "array",
+                            description:
+                                "Array value. Elements must be JSON-serializable. " +
+                                "For scalar values use write_result. " +
+                                "For objects use write_result_object.",
+                        },
+                    },
+                    required: ["key", "value"],
+                },
+            },
+        },
+        exec: async (_chatStream, args): Promise<ToolCallResult> => {
+            const store = resolveStore();
+            if (!store) return noStoreError(WRITE_ARRAY_TOOL_NAME);
+            return execWriteArray(store, args);
+        },
+    };
+
+    const writeObjectTool: RegisteredTool = {
+        ondemand: false,
+        capabilities: [],
+        requiresConfirmation: false,
+        schema: {
+            type: "function",
+            function: {
+                name: WRITE_OBJECT_TOOL_NAME,
+                description: WRITE_OBJECT_DESCRIPTION,
+                parameters: {
+                    type: "object",
+                    properties: {
+                        key: {
+                            type: "string",
+                            description: "Key name for this result entry.",
+                        },
+                        value: {
+                            type: "object",
+                            description:
+                                "Structured object value (plain object, values must be " +
+                                "JSON-serializable). PREFER using multiple write_result " +
+                                "calls for individual scalar fields instead of packing " +
+                                "everything into one object. Reserve this tool for when " +
+                                "several fields truly belong together as one unit (e.g. " +
+                                "a diff sample containing before_excerpt and after_excerpt).",
+                        },
+                    },
+                    required: ["key", "value"],
+                },
+            },
+        },
+        exec: async (_chatStream, args): Promise<ToolCallResult> => {
+            const store = resolveStore();
+            if (!store) return noStoreError(WRITE_OBJECT_TOOL_NAME);
+            return execWriteObject(store, args);
+        },
+    };
+
+    return [writeScalarTool, writeArrayTool, writeObjectTool] as const;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Op handlers
+// Op handlers — result (write) side
 // ─────────────────────────────────────────────────────────────────────────────
 
-function execWrite(store: HandoffStore, args: Record<string, unknown>): ToolCallResult {
+function execWriteScalar(store: HandoffStore, args: Record<string, unknown>): ToolCallResult {
     const key = args["key"];
     if (typeof key !== "string" || !key.trim()) {
-        return errorResult("`key` is required for write_handoff and must be a non-empty string.");
+        return errorResult("`key` is required for write_result and must be a non-empty string.");
     }
     if (!("value" in args)) {
-        return errorResult(
-            "`value` is required for write_handoff. " +
-            "Pass the structured value you want the main agent to receive.",
-        );
+        return errorResult("`value` is required for write_result.");
     }
 
     const value = args["value"];
+    const t = typeof value;
+    if (t === "string" || t === "boolean") {
+        store.set(key.trim(), value);
+        return { success: true, type: "object", content: { ok: true, key: key.trim() } };
+    }
+    if (t === "number") {
+        if (!Number.isFinite(value as number)) {
+            return errorResult("write_result does not accept NaN or Infinity.");
+        }
+        store.set(key.trim(), value);
+        return { success: true, type: "object", content: { ok: true, key: key.trim() } };
+    }
+    if (value === null) {
+        store.set(key.trim(), null);
+        return { success: true, type: "object", content: { ok: true, key: key.trim() } };
+    }
+
+    return errorResult(
+        `write_result only accepts scalar values (string, number, boolean, null). ` +
+        `Got ${t}. For arrays use write_result_array; for objects use write_result_object.`,
+    );
+}
+
+function execWriteArray(store: HandoffStore, args: Record<string, unknown>): ToolCallResult {
+    const key = args["key"];
+    if (typeof key !== "string" || !key.trim()) {
+        return errorResult("`key` is required for write_result_array and must be a non-empty string.");
+    }
+    if (!("value" in args)) {
+        return errorResult("`value` is required for write_result_array.");
+    }
+
+    const value = args["value"];
+    if (!Array.isArray(value)) {
+        return errorResult(
+            `write_result_array requires an array value; got ${typeof value}. ` +
+            "For scalar values use write_result. For objects use write_result_object.",
+        );
+    }
+
     const reason = validateSerializable(value);
     if (reason) {
         return errorResult(
-            `\`value\` is not JSON-serializable: ${reason}. ` +
+            `Array is not JSON-serializable: ${reason}. ` +
             "Allowed: string, number (finite), boolean, null, plain array, plain object. " +
             "Disallowed: undefined, NaN/Infinity, BigInt, function, symbol, Date, Map, Set, " +
             "RegExp, Error, binary buffers, class instances, circular references.",
@@ -389,11 +529,38 @@ function execWrite(store: HandoffStore, args: Record<string, unknown>): ToolCall
     }
 
     store.set(key.trim(), value);
-    return {
-        success: true,
-        type: "object",
-        content: { ok: true, key: key.trim() },
-    };
+    return { success: true, type: "object", content: { ok: true, key: key.trim() } };
+}
+
+function execWriteObject(store: HandoffStore, args: Record<string, unknown>): ToolCallResult {
+    const key = args["key"];
+    if (typeof key !== "string" || !key.trim()) {
+        return errorResult("`key` is required for write_result_object and must be a non-empty string.");
+    }
+    if (!("value" in args)) {
+        return errorResult("`value` is required for write_result_object.");
+    }
+
+    const value = args["value"];
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return errorResult(
+            `write_result_object requires a plain object value; got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}. ` +
+            "For arrays use write_result_array. For scalar values use write_result.",
+        );
+    }
+
+    const reason = validateSerializable(value);
+    if (reason) {
+        return errorResult(
+            `Object is not JSON-serializable: ${reason}. ` +
+            "Allowed: string, number (finite), boolean, null, plain array, plain object. " +
+            "Disallowed: undefined, NaN/Infinity, BigInt, function, symbol, Date, Map, Set, " +
+            "RegExp, Error, binary buffers, class instances, circular references.",
+        );
+    }
+
+    store.set(key.trim(), value);
+    return { success: true, type: "object", content: { ok: true, key: key.trim() } };
 }
 
 /**

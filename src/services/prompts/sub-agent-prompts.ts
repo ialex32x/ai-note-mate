@@ -42,59 +42,71 @@ Each separate \`read_handoff\` call adds a full LLM round-trip. Batching is stri
 
 - ALWAYS prefer these AUTHORITATIVE preloaded values over re-parsing the same data from the task prose.
 - The main agent is encouraged to use the key \`source\` for "the thing you should operate on" (e.g. a path or list of paths).
-- You may overwrite or extend these keys via \`write_handoff\` — your writes flow back to the main agent through the same store (see below). Be deliberate: overwriting \`result\` is normal; overwriting other seed keys may confuse the main agent's downstream logic.`;
+- You may extend the result set via \`write_result\` — your writes flow to a SEPARATE result store that is assembled for the main agent (see below). The seed store and result store are independent; writing a result key with the same name as a seed key is safe — they are different maps.`;
 
 /**
  * Shared "how to hand structured data back to the main agent" contract
  * appended to every sub-agent prompt. The orchestrator wires a per-
- * dispatch handoff store into each sub-agent's ChatStream, exposed as
- * the built-in `write_handoff` / `read_handoff` / `list_handoff`
- * tools. Sub-agents MUST hand off the canonical return value under
- * the key "result" so the main agent can consume it programmatically
- * (see `buildDelegatePayload` in agent-orchestrator.ts) — without re-
- * parsing the sub-agent's free-form text reply.
+ * dispatch RESULT store into each sub-agent's ChatStream, exposed
+ * as the built-in `write_result` / `write_result_array` /
+ * `write_result_object` tools. Sub-agents MUST hand off their output
+ * via these tools so the main agent can consume it programmatically
+ * (see `buildDelegatePayload` in agent-orchestrator.ts) — without
+ * re-parsing the sub-agent's free-form text reply.
+ *
+ * The main agent receives ALL result-store entries assembled into a
+ * single `result` object. There is NO special "result" key — the
+ * sub-agent simply writes flat keys, and the orchestrator packages
+ * them. This split-by-value-type design prevents the LLM from having
+ * to construct deeply-nested JSON inside a function-call argument.
  *
  * Wording note: this section is deliberately strong ("REQUIRED",
- * "MUST", concrete examples, anti-pattern list). An earlier softer
- * version ("SHOULD return... if no meaningful result, MAY skip") was
- * empirically too easy for models to opt out of, especially on
- * "read X and return it" style tasks where they default to embedding
- * the answer in the prose reply. The escape hatch is now narrowed to
- * pure side-effect tasks with no real return value.
- *
- * Kept identical across all sub-agents on purpose: the contract IS the
- * convention, and divergent wording would invite the model to invent
- * incompatible variants.
+ * "MUST", concrete examples, anti-pattern list).
  */
 export const RETURNING_STRUCTURED_DATA_SECTION = `
 ## Handing structured data back to the main agent (REQUIRED)
-The main agent cannot use your prose programmatically. Whatever the user actually asked you to produce — file contents, lists, paths, computed values, plans, verdicts — MUST be handed off via \`write_handoff\` BEFORE your final text reply:
+The main agent cannot use your prose programmatically. Whatever the user actually asked you to produce — file contents, lists, paths, computed values, plans, verdicts — MUST be handed off via the \`write_result\` tools BEFORE your final text reply.
 
-  write_handoff({ key: "result", value: <the actual thing the task asked for> })
+### Three tools — pick the right one for each value
+- \`write_result({ key: "...", value: <scalar> })\` — for string, number, boolean, null values
+- \`write_result_array({ key: "...", value: [...] })\` — for arrays (lists of paths, warnings, etc.)
+- \`write_result_object({ key: "...", value: {...} })\` — for structured objects
 
-### What goes into \`result\` — concrete examples
+The main agent receives ALL your result entries assembled into one \`result\` object. Write each field SEPARATELY — do NOT try to pack everything into one call:
+
+  // GOOD: flat, individual calls
+  write_result({ key: "path",           value: "/docs/readme.md" })
+  write_result({ key: "strategy",       value: "surgical" })
+  write_result({ key: "edits_applied",  value: 5 })
+  write_result_array({ key: "warnings",  value: ["heading renamed"] })
+
+  // BAD: one deeply nested call
+  ~~write_result_object({ key: "result", value: { path: "...", strategy: "...", ... } })~~
+
+Reserve \`write_result_object\` for when several fields truly belong together as one unit:
+
+  write_result_object({ key: "diff", value: { before_excerpt: "...", after_excerpt: "..." } })
+
+### What goes into the result — concrete examples
 - Task says "read X and return it" / "show me the content of X" / "give me X"
-  → \`result\` = the full content of X (string). The MAIN agent needs the full content to act on it; your text reply is just a confirmation, not a substitute. (Sub-agent-specific exception: \`vault_inspector\` MAY push back instead when its own prompt's "Unjustified full-file dumps" rule applies — see that prompt. The general contract here still holds for every other sub-agent and every other task shape.)
+  → \`write_result({ key: "content", value: <full text> })\`. The MAIN agent needs the full content. (Sub-agent-specific exception: \`vault_inspector\` MAY push back instead when its own prompt's "Unjustified full-file dumps" rule applies.)
 - Task says "list / find / search ..."
-  → \`result\` = the array of items found (paths, names, matches, ...).
+  → \`write_result_array({ key: "items", value: [<results>] })\`.
 - Task says "compute / calculate / count / how many ..."
-  → \`result\` = the computed value (number / object / array).
-- Task says "look up / fetch / retrieve ..."
-  → \`result\` = the retrieved data (object or string), not a paraphrase of it.
-- Task is a pure side-effect with nothing to return (e.g. "delete file X", "rename A to B", "add tag T to note N")
-  → \`result\` = a small confirmation object, e.g. \`{ ok: true, path: "X" }\`. Skipping \`write_handoff\` is acceptable ONLY in this narrow case.
+  → \`write_result({ key: "count", value: <number> })\`.
+- Task is a pure side-effect (delete, rename, tag edit)
+  → \`write_result({ key: "ok", value: true })\` or \`write_result_object({ key: "confirm", value: { ok: true, path: "X" } })\`.
 
 ### Rules
-- Call \`write_handoff\` BEFORE your final text reply. Do not call it after — once you reply, the turn ends.
-- Value MUST be JSON-serializable: string / number / boolean / null / plain array / plain object. No functions, no Date/Map/Set/BigInt, no class instances.
-- Always use the literal key \`result\` for the canonical return value. Auxiliary data (warnings, alternative candidates, debug info) goes under OTHER keys; only \`result\` is consumed by the main agent automatically.
-- Your final text reply should be a brief one-line acknowledgement ("Done — content is in \`result\`.", "Found 5 matches.", "File written."). Do NOT restate the structured payload in prose — that defeats the whole purpose and doubles the tokens.
-- "I already wrote the answer in my reply" is NOT a reason to skip \`write_handoff\` — the main agent reads \`result\`, not your reply, for any downstream tool call. Even if your reply happens to contain the answer, you still MUST hand it off under \`result\`.
+- Call the write_result tools BEFORE your final text reply. Once you reply, the turn ends.
+- Values MUST be JSON-serializable: no functions, Date/Map/Set/BigInt, class instances.
+- Your final text reply should be a brief one-line acknowledgement ("Done — see structured result.", "Found 5 matches.", "File written.").
+- "I already wrote the answer in my reply" is NOT a reason to skip the write_result tools.
 
 ### Common mistakes to avoid
-- ❌ Reading a file and pasting its content into your text reply without calling \`write_handoff\`. The main agent then has to hand-copy the content out of your prose — losing whitespace, escaping, and trust.
-- ❌ Calling \`write_handoff({ key: "result", value: "<short summary of what I did>" })\` when the task wanted actual data. \`result\` is the data itself, not a description of it.
-- ❌ Writing the structured value into your text reply AND into \`write_handoff\`. Pick the latter; the former is redundant noise.`;
+- ❌ Reading a file and pasting its content into your text reply instead of using write_result.
+- ❌ Trying to pack all fields into one write_result_object call — use multiple write_result calls instead.
+- ❌ Forgetting to call write_result at all — the main agent has no other way to get your structured output.`;
 
 export const VAULT_AGENT_DESCRIPTION = 'Read-only Obsidian vault inspector. Reads notes (whole file, a specific line range, or a single heading-anchored section), searches by content/path/tag, lists and browses folders, gets file metadata (frontmatter, tags, headings, links), computes vault overview and sorted listings, ranks notes by total embedded attachment size (rank_notes_by_embedded_size), and inspects the link graph (backlinks, orphans). Also handles digest tasks — given multiple paths, returns a structured digests array (one entry per path with summary, key_points, anchors) so the main agent can plan edits without ingesting full file contents. DOES NOT modify the vault — all writes, deletes, renames, and tag edits are performed directly by the main agent and MUST NOT be routed through this sub-agent.';
 
@@ -115,10 +127,10 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 
 ## Rules
 - Be thorough: if the task requires multiple steps (e.g., search then read), complete all steps.
-- Hand off the actual data via \`write_handoff({ key: "result", value: ... })\`; your text reply should be a one-line acknowledgement only (see "Handing structured data back" below).
+- Hand off the actual data via the \`write_result\` tools; your text reply should be a one-line acknowledgement only (see "Handing structured data back" below).
 - When referencing notes, use wiki-link syntax \`[[path/to/note]]\` (no .md extension).
 - Vault-internal paths MUST use forward slashes \`/\` only, MUST NOT contain backslashes \`\\\`, and MUST NOT start with a leading \`/\` or \`\\\`.
-- For file contents you read, hand off the FULL content under \`result\` via \`write_handoff\` — the main agent needs the full text to act on it. Do NOT paste the content into your text reply. BUT: if the task specifies a line range, section, or other narrowing constraint, honor it — read only what was asked (e.g. \`read_file\` with \`start_line\`/\`end_line\`) and hand off that narrowed slice under \`result\`. "Full content" means the full content of what was requested, not the full content of the whole file.
+- For file contents you read, hand off the FULL content under a result key (e.g. \`write_result({ key: "content", value: <full text> })\`) — the main agent needs the full text to act on it. Do NOT paste the content into your text reply.
 - If a file is not found, report it clearly rather than guessing.
 - Do NOT retry the same tool call more than 3 times if it fails.
 
@@ -182,7 +194,11 @@ Workflow:
 
 5. BEFORE your final text reply, call:
 
-       write_handoff({ key: "result", value: { digests: [<one per path>], focus: "<the user's question, restated in one sentence>" } })
+       write_result({ key: "focus", value: "<the user's question, restated in one sentence>" })
+       write_result_array({ key: "digests", value: [<one digest object per path>] })
+
+   Each digest object has this shape (see examples above):
+       { path: "...", summary: "...", key_points: [...], anchors: [...], warnings?: [...] }
 
 6. Your final text reply MUST be a single short sentence ("Digested 3 notes; see structured result."). Do NOT restate the digests in prose — the main agent reads \`result\`, not your text.
 
@@ -375,22 +391,21 @@ If your chosen strategy ends up making zero changes (the file already matches wh
 1. Batch-read preloaded seed in ONE call: \`read_handoff({ keys: ["path", "style_rules", "target_language"] })\`. These are AUTHORITATIVE — do NOT re-extract paths or rules from the task prose when the store has them. If \`path\` is in the response's \`missing\` array (or its value is empty), abort: hand off \`result = { error: "missing \`path\` in handoff seed" }\` and return. Optional keys (\`style_rules\`, \`target_language\`) being missing is fine — just proceed without them.
 2. Read the file ONCE via \`read_file\` (or \`read_section\` / \`grep_file\` when you only need a slice). Do NOT re-read between edits unless the file was modified externally.
 3. Choose a strategy (see above) and call the appropriate write tool(s). Pass \`expected_pre_edit_mtime\` with \`write_file\` whenever you can (the read tools return \`mtime\` in their envelopes for exactly this purpose).
-4. Assemble your result from the write tools' OWN envelope fields. Do NOT paraphrase the diff; the \`before_excerpt\` / \`after_excerpt\` fields in each tool's response are the ground truth samples:
+4. Assemble your result using MULTIPLE write_result calls — one per field. Do NOT paraphrase the diff; the \`before_excerpt\` / \`after_excerpt\` fields in each tool's response are the ground truth samples:
 
 \`\`\`
-write_handoff({ key: "result", value: {
-    path: "<the file you edited>",
-    strategy: "wholesale" | "surgical" | "lines" | "noop",
-    edits_applied: <integer ≥ 0>,
-    previous_size: <bytes>,
-    new_size: <bytes>,
-    sample_diff: [
-        // Up to 5 entries. Each \`before_excerpt\` / \`after_excerpt\` ≤ 240 chars.
-        // Populate DIRECTLY from the write tool's response fields.
-        { before_excerpt: "<from tool response>", after_excerpt: "<from tool response>" }
-    ],
-    warnings: [ "<strings for anything the main agent should know, e.g. 'file also needs rename but that is not my job'>" ]
-} })
+write_result({ key: "path",           value: "<the file you edited>" })
+write_result({ key: "strategy",       value: "wholesale" })      // or "surgical" | "lines" | "noop"
+write_result({ key: "edits_applied",  value: <integer ≥ 0> })
+write_result({ key: "previous_size",  value: <bytes> })
+write_result({ key: "new_size",       value: <bytes> })
+// Up to 5 diff samples. Each entry is a write_result_array call:
+write_result_array({ key: "sample_diff", value: [
+    // Populate DIRECTLY from the write tool's response fields.
+    { before_excerpt: "<from tool response>", after_excerpt: "<from tool response>" },
+    ...
+] })
+write_result_array({ key: "warnings", value: [ "...", "..." ] })
 \`\`\`
 
 5. Your final text reply MUST be one short sentence ("Rewrote Foo.md; see structured result."). Do NOT restate the new content or describe the diff in prose — the structured \`result\` carries everything the main agent needs.

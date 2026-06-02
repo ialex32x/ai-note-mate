@@ -12,7 +12,7 @@ import { ChatStream, ChatMessage, RegisteredTool, type ToolFilterOptions } from 
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
 import { type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, stripLoneSurrogates } from "../utils/string-safe";
-import { createHandoffTools, type HandoffStore } from "./tools/handoff-toolcall";
+import { createHandoffTools, createResultTools, type HandoffStore } from "./tools/handoff-toolcall";
 
 // ─────────────────────────────────────────────
 // Types
@@ -143,21 +143,25 @@ export class SubAgent {
     private _currentExecToolCallEndHandler: ((agentName: string, toolName: string, args: Record<string, unknown>, result: string, isError: boolean) => void) | undefined;
 
     /**
-     * Per-dispatch handoff store (key/value scratchpad shared with the
-     * orchestrator). Set at the start of `execute()` from
-     * `options.handoffStore`, cleared in the cleanup block — including
-     * on abort / error paths.
+     * Per-dispatch seed store (main → sub direction). Pre-populated by
+     * the orchestrator from `delegate_task`'s `handoff` argument.
+     * Read-only from the sub-agent's perspective; the read_handoff /
+     * list_handoff tools resolve this field via a getter closure.
      *
-     * The handoff tools registered on the (reused) ChatStream resolve
-     * this field via a getter closure at call-time, so a single
-     * registration suffices across all dispatches and there is no risk
-     * of leaking one dispatch's store into the next.
-     *
-     * `null` means "no handoff store wired for the current call"; the
-     * tools report a clear error to the model in that case (rather than
-     * crashing or silently no-op'ing).
+     * `null` means no seed store wired; the tools report a clear error.
      */
     private _currentHandoffStore: HandoffStore | null = null;
+
+    /**
+     * Per-dispatch result store (sub → main direction). Initially empty;
+     * the sub-agent populates it via write_result / write_result_array /
+     * write_result_object before its final text reply. The orchestrator
+     * reads it after completion to build the delegate envelope.
+     *
+     * Completely separate from `_currentHandoffStore` — no shared
+     * namespace, no key collision between seed and result.
+     */
+    private _currentResultStore: HandoffStore | null = null;
 
     constructor(config: SubAgentConfig) {
         this.name = config.name;
@@ -221,15 +225,21 @@ export class SubAgent {
                 signal?: AbortSignal;
             }) => Promise<boolean>;
             /**
-             * Per-dispatch handoff store. When provided, the sub-agent's
-             * built-in `write_handoff` / `read_handoff` / `list_handoff`
-             * tools will read/write into this map for the duration of
-             * this `execute()` call. The orchestrator owns the store:
-             * it creates it before calling `execute`, snapshots it
-             * after, and discards it. If omitted, the handoff tools
-             * will report "no store available" to the model.
+             * Per-dispatch seed store (main → sub direction). Pre-populated
+             * by the orchestrator with data from `delegate_task`'s `handoff`
+             * argument. The sub-agent's `read_handoff` / `list_handoff` tools
+             * read from this map. If omitted, those tools report "no store
+             * available" to the model.
              */
             handoffStore?: HandoffStore;
+            /**
+             * Per-dispatch result store (sub → main direction). Fresh empty
+             * map for the sub-agent to populate via `write_result` /
+             * `write_result_array` / `write_result_object`. The orchestrator
+             * reads this store after completion to build the delegate envelope.
+             * If omitted, the write tools report "no store available".
+             */
+            resultStore?: HandoffStore;
             /**
              * Optional opaque tag forwarded to the sub-agent's ChatStream
              * as {@link ChatStream.contextTag} for the duration of this
@@ -254,16 +264,7 @@ export class SubAgent {
         this._currentExecConfirmToolCall = options.onConfirmToolCall;
         this._currentExecToolCallEndHandler = options.onToolCallEnd;
         this._currentHandoffStore = options.handoffStore ?? null;
-
-        // Snapshot the handoff store's initial keys so we can later tell
-        // "keys the main agent pre-loaded as inputs" from "keys the sub-agent
-        // wrote back as outputs". The auto-fill safety net below only
-        // synthesizes a stand-in reply when the sub-agent ACTUALLY produced
-        // something new — purely-consuming runs that emit no text reply stay
-        // as genuinely empty replies.
-        const initialHandoffKeys: ReadonlySet<string> = options.handoffStore
-            ? new Set(options.handoffStore.keys())
-            : new Set<string>();
+        this._currentResultStore = options.resultStore ?? null;
 
         // Build the user message: task + optional context
         const userMessage = options.context
@@ -361,29 +362,13 @@ export class SubAgent {
 
             // Auto-fill safety net for the "silent write" case.
             //
-            // Some models treat `write_handoff` as the final action of the turn and
-            // end without producing a text reply. That leaves `summary === ""` here
-            // and `payload.text === ""` in the envelope the orchestrator builds.
-            // Empirically the main agent's LLM then mis-reads the empty `text` as
-            // "sub-agent failed / returned nothing" and ignores the `result` field
-            // sitting right next to it, even though the prompt tells it to prefer
-            // `result`. Synthesize a brief stand-in here so the channel always
-            // carries a positive signal when structured data IS available.
-            //
-            // We intentionally:
-            //  - skip the abort path (its synthetic "[aborted...]" summary already
-            //    explains the empty content),
-            //  - require at least one NEW key (so a run that only consumed
-            //    pre-loaded inputs without writing anything back stays empty,
-            //    which is the truthful signal),
-            //  - leave `fullContent` and the ChatStream message history untouched,
-            //    so the UI's empty-bubble hide path (bubble-renderer.ts) keeps
-            //    working — only the main-agent-facing summary changes.
-            if (!aborted && !summary.trim() && options.handoffStore) {
-                const synthesized = this._synthesizeHandoffSummary(
-                    options.handoffStore,
-                    initialHandoffKeys,
-                );
+            // Some models treat `write_result` as the final action of the turn and
+            // end without producing a text reply. Synthesize a stand-in so the
+            // envelope always carries a positive signal when structured data IS
+            // available. The result store is always initially empty (unlike the
+            // seed store), so any entries mean the sub-agent wrote output.
+            if (!aborted && !summary.trim() && this._currentResultStore) {
+                const synthesized = this._synthesizeHandoffSummary(this._currentResultStore);
                 if (synthesized) summary = synthesized;
             }
 
@@ -409,6 +394,7 @@ export class SubAgent {
             this._currentExecConfirmToolCall = undefined;
             this._currentExecToolCallEndHandler = undefined;
             this._currentHandoffStore = null;
+            this._currentResultStore = null;
         }
     }
 
@@ -444,46 +430,20 @@ export class SubAgent {
 
     /**
      * Build a brief stand-in `summary` for the "silent write" case —
-     * the sub-agent handed off structured data via `write_handoff` but
+     * the sub-agent handed off structured data via write_result but
      * ended the turn without producing a text reply.
      *
-     * Compares the store's current keys against the snapshot taken at
-     * the start of `execute()` (which records the keys the main agent
-     * pre-loaded as inputs). Only keys that were ADDED during the run
-     * count as sub-agent output:
-     *   - if `result` was added → lead with it (it's the canonical return
-     *     key per the prompt contract);
-     *   - any other added keys are listed as extras;
-     *   - if nothing was added (pure consume / overwrite-only) → return
-     *     null so the caller leaves `summary` empty, which is the
-     *     truthful "the sub-agent really produced nothing" signal.
+     * The result store is always empty at the start of execute(), so
+     * any entries mean the sub-agent produced output. Returns null
+     * when the store is empty (sub-agent produced nothing).
      *
      * Wording is English on purpose — this text is read by the MAIN
-     * AGENT's LLM (not the user). The bracketed form mirrors the
-     * `[Sub-agent "..." was aborted...]` synthetic summary used on the
-     * abort path so downstream prompts treating "[Sub-agent ...]" as a
-     * machine-emitted marker keep working uniformly.
+     * AGENT's LLM (not the user).
      */
-    private _synthesizeHandoffSummary(
-        store: HandoffStore,
-        initialKeys: ReadonlySet<string>,
-    ): string | null {
-        const addedKeys: string[] = [];
-        for (const k of store.keys()) {
-            if (!initialKeys.has(k)) addedKeys.push(k);
-        }
-        if (addedKeys.length === 0) return null;
-
-        const hasResult = addedKeys.includes('result');
-        const extras = addedKeys.filter(k => k !== 'result');
-
-        if (hasResult && extras.length === 0) {
-            return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`result\` in the envelope.]`;
-        }
-        if (hasResult) {
-            return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`result\` (plus extras: ${extras.join(', ')}) in the envelope.]`;
-        }
-        return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`extras\`: ${extras.join(', ')}.]`;
+    private _synthesizeHandoffSummary(store: HandoffStore): string | null {
+        if (store.size === 0) return null;
+        const keys = Array.from(store.keys());
+        return `[Sub-agent "${this.name}" produced no text reply; structured output is available under \`result\` in the envelope (keys: ${keys.join(', ')}).]`;
     }
 
     /**
@@ -587,22 +547,24 @@ export class SubAgent {
             chatStream.registerTool(tool);
         }
 
-        // Register the built-in handoff tools (`write_handoff` /
-        // `read_handoff` / `list_handoff`). They are registered
-        // unconditionally on every sub-agent: when no handoff store is
-        // wired for the current execute() call, the tools report a clear
-        // "no store available" error to the model rather than crashing.
-        //
-        // The handlers resolve the *current* store at call-time via the
-        // shared getter closure below. This way a single registration
-        // pass on the reused ChatStream shell correctly tracks per-
-        // dispatch stores without re-registering tools on every
-        // execute() call.
-        const [writeHandoffTool, readHandoffTool, listHandoffTool] =
+        // Register the built-in seed-handoff tools (`read_handoff` /
+        // `list_handoff`). They read from the seed store (main → sub
+        // direction). Registered unconditionally on every sub-agent;
+        // when no store is wired, the tools report a clear error.
+        const [readHandoffTool, listHandoffTool] =
             createHandoffTools(() => this._currentHandoffStore);
-        chatStream.registerTool(writeHandoffTool);
         chatStream.registerTool(readHandoffTool);
         chatStream.registerTool(listHandoffTool);
+
+        // Register the built-in result tools (`write_result` /
+        // `write_result_array` / `write_result_object`). They write to
+        // the result store (sub → main direction). Same unconditional
+        // registration as above.
+        const [writeScalarTool, writeArrayTool, writeObjectTool] =
+            createResultTools(() => this._currentResultStore);
+        chatStream.registerTool(writeScalarTool);
+        chatStream.registerTool(writeArrayTool);
+        chatStream.registerTool(writeObjectTool);
 
         this._reusableChatStream = chatStream;
         return chatStream;
