@@ -8,8 +8,8 @@ import {
 	type ModalityCapability,
 	type ThinkingLevel,
 } from "../../services/llm-provider";
-import { createDefaultProfile, generateId } from "../../settings/defaults";
-import type { TextGenConfig } from "../../settings/types";
+import { createDefaultProfile, generateId } from "../defaults";
+import type { TextGenConfig } from "../types";
 import {
 	createSettingsGroupHeading,
 	createApiKeyField,
@@ -17,11 +17,11 @@ import {
 	createModelFieldWithSelector,
 	createTabBar,
 	createTextField,
-} from "../settings-components";
+} from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { getProfileLabel } from "./global-section";
 import { resolveSecret } from "../../utils/secret-helper";
-import { TEXT_GEN_SECTION_ID } from "../../settings/section-ids";
+import { TEXT_GEN_SECTION_ID } from "../section-ids";
 
 export class TextGenSettingsSection implements SettingsSection {
 	readonly titleKey = TEXT_GEN_SECTION_ID;

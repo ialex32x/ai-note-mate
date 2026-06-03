@@ -1,15 +1,15 @@
 import { t } from "../../i18n";
 import type { EmbeddingProviderType } from "../../services/providers";
-import { createDefaultEmbeddingConfig } from "../../settings/defaults";
-import type { EmbeddingConfig } from "../../settings/types";
+import { createDefaultEmbeddingConfig } from "../defaults";
+import type { EmbeddingConfig } from "../types";
 import {
 	createApiKeyField,
 	createDropdownField,
 	createTabBar,
 	createTextField,
-} from "../settings-components";
+} from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
-import { EMBEDDING_SECTION_ID } from "../../settings/section-ids";
+import { EMBEDDING_SECTION_ID } from "../section-ids";
 
 export class EmbeddingSettingsSection implements SettingsSection {
 	readonly titleKey = EMBEDDING_SECTION_ID;

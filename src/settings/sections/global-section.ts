@@ -1,6 +1,6 @@
 import { DropdownComponent, Notice, Setting } from "obsidian";
 import { t } from "../../i18n";
-import type { TextGenConfig } from "../../settings/types";
+import type { TextGenConfig } from "../types";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
 import { TemplatePreviewModal } from "../../modals/template-preview-modal";
 import {
@@ -11,10 +11,10 @@ import {
 	markSettingAdvanced,
 	markSettingExperimental,
 	markSettingRequiresSessionRestart,
-} from "../settings-components";
+} from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { openPluginSettings } from "../../utils/open-plugin-settings";
-import { TEXT_GEN_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID } from "../../settings/section-ids";
+import { TEXT_GEN_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID } from "../section-ids";
 
 export class GlobalSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.globalSection';

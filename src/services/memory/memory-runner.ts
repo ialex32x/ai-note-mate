@@ -23,7 +23,7 @@
 
 import type NoteAssistantPlugin from '../../main';
 import { stripStructuredBlock } from '../suggestions';
-import { createInsightsConfig } from '../../views/session-view/chat-factory';
+import { createInsightsConfig } from '../chat-factory';
 import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from '../session-runtime/session-runtime';
 import { extractMemoryOps, type MemoryExtractOp } from './memory-extractor';

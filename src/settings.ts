@@ -1,5 +1,5 @@
 // Public entry module for plugin settings.
-// The implementation has been split into ./settings/* and ./components/settings-sections/*
+// The implementation has been split into ./settings/* (now including ./settings/sections/*)
 // This file is kept as a re-export barrel to preserve existing import paths.
 
 export * from "./settings/types";

@@ -1,6 +1,6 @@
 import type NoteAssistantPlugin from 'main';
-import { createChatAgent, buildDynamicTools, createSummarizerConfig } from '../../views/session-view/chat-factory';
-import { maybeGenerateSessionTitle } from '../../views/session-view/session-title-editor';
+import { createChatAgent, buildDynamicTools, createSummarizerConfig } from '../chat-factory';
+import { maybeGenerateSessionTitle } from '../session-title-generator';
 import { deriveArtifactStoreOptions } from '../../settings/helpers';
 import { SessionRuntime } from './session-runtime';
 import { maybeExtractInsightsAfterFinish } from './insight-runner';

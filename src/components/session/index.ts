@@ -10,3 +10,8 @@ export type { FollowUpPickHandler } from './follow-up-bar';
 export { InsightCard } from './insight-card';
 export { TodoPanel } from './todo-panel';
 export { QuickAskPanel } from './quick-ask-panel';
+export { appendErrorBubble, ErrorBubbleTracker } from './error-bubble';
+export type { AppendErrorBubbleOptions, AppendErrorBubbleResult } from './error-bubble';
+export { StreamingLoader } from './streaming-loader';
+export { showInitializationError } from './init-error-screen';
+export { SessionLoadingOverlay } from './session-loading-overlay';

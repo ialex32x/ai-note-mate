@@ -4,13 +4,13 @@ import {
 	DEFAULT_SKILL_FILTER_TOP_K,
 	DEFAULT_SKILL_HINT_THRESHOLD,
 	DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
-} from "../../settings/defaults";
+} from "../defaults";
 import { retrieve, type RetrievalResult } from "../../services/retriever";
 import { buildSkillEmbeddingText } from "../../skills/skill-catalogue";
-import { createEmbeddingConfig } from "../../views/session-view/chat-factory";
-import { createTextField, isAdvancedSettingsVisible } from "../settings-components";
+import { createEmbeddingConfig } from "../../services/chat-factory";
+import { createTextField, isAdvancedSettingsVisible } from "../../components/settings-components";
 import { SkillDetailsModal } from "./skill-details-modal";
-import type { NoteAssistantPluginSettings } from "../../settings/types";
+import type { NoteAssistantPluginSettings } from "../types";
 import type { SkillDefinition } from "../../skills/skill-loader";
 import type { SectionContext, SettingsSection } from "./types";
 

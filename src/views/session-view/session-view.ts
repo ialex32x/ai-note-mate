@@ -9,17 +9,17 @@ import {
     Platform,
     Menu,
 } from 'obsidian';
-import { ChatMessage, IChatAgent } from '../services/chat-stream';
-import { findTailTurn } from '../services/turn-utils';
-import { optimizePrompt, PromptOptimizationError } from '../services/prompt-optimizer';
-import { getActiveProfile } from '../settings';
-import { exportSessionToVault } from '../services/session-exporter';
+import { ChatMessage, IChatAgent } from '../../services/chat-stream';
+import { findTailTurn } from '../../services/turn-utils';
+import { optimizePrompt, PromptOptimizationError } from '../../services/prompt-optimizer';
+import { getActiveProfile } from '../../settings';
+import { exportSessionToVault } from '../../services/session-exporter';
 
 import NoteAssistantPlugin from 'main';
-import { t } from '../i18n';
-import { SessionManager } from '../session-manager';
-import { SessionSearchModal, SessionSearchResult } from '../modals/session-search-modal';
-import { CheckpointActionConfirmModal } from '../modals/checkpoint-action-confirm-modal';
+import { t } from '../../i18n';
+import { SessionManager } from '../../session-manager';
+import { SessionSearchModal, SessionSearchResult } from '../../modals/session-search-modal';
+import { CheckpointActionConfirmModal } from '../../modals/checkpoint-action-confirm-modal';
 import {
     DropdownManager,
     BubbleRenderer,
@@ -28,29 +28,30 @@ import {
     InsightCard,
     TodoPanel,
     QuickAskPanel,
-} from '../components/session';
-import { extractSuggestions, type SuggestedAction } from '../services/suggestions';
+    ErrorBubbleTracker,
+    StreamingLoader,
+    SessionLoadingOverlay,
+    showInitializationError,
+} from '../../components/session';
+import { extractSuggestions, type SuggestedAction } from '../../services/suggestions';
 import {
     buildInsightDeepenPrompt,
     type ConversationInsight,
     type InsightCardState,
-} from '../services/insights';
-import { resolveLinkOpenText } from '../utils/workspace-utils';
+} from '../../services/insights';
+import { resolveLinkOpenText } from '../../utils/workspace-utils';
 
 import {
     createProfileSelector, type ProfileSelectorHandle,
     createCheckpointSelector, type CheckpointSelectorHandle,
     createTipsButton, type TipsButtonHandle,
     createIssueTracerButton, type IssueTracerButtonHandle,
-} from '../components/session/toolbar';
-import type { TipSessionViewAdapter } from '../services/tips';
-import type { TokenUsage } from '../services/llm-provider';
-import { CMInput } from '../components/cm-input';
+} from '../../components/session/toolbar';
+import type { TipSessionViewAdapter } from '../../services/tips';
+import type { TokenUsage } from '../../services/llm-provider';
+import { CMInput } from '../../components/cm-input';
 import {
     ScrollController,
-    StreamingLoader,
-    showInitializationError,
-    ErrorBubbleTracker,
     BubbleListController,
     SessionStatusController,
     updateSessionTitle as renderSessionTitle,
@@ -61,17 +62,16 @@ import {
     createToolFilterOptions,
     createProviderForActiveProfileOf,
     SessionNavigator,
-} from './session-view/index';
-import { buildDisplayUnits } from './session-view/display-units';
-import { replayUnitsInFrames } from './session-view/history-replay-controller';
-import { SessionLoadingOverlay } from './session-view/session-loading-overlay';
-import { MessageWindowController } from './session-view/message-window-controller';
-import { HISTORY_LOADING } from './session-view/history-loading-config';
+} from './index';
+import { buildDisplayUnits } from './display-units';
+import { replayUnitsInFrames } from './history-replay-controller';
+import { MessageWindowController } from './message-window-controller';
+import { HISTORY_LOADING } from './history-loading-config';
 import {
     SessionRuntime,
     extractInsightsForMessage,
     type RuntimeEvent,
-} from '../services/session-runtime';
+} from '../../services/session-runtime';
 
 export class SessionView extends ItemView {
     static readonly VIEW_TYPE = 'ai-session-view';

@@ -1,10 +1,7 @@
-// Internal helpers used only by session-view.ts. Not part of the public
-// plugin API — callers outside `views/` should keep importing from
-// `views/session-view` instead.
+// SessionView class + internal helpers. External callers outside `views/`
+// should keep importing from `views/session-view`.
+export { SessionView } from './session-view';
 export { ScrollController } from './scroll-controller';
-export { StreamingLoader } from './streaming-loader';
-export { showInitializationError } from './init-error-screen';
-export { appendErrorBubble, ErrorBubbleTracker } from './error-bubble';
 export {
     updateSessionTitle,
     handleTitleClick,
@@ -19,7 +16,7 @@ export {
     createChatAgent,
     buildDynamicTools,
     type ChatAgentCallbacks,
-} from './chat-factory';
+} from '../../services/chat-factory';
 export { rebuildSessionDropdown, type SessionDropdownDeps } from './session-dropdown';
 export { SessionNavigator, type SessionNavigatorDeps } from './session-navigator';
 export { BubbleListController, type BubbleListControllerDeps } from './bubble-list-controller';

@@ -1,17 +1,17 @@
 import { t } from "../../i18n";
 import { listImageGenModels } from "../../services/image-gen";
-import { createDefaultImageGenConfig } from "../../settings/defaults";
-import { DefaultGeminiImageModel } from "../../settings/types";
-import type { ImageGenApiScheme, ImageGenConfig } from "../../settings/types";
+import { createDefaultImageGenConfig } from "../defaults";
+import { DefaultGeminiImageModel } from "../types";
+import type { ImageGenApiScheme, ImageGenConfig } from "../types";
 import {
 	createApiKeyField,
 	createDropdownField,
 	createModelFieldWithSelector,
 	createTabBar,
 	createTextField,
-} from "../settings-components";
+} from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
-import { IMAGE_GEN_SECTION_ID } from "../../settings/section-ids";
+import { IMAGE_GEN_SECTION_ID } from "../section-ids";
 
 export class ImageGenSettingsSection implements SettingsSection {
 	readonly titleKey = IMAGE_GEN_SECTION_ID;

@@ -1,35 +1,35 @@
 import type NoteAssistantPlugin from 'main';
-import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type ToolFilterOptions } from '../../services/chat-stream';
-import { AgentOrchestrator } from '../../services/agent-orchestrator';
-import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../../settings';
-import type { TextGenConfig } from '../../settings/types';
+import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type ToolFilterOptions } from './chat-stream';
+import { AgentOrchestrator } from './agent-orchestrator';
+import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
+import type { TextGenConfig } from '../settings/types';
 import {
     DEFAULT_TOOL_FILTER_TOP_K,
     DEFAULT_SKILL_FILTER_TOP_K,
     DEFAULT_SKILL_HINT_THRESHOLD,
     DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
     DEFAULT_SUB_AGENT_FILTER_TOP_K,
-} from '../../settings/defaults';
-import type { LLMProvider, MinimalModelConfig } from '../../services/llm-provider';
-import { createProviderForActiveProfile } from '../../utils/provider-factory';
-import { buildBuiltinSystemPrompt } from '../../services/prompts/session-prompts';
-import { buildSubAgentConfigs } from '../../services/sub-agent-registry';
-import { buildSkillSystemPromptForQuery } from '../../skills/skill-catalogue';
-import { buildMemorySystemPromptPrefix } from '../../services/memory';
-import type { ArtifactStore } from '../../services/artifact-store';
-import { createObsidianTools, createObsidianMutationTools } from '../../services/tools/obsidian';
-import { createWebSearchTools, createImageDownloadTools } from '../../services/tools/web-search-toolcall';
-import { createWebFetchTools } from '../../services/tools/web-fetch-toolcall';
-import { createRSSFetchTools } from '../../services/tools/rss-fetch-toolcall';
-import { createBuiltinTools } from '../../services/tools/builtin-toolcall';
-import { createMemoryTools } from '../../services/tools/memory-toolcall';
-import { createJavaScriptTools } from '../../services/tools/js_toolcall';
-import { createSkillTools } from '../../services/tools/skill-toolcall';
-import { createImageTool } from '../../services/tools/image-toolcall';
-import { createConversationTools } from '../../services/tools/conversation-toolcall';
-import { createRecallArtifactTool } from '../../services/tools/recall-artifact-toolcall';
-import { createTodoTool, type TodoStateSource } from '../../services/tools/todo-toolcall';
-import { inferModelContextWindow } from '../../services/model-context-window';
+} from '../settings/defaults';
+import type { LLMProvider, MinimalModelConfig } from './llm-provider';
+import { createProviderForActiveProfile } from '../utils/provider-factory';
+import { buildBuiltinSystemPrompt } from './prompts/session-prompts';
+import { buildSubAgentConfigs } from './sub-agent-registry';
+import { buildSkillSystemPromptForQuery } from '../skills/skill-catalogue';
+import { buildMemorySystemPromptPrefix } from './memory';
+import type { ArtifactStore } from './artifact-store';
+import { createObsidianTools, createObsidianMutationTools } from './tools/obsidian';
+import { createWebSearchTools, createImageDownloadTools } from './tools/web-search-toolcall';
+import { createWebFetchTools } from './tools/web-fetch-toolcall';
+import { createRSSFetchTools } from './tools/rss-fetch-toolcall';
+import { createBuiltinTools } from './tools/builtin-toolcall';
+import { createMemoryTools } from './tools/memory-toolcall';
+import { createJavaScriptTools } from './tools/js_toolcall';
+import { createSkillTools } from './tools/skill-toolcall';
+import { createImageTool } from './tools/image-toolcall';
+import { createConversationTools } from './tools/conversation-toolcall';
+import { createRecallArtifactTool } from './tools/recall-artifact-toolcall';
+import { createTodoTool, type TodoStateSource } from './tools/todo-toolcall';
+import { inferModelContextWindow } from './model-context-window';
 import { resolveSecret } from 'utils/secret-helper';
 
 function createModelConfigFromProfile(

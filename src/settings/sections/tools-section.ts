@@ -9,8 +9,8 @@ import {
 	createDefaultUploadConfig,
 	DEFAULT_TOOL_FILTER_TOP_K,
 	DEFAULT_SUB_AGENT_FILTER_TOP_K,
-} from "../../settings/defaults";
-import type { UploadConfig, UploadProviderType } from "../../settings/types";
+} from "../defaults";
+import type { UploadConfig, UploadProviderType } from "../types";
 import {
 	createApiKeyField,
 	createDropdownField,
@@ -20,9 +20,9 @@ import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
-} from "../settings-components";
+} from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
-import { TOOLS_SECTION_ID } from "../../settings/section-ids";
+import { TOOLS_SECTION_ID } from "../section-ids";
 
 /**
  * Label / description i18n keys for each capability in the tools settings UI.

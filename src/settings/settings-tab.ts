@@ -13,8 +13,8 @@ import {
 	SettingsSection,
 	SkillSettingsSection,
 	ToolsSettingsSection,
-} from "../components/settings-sections";
-import { getProfileLabel } from "../components/settings-sections/global-section";
+} from "./sections";
+import { getProfileLabel } from "./sections/global-section";
 
 export class NoteAssistantSettingTab extends PluginSettingTab {
 	plugin: NoteAssistantPlugin;

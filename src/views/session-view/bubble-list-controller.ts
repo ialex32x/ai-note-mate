@@ -2,10 +2,10 @@ import type { ChatMessage, IChatAgent } from '../../services/chat-stream';
 import type { BubbleRenderer } from '../../components/session';
 import type { FollowUpBar } from '../../components/session/follow-up-bar';
 import type { InsightCard } from '../../components/session/insight-card';
-import type { StreamingLoader } from './streaming-loader';
+import type { StreamingLoader } from '../../components/session/streaming-loader';
 import type { ScrollController } from './scroll-controller';
 import type { MessageWindowController } from './message-window-controller';
-import type { ErrorBubbleTracker } from './error-bubble';
+import type { ErrorBubbleTracker } from '../../components/session/error-bubble';
 import { computeBubbleClasses } from '../../components/bubble/chat-bubble';
 import { isMessageInterrupted } from '../../components/bubble/action-bar';
 

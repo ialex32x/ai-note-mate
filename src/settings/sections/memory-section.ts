@@ -5,7 +5,7 @@ import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
-} from "../settings-components";
+} from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import {
 	isMemoryConfigured,
