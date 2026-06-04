@@ -496,6 +496,8 @@ Write the result directly into the note — do not reply with the edited text in
 	'statusTooltip.embeddingUnused': 'Not used yet in this session',
 	'statusTooltip.embeddingUnavailable': 'Unavailable, falling back to full tool set',
 	'statusTooltip.embeddingOk': 'Working normally',
+	'statusValue.embeddingTokens': '{api} / {total}',
+	'statusTooltip.embeddingTokens': 'API calls: {apiExact} tokens / Total processed: {totalExact} tokens (estimated)',
 	'statusTooltip.mcpConnected': 'Connected',
 	'statusTooltip.mcpConnecting': 'Connecting…',
 	'statusTooltip.mcpDisconnected': 'Disconnected',

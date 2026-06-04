@@ -113,6 +113,19 @@ export class Embedder {
      */
     private _lastErrorMessage: string | null = null;
 
+    /**
+     * Estimated cumulative token count for texts that were actually sent
+     * to the embedding API (cache misses). Session-only; not persisted.
+     * Token counts are approximate (char-based heuristic) and labelled as
+     * estimated in the UI.
+     */
+    private _apiTokenCount = 0;
+    /**
+     * Estimated cumulative token count for ALL texts that entered
+     * {@link embed} (including cache hits). Session-only; not persisted.
+     */
+    private _totalTokenCount = 0;
+
     constructor(opts: EmbedderOptions) {
         this.adapter = opts.adapter;
         this.cacheFilePath = opts.cacheFilePath;
@@ -180,6 +193,13 @@ export class Embedder {
             `Embedder: embed() received ${texts.length} text(s), cache hit=${hitCount}, miss=${missTexts.length}`,
         );
 
+        // Count total tokens (all texts, including cache hits).
+        // Sum per-text estimates in case the embeddings model charges
+        // on a per-request basis with per-text minimums.
+        for (const t of texts) {
+            this._totalTokenCount += Embedder.estimateTokens(t);
+        }
+
         if (missTexts.length > 0) {
             if (signal?.aborted) {
                 throw new DOMException("Aborted", "AbortError");
@@ -218,6 +238,11 @@ export class Embedder {
             this.markDirty();
         }
 
+        // Count API tokens for cache misses that were sent to the provider.
+        for (const t of missTexts) {
+            this._apiTokenCount += Embedder.estimateTokens(t);
+        }
+
         this._status = 'ok';
         this._lastErrorMessage = null;
         return result as number[][];
@@ -251,6 +276,8 @@ export class Embedder {
     clear(): void {
         if (this.entries.size === 0 && !this.dirty) return;
         this.entries.clear();
+        this._apiTokenCount = 0;
+        this._totalTokenCount = 0;
         this.markDirty();
     }
 
@@ -286,7 +313,57 @@ export class Embedder {
         return this._lastErrorMessage;
     }
 
+    /**
+     * Estimated cumulative token count for texts actually sent to the
+     * embedding API (cache misses). Session-only; reset on dispose.
+     */
+    get apiTokenCount(): number {
+        return this._apiTokenCount;
+    }
+
+    /**
+     * Estimated cumulative token count for ALL texts that have passed
+     * through {@link embed} (including cache hits). Session-only.
+     */
+    get totalTokenCount(): number {
+        return this._totalTokenCount;
+    }
+
     // ── Internal helpers ────────────────────────────────────────────────────
+
+    /**
+     * Estimate the token count of a text using a character-based heuristic.
+     *
+     * Approximation (no tokenizer dependency):
+     *   - CJK characters (U+4E00–U+9FFF, U+3400–U+4DBF, U+F900–U+FAFF,
+     *     U+3000–U+303F, U+FF00–U+FFEF): ~0.66 tokens per char (≈1.5 chars/token)
+     *   - Other characters: ~0.25 tokens per char (≈4 chars/token)
+     *
+     * This is intentionally lightweight. Accuracy is ±20–30 % depending on
+     * language mix; the UI labels the result as estimated.
+     */
+    static estimateTokens(text: string): number {
+        if (!text) return 0;
+        let cjk = 0;
+        let other = 0;
+        for (let i = 0; i < text.length; i++) {
+            const cp = text.charCodeAt(i);
+            if (
+                (cp >= 0x4E00 && cp <= 0x9FFF) ||   // CJK Unified Ideographs
+                (cp >= 0x3400 && cp <= 0x4DBF) ||   // CJK Unified Ideographs Extension A
+                (cp >= 0xF900 && cp <= 0xFAFF) ||   // CJK Compatibility Ideographs
+                (cp >= 0x3000 && cp <= 0x303F) ||   // CJK Symbols and Punctuation
+                (cp >= 0xFF00 && cp <= 0xFFEF)       // Halfwidth and Fullwidth Forms
+            ) {
+                cjk++;
+            } else {
+                other++;
+            }
+        }
+        // CJK: ~1.5 chars/token  →  ~0.67 tokens/char
+        // Other: ~4 chars/token   →  ~0.25 tokens/char
+        return Math.max(1, Math.round(cjk * 0.67 + other * 0.25));
+    }
 
     /**
      * Convert an arbitrary thrown value into a short, single-line message

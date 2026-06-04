@@ -497,6 +497,8 @@ export const ja: Record<string, string> = {
 	'statusTooltip.embeddingUnused': 'このセッションではまだ使用されていません',
 	'statusTooltip.embeddingUnavailable': '利用できません。全ツールセットにフォールバックします',
 	'statusTooltip.embeddingOk': '正常に動作しています',
+	'statusValue.embeddingTokens': '{api} / {total}',
+	'statusTooltip.embeddingTokens': 'API 呼び出し: {apiExact} tokens / 総処理: {totalExact} tokens（推定値）',
 	'statusTooltip.mcpConnected': '接続済み',
 	'statusTooltip.mcpConnecting': '接続中…',
 	'statusTooltip.mcpDisconnected': '切断',

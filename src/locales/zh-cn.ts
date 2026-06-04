@@ -496,6 +496,8 @@ export const zhCN: Record<string, string> = {
 	'statusTooltip.embeddingUnused': '当前会话尚未使用',
 	'statusTooltip.embeddingUnavailable': '不可用，已回退至全量工具集',
 	'statusTooltip.embeddingOk': '运行正常',
+	'statusValue.embeddingTokens': '{api} / {total}',
+	'statusTooltip.embeddingTokens': 'API 调用: {apiExact} tokens / 总计处理: {totalExact} tokens（估算值）',
 	'statusTooltip.mcpConnected': '已连接',
 	'statusTooltip.mcpConnecting': '连接中…',
 	'statusTooltip.mcpDisconnected': '已断开',

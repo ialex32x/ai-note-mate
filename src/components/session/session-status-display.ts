@@ -294,17 +294,36 @@ export class SessionStatusDisplay {
                     t('statusTooltip.embeddingUnconfigured'),
                 );
             } else {
-                // Runtime status: shown as an icon only (no localized text).
-                // A tooltip on hover conveys the textual meaning of the state.
-                // Only rendered when the embedder singleton has been initialized.
+                // Runtime status. Only rendered when the embedder singleton has
+                // been initialized.
+                //
+                // When working normally (`ok`), show the estimated token ratio
+                // (API calls / total processed) as a compact value so the user
+                // can see how much the cache is saving. For other states
+                // (`unused`, `unavailable`), keep the icon-only approach.
                 const embedder = getGlobalEmbedder();
                 if (embedder) {
-                    this.renderIconRow(
-                        section,
-                        t('statusLabel.embedding'),
-                        this.iconForEmbedderStatus(embedder.status),
-                        this.tooltipForEmbedderStatus(embedder.status, embedder.lastErrorMessage),
-                    );
+                    const status = embedder.status;
+                    if (status === 'ok') {
+                        const api = this.formatCompact(embedder.apiTokenCount);
+                        const total = this.formatCompact(embedder.totalTokenCount);
+                        this.renderRow(
+                            section,
+                            t('statusLabel.embedding'),
+                            t('statusValue.embeddingTokens', { api, total }),
+                            t('statusTooltip.embeddingTokens', {
+                                apiExact: embedder.apiTokenCount.toLocaleString(),
+                                totalExact: embedder.totalTokenCount.toLocaleString(),
+                            }),
+                        );
+                    } else {
+                        this.renderIconRow(
+                            section,
+                            t('statusLabel.embedding'),
+                            this.iconForEmbedderStatus(status),
+                            this.tooltipForEmbedderStatus(status, embedder.lastErrorMessage),
+                        );
+                    }
                 }
             }
         });

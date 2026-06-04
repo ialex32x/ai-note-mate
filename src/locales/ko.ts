@@ -497,6 +497,8 @@ export const ko: Record<string, string> = {
 	'statusTooltip.embeddingUnused': '이 세션에서 아직 사용되지 않았습니다',
 	'statusTooltip.embeddingUnavailable': '사용할 수 없습니다. 전체 도구 세트로 폴백합니다',
 	'statusTooltip.embeddingOk': '정상 작동 중',
+	'statusValue.embeddingTokens': '{api} / {total}',
+	'statusTooltip.embeddingTokens': 'API 호출: {apiExact} tokens / 총 처리: {totalExact} tokens（추정치）',
 	'statusTooltip.mcpConnected': '연결됨',
 	'statusTooltip.mcpConnecting': '연결 중…',
 	'statusTooltip.mcpDisconnected': '연결 끊김',
