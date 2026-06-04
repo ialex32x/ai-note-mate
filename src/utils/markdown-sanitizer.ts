@@ -143,7 +143,7 @@ function closeBoldItalic(content: string): string {
     return suffix ? content + suffix : content;
 }
 
-// ── P1: Incomplete table ─────────────────────────────────────────────────────
+// ── P1: Trailing table deferral ──────────────────────────────────────────────
 
 /** A table separator row matches `| --- | --- | ...` pattern. */
 function isTableSeparatorRow(line: string): boolean {
@@ -152,31 +152,56 @@ function isTableSeparatorRow(line: string): boolean {
 }
 
 /**
- * Defer incomplete table content to prevent layout jumps during streaming.
+ * Defer trailing table content to prevent layout jumps during streaming.
  *
- * Handles three cases:
- * 1. The last line is an incomplete table row (starts with `|` but doesn't
+ * During streaming, a table that is still receiving new rows causes the
+ * Markdown renderer to rebuild the entire `<table>` DOM on every row,
+ * triggering column-width recalculations and layout jumps.  We defer the
+ * **entire** table block — including header, separator, and all data rows —
+ * until the table is no longer at the end of content (i.e. a non-table,
+ * non-blank line appears after it, or the stream ends).
+ *
+ * Handles four cases:
+ * 1. Last line is an incomplete table row (starts with `|` but doesn't
  *    end with `|`) — truncate that line.
- * 2. The table has a header row but the separator row hasn't arrived yet —
- *    truncate the entire pending table block, because without the separator
- *    the renderer treats it as plain text (then suddenly re-renders as a
- *    table once the separator appears → big layout jump).
- * 3. The table has header + separator but the first data row is incomplete —
- *    same truncation as case 1.
+ * 2. Table has only a header row (no separator yet) — defer the entire
+ *    pending table block, because without the separator the renderer treats
+ *    it as plain text (then suddenly re-renders as a table once the
+ *    separator appears → big layout jump).
+ * 3. Table has header + something, but the second line is NOT a valid
+ *    separator row — same as case 2.
+ * 4. Table has header + separator (+ data rows) but the table block
+ *    extends to the end of content — defer the entire table block to avoid
+ *    incremental DOM rebuilds.  The table is only rendered when it is
+ *    complete (followed by non-table content or the stream ends).
  *
  * Skipped when inside a fenced code block.
  */
-function truncateIncompleteTable(content: string): string {
+function deferTrailingTable(content: string): string {
     if (isInsideFencedCodeBlock(content)) return content;
 
-    const lastNewline = content.lastIndexOf('\n');
+    // Strip trailing newlines so that the "last line" detection works
+    // correctly on streaming content where each row ends with \n.
+    // The trailing newlines are re-appended to the result so callers
+    // don't see a different number of blank lines.
+    const trailingNewlines = (content.match(/\n+$/) ?? [''])[0];
+    const work = trailingNewlines
+        ? content.slice(0, -trailingNewlines.length)
+        : content;
+
+    if (!work) return content; // all trailing newlines — nothing to defer
+
+    const lastNewline = work.lastIndexOf('\n');
     if (lastNewline === -1) return content;
 
-    const lastLine = content.slice(lastNewline + 1).trimEnd();
+    const lastLine = work.slice(lastNewline + 1).trimEnd();
 
-    // Case 1: last line is an incomplete table row — truncate it
+    // Case 1: last line is an incomplete table row — truncate it and
+    // recurse so any trailing table exposed by truncation is also deferred.
     if (lastLine.startsWith('|') && !lastLine.endsWith('|')) {
-        return content.slice(0, lastNewline);
+        return deferTrailingTable(
+            work.slice(0, lastNewline) + trailingNewlines,
+        );
     }
 
     // If the last line is not a table row at all, nothing to do
@@ -184,7 +209,7 @@ function truncateIncompleteTable(content: string): string {
 
     // The last line is a complete table row.  Walk backwards to find the
     // start of the table block and check whether it has a separator row.
-    const lines = content.split('\n');
+    const lines = work.split('\n');
     let tableStartIdx = -1;
     for (let i = lines.length - 1; i >= 0; i--) {
         const trimmed = lines[i]!.trimEnd();
@@ -202,17 +227,26 @@ function truncateIncompleteTable(content: string): string {
     // Case 2: table has only a header row (no separator yet) — defer the
     // entire table block.
     if (tableLines.length < 2) {
-        // Only the header row exists; truncate it
-        return lines.slice(0, tableStartIdx).join('\n');
+        return lines.slice(0, tableStartIdx).join('\n') + trailingNewlines;
     }
 
     // Case 3: table has header + something, but the second line is NOT a
     // valid separator row — the table is structurally incomplete, defer it.
     if (!isTableSeparatorRow(tableLines[1]!)) {
-        return lines.slice(0, tableStartIdx).join('\n');
+        return lines.slice(0, tableStartIdx).join('\n') + trailingNewlines;
     }
 
-    // Table has header + separator (+ possibly data rows).  It's valid.
+    // Case 4: table has header + separator (+ possibly data rows).
+    // If the table block extends to the end of content, it is still
+    // receiving new rows — defer the entire block to avoid incremental
+    // DOM rebuilds that cause column-width recalculations and layout jumps.
+    // The table will be rendered when a non-table line appears after it,
+    // or when the stream ends (finalize renders the raw, un-sanitized content).
+    if (tableStartIdx + tableLines.length === lines.length) {
+        return lines.slice(0, tableStartIdx).join('\n') + trailingNewlines;
+    }
+
+    // Table has ended (followed by non-table content) — keep it.
     return content;
 }
 
@@ -306,7 +340,7 @@ export function sanitizeStreamingMarkdown(content: string): string {
 
     // P1: Incomplete table (truncation — defers incomplete rows and
     // structurally incomplete tables that lack a separator row)
-    result = truncateIncompleteTable(result);
+    result = deferTrailingTable(result);
 
     // P1: Math block
     result = closeMathBlock(result);
