@@ -84,7 +84,7 @@ export async function generateImageWithSeedream(
     config: Pick<ImageGenConfig, 'apiKey' | 'model'>,
     params: SeedreamImageGenParams,
 ): Promise<ImageGenResult> {
-    const { prompt, aspectRatio, negativePrompt, signal } = params;
+    const { prompt, aspectRatio, negativePrompt, refImages, signal } = params;
 
     const apiKey = resolveSecret(plugin.app, config.apiKey);
     if (!apiKey) {
@@ -104,6 +104,15 @@ export async function generateImageWithSeedream(
         n: 1,
         response_format: "b64_json",
     };
+
+    // Attach reference images (image-to-image) via the `image` field.
+    // Seedream accepts a single URL/base64 string or an array (up to 14).
+    if (refImages.length > 0) {
+        const imageUris = refImages.map(
+            img => `data:${img.mimeType};base64,${img.base64}`,
+        );
+        requestBody.image = imageUris.length === 1 ? imageUris[0] : imageUris;
+    }
 
     const resolvedSize = resolveSeedreamSize(aspectRatio);
     if (resolvedSize) {
