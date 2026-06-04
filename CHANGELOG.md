@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.4.4
+
+### What's new
+
+- **Seedream (Ark) image generation** — ByteDance's Seedream models are now available as a first-class image generation provider via the Ark API. Configure your API key and start generating images with Seedream.
+- **Reference image support for Seedream** — When generating with Seedream, you can now provide reference images to guide the output.
+- **Doubao & Seed model icon** — ByteDance's Doubao and Seed models now display a dedicated icon in the profile selector, making them easy to spot alongside other providers.
+
+### Fixes
+
+- **Regex mode `old`/`new` parameter remapping** — The `edit_lines` regex mode now correctly handles `old`/`new` as aliases for `pattern`/`replacement`, preventing failures when the model uses these natural parameter names.
+- **Streaming table layout stability** — Tables at the end of assistant replies no longer cause layout jumps during streaming, keeping the view steady as content arrives.
+
+---
+
 ## 1.4.3
 
 ### What's new
