@@ -191,6 +191,16 @@ function normaliseReplacement(
     }
     const r = raw as Record<string, unknown>;
 
+    // Fallback: many LLM coding agents use `old`/`new` by convention
+    // (e.g. CodeBuddy's replace_in_file). Silently remap to our canonical
+    // `pattern`/`replacement` so the call succeeds without retry overhead.
+    if (r["old"] !== undefined && r["pattern"] === undefined) {
+        r["pattern"] = r["old"];
+    }
+    if (r["new"] !== undefined && r["replacement"] === undefined) {
+        r["replacement"] = r["new"];
+    }
+
     const replacement = r["replacement"];
     if (typeof replacement !== "string") {
         return `replacements[${index}].replacement must be a string.`;
