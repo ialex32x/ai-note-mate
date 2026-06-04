@@ -9,6 +9,7 @@ import { joinPath } from "../../utils/path-helper";
 import { generateImageWithGemini } from "../image-gen/gemini-image";
 import { generateImageWithQwen } from "../image-gen/qwen-image";
 import { generateImageWithOpenAI } from "../image-gen/openai-image";
+import { generateImageWithSeedream } from "../image-gen/seedream-image";
 import { getMimeType, mimeTypeToExt } from "../../utils/mime-helper";
 import { recordIssue } from "../diagnostics/issue-tracer";
 
@@ -27,6 +28,8 @@ export function createImageTool(plugin: NoteAssistantPlugin): RegisteredTool | u
             return createQwenImageTool(plugin, imageConfig);
         case 'openai':
             return createOpenAIImageTool(plugin, imageConfig);
+        case 'seedream':
+            return createSeedreamImageTool(plugin, imageConfig);
         case 'gemini':
         default:
             return createGeminiImageTool(plugin, imageConfig);
@@ -326,6 +329,88 @@ function createOpenAIImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
                     size,
                     quality,
                     style,
+                    refImages,
+                    signal,
+                });
+                return handleImageGenResult(plugin, result);
+            } catch (err) {
+                return handleImageGenError(err);
+            }
+        },
+    };
+}
+
+/**
+ * Create Seedream (Ark/方舟) image generation tool.
+ * Seedream supports aspect ratio and negative prompt.
+ */
+function createSeedreamImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<ImageGenConfig, 'apiKey' | 'model'>): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "generate_image",
+                description:
+                    "Generate an image based on a text description using AI. " +
+                    "The generated image will be saved to the vault and a markdown image link will be returned. " +
+                    "Use this when the user asks to create, draw, generate, design, make, or produce " +
+                    "an image, illustration, picture, or artwork.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        prompt: {
+                            type: "string",
+                            description:
+                                "A detailed text description of the image to generate. " +
+                                "Be as specific as possible about the subject, style, composition, colors, and mood.",
+                        },
+                        aspect_ratio: {
+                            type: "string",
+                            description:
+                                "The aspect ratio of the generated image. " +
+                                "Common: '1:1' (square), '16:9' / '21:9' (landscape), '9:16' (portrait), " +
+                                "'4:3' / '3:4', '3:2' / '2:3'. " +
+                                "The actual pixel resolution is chosen automatically. " +
+                                "Omit to let the model pick a default (1024x1024).",
+                            enum: [
+                                "1:1",
+                                "2:3", "3:2",
+                                "3:4", "4:3",
+                                "9:16", "16:9",
+                                "21:9",
+                            ],
+                        },
+                        negative_prompt: {
+                            type: "string",
+                            description:
+                                "A text description of what to avoid in the generated image. " +
+                                "Describe elements, styles, or qualities that should NOT appear in the image. " +
+                                "Leave empty or omit if not needed.",
+                        },
+                        reference_image_paths: REFERENCE_IMAGE_PATHS_SCHEMA,
+                    },
+                    required: ["prompt"],
+                },
+            },
+        },
+        capabilities: ["network", "create_file", "read_file", "multimodal_generate"] as ToolCapability[],
+        requiresConfirmation: true,
+        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
+            const prompt = args["prompt"] as string;
+            const aspectRatio = args["aspect_ratio"] as string | undefined;
+            const negativePrompt = (args["negative_prompt"] as string) || "";
+            const refImagePaths = (args["reference_image_paths"] as string[] | undefined) || [];
+
+            try {
+                const refImages = refImagePaths.length > 0
+                    ? await readReferenceImages(plugin.app, refImagePaths)
+                    : [];
+                const result = await generateImageWithSeedream(plugin, imageConfig, {
+                    prompt,
+                    aspectRatio,
+                    negativePrompt,
                     refImages,
                     signal,
                 });

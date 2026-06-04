@@ -125,6 +125,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 				'gemini': 'Google Gemini',
 				'qwen': 'Qwen Image',
 				'openai': 'OpenAI Compatible',
+				'seedream': 'Seedream (Ark)',
 			},
 			value: config.apiScheme,
 			onChange: async (value) => {
@@ -188,6 +189,8 @@ function getImageGenModelPlaceholder(scheme: ImageGenApiScheme): string {
 			return 'qwen-image';
 		case 'openai':
 			return 'dall-e-3';
+		case 'seedream':
+			return 'doubao-seedream-4.0-250828';
 		case 'gemini':
 		default:
 			return DefaultGeminiImageModel;

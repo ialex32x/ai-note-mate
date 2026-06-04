@@ -75,7 +75,7 @@ export interface TextGenConfig {
 // Image Generation
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type ImageGenApiScheme = 'gemini' | 'qwen' | 'openai';
+export type ImageGenApiScheme = 'gemini' | 'qwen' | 'openai' | 'seedream';
 
 export interface ImageGenConfig {
 	/** Unique ID (auto-generated) */

@@ -28,6 +28,21 @@ const KNOWN_QWEN_IMAGE_MODELS: ReadonlyArray<string> = [
 ];
 
 /**
+ * Well-known Seedream models available on the Ark (方舟) platform.
+ *
+ * Ark does not currently expose a dedicated image-models listing endpoint
+ * via its OpenAI-compatible API, so we hardcode the known models here.
+ * Users can still type a custom model identifier — the list is a
+ * discovery aid, not a hard whitelist.
+ */
+const KNOWN_SEEDREAM_MODELS: ReadonlyArray<string> = [
+    "doubao-seedream-3-0-t2i-250415",
+    "doubao-seedream-4-0-250828",
+    "doubao-seedream-4-5-251128",
+    "doubao-seedream-5-0-260128",
+];
+
+/**
  * Fetch the list of models available for an image generation config.
  *
  * Per-scheme strategy:
@@ -35,8 +50,8 @@ const KNOWN_QWEN_IMAGE_MODELS: ReadonlyArray<string> = [
  *    `listModels()` (created on the fly from the image-gen config). The
  *    upstream `/models` endpoint returns the account's full catalogue;
  *    the picker UI filters/searches client-side.
- *  - `qwen`: return the hardcoded well-known list (see comment on
- *    {@link KNOWN_QWEN_IMAGE_MODELS}).
+ *  - `qwen` / `seedream`: return the hardcoded well-known list (see
+ *    {@link KNOWN_QWEN_IMAGE_MODELS} / {@link KNOWN_SEEDREAM_MODELS}).
  *
  * Throws when the chosen provider's `listModels()` rejects — the caller
  * (settings UI) surfaces a generic "fetch failed" notice and logs the
@@ -68,6 +83,9 @@ export async function listImageGenModels(
         }
         case "qwen": {
             return [...KNOWN_QWEN_IMAGE_MODELS];
+        }
+        case "seedream": {
+            return [...KNOWN_SEEDREAM_MODELS];
         }
     }
 }
