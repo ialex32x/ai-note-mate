@@ -704,9 +704,9 @@ describe('SubAgent — normal tool_call lifecycle', () => {
         expect(last.toolCallResult!.status).toBe('success');
     });
 
-    it('write_handoff bubble (real built-in tool) gets streaming=false and a populated toolCallResult after a successful write', async () => {
+    it('write_result_object bubble (real built-in tool) gets streaming=false and a populated toolCallResult after a successful write', async () => {
         // Replicates the user-reported scenario: a sub-agent calls
-        // `write_handoff({key:'result', value:...})` and the
+        // `write_result_object({key:'result', value:...})` and the
         // bubble was visually stuck at `...`. The chat-stream's
         // dispatch contract must hand a finalized message to the
         // UI here too — there is nothing handoff-specific in the
@@ -718,19 +718,19 @@ describe('SubAgent — normal tool_call lifecycle', () => {
         const store: HandoffStore = new Map();
 
         const config: SubAgentConfig = {
-            name: 'real-handoff-agent',
-            description: 'Tests the real handoff tools',
+            name: 'real-result-object-agent',
+            description: 'Tests the real result tools',
             systemPrompt: 'system',
             tools: [],
         };
 
         const agent = new SubAgent(config);
         await agent.execute('do it', {
-            provider: createToolCallProvider('write_handoff', {
+            provider: createToolCallProvider('write_result_object', {
                 key: 'result',
                 value: { found: true, path: 'Inbox/Foo.md' },
             }) as never,
-            handoffStore: store,
+            resultStore: store,
             onMessageUpdate: (_name, msg) => {
                 updates.push({ ...msg, toolCallResult: msg.toolCallResult ? { ...msg.toolCallResult } : undefined });
             },
@@ -741,7 +741,7 @@ describe('SubAgent — normal tool_call lifecycle', () => {
         expect(store.get('result')).toEqual({ found: true, path: 'Inbox/Foo.md' });
 
         const toolCallStates = updates.filter(
-            m => m.role === 'tool_call' && m.toolCallMeta?.toolName === 'write_handoff',
+            m => m.role === 'tool_call' && m.toolCallMeta?.toolName === 'write_result_object',
         );
         expect(toolCallStates.length).toBeGreaterThanOrEqual(2);
 
@@ -749,7 +749,7 @@ describe('SubAgent — normal tool_call lifecycle', () => {
         expect(last.streaming).toBe(false);
         expect(last.toolCallResult).toBeDefined();
         expect(last.toolCallResult!.status).toBe('success');
-        // write_handoff returns `{ok:true, key:'result'}` serialised.
+        // write_result_object returns `{ok:true, key:'result'}` serialised.
         expect(last.toolCallResult!.result).toMatch(/"ok":\s*true/);
         expect(last.toolCallResult!.result).toContain('"key"');
     });

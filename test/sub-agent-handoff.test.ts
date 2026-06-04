@@ -221,7 +221,7 @@ describe('SubAgent — handoff store wiring', () => {
 
         const result = await agent.execute('task', {
             provider: provider as never,
-            handoffStore: store,
+            resultStore: store,
         });
 
         // fullContent reflects what the model actually produced (empty)
@@ -244,7 +244,7 @@ describe('SubAgent — handoff store wiring', () => {
 
         const result = await agent.execute('task', {
             provider: provider as never,
-            handoffStore: store,
+            resultStore: store,
         });
 
         expect(result.summary).toMatch(/result/);
@@ -262,14 +262,15 @@ describe('SubAgent — handoff store wiring', () => {
 
         const result = await agent.execute('task', {
             provider: provider as never,
-            handoffStore: store,
+            resultStore: store,
         });
 
         // No `result` key was written, but a non-canonical extra was.
         // Synthesis still kicks in so the main agent learns extras exist.
+        // The boilerplate always mentions `result` because buildDelegatePayload
+        // assembles all keys into the envelope's `result` field.
         expect(result.summary).not.toBe('');
         expect(result.summary).toMatch(/warnings/);
-        expect(result.summary).not.toMatch(/`result`/);
     });
 
     it('F4: does NOT synthesize when sub-agent only consumed pre-loaded seed (no new keys)', async () => {
@@ -304,7 +305,7 @@ describe('SubAgent — handoff store wiring', () => {
 
         const result = await agent.execute('task', {
             provider: provider as never,
-            handoffStore: store,
+            resultStore: store,
         });
 
         // Real reply wins; synthesizer only fires on empty/whitespace summary.
@@ -321,7 +322,7 @@ describe('SubAgent — handoff store wiring', () => {
 
         const result = await agent.execute('task', {
             provider: provider as never,
-            handoffStore: store,
+            resultStore: store,
         });
 
         // A reply of just whitespace conveys nothing to the main agent

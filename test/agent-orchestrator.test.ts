@@ -337,19 +337,19 @@ describe('buildDelegatePayload', () => {
         expect(payload.extras).not.toHaveProperty('result');
     });
 
-    it('omits `extras` field when only auxiliary keys exist (no `result`)', () => {
+    it('assembles auxiliary keys into `result` when no explicit `result` key exists', () => {
         // Edge case: sub-agent put aux data but never wrote `result`. The
-        // envelope must still be valid: `result` absent, `extras` present.
-        // The main-agent prompt explicitly tells the LLM to fall back to
-        // `text` in this case, so we don't synthesize a fake `result`.
+        // assemble logic packages all extras into a single `result` object
+        // so the main agent sees one `result` with all entries.
         const store: HandoffStore = new Map();
         store.set('debug', { trace: [1, 2, 3] });
 
         const payload = buildDelegatePayload('side-effect done', store);
 
         expect(payload.text).toBe('side-effect done');
-        expect('result' in payload).toBe(false);
-        expect(payload.extras).toEqual({ debug: { trace: [1, 2, 3] } });
+        expect('result' in payload).toBe(true);
+        expect(payload.result).toEqual({ debug: { trace: [1, 2, 3] } });
+        expect(payload.extras).toBeUndefined();
     });
 
     it('drops oversized values and records them under `omitted` (test 9)', () => {

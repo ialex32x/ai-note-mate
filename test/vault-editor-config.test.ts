@@ -88,7 +88,7 @@ describe('VAULT_EDITOR_PROMPT — key anchors', () => {
     // hard limits on sample_diff) should remain visible in the prompt body.
     const phrases: Array<{ pattern: string; why: string }> = [
         { pattern: 'ONE file per task', why: 'scope hard-limit that prevents editor from fanning out' },
-        { pattern: "write_handoff", why: 'must mention write_handoff for result emission' },
+        { pattern: "write_result", why: 'must mention write_result for result emission' },
         { pattern: 'sample_diff', why: 'names the canonical diff-summary field' },
         { pattern: 'wholesale', why: 'names one of the four strategy values' },
         { pattern: 'surgical', why: 'names another strategy value' },
