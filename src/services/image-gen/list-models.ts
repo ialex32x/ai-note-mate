@@ -42,6 +42,10 @@ const KNOWN_SEEDREAM_MODELS: ReadonlyArray<string> = [
     "doubao-seedream-5-0-260128",
 ];
 
+export function getDefaultSeedreamModel() {
+    return KNOWN_SEEDREAM_MODELS[1]!;
+}
+
 /**
  * Fetch the list of models available for an image generation config.
  *

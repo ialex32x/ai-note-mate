@@ -12,6 +12,7 @@ import {
 } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { IMAGE_GEN_SECTION_ID } from "../section-ids";
+import { getDefaultSeedreamModel } from "../../services/image-gen/list-models";
 
 export class ImageGenSettingsSection implements SettingsSection {
 	readonly titleKey = IMAGE_GEN_SECTION_ID;
@@ -190,7 +191,7 @@ function getImageGenModelPlaceholder(scheme: ImageGenApiScheme): string {
 		case 'openai':
 			return 'dall-e-3';
 		case 'seedream':
-			return 'doubao-seedream-4.0-250828';
+			return getDefaultSeedreamModel();
 		case 'gemini':
 		default:
 			return DefaultGeminiImageModel;
