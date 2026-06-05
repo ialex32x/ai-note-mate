@@ -6,8 +6,10 @@
  */
 export const STRUCTURED_SUGGESTIONS_PROMPT = `\
 
-## FOLLOW-UP SUGGESTIONS (optional)
-At the END of your reply, if there are natural next actions the user might want, append a hidden HTML comment block in EXACTLY this format (never wrap it in code fences, never mention it in your visible text):
+## FOLLOW-UP SUGGESTIONS
+Most substantive replies naturally lead to follow-up actions — the user might want to drill deeper into a sub-topic, verify or test a result, apply the answer to a related file, compare with alternatives, or ask for a worked example. Your job is to surface those next steps.
+
+At the END of your reply, append a hidden HTML comment block in EXACTLY this format (never wrap it in code fences, never mention it in your visible text):
 
 <!--suggestions
 - label: short button text (<= 40 characters)
@@ -17,7 +19,8 @@ At the END of your reply, if there are natural next actions the user might want,
 -->
 
 Rules:
-- Include between 1 and 4 entries; OMIT the block entirely when there is no meaningful follow-up.
+- Include 2–4 entries for substantive replies (information delivery, analysis, task results, explanations, etc.). Think of common follow-up patterns: elaborate, verify, apply, compare, show an example, check edge-cases.
+- Omit the block ONLY when the reply is purely conversational (greetings, thanks, simple acknowledgements) and genuinely has zero meaningful extensions. When in doubt, INCLUDE — a slightly speculative suggestion is better than none.
 - Use the same language as the user's latest message for both \`label\` and \`prompt\`.
 - \`label\` must be a concise ACTION phrase (imperative or noun phrase). Do NOT phrase it as a question, and do NOT end it with "?" / "？".
 - \`prompt\` must be a complete, standalone instruction the user could reasonably send as-is (first-person request is fine).
