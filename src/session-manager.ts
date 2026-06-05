@@ -2,6 +2,7 @@ import type { App } from 'obsidian';
 import type { ChatMessage, ConversationSummary, AgentTokenBreakdown, QuickAskTurn } from './services/chat-stream';
 import type { TokenUsage } from './services/llm-provider';
 import type { InsightCardState } from './services/insights';
+import type { SuggestionCardState } from './services/suggestions';
 import type { TodoState } from './services/tools/todo-state';
 
 type ReadonlyChatMessages = ReadonlyArray<ChatMessage>;
@@ -29,6 +30,14 @@ export interface SessionMetadata {
      * `loading` is deliberately not persisted (it's transient).
      */
     lastInsights?: InsightCardState;
+
+    /**
+     * Last terminal state of the follow-up suggestion bar, produced
+     * by the LLM fallback extraction. Persisted by {@link SessionRuntime}
+     * so the bar survives view detach and plugin reload. Mirrors
+     * {@link lastInsights} in shape and lifecycle.
+     */
+    lastSuggestions?: SuggestionCardState;
 }
 
 /** Messages file content (stored in sessions/${id}.json) */
@@ -313,6 +322,39 @@ export class SessionManager {
     /** Convenience: clear the insight card state for a specific session. */
     clearSessionLastInsights(sessionId: string): void {
         this.setSessionLastInsights(sessionId, undefined);
+    }
+
+    /**
+     * Get the persisted suggestion bar state for a specific session,
+     * or undefined if none has been recorded. Mirrors
+     * {@link getSessionLastInsights}.
+     */
+    getSessionLastSuggestions(sessionId: string): SuggestionCardState | undefined {
+        return this.metadataMap.get(sessionId)?.lastSuggestions;
+    }
+
+    /**
+     * Record (or clear) the suggestion bar state for a specific session.
+     * Pass `undefined` to clear. Calls with `state.phase === 'loading'`
+     * are ignored — loading is a transient runtime-only state.
+     *
+     * Only mutates in-memory metadata; callers should follow up with
+     * {@link saveMetadata} to flush to disk.
+     */
+    setSessionLastSuggestions(sessionId: string, state: SuggestionCardState | undefined): void {
+        const meta = this.metadataMap.get(sessionId);
+        if (!meta) return;
+        if (state && state.phase === 'loading') return;
+        if (state) {
+            meta.lastSuggestions = state;
+        } else {
+            delete meta.lastSuggestions;
+        }
+    }
+
+    /** Convenience: clear the suggestion bar state for a specific session. */
+    clearSessionLastSuggestions(sessionId: string): void {
+        this.setSessionLastSuggestions(sessionId, undefined);
     }
 
     /**

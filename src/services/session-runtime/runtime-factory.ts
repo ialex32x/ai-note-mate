@@ -4,6 +4,7 @@ import { maybeGenerateSessionTitle } from '../session-title-generator';
 import { deriveArtifactStoreOptions } from '../../settings/helpers';
 import { SessionRuntime } from './session-runtime';
 import { maybeExtractInsightsAfterFinish } from './insight-runner';
+import { maybeExtractSuggestionsAfterFinish } from './suggestion-runner';
 import { maybeExtractMemoriesAfterFinish } from '../memory';
 import { CheckpointStore } from '../vault';
 import type { ChatMessage } from '../chat-stream';
@@ -38,10 +39,10 @@ import type { ChatMessage } from '../chat-stream';
  *   - No DOM access of any kind. The runtime stays free of
  *     view-private references so a background continuation cannot
  *     leak into a detached DOM tree.
- *   - No follow-up-suggestion EXTRACTION; suggestions are deterministic
- *     from the assistant reply content and the SessionView re-runs the
- *     pure extractor on every turn-finish AND on session bind, so no
- *     runtime-side machinery is needed for them.
+ *   - Follow-up-suggestion deterministic extraction runs in the view
+ *     for instant feedback; the LLM fallback runs here (same as
+ *     insights) so background turns produce + persist suggestions even
+ *     when no view is attached.
  *   - Title generation and insight extraction, by contrast, both call
  *     out to an LLM and are not idempotent / cheap. Those run here in
  *     `onFinish` so background continuations correctly produce + persist
@@ -111,6 +112,9 @@ export function createSessionRuntime(
             // Clearing both in-memory and persisted state here keeps
             // metadata in sync; the next clean finish will repopulate.
             runtime.clearInsightState();
+            // Same for follow-up suggestions — a new turn makes the
+            // old assistant reply's suggestions stale.
+            runtime.clearSuggestionState();
             runtime.emit({ type: 'start' });
         },
         onMessageUpdate: (msg: ChatMessage) => {
@@ -162,6 +166,12 @@ export function createSessionRuntime(
                 // detached one will read via getInsightState() on next
                 // attach. Fire-and-forget — errors are logged inside.
                 void maybeExtractInsightsAfterFinish(plugin, runtime);
+                // Suggestion extraction (LLM fallback): mirrors the
+                // insight pattern. Determines if the deterministic
+                // extraction produced nothing, then fires a separate
+                // LLM call to generate suggestions. Persisted so the
+                // bar survives view detach and plugin reload.
+                void maybeExtractSuggestionsAfterFinish(plugin, runtime);
                 // Memory auto-extraction. Gated by `memoryAutoExtract`
                 // (off by default), so users who don't opt in pay
                 // nothing. Failures are swallowed internally — memory

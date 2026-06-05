@@ -2,6 +2,7 @@ import type { IChatAgent, ChatMessage, QuickAskTurn } from '../chat-stream';
 import type { SessionManager } from '../../session-manager';
 import { ArtifactStore, type ArtifactStoreOptions } from '../artifact-store';
 import type { InsightCardState } from '../insights';
+import type { SuggestionCardState } from '../suggestions';
 import type { CheckpointStore } from '../vault';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
 import {
@@ -135,6 +136,24 @@ export class SessionRuntime {
      * been superseded by a newer extraction or by a new turn starting.
      */
     private _insightGen = 0;
+
+    /**
+     * Live state of the follow-up suggestion bar for this session.
+     * Mirrors {@link _insightState}: owned by the runtime so background
+     * extraction (triggered by `onFinish` while no view is attached)
+     * can still drive the state machine and persist terminal phases
+     * into {@link SessionManager} metadata.
+     *
+     * `null` means "no bar should be shown".
+     */
+    private _suggestionState: SuggestionCardState | null = null;
+
+    /**
+     * Monotonic counter for suggestion extraction — mirrors
+     * {@link _insightGen}. Bumped on every extraction start or state
+     * clear, used to drop stale LLM callbacks.
+     */
+    private _suggestionGen = 0;
 
     /**
      * Live TODO list maintained by the `manage_todos` tool. Owned by
@@ -618,6 +637,52 @@ export class SessionRuntime {
     restoreInsightState(state: InsightCardState): void {
         this._insightGen++;
         this._insightState = state;
+    }
+
+    // ── Suggestion bar state (mirrors insight state) ────────────────────
+
+    /**
+     * Read the current suggestion bar state. Views call this on attach
+     * so they can render the latest known state without waiting for the
+     * next `suggestion-update` emit.
+     */
+    getSuggestionState(): SuggestionCardState | null {
+        return this._suggestionState;
+    }
+
+    /** Begin a new suggestion extraction. Mirrors {@link beginInsightExtraction}. */
+    beginSuggestionExtraction(messageId: string, cause: 'auto' | 'manual'): number {
+        this._suggestionGen++;
+        this._suggestionState = { messageId, phase: 'loading', suggestions: [], cause };
+        this.emit({ type: 'suggestion-update', state: this._suggestionState });
+        return this._suggestionGen;
+    }
+
+    /** Commit the result of a previously-begun suggestion extraction. Mirrors {@link commitInsightResult}. */
+    commitSuggestionResult(gen: number, state: SuggestionCardState | null): void {
+        if (gen !== this._suggestionGen) return;
+        this._suggestionState = state;
+        if (state) {
+            this.sessionManager.setSessionLastSuggestions(this.sessionId, state);
+        } else {
+            this.sessionManager.clearSessionLastSuggestions(this.sessionId);
+        }
+        this.emit({ type: 'suggestion-update', state });
+    }
+
+    /** Clear suggestion state. Mirrors {@link clearInsightState}. */
+    clearSuggestionState(): void {
+        if (this._suggestionState === null) return;
+        this._suggestionGen++;
+        this._suggestionState = null;
+        this.sessionManager.clearSessionLastSuggestions(this.sessionId);
+        this.emit({ type: 'suggestion-update', state: null });
+    }
+
+    /** Hydrate suggestion state from persisted metadata. Mirrors {@link restoreInsightState}. */
+    restoreSuggestionState(state: SuggestionCardState): void {
+        this._suggestionGen++;
+        this._suggestionState = state;
     }
 
     /**

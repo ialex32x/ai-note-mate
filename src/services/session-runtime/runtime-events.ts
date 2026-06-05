@@ -1,5 +1,6 @@
 import type { ChatMessage } from '../chat-stream';
 import type { InsightCardState } from '../insights';
+import type { SuggestionCardState } from '../suggestions';
 import type { TodoState } from '../tools/todo-state';
 
 /**
@@ -102,6 +103,21 @@ export type RuntimeEvent =
      * persisted into session metadata for cold-load recovery.
      */
     | { type: 'insight-update'; state: InsightCardState | null }
+
+    /**
+     * The follow-up suggestion bar state changed. Fired by the runtime
+     * when a suggestion extraction transitions phases (loading →
+     * results / empty / error), or when a new turn starts and the
+     * previous state is cleared (`state === null`). Mirrors
+     * {@link insight-update} exactly.
+     *
+     * Deterministic extraction (structured block + heuristic) runs
+     * in the view for instant feedback; this event carries the LLM-
+     * backed fallback result that may arrive 1–3 s later. Listeners
+     * that miss this event can recover on next attach via
+     * {@link SessionRuntime.getSuggestionState}.
+     */
+    | { type: 'suggestion-update'; state: SuggestionCardState | null }
 
     /**
      * The TODO state changed (the `manage_todos` tool ran a `write`,

@@ -33,7 +33,7 @@ import {
     SessionLoadingOverlay,
     showInitializationError,
 } from '../../components/session';
-import { extractSuggestions, type SuggestedAction } from '../../services/suggestions';
+import { extractSuggestions, type SuggestedAction, type SuggestionCardState } from '../../services/suggestions';
 import {
     buildInsightDeepenPrompt,
     type ConversationInsight,
@@ -416,6 +416,9 @@ export class SessionView extends ItemView {
             }
             case 'insight-update':
                 this.renderInsightFromRuntimeState(ev.state);
+                break;
+            case 'suggestion-update':
+                this.renderSuggestionFromRuntimeState(ev.state);
                 break;
             case 'todo-update':
                 // The runtime mutated its TODO snapshot — refresh the
@@ -1597,6 +1600,12 @@ export class SessionView extends ItemView {
             runtime.restoreInsightState(lastInsights);
         }
 
+        // Persisted suggestion bar state (LLM fallback results).
+        const lastSuggestions = this.sessionManager.getSessionLastSuggestions(runtime.sessionId);
+        if (lastSuggestions) {
+            runtime.restoreSuggestionState(lastSuggestions);
+        }
+
         // Persisted TODO state (v4 sessions only). Always restore the
         // runtime's snapshot from disk before the replay pass — the
         // panel is then projected from `runtime.getTodoState()` in
@@ -1686,6 +1695,7 @@ export class SessionView extends ItemView {
 
         this.maybeShowFollowUpSuggestions();
         this.renderInsightFromRuntimeState(this.runtime?.getInsightState() ?? null);
+        this.renderSuggestionFromRuntimeState(this.runtime?.getSuggestionState() ?? null);
         this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
 
         if (opts.fromCache && runtime.isBusy) {
@@ -2126,6 +2136,10 @@ export class SessionView extends ItemView {
      * proposed next actions (either a structured <!--suggestions--> block or
      * a plain-text follow-up list), render them as one-shot quick-pick buttons
      * at the tail of the message list.
+     *
+     * This is the DETERMINISTIC (instant) path only. The LLM-backed fallback
+     * runs in the runtime via {@link maybeExtractSuggestionsAfterFinish} and
+     * arrives through the `suggestion-update` event → {@link renderSuggestionFromRuntimeState}.
      */
     private maybeShowFollowUpSuggestions(): void {
         if (!this.followUpBar) return;
@@ -2163,6 +2177,46 @@ export class SessionView extends ItemView {
         }
 
         this.followUpBar.show(target.id, actions);
+        this.maybeScrollToBottom();
+    }
+
+    /**
+     * Render the follow-up bar from a runtime-owned suggestion state
+     * (LLM fallback path). Called from the `suggestion-update` event
+     * handler and (on bind) from {@link replayRuntimeUI}.
+     *
+     * Only renders when the deterministic path hasn't already populated
+     * the bar — we respect deterministic results as higher priority
+     * since they come from the main model's own intent.
+     */
+    private renderSuggestionFromRuntimeState(state: SuggestionCardState | null): void {
+        if (!this.followUpBar) return;
+        if (state === null || state.phase !== 'results' || state.suggestions.length === 0) {
+            // Don't hide here — the deterministic path may have already
+            // populated the bar, and clearing/error states from the runtime
+            // shouldn't clobber deterministic results.
+            return;
+        }
+
+        // If the bar is already showing (deterministic extraction found
+        // results), don't override with LLM-produced suggestions.
+        if (this.followUpBar.isVisible) return;
+
+        // Verify the assistant message hasn't been superseded.
+        const messages = this.chat?.messages ?? [];
+        let isLatest = false;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            const m = messages[i];
+            if (!m) continue;
+            if (m.role === 'assistant' && !m.streaming) {
+                isLatest = m.id === state.messageId;
+                break;
+            }
+            if (m.role === 'user') break;
+        }
+        if (!isLatest) return;
+
+        this.followUpBar.show(state.messageId, state.suggestions);
         this.maybeScrollToBottom();
     }
 

@@ -51,3 +51,19 @@ export interface ExtractOptions {
     /** Max length of each label. */
     labelMaxLength?: number;
 }
+
+/**
+ * Runtime-owned state for the follow-up suggestion bar, persisted into
+ * session metadata so the bar survives plugin reload and session
+ * switching. Mirrors {@link InsightCardState} from the insights module.
+ */
+export type SuggestionCardPhase = 'loading' | 'results' | 'empty' | 'error';
+
+export interface SuggestionCardState {
+    /** Assistant message id this state is anchored to. */
+    messageId: string;
+    phase: SuggestionCardPhase;
+    suggestions: SuggestedAction[];
+    /** Whether extraction was auto (on-finish) or manual (future use). */
+    cause: 'auto' | 'manual';
+}
