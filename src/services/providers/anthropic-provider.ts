@@ -137,8 +137,7 @@ export class AnthropicProvider implements LLMProvider {
     // ── listModels ────────────────────────────────────────────────
 
     async listModels(): Promise<string[]> {
-        // eslint-disable-next-line no-restricted-globals -- native fetch per user request
-        const response = await fetch(`${this.baseURL}/models`, {
+        const response = await window.fetch(`${this.baseURL}/models`, {
             headers: {
                 "x-api-key": this.apiKey,
                 "anthropic-version": ANTHROPIC_VERSION,
@@ -209,8 +208,7 @@ export class AnthropicProvider implements LLMProvider {
         }
 
         // --- fire request ---
-        // eslint-disable-next-line no-restricted-globals -- native fetch per user request
-        const response = await fetch(`${this.baseURL}/messages`, {
+        const response = await window.fetch(`${this.baseURL}/messages`, {
             method: "POST",
             headers: {
                 "x-api-key": this.apiKey,
@@ -696,8 +694,7 @@ export async function createAnthropicCompletion(
     };
     if (systemText) body.system = systemText;
 
-    // eslint-disable-next-line no-restricted-globals -- native fetch per user request
-    const response = await fetch(`${baseURL}/messages`, {
+    const response = await window.fetch(`${baseURL}/messages`, {
         method: "POST",
         headers: {
             "x-api-key": config.apiKey,
