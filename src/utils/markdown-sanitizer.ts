@@ -143,13 +143,27 @@ function closeBoldItalic(content: string): string {
     return suffix ? content + suffix : content;
 }
 
-// ── P1: Trailing table deferral ──────────────────────────────────────────────
+// ── Shared table detection helpers ────────────────────────────────────────────
 
-/** A table separator row matches `| --- | --- | ...` pattern. */
-function isTableSeparatorRow(line: string): boolean {
+/**
+ * Check whether a line looks like a table row (starts and ends with `|`).
+ * Uses full trim() to handle indented table rows (e.g. `  | Col |`).
+ */
+function isTableRow(line: string): boolean {
+    const trimmed = line.trim();
+    return trimmed.startsWith('|') && trimmed.endsWith('|');
+}
+
+/**
+ * Check whether a line is a table separator row (`| --- | --- |` pattern,
+ * with optional alignment colons).
+ */
+function isTableSep(line: string): boolean {
     const trimmed = line.trim();
     return /^\|[\s:]*-{3,}[\s:]*(\|[\s:]*-{3,}[\s:]*)*\|$/.test(trimmed);
 }
+
+// ── P1: Trailing table deferral ──────────────────────────────────────────────
 
 /**
  * Defer trailing table content to prevent layout jumps during streaming.
@@ -176,6 +190,11 @@ function isTableSeparatorRow(line: string): boolean {
  *    complete (followed by non-table content or the stream ends).
  *
  * Skipped when inside a fenced code block.
+ *
+ * NOTE: The inline table-row checks below use trimEnd() semantics rather
+ * than isTableRow() because during streaming, leading whitespace on a
+ * table line is more likely to be a formatting artifact than an intentional
+ * indented table — deferring would strip it unnecessarily.
  */
 function deferTrailingTable(content: string): string {
     if (isInsideFencedCodeBlock(content)) return content;
@@ -232,7 +251,7 @@ function deferTrailingTable(content: string): string {
 
     // Case 3: table has header + something, but the second line is NOT a
     // valid separator row — the table is structurally incomplete, defer it.
-    if (!isTableSeparatorRow(tableLines[1]!)) {
+    if (!isTableSep(tableLines[1]!)) {
         return lines.slice(0, tableStartIdx).join('\n') + trailingNewlines;
     }
 
@@ -354,30 +373,16 @@ export function sanitizeStreamingMarkdown(content: string): string {
 // ── Final normalizer: blank lines around tables ────────────────────────────
 
 /**
- * Check whether a line looks like a table row (starts and ends with `|`).
- */
-function isTableRow(line: string): boolean {
-    const trimmed = line.trim();
-    return trimmed.startsWith('|') && trimmed.endsWith('|');
-}
-
-/**
- * Check whether a line is a table separator row (`| --- | --- |` pattern,
- * with optional alignment colons).
- */
-function isTableSep(line: string): boolean {
-    const trimmed = line.trim();
-    return /^\|[\s:]*-{3,}[\s:]*(\|[\s:]*-{3,}[\s:]*)*\|$/.test(trimmed);
-}
-
-/**
  * Normalize markdown content so that Obsidian's renderer handles it correctly.
  *
  * Currently handles one common issue:
  * - **Tables without surrounding blank lines**: Obsidian's Markdown renderer
  *   may fail to recognize a table if it is not separated from adjacent content
- *   by blank lines.  This function inserts missing blank lines before and after
- *   every table block.
+ *   by blank lines.  This function inserts a missing blank line before and
+ *   after every table block when one is absent.
+ *
+ * Existing blank lines (including multiple consecutive ones) are preserved —
+ * only missing separators are added.
  *
  * Tables inside fenced code blocks are intentionally left unchanged — backtick
  * content is literal and must not be altered.
@@ -390,24 +395,29 @@ export function normalizeMarkdownForObsidian(content: string): string {
 
     const lines = content.split('\n');
     const result: string[] = [];
+    let insideCodeBlock = false;
     let i = 0;
 
     while (i < lines.length) {
+        const trimmedStart = lines[i]!.trimStart();
+
+        // Track fenced code block boundaries in a single pass so we never
+        // re-scan for each table (avoids O(n²) for multi-table documents).
+        if (/^(`{3,}|~{3,})/.test(trimmedStart)) {
+            insideCodeBlock = !insideCodeBlock;
+            result.push(lines[i]!);
+            i++;
+            continue;
+        }
+
         // Detect a table block: current line is a table row AND the next
-        // line is a separator row.
+        // line is a separator row.  Skip if inside a fenced code block.
         if (
+            !insideCodeBlock &&
             i + 1 < lines.length &&
             isTableRow(lines[i]!) &&
             isTableSep(lines[i + 1]!)
         ) {
-            // Check whether this table is inside a fenced code block.
-            if (isLineInsideFencedCodeBlock(lines, i)) {
-                // Inside a code block — pass through verbatim.
-                result.push(lines[i]!);
-                i++;
-                continue;
-            }
-
             const tableStart = i;
             i += 2; // skip header + separator
             while (i < lines.length && isTableRow(lines[i]!)) {
@@ -422,16 +432,12 @@ export function normalizeMarkdownForObsidian(content: string): string {
             const tableEnd = i;
 
             // ── Ensure blank line BEFORE the table ──
-            // Strip any trailing blank lines in `result` so we can add
-            // exactly one if the table is not at the very beginning.
-            while (
+            // Only insert a blank line when there isn't one already.
+            if (
                 result.length > 0 &&
-                result[result.length - 1]!.trim() === ''
+                result[result.length - 1]!.trim() !== ''
             ) {
-                result.pop();
-            }
-            if (result.length > 0) {
-                result.push(''); // exactly one blank line before table
+                result.push('');
             }
 
             // ── Add table lines ──
@@ -440,12 +446,10 @@ export function normalizeMarkdownForObsidian(content: string): string {
             }
 
             // ── Ensure blank line AFTER the table ──
-            // Skip blank lines that already follow the table in the source.
-            while (i < lines.length && lines[i]!.trim() === '') {
-                i++;
-            }
-            if (i < lines.length) {
-                result.push(''); // exactly one blank line after table
+            // Only insert a blank line when the next content line isn't
+            // already blank (preserving any existing blank lines).
+            if (i < lines.length && lines[i]!.trim() !== '') {
+                result.push('');
             }
         } else {
             result.push(lines[i]!);
@@ -454,24 +458,6 @@ export function normalizeMarkdownForObsidian(content: string): string {
     }
 
     return result.join('\n');
-}
-
-/**
- * Scan lines 0…endIndex to determine whether line at `endIndex` is inside
- * a fenced code block (opened but not yet closed).
- */
-function isLineInsideFencedCodeBlock(
-    lines: string[],
-    endIndex: number
-): boolean {
-    let inside = false;
-    for (let j = 0; j <= endIndex; j++) {
-        const trimmed = lines[j]!.trimStart();
-        if (/^(`{3,}|~{3,})/.test(trimmed)) {
-            inside = !inside;
-        }
-    }
-    return inside;
 }
 
 /**

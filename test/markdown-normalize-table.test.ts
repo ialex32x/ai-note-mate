@@ -7,10 +7,10 @@ import { normalizeMarkdownForObsidian } from "../src/utils/markdown-sanitizer";
 // Obsidian's Markdown renderer may fail to recognize a table if it is not
 // separated from adjacent content by blank lines.  This function ensures
 // every structurally valid table block (header + separator [+ data rows])
-// has a blank line before and after it, unless the table is at the very
-// beginning or end of the document.
+// has at least one blank line before and after it (existing blanks are
+// preserved, only missing separators are added).
 //
-// Tables inside fenced code blocks are intentionally left unchanged.
+// Blank lines at BOF/EOF are never added — the table itself anchors the edge.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("normalizeMarkdownForObsidian", () => {
@@ -52,21 +52,21 @@ describe("normalizeMarkdownForObsidian", () => {
         expect(result).toBe(input);
     });
 
-    it("collapses multiple blank lines before a table to one", () => {
+    it("preserves multiple blank lines before a table", () => {
         const input =
             "Before\n\n\n\n| Col A | Col B |\n| --- | --- |\n| data | here |";
         const result = norm(input);
         expect(result).toBe(
-            "Before\n\n| Col A | Col B |\n| --- | --- |\n| data | here |",
+            "Before\n\n\n\n| Col A | Col B |\n| --- | --- |\n| data | here |",
         );
     });
 
-    it("collapses multiple blank lines after a table to one", () => {
+    it("preserves multiple blank lines after a table", () => {
         const input =
             "| Col A | Col B |\n| --- | --- |\n| data | here |\n\n\n\nAfter";
         const result = norm(input);
         expect(result).toBe(
-            "| Col A | Col B |\n| --- | --- |\n| data | here |\n\nAfter",
+            "| Col A | Col B |\n| --- | --- |\n| data | here |\n\n\n\nAfter",
         );
     });
 
