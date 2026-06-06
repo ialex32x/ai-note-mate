@@ -1,5 +1,5 @@
 import { MarkdownRenderer, App, Component } from 'obsidian';
-import { sanitizeStreamingMarkdown } from '../../utils/markdown-sanitizer';
+import { sanitizeStreamingMarkdown, normalizeMarkdownForObsidian } from '../../utils/markdown-sanitizer';
 
 /**
  * Default minimum interval (ms) between two consecutive renders.
@@ -74,7 +74,13 @@ export async function renderFinalMarkdown(
         afterRender?: (contentEl: HTMLElement) => void;
     } = {}
 ): Promise<void> {
-    const cleaned = options.preprocess ? options.preprocess(content) : content;
+    // 1. Normalize markdown for Obsidian compatibility (e.g. ensure blank
+    //    lines around tables).  This runs unconditionally before any
+    //    feature-specific preprocessing.
+    let cleaned = normalizeMarkdownForObsidian(content);
+    // 2. Optional feature-specific preprocessing (e.g. strip machine-only
+    //    blocks like <!--suggestions-->).
+    cleaned = options.preprocess ? options.preprocess(cleaned) : cleaned;
     contentEl.empty();
     await MarkdownRenderer.render(app, cleaned, contentEl, '', component);
     options.afterRender?.(contentEl);
