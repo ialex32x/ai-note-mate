@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.4.5
+
+### What's new
+
+- **LLM fallback for follow-up suggestions** — When template-based follow-up suggestions don't fire, the plugin now falls back to an LLM-powered generation so you always get relevant prompts to continue the conversation.
+- **More follow-up suggestions** — Follow-up suggestion generation has been tuned to produce a wider variety of useful prompts.
+- **Embedding token ratio in status** — The embedding status indicator now shows an estimated token ratio alongside the file count, giving you a clearer picture of how much context your embedded notes are consuming.
+
+### Refinements
+
+- **Smarter table blank-line handling** — Table detection now uses a single-pass scan for better performance, and preserves existing blank lines around tables instead of collapsing them.
+
+### Fixes
+
+- **Markdown normalization** — Assistant markdown output is now normalized before final rendering, preventing rendering glitches from model formatting quirks.
+- **Lint clean-up** — Removed unnecessary regex escapes and switched to `window.fetch` for broader compatibility.
+
+---
+
 ## 1.4.4
 
 ### What's new
