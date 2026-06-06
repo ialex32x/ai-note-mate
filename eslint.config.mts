@@ -45,6 +45,8 @@ export default tseslint.config(
 		// JSON files are not source code. The typescript-eslint parser cannot
 		// parse JSON syntax and would produce spurious "Unexpected token :"
 		// parse errors when linting the whole repo (npm run lint = `eslint .`).
-		"**/*.json"
+		"**/*.json",
+		// stylelint config is not part of the plugin bundle
+		".stylelintrc.js",
 	]),
 );

@@ -77,7 +77,9 @@
     padding: @spacing-sm @spacing-md;
     border: 1px solid @bg-modifier-border;
     border-left: 3px solid @session-todo-accent;
-    background-color: @bg-secondary;
+    /* Progressive enhancement: browsers supporting color-mix use the blended tint;
+       others fall back to the solid background. */
+    background: @bg-secondary;
     background-color: color-mix(in srgb, @session-todo-accent 6%, @bg-secondary);
 }
 

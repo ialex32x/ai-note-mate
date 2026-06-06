@@ -40,7 +40,6 @@
     min-width: 28px;
     min-height: 28px;
     padding: 0;
-    font-size: 0.9em;
 }
 
 .button-large() {
@@ -194,7 +193,8 @@
 // hover state are intentionally left to the caller so each surface can
 // pick its own affordance (clickable vs. static, neutral vs. accent).
 .chip() {
-    display: inline-flex;
+    // `display` is intentionally omitted — callers declare their own
+    // (inline-flex / flex) depending on the containing layout.
     align-items: center;
     gap: @spacing-sm;
     padding: @spacing-xs @spacing-md @spacing-xs @spacing-lg;

@@ -10,7 +10,8 @@
     font-size: 0.9em;
     word-break: break-word;
     
-    // Allow text selection in message bubbles
+    // Allow text selection in message bubbles.
+    // !important is needed to override Obsidian's view-level user-select: none.
     &, & * {
         user-select: text !important;
         -webkit-user-select: text !important;
@@ -87,8 +88,10 @@
     }
 }
 
-// Abort system message - centered divider indicator
-.session-bubble--system:has(.session-bubble__abort-divider) {
+// Abort system message - centered divider indicator.
+// Uses an explicit modifier class instead of :has() to avoid
+// broad selector invalidation on every DOM mutation.
+.session-bubble--abort {
     max-width: 80%;
     margin: @spacing-sm auto;
     padding: @spacing-xs 0;
@@ -151,9 +154,9 @@
     }
 
     .session-bubble__error-text {
-        margin: 0 !important;
-        padding: @spacing-sm @spacing-md !important;
-        background: transparent !important;
+        margin: 0;
+        padding: @spacing-sm @spacing-md;
+        background: transparent;
         color: @text-error;
         font-size: 0.85em;
         white-space: pre-wrap;
@@ -201,19 +204,21 @@
     line-height: 1.5;
     width: 100%;
     
-    // Reset margins for markdown-rendered elements
+    // Reset margins for markdown-rendered elements.
+    // All selectors inherit the parent .session-bubble__content scope (0,1,1+),
+    // which is sufficient to override Obsidian's default element styles (0,0,1).
     p, ul, ol, blockquote, pre, div:not(.session-bubble__tool-confirm):not(.table-container) {
-        margin: 0 !important;
-        margin-top: 0 !important;
-        margin-bottom: 0 !important;
-        max-width: 100% !important;
+        margin: 0;
+        margin-top: 0;
+        margin-bottom: 0;
+        max-width: 100%;
     }
     
     // Headings spacing
     h1, h2, h3, h4, h5, h6 {
-        margin: 0 !important;
-        margin-top: 12px !important;
-        margin-bottom: 6px !important;
+        margin: 0;
+        margin-top: 12px;
+        margin-bottom: 6px;
     }
     
     // Add spacing between block elements
@@ -226,28 +231,28 @@
     ol + ol,
     pre + p,
     p + pre {
-        margin-top: 0.5em !important;
+        margin-top: 0.5em;
     }
     
     // Tighter list spacing
     ul, ol {
-        padding-left: 1.5em !important;
-        padding-top: 0 !important;
-        padding-bottom: 0 !important;
+        padding-left: 1.5em;
+        padding-top: 0;
+        padding-bottom: 0;
     }
     
     li {
-        margin: 0 !important;
-        padding: 0 !important;
+        margin: 0;
+        padding: 0;
         
         p {
-            margin: 0 !important;
+            margin: 0;
         }
     }
     
     // Code blocks
     pre {
-        padding: 0.5em !important;
+        padding: 0.5em;
         border-radius: @radius-sm;
         overflow-x: auto;
         position: relative;
@@ -260,7 +265,7 @@
     // Table styles — match Obsidian editor appearance
     .table-container {
         overflow-x: auto;
-        margin: 0.5em 0 !important;
+        margin: 0.5em 0;
         max-width: 100%;
         scrollbar-width: thin;
     }
@@ -290,22 +295,23 @@
         background: color-mix(in srgb, @bg-modifier-hover 50%, transparent);
     }
     
-    // Code block copy button
+    // Code block copy button.
+    // Scoped under .session-bubble__content (0,2,0) to beat Obsidian's .copy-code-button (0,1,0).
     .copy-code-button {
-        width: 20px !important;
-        height: 20px !important;
-        padding: 0 !important;
-        margin: @spacing-sm !important;
-        border-radius: @radius-sm !important;
-        background: transparent !important;
-        color: @text-secondary !important;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        margin: @spacing-sm;
+        border-radius: @radius-sm;
+        background: transparent;
+        color: @text-secondary;
         opacity: 0;
         visibility: hidden;
-        transition: background @duration-normal, color @duration-normal, opacity @duration-slow ease !important;
+        transition: background @duration-normal, color @duration-normal, opacity @duration-slow ease;
         
         &:hover {
-            background: @bg-modifier-hover !important;
-            color: @text-primary !important;
+            background: @bg-modifier-hover;
+            color: @text-primary;
         }
         
         svg {
@@ -366,14 +372,14 @@
 }
 
 .session-bubble__speak-btn {
-    border-radius: @radius-sm 0 0 @radius-sm !important;
+    border-radius: @radius-sm 0 0 @radius-sm;
 }
 
 .session-bubble__voice-picker-btn {
-    border-radius: 0 @radius-sm @radius-sm 0 !important;
-    width: 14px !important;
+    border-radius: 0 @radius-sm @radius-sm 0;
+    width: 14px;
     min-width: 14px;
-    padding: 0 3px !important;
+    padding: 0 3px;
     opacity: 0.7;
     
     &:hover {

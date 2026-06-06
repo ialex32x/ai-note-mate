@@ -255,24 +255,26 @@
 // Now rendered via createCollapsible() using the unified
 // .collapsible-block CSS classes defined below.
 
-// Utility: hide empty sub-agent bubbles entirely
-.session-bubble--hidden {
-    display: none !important;
+// Utility: hide empty sub-agent bubbles entirely.
+// Chained to beat .session-bubble { display: flex } without !important.
+.session-bubble.session-bubble--hidden {
+    display: none;
 }
 
 // ── delegate_task `inputs` panel (collapsible) ──────────
 // Now rendered via createCollapsible() / renderCollapsibleCodeBlock()
 // using the unified .collapsible-block CSS classes defined below.
 
-// Override Obsidian's markdown preview styles
+// Override Obsidian's markdown preview styles.
+// Scoped under .session-bubble__content (0,2,0) to beat Obsidian's defaults (0,1,0).
 .session-bubble__content {
     .markdown-preview-view,
     .markdown-preview-sizer,
     .markdown-renderer {
-        padding: 0 !important;
-        margin: 0 !important;
-        width: 100% !important;
-        max-width: 100% !important;
+        padding: 0;
+        margin: 0;
+        width: 100%;
+        max-width: 100%;
     }
 }
 

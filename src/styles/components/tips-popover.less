@@ -19,12 +19,9 @@
 }
 
 // Make the thinking row the positioning context for the tips popover.
-// Scoped with `:has()` so only rows that actually mount the tips button
-// gain `position: relative` — leaves other thinking-row instances
-// untouched. Without this rule the popover would fall through to
-// `.session-input-container` and float above the whole input area
-// instead of staying visually attached to the button.
-.session-thinking-row:has(> .session-tips) {
+// Uses an explicit modifier class (set in JS when the tips button is
+// mounted) instead of :has() to avoid broad selector invalidation.
+.session-thinking-row--has-tips {
     position: relative;
 }
 
@@ -69,13 +66,6 @@
     box-sizing: border-box;
 }
 
-.session-tips-popover__view {
-    display: flex;
-    flex-direction: column;
-    gap: @spacing-sm;
-    padding: @spacing-md;
-}
-
 // Pin both views (the tips list AND the preview / confirm panel) to a
 // stable height — both a floor AND a ceiling — so the nav row /
 // action buttons sit at fixed coordinates regardless of which tip is
@@ -97,6 +87,10 @@
 // cheap defence in depth — if a future tweak relaxes the ceiling,
 // short content will still glue the action buttons to the bottom.
 .session-tips-popover__view {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-sm;
+    padding: @spacing-md;
     min-height: 220px;
     max-height: 220px;
 

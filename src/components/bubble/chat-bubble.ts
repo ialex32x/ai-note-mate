@@ -212,6 +212,7 @@ export class ChatBubble {
 
         // ── System message (special layout: no body wrapper) ──────────
         if (msg.role === 'system' && msg.content === 'aborted') {
+            bubble.addClass('session-bubble--abort');
             const bodyEl = bubble.createEl('div', { cls: BUBBLE_BODY_CLS });
             const divider = bodyEl.createEl('div', { cls: 'session-bubble__abort-divider' });
             divider.createEl('span', { cls: 'session-bubble__abort-text', text: t('view.responseAborted') });

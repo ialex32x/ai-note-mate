@@ -38,6 +38,7 @@ export function createTipsButton(
     sessionView: TipSessionViewAdapter,
     dropdownManager: DropdownManager,
 ): TipsButtonHandle {
+    parent.addClass('session-thinking-row--has-tips');
     const wrapper = parent.createEl('span', { cls: 'session-selector session-tips' });
 
     const button = wrapper.createEl('button', {

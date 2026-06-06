@@ -43,6 +43,7 @@
 
 .session-toolbar__btn {
     .button-medium();
+    font-size: 0.9em;
     color: @text-secondary;
     background: transparent;
     
@@ -411,7 +412,9 @@
     font-size: 0.82em;
     color: @text-secondary;
     background: @bg-modifier-hover;
-    border: 1px dashed @bg-modifier-border;
+    border-width: 1px;
+    border-style: dashed;
+    border-color: @bg-modifier-border;
 
     &:hover:not(:disabled) {
         color: @text-primary;

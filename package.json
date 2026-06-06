@@ -6,8 +6,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
-		"build": "npm run lint && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"build": "npm run lint && npm run lint:css && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"lint": "eslint .",
+		"lint:css": "stylelint \"src/styles/**/*.less\"",
 		"test": "vitest run",
 		"test:watch": "vitest",
 		"test:bing": "tsx test-bing-search.ts"
@@ -34,6 +35,9 @@
 		"jiti": "2.6.1",
 		"less": "^4.2.0",
 		"obsidian": "~1.11.4",
+		"postcss-less": "^6.0.0",
+		"stylelint": "^17.13.0",
+		"stylelint-config-recommended": "^18.0.0",
 		"tslib": "2.4.0",
 		"tsx": "^4.21.0",
 		"typescript": "^5.8.3",

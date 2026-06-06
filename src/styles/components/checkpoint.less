@@ -48,8 +48,8 @@
     min-height: 32px;
     box-sizing: border-box;
     justify-content: flex-start;
-    background: @bg-primary !important;
-    border: 1px solid @bg-modifier-border !important;
+    background: @bg-primary;
+    border: 1px solid @bg-modifier-border;
     color: @text-secondary;
 }
 
@@ -65,7 +65,7 @@
     gap: @spacing-xs;
 }
 
-.session-checkpoint-bar__bulk-btn {
+.session-checkpoint-bar .session-checkpoint-bar__bulk-btn {
     flex: 0 0 auto;
     display: inline-flex;
     align-items: center;
@@ -75,8 +75,8 @@
     padding: 0;
     border-radius: @radius-sm;
     cursor: pointer;
-    border: 1px solid @bg-modifier-border !important;
-    background: @bg-primary !important;
+    border: 1px solid @bg-modifier-border;
+    background: @bg-primary;
     color: @text-secondary;
     transition: background @duration-fast, color @duration-fast, border-color @duration-fast;
 
@@ -85,9 +85,9 @@
     }
 
     &:hover:not(:disabled) {
-        background: @bg-modifier-hover !important;
+        background: @bg-modifier-hover;
         color: @text-primary;
-        border-color: @text-secondary !important;
+        border-color: @text-secondary;
     }
 
     &:disabled {
@@ -106,8 +106,10 @@
 
 // Hidden when there are no pending checkpoints (including before
 // the first vault mutation and after every checkpoint is resolved).
-.session-checkpoint-selector--empty {
-    display: none !important;
+// Chained with the parent selector to beat `.session-checkpoint-selector { display: flex }`
+// without resorting to !important.
+.session-checkpoint-row > .session-checkpoint-selector.session-checkpoint-selector--empty {
+    display: none;
 }
 
 // When at least one checkpoint is still pending, surface the trigger
