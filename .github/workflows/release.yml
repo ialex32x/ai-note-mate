@@ -9,7 +9,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -50,6 +52,21 @@ jobs:
 
       - name: Build plugin
         run: npm run build
+
+      - name: Generate artifact attestation for main.js
+        uses: actions/attest@v4
+        with:
+          subject-path: main.js
+
+      - name: Generate artifact attestation for manifest.json
+        uses: actions/attest@v4
+        with:
+          subject-path: manifest.json
+
+      - name: Generate artifact attestation for styles.css
+        uses: actions/attest@v4
+        with:
+          subject-path: styles.css
 
       - name: Create release
         env:
