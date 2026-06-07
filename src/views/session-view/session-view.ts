@@ -920,8 +920,8 @@ export class SessionView extends ItemView {
         });
 
         // ── Generated-asset panel button ─────────────────────────────────
-        // Image icon + badge count. Hides when no assets have been generated
-        // in this session. Opens a popup grid of 128×128 thumbnails.
+        // Image icon. Hides when no assets have been generated in this
+        // session. Opens a popup grid of 64×64 thumbnails.
         this.assetPanelBtn = new AssetPanelButton(
             this.app,
             () => this.runtime?.assetCollection.assets ?? [],
@@ -1041,6 +1041,7 @@ export class SessionView extends ItemView {
         this.tipsButton = null;
         this.issueTracerButton?.dispose();
         this.issueTracerButton = null;
+        this.assetPanelBtn?.dispose();
         this.statusController?.dispose();
         if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
@@ -1485,6 +1486,8 @@ export class SessionView extends ItemView {
         // refresh on the next dropdown open.
         this.unsubCheckpointChange?.();
         this.unsubCheckpointChange = null;
+        // Unbind the asset panel from the old runtime's collection.
+        this.assetPanelBtn?.dispose();
         this.runtime = undefined;
         this.plugin.runtimePool.release(id);
     }

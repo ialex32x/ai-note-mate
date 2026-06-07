@@ -37,11 +37,6 @@ export class GeneratedAssetCollection {
 		return this._assets;
 	}
 
-	/** Number of assets currently held. */
-	get count(): number {
-		return this._assets.length;
-	}
-
 	/**
 	 * Append assets from a freshly-executed tool call (real-time path).
 	 * Each entry is pushed as-is; no dedup is performed.

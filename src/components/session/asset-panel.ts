@@ -4,7 +4,7 @@ import { t } from '../../i18n';
 
 /**
  * Renders the generated-asset button (in the session toolbar) and its
- * popup panel (grid of 128×128 image thumbnails).
+ * popup panel (grid of 64×64 image thumbnails).
  *
  * The button hides when there are zero assets.  When clicked it opens a
  * dropdown whose content is re-rendered on every open so it stays in
