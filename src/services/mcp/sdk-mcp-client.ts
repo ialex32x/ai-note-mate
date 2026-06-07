@@ -110,12 +110,74 @@ function parseResponse(data: unknown): unknown {
 }
 
 // ─────────────────────────────────────────────
-// SSE helper for tool call results
+// Response helpers
 // ─────────────────────────────────────────────
 
 /**
+ * Read an MCP response, dispatching by Content-Type.
+ *
+ * MCP Streamable HTTP servers may return JSON or SSE for ANY endpoint,
+ * not just `tools/call`. The SDK handled both; we must do the same.
+ *
+ * For non-SSE responses, we read the body as TEXT first so we always
+ * have a raw copy for diagnostics when JSON-RPC parsing comes up empty.
+ */
+async function readMCPResult(resp: Response): Promise<unknown> {
+    const contentType = resp.headers.get("Content-Type") ?? "";
+    console.debug("[mcp] response Content-Type:", contentType);
+
+    if (contentType.includes("text/event-stream") && resp.body) {
+        try {
+            return await readSSEResult(resp.body);
+        } catch (err) {
+            // SSE parsing can fail for legitimate reasons (e.g. the server
+            // returned a single JSON frame without SSE framing).  Fall
+            // through to the text-backed JSON path instead of throwing.
+            const rawText = await resp.text().catch(() => "");
+            if (rawText) {
+                console.debug("[mcp] SSE path failed, trying JSON parse of raw body:", rawText.slice(0, 500));
+                try {
+                    return parseResponse(JSON.parse(rawText));
+                } catch {
+                    // Return the raw text so callTool can surface it
+                    console.warn("[mcp] SSE + JSON fallback both failed; returning raw text");
+                    return rawText;
+                }
+            }
+            throw err;
+        }
+    }
+
+    // Non-SSE: read raw text FIRST so we never lose the body.
+    const rawText = await resp.text();
+    console.debug("[mcp] JSON response:", rawText.slice(0, 500));
+
+    try {
+        const data = JSON.parse(rawText) as JsonRpcResponse;
+        const result = parseResponse(data);
+        if (result === undefined) {
+            // Valid JSON but no `result` or `error` field — this is
+            // a protocol anomaly.  Surface the raw parsed object so
+            // callTool can inspect it directly.
+            console.warn("[mcp] JSON-RPC response missing result/error field:", rawText.slice(0, 500));
+            return data;
+        }
+        return result;
+    } catch {
+        // Not valid JSON at all — return the raw text so the caller
+        // can still surface useful content (or a helpful error).
+        console.warn("[mcp] Non-JSON response, returning raw text:", rawText.slice(0, 500));
+        return rawText;
+    }
+}
+
+/**
  * Read an SSE stream and extract the JSON-RPC result from the first
- * data frame. MCP `tools/call` may return SSE when streaming.
+ * data frame. Skips frames without a `result` field.
+ *
+ * Per the SSE spec, multi-line values are represented as consecutive
+ * `data:` lines within a single event — they must be concatenated with
+ * `\n` before parsing.
  */
 async function readSSEResult(
     body: ReadableStream<Uint8Array>,
@@ -123,6 +185,33 @@ async function readSSEResult(
     const reader = body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
+
+    const processFrame = (frame: string): unknown => {
+        // Collect ALL `data:` lines (SSE multi-line values)
+        const dataLines: string[] = [];
+        for (const line of frame.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data:")) {
+                // Value starts after "data:" — leading space is optional
+                const val = trimmed.slice(5).replace(/^ /, "");
+                dataLines.push(val);
+            }
+        }
+        if (dataLines.length === 0) return undefined;
+        const jsonStr = dataLines.join("\n");
+        if (!jsonStr || jsonStr === "{}") return undefined;
+        try {
+            const parsed = JSON.parse(jsonStr) as JsonRpcResponse;
+            console.debug("[mcp] SSE frame parsed, has result:", parsed.result !== undefined, "has error:", parsed.error !== undefined);
+            if (parsed.result !== undefined) {
+                return parseResponse(parsed);
+            }
+            console.debug("[mcp] SSE frame skipped (no result):", jsonStr.slice(0, 200));
+        } catch (e) {
+            console.debug("[mcp] SSE frame JSON parse failed:", jsonStr.slice(0, 200), String(e));
+        }
+        return undefined;
+    };
 
     try {
         while (true) {
@@ -139,29 +228,25 @@ async function readSSEResult(
                 const frame = buffer.slice(0, frameEnd);
                 buffer = buffer.slice(frameEnd + 2);
 
-                for (const line of frame.split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed.startsWith("data: ")) {
-                        const jsonStr = trimmed.slice(6);
-                        if (!jsonStr || jsonStr === "{}") continue;
-                        try {
-                            const parsed = JSON.parse(jsonStr) as JsonRpcResponse;
-                            // Skip frames without a result (e.g. progress notifications)
-                            if (parsed.result !== undefined) {
-                                return parseResponse(parsed);
-                            }
-                        } catch {
-                            // keep reading for more frames
-                        }
-                    }
-                }
+                const result = processFrame(frame);
+                if (result !== undefined) return result;
             }
+        }
+
+        // Flush trailing frame (may lack final \n\n)
+        if (buffer.trim()) {
+            const result = processFrame(buffer);
+            if (result !== undefined) return result;
         }
     } finally {
         reader.releaseLock();
     }
 
-    throw new Error("MCP tool call returned no result");
+    const lastBuf = buffer.trim().slice(0, 300);
+    throw new Error(
+        `MCP tool call returned no result` +
+        (lastBuf ? ` (last buffer: ${lastBuf})` : ""),
+    );
 }
 
 // ─────────────────────────────────────────────
@@ -182,6 +267,7 @@ export class SdkMCPClient implements IMCPClient {
     private _requestId = 0;
     private _fetch: typeof fetch;
     private _url?: string;
+    private _apiKey?: string;
 
     constructor() {
         this._fetch = window.fetch.bind(window);
@@ -200,6 +286,7 @@ export class SdkMCPClient implements IMCPClient {
     ): Promise<MCPToolInfo[]> {
         this.close();
         this._url = url;
+        this._apiKey = options?.apiKey;
 
         if (options?.useRequestUrl) {
             this._fetch = createRequestUrlFetch() as unknown as typeof fetch;
@@ -245,8 +332,7 @@ export class SdkMCPClient implements IMCPClient {
                 headers[SESSION_HEADER] = this._sessionId;
             }
 
-            const initData: unknown = await initResp.json();
-            parseResponse(initData);
+            await readMCPResult(initResp);
 
             // ── Step 2: Send initialized notification ──
             const notifReq = makeRequest("notifications/initialized");
@@ -273,8 +359,7 @@ export class SdkMCPClient implements IMCPClient {
                 );
             }
 
-            const listData: unknown = await listResp.json();
-            const listResult = parseResponse(listData) as {
+            const listResult = (await readMCPResult(listResp)) as {
                 tools?: Array<{
                     name: string;
                     description?: string;
@@ -304,6 +389,9 @@ export class SdkMCPClient implements IMCPClient {
             "Content-Type": "application/json",
             Accept: "text/event-stream, application/json",
         };
+        if (this._apiKey) {
+            headers["Authorization"] = `Bearer ${this._apiKey}`;
+        }
         if (this._sessionId) {
             headers[SESSION_HEADER] = this._sessionId;
         }
@@ -329,21 +417,29 @@ export class SdkMCPClient implements IMCPClient {
             );
         }
 
-        // Parse response: SSE stream or plain JSON
-        const contentType = resp.headers.get("Content-Type") ?? "";
-        let result: unknown;
+        const result = await readMCPResult(resp);
 
-        if (contentType.includes("text/event-stream") && resp.body) {
-            result = await readSSEResult(resp.body);
-        } else {
-            const data: unknown = await resp.json();
-            result = parseResponse(data);
+        // `readMCPResult` should never return undefined after the text-backed
+        // fallback, but keep this as a safety net.
+        if (result === undefined) {
+            throw new Error("MCP tool call returned empty result");
         }
 
-        // Extract text content from the result
+        // `null` is a valid JSON value — treat as empty content.
+        if (result === null) {
+            return "null";
+        }
+
+        // Raw text fallback: when JSON / SSE parsing failed entirely,
+        // readMCPResult returns the raw response body as a string.
+        if (typeof result === "string") {
+            return result;
+        }
+
         const toolResult = result as {
             content?: Array<{ type?: string; text?: string }>;
             isError?: boolean;
+            toolResult?: unknown;
         };
 
         if (toolResult.isError) {
@@ -356,9 +452,15 @@ export class SdkMCPClient implements IMCPClient {
         }
 
         // Legacy result format
-        return JSON.stringify(
-            (result as { toolResult: unknown }).toolResult,
-        );
+        if (toolResult.toolResult !== undefined) {
+            return JSON.stringify(toolResult.toolResult);
+        }
+
+        // Last-resort fallback for unexpected result shapes (e.g. a
+        // JSON-RPC envelope that bypassed parseResponse, or a non-standard
+        // MCP server response).  Stringify the whole thing so the LLM
+        // at least sees what the server sent.
+        return JSON.stringify(result);
     }
 
     close(): void {
@@ -366,6 +468,7 @@ export class SdkMCPClient implements IMCPClient {
         this._tools = [];
         this._sessionId = undefined;
         this._url = undefined;
+        this._apiKey = undefined;
         this._fetch = window.fetch.bind(window);
     }
 }
