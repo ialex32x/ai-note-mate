@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.6
+
+### Refinements
+
+- **Shed SDK dependencies** — Removed `@google/genai`, OpenAI, and `@modelcontextprotocol/sdk` packages in favour of direct REST calls and `window.fetch`, making the plugin bundle significantly lighter.
+- **Cheerio replaced with built-in DOMParser** — Web scraping no longer depends on cheerio, using the browser-native DOMParser instead for faster parsing and zero extra weight.
+- **MCP SSE handling streamlined** — Server-sent event and JSON response parsing is now more robust, with simpler error handling and proper request-ID resets on disconnect.
+
+### Fixes
+
+- **`delete_files` alias support** — The `delete_files` tool now accepts `file_paths` as an argument alias, matching the parameter name some models use naturally.
+
+---
+
 ## 1.4.5
 
 ### What's new
