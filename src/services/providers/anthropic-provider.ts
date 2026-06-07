@@ -10,7 +10,7 @@ import type {
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
-import { fetchWithRetry } from "../../utils/retry-helper";
+import { corsFreeFetchWithRetry } from "../../utils/retry-helper";
 
 const retryLogger = (ctx: string) =>
     (err: unknown, n: number) => console.warn(`[anthropic-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
@@ -142,7 +142,7 @@ export class AnthropicProvider implements LLMProvider {
     // ── listModels ────────────────────────────────────────────────
 
     async listModels(): Promise<string[]> {
-        const response = await fetchWithRetry(`${this.baseURL}/models`, {
+        const response = await corsFreeFetchWithRetry(`${this.baseURL}/models`, {
             headers: {
                 "x-api-key": this.apiKey,
                 "anthropic-version": ANTHROPIC_VERSION,
@@ -213,7 +213,7 @@ export class AnthropicProvider implements LLMProvider {
         }
 
         // --- fire request ---
-        const response = await fetchWithRetry(`${this.baseURL}/messages`, {
+        const response = await corsFreeFetchWithRetry(`${this.baseURL}/messages`, {
             method: "POST",
             headers: {
                 "x-api-key": this.apiKey,
@@ -675,7 +675,7 @@ export async function createAnthropicCompletion(
     };
     if (systemText) body.system = systemText;
 
-    const response = await fetchWithRetry(`${baseURL}/messages`, {
+    const response = await corsFreeFetchWithRetry(`${baseURL}/messages`, {
         method: "POST",
         headers: {
             "x-api-key": config.apiKey,

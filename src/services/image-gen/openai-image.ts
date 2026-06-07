@@ -3,7 +3,7 @@ import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
 import { resolveSecret } from "../../utils/secret-helper";
-import { fetchWithRetry } from "../../utils/retry-helper";
+import { corsFreeFetchWithRetry } from "../../utils/retry-helper";
 
 const retryLogger = (ctx: string) =>
     (err: unknown, n: number) => console.warn(`[OpenAIImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
@@ -73,7 +73,7 @@ export async function generateImageWithOpenAI(
             formData.append("response_format", "b64_json");
             if (size) formData.append("size", size);
 
-            const response = await fetchWithRetry(`${baseURL}/images/edits`, {
+            const response = await corsFreeFetchWithRetry(`${baseURL}/images/edits`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
@@ -107,7 +107,7 @@ export async function generateImageWithOpenAI(
             if (quality) body.quality = quality;
             if (style) body.style = style;
 
-            const response = await fetchWithRetry(`${baseURL}/images/generations`, {
+            const response = await corsFreeFetchWithRetry(`${baseURL}/images/generations`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
