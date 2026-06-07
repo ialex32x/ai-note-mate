@@ -1,9 +1,11 @@
-import OpenAI, { toFile } from "openai";
 import type NoteAssistantPlugin from "../../main";
 import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
 import { resolveSecret } from "../../utils/secret-helper";
+
+/** Default base URL for the OpenAI API. */
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
 /**
  * Parameters for OpenAI-compatible image generation.
@@ -24,23 +26,19 @@ export interface OpenAIImageGenParams {
 
 /**
  * Generate an image using OpenAI-compatible API.
+ *
  * Works with OpenAI (DALL-E / gpt-image-1), and other compatible providers.
- * If reference images are provided, the `images.edit` endpoint is used
- * (image-to-image); otherwise `images.generate` (text-to-image).
+ * If reference images are provided, the `images/edits` endpoint is used
+ * (image-to-image via multipart/form-data); otherwise `images/generations`
+ * (text-to-image via JSON).
  */
 export async function generateImageWithOpenAI(
     plugin: NoteAssistantPlugin,
-    config: Pick<ImageGenConfig, 'apiKey' | 'model' | 'baseUrl'>,
+    config: Pick<ImageGenConfig, "apiKey" | "model" | "baseUrl">,
     params: OpenAIImageGenParams,
 ): Promise<ImageGenResult> {
     const { prompt, size, quality, style, refImages, signal } = params;
 
-    // Resolve first, then validate: `config.apiKey` is the SecretComponent
-    // reference key, not the plaintext, so checking it directly only catches
-    // the "user never typed anything" case. The post-resolve check also
-    // catches the "reference exists but the underlying secret was wiped"
-    // case — without it, an empty string would be forwarded to the SDK and
-    // surface as a confusing 401.
     const apiKey = resolveSecret(plugin.app, config.apiKey);
     if (!apiKey) {
         return {
@@ -49,81 +47,91 @@ export async function generateImageWithOpenAI(
         };
     }
     const model = config.model || "dall-e-3";
-    const baseURL = config.baseUrl || "https://api.openai.com/v1";
-
-    const client = new OpenAI({
-        apiKey,
-        baseURL,
-        dangerouslyAllowBrowser: true,
-    });
+    const baseURL = config.baseUrl || DEFAULT_BASE_URL;
 
     try {
-        let response: OpenAI.Images.ImagesResponse;
+        let imageData: string | undefined;
+        let mimeType: string;
+        let responseJson: Record<string, unknown>;
 
         if (refImages.length > 0) {
-            // Image-to-image: use the edit endpoint. Works with gpt-image-1
-            // (multi-image supported); dall-e-2 supports single image only;
-            // dall-e-3 does not support edit. Per decision 1 (hard switch),
-            // we do not branch by model - errors are surfaced from the API.
-            const uploadables = await Promise.all(
-                refImages.map((img) =>
-                    toFile(img.arrayBuffer, img.fileName, { type: img.mimeType }),
-                ),
+            // ── Image-to-image: /v1/images/edits (multipart/form-data) ──
+            const firstImg = refImages[0]!;
+            const formData = new FormData();
+            formData.append(
+                "image",
+                new Blob([firstImg.arrayBuffer], { type: firstImg.mimeType }),
+                firstImg.fileName,
             );
-            const editParams: OpenAI.Images.ImageEditParams = {
-                model,
-                prompt,
-                // Pass single file directly when possible; SDK accepts both forms.
-                image: uploadables.length === 1 ? uploadables[0]! : uploadables,
-                n: 1,
-            };
-            if (size) {
-                // The SDK's edit type only accepts gpt-image-1 / DALL-E 2 sizes.
-                // If the LLM picks a DALL-E 3-only size (1792x1024 / 1024x1792)
-                // with refImages, the value is forwarded at runtime and the API
-                // rejects it — consistent with the hard-switch policy of not
-                // branching by model.
-                editParams.size = size as
-                    | "auto" | "256x256" | "512x512" | "1024x1024" | "1536x1024" | "1024x1536";
+            formData.append("prompt", prompt);
+            formData.append("model", model);
+            formData.append("n", "1");
+            formData.append("response_format", "b64_json");
+            if (size) formData.append("size", size);
+
+            const response = await window.fetch(`${baseURL}/images/edits`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                },
+                body: formData,
+                signal,
+            });
+
+            if (signal?.aborted) {
+                return { success: false, error: "Aborted" };
             }
-            // images.edit return type is a union with Stream<> when stream:true.
-            // We never opt into streaming, so coerce to the non-stream branch.
-            response = (await client.images.edit(editParams, { signal })) as OpenAI.Images.ImagesResponse;
+
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => "");
+                return {
+                    success: false,
+                    error: `OpenAI image edit error ${response.status}: ${errorBody || response.statusText}`,
+                };
+            }
+
+            responseJson = (await response.json()) as Record<string, unknown>;
         } else {
-            // Pure text-to-image path.
-            const requestParams: OpenAI.Images.ImageGenerateParams = {
+            // ── Text-to-image: /v1/images/generations (JSON) ──
+            const body: Record<string, unknown> = {
                 model,
                 prompt,
                 n: 1,
+                response_format: "b64_json",
             };
-            if (size) {
-                // Union covers both DALL-E (..x..) and gpt-image-1 (1024x1024 / 1024x1536 / 1536x1024 / auto).
-                // Unsupported combinations are rejected by the API with a clear error.
-                requestParams.size = size as
-                    | "auto"
-                    | "256x256"
-                    | "512x512"
-                    | "1024x1024"
-                    | "1536x1024"
-                    | "1024x1536"
-                    | "1792x1024"
-                    | "1024x1792";
+            if (size) body.size = size;
+            if (quality) body.quality = quality;
+            if (style) body.style = style;
+
+            const response = await window.fetch(`${baseURL}/images/generations`, {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify(body),
+                signal,
+            });
+
+            if (signal?.aborted) {
+                return { success: false, error: "Aborted" };
             }
-            if (quality) {
-                requestParams.quality = quality as "standard" | "hd";
+
+            if (!response.ok) {
+                const errorBody = await response.text().catch(() => "");
+                return {
+                    success: false,
+                    error: `OpenAI image generation error ${response.status}: ${errorBody || response.statusText}`,
+                };
             }
-            if (style) {
-                requestParams.style = style as "vivid" | "natural";
-            }
-            response = await client.images.generate(requestParams, { signal });
+
+            responseJson = (await response.json()) as Record<string, unknown>;
         }
 
-        // Check abort after the API call
-        if (signal?.aborted) {
-            return { success: false, error: "Aborted" };
-        }
-
-        const data = response.data?.[0];
+        const dataArray = responseJson.data as
+            | Array<{ b64_json?: string; url?: string }>
+            | undefined;
+        const data = dataArray?.[0];
         if (!data) {
             return {
                 success: false,
@@ -133,29 +141,22 @@ export async function generateImageWithOpenAI(
 
         // Handle b64_json response
         if (data.b64_json) {
-            // OpenAI DALL-E returns PNG format by default
-            return {
-                success: true,
-                imageData: data.b64_json,
-                mimeType: "image/png",
-            };
+            imageData = data.b64_json;
+            mimeType = "image/png";
+            return { success: true, imageData, mimeType };
         }
 
-        // If URL is returned instead of b64_json, we need to download it.
-        // Use Obsidian's requestUrl (via downloadAsBase64) to bypass CORS and
-        // stay mobile-safe. Note: `requestUrl` does not support mid-flight
-        // cancellation, so an aborted signal only discards the result; the
-        // download itself will still run to completion.
+        // If URL is returned instead of b64_json, download it.
         if (data.url) {
-            const { base64, mimeType } = await downloadAsBase64(data.url, {
+            const result = await downloadAsBase64(data.url, {
                 signal,
                 fallbackMimeType: "image/png",
             });
 
             return {
                 success: true,
-                imageData: base64,
-                mimeType,
+                imageData: result.base64,
+                mimeType: result.mimeType,
             };
         }
 
@@ -166,13 +167,6 @@ export async function generateImageWithOpenAI(
     } catch (err) {
         if (signal?.aborted) {
             return { success: false, error: "Aborted" };
-        }
-
-        // Handle OpenAI API errors
-        if (err instanceof OpenAI.APIError) {
-            const msg = err.message || `API Error: ${err.status}`;
-            console.error("[OpenAIImageGen] API Error:", err);
-            return { success: false, error: msg };
         }
 
         const msg = err instanceof Error ? err.message : String(err);

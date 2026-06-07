@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import type {
     LLMProvider,
     LLMProviderConfig,
@@ -11,53 +10,163 @@ import type {
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
 
+// ─────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────
+
+/** Default base URL for the OpenAI API. */
+const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+
+// ─────────────────────────────────────────────
+// SSE Stream Parser
+// ─────────────────────────────────────────────
+
 /**
- * Some OpenAI-compatible thinking models (DeepSeek R1, certain Qwen
- * thinking variants) require an out-of-spec `reasoning_content` field
- * to be echoed back on assistant messages, and also surface it on the
- * streaming `delta`. The OpenAI SDK types do not declare it.
+ * Parse an OpenAI SSE (Server-Sent Events) byte stream into individual
+ * JSON objects.
  *
- * We use these narrow local extensions instead of `as any` so the only
- * untyped surface is the single `reasoning_content` property.
+ * OpenAI's streaming chat completions return standard SSE: each event is
+ * separated by a blank line, and the payload is on a `data:` line. The
+ * stream ends with `data: [DONE]`.
+ *
+ * @param body   - The response body ReadableStream from `window.fetch`.
+ * @param signal - Optional AbortSignal to cancel the stream early.
  */
-type OpenAIMessageWithReasoning = OpenAI.Chat.ChatCompletionMessageParam & {
-    reasoning_content?: string;
-};
+async function* parseOpenAISSEStream(
+    body: ReadableStream<Uint8Array>,
+    signal?: AbortSignal,
+): AsyncIterable<Record<string, unknown>> {
+    const reader = body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
 
-type OpenAIDeltaWithReasoning = OpenAI.Chat.Completions.ChatCompletionChunk.Choice.Delta & {
-    reasoning_content?: string | null;
-};
+    try {
+        while (true) {
+            if (signal?.aborted) break;
+
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Normalise line endings to LF (SSE spec allows \r\n and \r).
+            buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+            // SSE frames are separated by double newlines
+            while (true) {
+                const frameEnd = buffer.indexOf("\n\n");
+                if (frameEnd === -1) break;
+
+                const frame = buffer.slice(0, frameEnd);
+                buffer = buffer.slice(frameEnd + 2);
+
+                // Extract data: payload from the frame
+                for (const line of frame.split("\n")) {
+                    const trimmed = line.trim();
+                    if (trimmed.startsWith("data: ")) {
+                        const jsonStr = trimmed.slice(6);
+                        // [DONE] signals end of stream
+                        if (jsonStr === "[DONE]") return;
+                        // Skip empty data (ping frames)
+                        if (jsonStr === "" || jsonStr === "{}") break;
+                        try {
+                            yield JSON.parse(jsonStr) as Record<string, unknown>;
+                        } catch {
+                            console.warn(
+                                "[openai-provider] SSE JSON parse error:",
+                                jsonStr.slice(0, 200),
+                            );
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Flush trailing frame
+        if (buffer.trim()) {
+            for (const line of buffer.split("\n")) {
+                const trimmed = line.trim();
+                if (trimmed.startsWith("data: ")) {
+                    const jsonStr = trimmed.slice(6);
+                    if (jsonStr === "[DONE]") return;
+                    if (jsonStr && jsonStr !== "{}") {
+                        try {
+                            yield JSON.parse(jsonStr) as Record<string, unknown>;
+                        } catch {
+                            console.warn(
+                                "[openai-provider] SSE final fragment parse error:",
+                                jsonStr.slice(0, 200),
+                            );
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    } finally {
+        reader.releaseLock();
+    }
+}
+
+// ─────────────────────────────────────────────
+// OpenAIProvider
+// ─────────────────────────────────────────────
 
 /**
- * OpenAI-compatible LLM provider.
+ * OpenAI-compatible LLM provider using direct `window.fetch`.
+ *
+ * Talks directly to the OpenAI REST API without the `openai` npm SDK.
  * Works with any API that implements the OpenAI chat completions format
- * (DeepSeek, OpenRouter, Together AI, etc.)
+ * (DeepSeek, OpenRouter, Together AI, etc.).
  */
 export class OpenAIProvider implements LLMProvider {
-    private readonly client: OpenAI;
+    private readonly apiKey: string;
+    private readonly baseURL: string;
     private readonly model: string;
     private readonly modalities: Set<ModalityCapability>;
 
     constructor(config: LLMProviderConfig) {
         this.model = config.model;
         this.modalities = new Set(config.modalities ?? []);
-        this.client = new OpenAI({
-            apiKey: config.apiKey,
-            baseURL: config.baseURL,
-            dangerouslyAllowBrowser: true,
-        });
+        this.apiKey = config.apiKey;
+        this.baseURL = config.baseURL || DEFAULT_BASE_URL;
     }
 
+    // ── listModels ────────────────────────────────────────────────
+
     async listModels(): Promise<string[]> {
-        const response = await this.client.models.list();
         const models: string[] = [];
-        for await (const model of response) {
+
+        // OpenAI's /v1/models returns { object: "list", data: [...] }.
+        // There is no standard pagination param; we rely on the default page.
+        const response = await window.fetch(`${this.baseURL}/models`, {
+            headers: {
+                Authorization: `Bearer ${this.apiKey}`,
+            },
+        });
+
+        if (!response.ok) {
+            const errorBody = await response.text().catch(() => "");
+            throw new Error(
+                `OpenAI listModels failed: ${response.status} ${response.statusText}${errorBody ? ` — ${errorBody}` : ""}`,
+            );
+        }
+
+        const data = (await response.json()) as {
+            data?: Array<{ id?: string }>;
+        };
+
+        for (const model of data.data ?? []) {
             if (model.id) {
                 models.push(model.id);
             }
         }
+
         return models.sort((a, b) => a.localeCompare(b));
     }
+
+    // ── createStream ───────────────────────────────────────────────
 
     async *createStream(
         messages: ChatMessageParam[],
@@ -65,91 +174,68 @@ export class OpenAIProvider implements LLMProvider {
         signal?: AbortSignal,
         thinkingLevel?: ThinkingLevel,
     ): AsyncIterable<StreamChunk> {
-        // Some OpenAI-compatible thinking models (e.g. deepseek-v4-flash,
-        // certain Qwen thinking variants) require the `reasoning_content`
-        // of ALL assistant turns to be passed back. We attach it to every
-        // assistant message that carries `thinkingContent` from a prior turn.
-
-        // Defensive sanitization (last line of defense against 400 errors
-        // caused by orphan tool_result / empty assistant messages that may
-        // slip through the context reducer). Shared with gemini-provider —
-        // see services/providers/_shared.ts and
-        // docs/context-compression-fix-plan.md \u00a74.3.
         const sanitized = sanitizeChatMessages(messages, "openai-provider");
 
         // Convert our messages to OpenAI format
-        const openaiMessages = sanitized.map((m): OpenAI.Chat.ChatCompletionMessageParam => {
+        const openaiMessages = sanitized.map((m): Record<string, unknown> => {
             if (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0) {
-                const base: OpenAIMessageWithReasoning = {
-                    role: "assistant" as const,
+                const msg: Record<string, unknown> = {
+                    role: "assistant",
                     content: m.content || null,
                     tool_calls: m.toolCalls.map((tc) => ({
                         id: tc.id,
-                        type: "function" as const,
+                        type: "function",
                         function: { name: tc.function.name, arguments: tc.function.arguments },
                     })),
                 };
                 if (m.thinkingContent) {
-                    base.reasoning_content = m.thinkingContent;
+                    msg.reasoning_content = m.thinkingContent;
                 }
-                return base;
+                return msg;
             }
             if (m.role === "tool_result") {
                 return {
-                    role: "tool" as const,
+                    role: "tool",
                     tool_call_id: m.toolCallId ?? "",
                     content: m.content,
                 };
             }
-            // User messages with multimodal attachments → multimodal content
+            // User messages with multimodal attachments → multimodal content array
             if (m.media && m.media.length > 0 && m.role === "user") {
-                const parts: Array<
-                    | { type: "text"; text: string }
-                    | { type: "image_url"; image_url: { url: string } }
-                    | { type: "input_audio"; input_audio: { data: string; format: string } }
-                    | { type: "file"; file: { filename: string; file_data: string } }
-                > = [{ type: "text" as const, text: m.content }];
+                const parts: Array<Record<string, unknown>> = [
+                    { type: "text", text: m.content },
+                ];
                 const skipped: string[] = [];
                 for (const att of m.media) {
                     const part = this.buildOpenAIMediaPart(att, skipped);
-                    if (part) parts.push(part);
+                    if (part) parts.push(part as unknown as Record<string, unknown>);
                 }
-                // If skipped attachments exist, surface a single text note so
-                // the model knows something was elided rather than silently
-                // dropping it. Hard-coded English: this is model-facing, not
-                // user-visible.
                 if (skipped.length > 0) {
                     parts[0] = {
-                        type: "text" as const,
+                        type: "text",
                         text: `${m.content}\n\n[Attachments omitted: ${skipped.join("; ")}]`,
                     };
                 }
-                return {
-                    role: "user" as const,
-                    content: parts as unknown as OpenAI.Chat.ChatCompletionContentPart[],
-                };
+                return { role: "user", content: parts };
             }
             if (m.role === "assistant") {
-                const base: OpenAIMessageWithReasoning = {
-                    role: "assistant" as const,
+                const msg: Record<string, unknown> = {
+                    role: "assistant",
                     content: m.content,
                 };
                 if (m.thinkingContent) {
-                    base.reasoning_content = m.thinkingContent;
+                    msg.reasoning_content = m.thinkingContent;
                 }
-                return base;
+                return msg;
             }
-            return {
-                role: m.role as "system" | "user",
-                content: m.content,
-            };
+            return { role: m.role, content: m.content };
         });
 
-        // Convert our tools to OpenAI format (they are already compatible)
-        const openaiTools: OpenAI.Chat.ChatCompletionTool[] | undefined =
+        // Convert tools to OpenAI format
+        const openaiTools: Record<string, unknown>[] | undefined =
             tools && tools.length > 0
                 ? tools.map((t) => ({
-                      type: "function" as const,
+                      type: "function",
                       function: {
                           name: t.function.name,
                           description: t.function.description,
@@ -158,42 +244,73 @@ export class OpenAIProvider implements LLMProvider {
                   }))
                 : undefined;
 
-        // `reasoning_effort` is supported by OpenAI o-series / GPT-5 and a
-        // handful of OpenAI-compatible thinking models (DeepSeek R1, certain
-        // Qwen variants). Only forward the three explicit tiers; `auto` and
-        // `off` both translate to "omit the parameter" because OpenAI's API
-        // has no way to truly disable thinking on a reasoning-only model and
-        // `auto` is precisely "let the model decide".
-        const isExplicitTier = thinkingLevel === "low"
-            || thinkingLevel === "medium"
-            || thinkingLevel === "high";
+        // reasoning_effort for o-series / GPT-5
+        const isExplicitTier =
+            thinkingLevel === "low" ||
+            thinkingLevel === "medium" ||
+            thinkingLevel === "high";
 
-        const stream = await this.client.chat.completions.create(
-            {
-                model: this.model,
-                messages: openaiMessages,
-                tools: openaiTools,
-                stream: true,
-                stream_options: { include_usage: true },
-                ...(isExplicitTier ? { reasoning_effort: thinkingLevel } : {}),
+        // Build request body
+        const body: Record<string, unknown> = {
+            model: this.model,
+            messages: openaiMessages,
+            stream: true,
+            stream_options: { include_usage: true },
+        };
+        if (openaiTools) body.tools = openaiTools;
+        if (isExplicitTier) body.reasoning_effort = thinkingLevel;
+
+        // Fire streaming request
+        const response = await window.fetch(`${this.baseURL}/chat/completions`, {
+            method: "POST",
+            headers: {
+                Authorization: `Bearer ${this.apiKey}`,
+                "Content-Type": "application/json",
             },
-            { signal },
-        );
+            body: JSON.stringify(body),
+            signal,
+        });
 
-        for await (const chunk of stream) {
-            const delta = chunk.choices[0]?.delta as OpenAIDeltaWithReasoning | undefined;
-            const finishReason = chunk.choices[0]?.finish_reason ?? null;
-            const usage = chunk.usage
+        if (!response.ok) {
+            const errorBody = await response.text().catch(() => "");
+            throw new Error(
+                `OpenAI API error ${response.status}: ${errorBody || response.statusText}`,
+            );
+        }
+
+        if (!response.body) {
+            throw new Error("OpenAI returned no response body");
+        }
+
+        // Parse SSE stream and convert to StreamChunk
+        for await (const chunk of parseOpenAISSEStream(response.body, signal)) {
+            const choice = (chunk.choices as Array<Record<string, unknown>>)?.[0] as
+                | Record<string, unknown>
+                | undefined;
+            const delta = choice?.delta as Record<string, unknown> | undefined;
+            const finishReason = (choice?.finish_reason as string) ?? null;
+            const usageRaw = chunk.usage as
+                | { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+                | undefined;
+            const usage = usageRaw
                 ? {
-                      promptTokens: chunk.usage.prompt_tokens,
-                      completionTokens: chunk.usage.completion_tokens,
-                      totalTokens: chunk.usage.total_tokens,
+                      promptTokens: usageRaw.prompt_tokens ?? 0,
+                      completionTokens: usageRaw.completion_tokens ?? 0,
+                      totalTokens: usageRaw.total_tokens ?? 0,
                   }
                 : null;
 
-            const toolCallDeltas = delta?.tool_calls
-                ? delta.tool_calls.map((tc) => ({
-                      index: tc.index,
+            // Tool call deltas (streamed incrementally)
+            const rawToolCalls = delta?.tool_calls as
+                | Array<{
+                      index?: number;
+                      id?: string;
+                      function?: { name?: string; arguments?: string };
+                  }>
+                | undefined;
+            const toolCallDeltas = rawToolCalls
+                ? rawToolCalls.map((tc) => ({
+                      index: tc.index ?? 0,
                       id: tc.id ?? undefined,
                       function: tc.function
                           ? {
@@ -205,9 +322,9 @@ export class OpenAIProvider implements LLMProvider {
                 : null;
 
             yield {
-                content: delta?.content ?? null,
-                // DeepSeek R1 and compatible models return reasoning_content in the delta
-                reasoningContent: delta?.reasoning_content ?? null,
+                content: (delta?.content as string) ?? null,
+                // DeepSeek R1 / Qwen thinking variants return reasoning_content
+                reasoningContent: (delta?.reasoning_content as string) ?? null,
                 toolCallDeltas,
                 finishReason,
                 usage,
@@ -215,32 +332,12 @@ export class OpenAIProvider implements LLMProvider {
         }
     }
 
-    /**
-     * Build a single OpenAI Chat Completions content part from a media attachment,
-     * filtered by the profile's `modalities` capability set.
-     *
-     * Returns null and pushes a short English note into `skipped` for any
-     * attachment that cannot be delivered through this API. The note is
-     * surfaced to the model as a single text addendum so it can either
-     * proceed without the asset or ask the user to convert it.
-     *
-     * Capability matrix (OpenAI Chat Completions):
-     *  - image: forwarded as `image_url` (data URL)
-     *  - audio: forwarded as `input_audio` (only `gpt-4o-audio-*` understands it;
-     *           plain text-only models will error — gated by the profile flag)
-     *  - video: not accepted by Chat Completions in any form → always skipped
-     *  - pdf:   forwarded as `file` part with inline base64 data URL
-     *           (subject to OpenAI's 32 MB / 100-page hard limit; pre-checked
-     *           upstream at the vault read step)
-     */
+    // ── Media attachment (unchanged logic) ─────────────────────────
+
     private buildOpenAIMediaPart(
         att: MediaAttachment,
         skipped: string[],
-    ):
-        | { type: "image_url"; image_url: { url: string } }
-        | { type: "input_audio"; input_audio: { data: string; format: string } }
-        | { type: "file"; file: { filename: string; file_data: string } }
-        | null {
+    ): Record<string, unknown> | null {
         const label = att.sourcePath ? ` (${att.sourcePath})` : "";
 
         if (att.kind === "image") {
@@ -249,7 +346,7 @@ export class OpenAIProvider implements LLMProvider {
                 return null;
             }
             return {
-                type: "image_url" as const,
+                type: "image_url",
                 image_url: { url: `data:${att.mimeType};base64,${att.base64}` },
             };
         }
@@ -258,14 +355,13 @@ export class OpenAIProvider implements LLMProvider {
                 skipped.push(`audio${label}: model not configured for audio input`);
                 return null;
             }
-            // OpenAI input_audio only accepts wav and mp3 right now.
             const format = openaiAudioFormat(att.mimeType);
             if (!format) {
                 skipped.push(`audio${label}: unsupported MIME ${att.mimeType} for OpenAI input_audio`);
                 return null;
             }
             return {
-                type: "input_audio" as const,
+                type: "input_audio",
                 input_audio: { data: att.base64, format },
             };
         }
@@ -283,7 +379,7 @@ export class OpenAIProvider implements LLMProvider {
             return null;
         }
         return {
-            type: "file" as const,
+            type: "file",
             file: {
                 filename: deriveOpenAIFilename(att.sourcePath, "document.pdf"),
                 file_data: `data:${att.mimeType};base64,${att.base64}`,
@@ -292,27 +388,29 @@ export class OpenAIProvider implements LLMProvider {
     }
 }
 
-/**
- * Derive a `filename` for OpenAI's `file` content part from an attachment's
- * source path. Falls back to a generic name when the attachment was injected
- * synthetically (e.g. via paste / drag-and-drop without a vault path).
- */
-function deriveOpenAIFilename(sourcePath: string | undefined, fallback: string): string {
+// ─────────────────────────────────────────────
+// Helpers (unchanged from original)
+// ─────────────────────────────────────────────
+
+function deriveOpenAIFilename(
+    sourcePath: string | undefined,
+    fallback: string,
+): string {
     if (!sourcePath) return fallback;
     const base = sourcePath.split(/[\\/]/).pop();
     return base && base.length > 0 ? base : fallback;
 }
 
-/**
- * Normalise an audio MIME type to the `format` value OpenAI's input_audio
- * part accepts ("wav" | "mp3"). Returns null for anything else.
- */
 function openaiAudioFormat(mime: string): string | null {
     const m = mime.toLowerCase();
     if (m === "audio/wav" || m === "audio/x-wav" || m === "audio/wave") return "wav";
     if (m === "audio/mpeg" || m === "audio/mp3") return "mp3";
     return null;
 }
+
+// ─────────────────────────────────────────────
+// Non-streaming completion helper
+// ─────────────────────────────────────────────
 
 /**
  * Simple single-turn non-streaming chat completion for OpenAI-compatible APIs.
@@ -323,27 +421,40 @@ export async function createOpenAICompletion(
     messages: { role: string; content: string }[],
     signal?: AbortSignal,
 ): Promise<string> {
-    const client = new OpenAI({
-        baseURL: config.baseURL || "https://api.openai.com/v1",
-        apiKey: config.apiKey,
-        dangerouslyAllowBrowser: true,
+    const baseURL = config.baseURL || DEFAULT_BASE_URL;
+
+    const body = {
+        model: config.model,
+        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+    };
+
+    const response = await window.fetch(`${baseURL}/chat/completions`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
     });
 
-    // Forward the AbortSignal through the SDK's request options so the
-    // user can interrupt long-running auxiliary calls (e.g. context
-    // summarization) without waiting for the network round-trip to
-    // finish. The SDK throws an AbortError on abort which the caller
-    // is expected to surface or re-throw as appropriate.
-    const response = await client.chat.completions.create(
-        {
-            model: config.model,
-            messages: messages as OpenAI.Chat.ChatCompletionMessageParam[],
-        },
-        { signal },
-    );
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(
+            `OpenAI completion error ${response.status}: ${errorBody || response.statusText}`,
+        );
+    }
 
-    return response.choices[0]?.message?.content || "";
+    const data = (await response.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    return data.choices?.[0]?.message?.content || "";
 }
+
+// ─────────────────────────────────────────────
+// Embeddings helper
+// ─────────────────────────────────────────────
 
 /**
  * Create text embeddings using OpenAI-compatible API.
@@ -354,25 +465,37 @@ export async function createOpenAIEmbeddings(
     texts: string[],
     signal?: AbortSignal,
 ): Promise<number[][]> {
-    const client = new OpenAI({
-        baseURL: config.baseURL || "https://api.openai.com/v1",
-        apiKey: config.apiKey,
-        dangerouslyAllowBrowser: true,
+    const baseURL = config.baseURL || DEFAULT_BASE_URL;
+
+    const body = {
+        model: config.model,
+        input: texts,
+    };
+
+    const response = await window.fetch(`${baseURL}/embeddings`, {
+        method: "POST",
+        headers: {
+            Authorization: `Bearer ${config.apiKey}`,
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+        signal,
     });
 
-    // Forward the AbortSignal so embed calls invoked from the per-turn
-    // tool / skill / memory shortlisters can be interrupted mid-flight
-    // by the global stop button — without this the wait spans the full
-    // network round-trip even after the user cancelled.
-    const response = await client.embeddings.create(
-        {
-            model: config.model,
-            input: texts,
-        },
-        { signal },
-    );
+    if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(
+            `OpenAI embedding error ${response.status}: ${errorBody || response.statusText}`,
+        );
+    }
 
-    // Sort by index to ensure correct order (API may return in different order)
-    const sorted = response.data.sort((a, b) => a.index - b.index);
-    return sorted.map((item) => item.embedding);
+    const data = (await response.json()) as {
+        data?: Array<{ index?: number; embedding?: number[] }>;
+    };
+
+    // Sort by index to ensure correct order
+    const sorted = (data.data ?? []).sort(
+        (a, b) => (a.index ?? 0) - (b.index ?? 0),
+    );
+    return sorted.map((item) => item.embedding ?? []);
 }
