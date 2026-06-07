@@ -2178,7 +2178,13 @@ export class SessionView extends ItemView {
         }
 
         this.followUpBar.show(target.id, actions);
-        this.maybeScrollToBottom();
+        // When auto-follow is parked (last message was oversized and
+        // the user is reading), do NOT yank the view to the tail just
+        // because the follow-up bar appeared.  Respect the user's
+        // current reading position.
+        if (!this.scroller.isAutoFollowParked()) {
+            this.maybeScrollToBottom();
+        }
     }
 
     /**
@@ -2218,7 +2224,11 @@ export class SessionView extends ItemView {
         if (!isLatest) return;
 
         this.followUpBar.show(state.messageId, state.suggestions);
-        this.maybeScrollToBottom();
+        // Respect parked auto-follow: don't yank the view when the
+        // user is reading an earlier part of a long message.
+        if (!this.scroller.isAutoFollowParked()) {
+            this.maybeScrollToBottom();
+        }
     }
 
     /**
