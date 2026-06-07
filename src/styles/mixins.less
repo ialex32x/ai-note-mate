@@ -88,6 +88,16 @@
     white-space: nowrap;
 }
 
+// Section / category title used across popup panels (session status,
+// asset panel, profile selector).  Uppercase accent-coloured label
+// that signals a logical grouping inside a dropdown surface.
+.section-category-title() {
+    font-weight: 700;
+    color: @text-accent;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+}
+
 .text-multiline-truncate(@lines: 2) {
     overflow: hidden;
     display: -webkit-box;
