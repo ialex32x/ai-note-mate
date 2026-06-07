@@ -10,6 +10,10 @@ import type {
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
+import { fetchWithRetry } from "../../utils/retry-helper";
+
+const retryLogger = (ctx: string) =>
+    (err: unknown, n: number) => console.warn(`[anthropic-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
 
 // ─────────────────────────────────────────────
 // Constants
@@ -138,12 +142,12 @@ export class AnthropicProvider implements LLMProvider {
     // ── listModels ────────────────────────────────────────────────
 
     async listModels(): Promise<string[]> {
-        const response = await window.fetch(`${this.baseURL}/models`, {
+        const response = await fetchWithRetry(`${this.baseURL}/models`, {
             headers: {
                 "x-api-key": this.apiKey,
                 "anthropic-version": ANTHROPIC_VERSION,
             },
-        });
+        }, { onRetry: retryLogger("listModels") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -209,7 +213,7 @@ export class AnthropicProvider implements LLMProvider {
         }
 
         // --- fire request ---
-        const response = await window.fetch(`${this.baseURL}/messages`, {
+        const response = await fetchWithRetry(`${this.baseURL}/messages`, {
             method: "POST",
             headers: {
                 "x-api-key": this.apiKey,
@@ -218,7 +222,7 @@ export class AnthropicProvider implements LLMProvider {
             },
             body: JSON.stringify(body),
             signal,
-        });
+        }, { onRetry: retryLogger("createStream") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -671,7 +675,7 @@ export async function createAnthropicCompletion(
     };
     if (systemText) body.system = systemText;
 
-    const response = await window.fetch(`${baseURL}/messages`, {
+    const response = await fetchWithRetry(`${baseURL}/messages`, {
         method: "POST",
         headers: {
             "x-api-key": config.apiKey,
@@ -680,7 +684,7 @@ export async function createAnthropicCompletion(
         },
         body: JSON.stringify(body),
         signal,
-    });
+    }, { onRetry: retryLogger("completion") });
 
     if (!response.ok) {
         const errorBody = await response.text().catch(() => "");

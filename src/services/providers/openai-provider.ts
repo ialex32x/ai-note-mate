@@ -10,6 +10,10 @@ import type {
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
+import { fetchWithRetry } from "../../utils/retry-helper";
+
+const retryLogger = (ctx: string) =>
+    (err: unknown, n: number) => console.warn(`[openai-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
 
 // ─────────────────────────────────────────────
 // Constants
@@ -92,11 +96,11 @@ export class OpenAIProvider implements LLMProvider {
 
         // OpenAI's /v1/models returns { object: "list", data: [...] }.
         // There is no standard pagination param; we rely on the default page.
-        const response = await window.fetch(`${this.baseURL}/models`, {
+        const response = await fetchWithRetry(`${this.baseURL}/models`, {
             headers: {
                 Authorization: `Bearer ${this.apiKey}`,
             },
-        });
+        }, { onRetry: retryLogger("listModels") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -213,7 +217,7 @@ export class OpenAIProvider implements LLMProvider {
         if (isExplicitTier) body.reasoning_effort = thinkingLevel;
 
         // Fire streaming request
-        const response = await window.fetch(`${this.baseURL}/chat/completions`, {
+        const response = await fetchWithRetry(`${this.baseURL}/chat/completions`, {
             method: "POST",
             headers: {
                 Authorization: `Bearer ${this.apiKey}`,
@@ -221,7 +225,7 @@ export class OpenAIProvider implements LLMProvider {
             },
             body: JSON.stringify(body),
             signal,
-        });
+        }, { onRetry: retryLogger("createStream") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -380,7 +384,7 @@ export async function createOpenAICompletion(
         messages: messages.map((m) => ({ role: m.role, content: m.content })),
     };
 
-    const response = await window.fetch(`${baseURL}/chat/completions`, {
+    const response = await fetchWithRetry(`${baseURL}/chat/completions`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${config.apiKey}`,
@@ -388,7 +392,7 @@ export async function createOpenAICompletion(
         },
         body: JSON.stringify(body),
         signal,
-    });
+    }, { onRetry: retryLogger("completion") });
 
     if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
@@ -424,7 +428,7 @@ export async function createOpenAIEmbeddings(
         input: texts,
     };
 
-    const response = await window.fetch(`${baseURL}/embeddings`, {
+    const response = await fetchWithRetry(`${baseURL}/embeddings`, {
         method: "POST",
         headers: {
             Authorization: `Bearer ${config.apiKey}`,
@@ -432,7 +436,7 @@ export async function createOpenAIEmbeddings(
         },
         body: JSON.stringify(body),
         signal,
-    });
+    }, { onRetry: retryLogger("embeddings") });
 
     if (!response.ok) {
         const errorBody = await response.text().catch(() => "");

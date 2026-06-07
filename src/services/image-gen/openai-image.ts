@@ -3,6 +3,10 @@ import type { ImageGenConfig } from "../../settings";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
 import { resolveSecret } from "../../utils/secret-helper";
+import { fetchWithRetry } from "../../utils/retry-helper";
+
+const retryLogger = (ctx: string) =>
+    (err: unknown, n: number) => console.warn(`[OpenAIImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
 
 /** Default base URL for the OpenAI API. */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -69,14 +73,14 @@ export async function generateImageWithOpenAI(
             formData.append("response_format", "b64_json");
             if (size) formData.append("size", size);
 
-            const response = await window.fetch(`${baseURL}/images/edits`, {
+            const response = await fetchWithRetry(`${baseURL}/images/edits`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
                 },
                 body: formData,
                 signal,
-            });
+            }, { onRetry: retryLogger("edits") });
 
             if (signal?.aborted) {
                 return { success: false, error: "Aborted" };
@@ -103,7 +107,7 @@ export async function generateImageWithOpenAI(
             if (quality) body.quality = quality;
             if (style) body.style = style;
 
-            const response = await window.fetch(`${baseURL}/images/generations`, {
+            const response = await fetchWithRetry(`${baseURL}/images/generations`, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
@@ -111,7 +115,7 @@ export async function generateImageWithOpenAI(
                 },
                 body: JSON.stringify(body),
                 signal,
-            });
+            }, { onRetry: retryLogger("generations") });
 
             if (signal?.aborted) {
                 return { success: false, error: "Aborted" };
