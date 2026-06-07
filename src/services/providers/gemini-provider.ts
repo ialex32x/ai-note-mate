@@ -10,7 +10,7 @@ import type {
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
-import { corsFreeFetchWithRetry } from "../../utils/retry-helper";
+import { fetchWithRetry } from "../../utils/retry-helper";
 
 const retryLogger = (ctx: string) =>
     (err: unknown, n: number) => console.warn(`[gemini-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
@@ -125,7 +125,7 @@ export class GeminiProvider implements LLMProvider {
             if (pageToken) params.set("pageToken", pageToken);
 
             const url = `${GEMINI_BASE_URL}/models?${params.toString()}`;
-            const response = await corsFreeFetchWithRetry(url, {
+            const response = await fetchWithRetry(url, {
                 headers: { [API_KEY_HEADER]: this.apiKey },
             }, { onRetry: retryLogger("listModels") });
 
@@ -219,7 +219,7 @@ export class GeminiProvider implements LLMProvider {
         // with newlines inside objects), which is NOT NDJSON and cannot be
         // parsed line-by-line. `alt=sse` gives us standard SSE with one complete
         // JSON object per `data:` line.
-        const response = await corsFreeFetchWithRetry(
+        const response = await fetchWithRetry(
             `${GEMINI_BASE_URL}/models/${encodeURIComponent(this.model)}:streamGenerateContent?alt=sse`,
             {
                 method: "POST",
@@ -613,7 +613,7 @@ export async function createGeminiCompletion(
         };
     }
 
-    const response = await corsFreeFetchWithRetry(
+    const response = await fetchWithRetry(
         `${GEMINI_BASE_URL}/models/${encodeURIComponent(config.model)}:generateContent`,
         {
             method: "POST",
@@ -722,7 +722,7 @@ export async function createGeminiEmbeddings(
             },
         };
 
-        const response = await corsFreeFetchWithRetry(
+        const response = await fetchWithRetry(
             `${GEMINI_BASE_URL}/models/${encodeURIComponent(config.model)}:embedContent`,
             {
                 method: "POST",

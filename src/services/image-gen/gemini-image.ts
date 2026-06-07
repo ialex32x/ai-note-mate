@@ -3,7 +3,7 @@ import type { ImageGenConfig } from "../../settings";
 import { resolveSecret } from "../../utils/secret-helper";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { GEMINI_BASE_URL, API_KEY_HEADER } from "../providers/gemini-provider";
-import { corsFreeFetchWithRetry } from "../../utils/retry-helper";
+import { fetchWithRetry } from "../../utils/retry-helper";
 
 const retryLogger = (ctx: string) =>
     (err: unknown, n: number) => console.warn(`[GeminiImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
@@ -76,7 +76,7 @@ export async function generateImageWithGemini(
     };
 
     try {
-        const response = await corsFreeFetchWithRetry(
+        const response = await fetchWithRetry(
             `${GEMINI_BASE_URL}/models/${encodeURIComponent(model)}:generateContent`,
             {
                 method: "POST",

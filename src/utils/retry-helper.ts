@@ -1,6 +1,6 @@
 import { type RequestUrlParam, type RequestUrlResponse } from "obsidian";
 import { isAbortError, requestUrlWithAbort } from "./abortable-request";
-import { corsFreeFetch } from "./node-fetch";
+import { resolveFetch } from "./resolve-fetch";
 
 // ─────────────────────────────────────────────
 // Types
@@ -15,11 +15,6 @@ export interface RetryOptions {
      * Use for logging.
      */
     onRetry?: (error: unknown, attempt: number) => void;
-    /**
-     * Optional custom fetch function to use instead of `window.fetch`.
-     * Use this to inject a CORS-bypassing fetch (e.g. Node.js-based on desktop).
-     */
-    fetchFn?: typeof window.fetch;
 }
 
 const DEFAULT_MAX_RETRIES = 3;
@@ -91,7 +86,7 @@ function backoffDelay(attempt: number): Promise<void> {
 // ─────────────────────────────────────────────
 
 /**
- * Wrap `window.fetch` with automatic retry for transient failures.
+ * Wrap `fetch` with automatic retry for transient failures.
  *
  * Retryable conditions:
  *  - Network errors (TypeError — DNS, connection refused, timeout).
@@ -106,8 +101,8 @@ function backoffDelay(attempt: number): Promise<void> {
  * When a response comes back with a retryable HTTP status, the body is
  * consumed (for logging) and a fresh request is made.
  *
- * @param input   - URL or Request object (same as `window.fetch`).
- * @param init    - Fetch init options (same as `window.fetch`).
+ * @param input   - URL or Request object.
+ * @param init    - Fetch init options.
  * @param options - Retry configuration.
  */
 export async function fetchWithRetry(
@@ -116,12 +111,11 @@ export async function fetchWithRetry(
     options?: RetryOptions,
 ): Promise<Response> {
     const maxRetries = options?.maxRetries ?? DEFAULT_MAX_RETRIES;
-    const fetchFn = options?.fetchFn ?? window.fetch;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= maxRetries + 1; attempt++) {
         try {
-            const response = await fetchFn(input, init);
+            const response = await resolveFetch()(input, init);
 
             // If the response is OK, return it immediately.
             if (response.ok) return response;
@@ -165,29 +159,6 @@ export async function fetchWithRetry(
 
     // Should never reach here, but satisfy TypeScript.
     throw lastError;
-}
-
-// ─────────────────────────────────────────────
-// corsFreeFetchWithRetry
-// ─────────────────────────────────────────────
-
-/**
- * Convenience wrapper: `fetchWithRetry` that uses a CORS-bypassing fetch
- * implementation (Node.js `https`/`http` on desktop, `window.fetch` on mobile).
- *
- * This is the recommended replacement for `fetchWithRetry` in provider code,
- * as it eliminates CORS issues that can occur with `window.fetch` in Electron
- * when a VPN or proxy is active.
- */
-export function corsFreeFetchWithRetry(
-    input: RequestInfo,
-    init?: RequestInit,
-    options?: RetryOptions,
-): Promise<Response> {
-    return fetchWithRetry(input, init, {
-        ...options,
-        fetchFn: corsFreeFetch,
-    });
 }
 
 // ─────────────────────────────────────────────

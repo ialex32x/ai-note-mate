@@ -1,7 +1,7 @@
 import type { IMCPClient, MCPToolInfo } from './mcp-types';
 import { requestUrl } from 'obsidian';
 import { parseSSEFrames } from '../../utils/sse-parser';
-import { corsFreeFetch } from '../../utils/node-fetch';
+import { resolveFetch } from '../../utils/resolve-fetch';
 
 // ─────────────────────────────────────────────
 // MCP Protocol Constants
@@ -239,7 +239,7 @@ export class SdkMCPClient implements IMCPClient {
     private _apiKey?: string;
 
     constructor() {
-        this._fetch = corsFreeFetch as typeof fetch;
+        this._fetch = resolveFetch();
     }
 
     get connected() {
@@ -439,7 +439,7 @@ export class SdkMCPClient implements IMCPClient {
         this._url = undefined;
         this._apiKey = undefined;
         this._requestId = 0;
-        this._fetch = window.fetch.bind(window);
+        this._fetch = resolveFetch();
     }
 }
 
