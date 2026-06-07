@@ -40,8 +40,8 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
         },
         capabilities: ["delete_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal) => {
-            // Accept both `paths` (array, canonical) and `path` (single string, common LLM slip).
-            let rawPaths = args["paths"];
+            // Accept `paths` (array, canonical), `file_paths` (alternative), and `path` (single string).
+            let rawPaths = args["paths"] ?? args["file_paths"];
             if (!rawPaths && typeof args["path"] === "string") {
                 rawPaths = [args["path"]];
             }
