@@ -1,7 +1,7 @@
-import { load as cheerioLoad, type CheerioAPI } from 'cheerio';
-import { requestUrl, RequestUrlParam } from 'obsidian';
+﻿import { requestUrl, RequestUrlParam } from 'obsidian';
 import { getUserAgent } from './types';
 import { withAbort } from 'utils/abortable-request';
+import { parseDocument, type QueryFn, type QueryHandle } from './dom-utils';
 
 /**
  * RSS/Atom feed item
@@ -130,7 +130,7 @@ export class RSSParser {
      * @returns Parsed feed data
      */
     parse(xml: string, sourceUrl: string): ParsedFeed {
-        const $ = cheerioLoad(xml, { xmlMode: true });
+        const $ = parseDocument(xml, { xmlMode: true });
 
         // Detect feed type
         const isAtom = $('feed').length > 0;
@@ -145,7 +145,7 @@ export class RSSParser {
     /**
      * Parse RSS 2.0 format
      */
-    private parseRSS($: CheerioAPI, sourceUrl: string): ParsedFeed {
+    private parseRSS($: QueryFn, sourceUrl: string): ParsedFeed {
         const channel = $('channel').first();
 
         // Parse channel info
@@ -191,7 +191,7 @@ export class RSSParser {
     /**
      * Parse Atom format
      */
-    private parseAtom($: CheerioAPI, sourceUrl: string): ParsedFeed {
+    private parseAtom($: QueryFn, sourceUrl: string): ParsedFeed {
         const feedEl = $('feed').first();
 
         // Parse feed info
@@ -240,7 +240,7 @@ export class RSSParser {
     /**
      * Get text content from an element
      */
-    private getText($: CheerioAPI, $el: ReturnType<CheerioAPI>, selector: string): string | undefined {
+    private getText($: QueryFn, $el: QueryHandle, selector: string): string | undefined {
         const text = $el.find(selector).text().trim();
         return text || undefined;
     }
@@ -248,7 +248,7 @@ export class RSSParser {
     /**
      * Get RSS item link (handles multiple link formats)
      */
-    private getRSSLink($: CheerioAPI, $item: ReturnType<CheerioAPI>): string {
+    private getRSSLink($: QueryFn, $item: QueryHandle): string {
         // Standard <link> element
         let link = $item.find('link').not('[rel]').first().text().trim();
 
@@ -268,7 +268,7 @@ export class RSSParser {
     /**
      * Get Atom link by rel attribute
      */
-    private getAtomLink($: CheerioAPI, $el: ReturnType<CheerioAPI>, rel: string): string | undefined {
+    private getAtomLink($: QueryFn, $el: QueryHandle, rel: string): string | undefined {
         // Try to find link with matching rel
         let link = $el.find(`link[rel="${rel}"]`).attr('href');
 
@@ -288,7 +288,7 @@ export class RSSParser {
     /**
      * Get categories from element
      */
-    private getCategories($: CheerioAPI, $el: ReturnType<CheerioAPI>, selector: string): string[] | undefined {
+    private getCategories($: QueryFn, $el: QueryHandle, selector: string): string[] | undefined {
         const categories: string[] = [];
 
         $el.find(selector).each((_, catEl) => {
@@ -306,7 +306,7 @@ export class RSSParser {
     /**
      * Get enclosures from RSS item
      */
-    private getEnclosures($: CheerioAPI, $item: ReturnType<CheerioAPI>): FeedEnclosure[] | undefined {
+    private getEnclosures($: QueryFn, $item: QueryHandle): FeedEnclosure[] | undefined {
         const enclosures: FeedEnclosure[] = [];
 
         $item.find('enclosure').each((_, encEl) => {

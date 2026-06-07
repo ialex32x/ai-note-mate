@@ -1,8 +1,8 @@
-import { load as cheerioLoad } from 'cheerio';
-import { requestUrl } from 'obsidian';
+﻿import { requestUrl } from 'obsidian';
 import { getUserAgent, SearchResult } from './types';
 import { SearchEngineScheduler } from './search-engine-scheduler';
 import { withAbort, checkAbort } from 'utils/abortable-request';
+import { parseDocument } from './dom-utils';
 
 type SearchEngineId = 'bing' | 'baidu' | 'duckduckgo';
 
@@ -49,7 +49,7 @@ export class EnhancedWebSearcher {
             const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=${limit}`;
             const resp = await withAbort(signal, () => requestUrl({ url: searchUrl, method: 'GET', headers }));
 
-            const $ = cheerioLoad(resp.text);
+            const $ = parseDocument(resp.text);
             $('li.b_algo').each((_i, elem) => {
                 if (results.length >= limit) return;
                 const titleElem = $(elem).find('h2 a');
@@ -83,7 +83,7 @@ export class EnhancedWebSearcher {
             const searchUrl = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=${limit}`;
             const resp = await withAbort(signal, () => requestUrl({ url: searchUrl, method: 'GET', headers }));
 
-            const $ = cheerioLoad(resp.text);
+            const $ = parseDocument(resp.text);
             $('div.result, div.c-container').each((_i, elem) => {
                 if (results.length >= limit) return;
                 const titleElem = $(elem).find('h3 a');
@@ -117,7 +117,7 @@ export class EnhancedWebSearcher {
             const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
             const resp = await withAbort(signal, () => requestUrl({ url: searchUrl, method: 'GET', headers }));
 
-            const $ = cheerioLoad(resp.text);
+            const $ = parseDocument(resp.text);
             $('.result').each((_i, elem) => {
                 if (results.length >= limit) return;
 

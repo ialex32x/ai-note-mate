@@ -1,20 +1,10 @@
-import { type CheerioAPI, type Cheerio, load as cheerioLoad } from "cheerio";
 import { requestUrl, RequestUrlParam } from "obsidian";
-import type { AnyNode, Element, Text } from "domhandler";
 import { getUserAgent } from "./types";
 import { withAbort, checkAbort } from "utils/abortable-request";
+import { parseDocument, extractTitle, type QueryFn, type QueryHandle } from "./dom-utils";
 
-/**
- * Local type guard for domhandler text nodes.
- * Avoids importing `isText` as a value (would require declaring `domhandler`
- * as a direct dependency even though it's only a transitive dep of cheerio).
- * Comparing `node.type` (a `domelementtype` enum) against a bare string would
- * trigger `@typescript-eslint/no-unsafe-enum-comparison`; comparing the
- * enum-typed value against `String(...)` keeps the runtime check identical
- * while satisfying the rule, and the type predicate narrows `node` for callers.
- */
-function isTextNode(node: AnyNode): node is Text {
-    return String(node.type) === "text";
+function isTextNode(node: Node): node is Text {
+    return node.nodeType === Node.TEXT_NODE;
 }
 
 /**
@@ -244,8 +234,8 @@ export class UrlContentFetcher {
             }
 
             const html = response.text;
-            const $ = cheerioLoad(html);
-            const title = $("title").text().trim() || $("h1").first().text().trim() || "No Title";
+            const $ = parseDocument(html);
+            const title = extractTitle($);
 
             // Structured-region extraction is the primary path. When it
             // returns nothing we fall back to body text (covers pages
@@ -314,7 +304,7 @@ export class UrlContentFetcher {
      * we'd rather hand the model a noisy "OK-ish" result than say "the
      * page is empty" when it isn't.
      */
-    private extractBodyTextFallback($: CheerioAPI): ContentElement | null {
+    private extractBodyTextFallback($: QueryFn): ContentElement | null {
         const $body = $('body');
         if ($body.length === 0) return null;
         // Strip JS/CSS/nav noise inline rather than mutating shared state.
@@ -338,7 +328,7 @@ export class UrlContentFetcher {
     /**
      * Extract structured content from page
      */
-    private extractContent($: CheerioAPI, baseUrl: string) {
+    private extractContent($: QueryFn, baseUrl: string) {
         // Remove unnecessary elements
         $("script, style, noscript").remove();
 
@@ -361,7 +351,7 @@ export class UrlContentFetcher {
             if ($region.length === 0) continue;
 
             // Check if already processed (avoid duplicate extraction for nested regions)
-            const regionElement = $region.get(0) as Element | undefined;
+            const regionElement = $region.get(0);
             if (regionElement && processedElements.has(regionElement)) continue;
 
             const blocks = this.extractBlocks($, $region, processedElements, baseUrl);
@@ -393,8 +383,8 @@ export class UrlContentFetcher {
      * Extract content blocks from a region
      */
     private extractBlocks(
-        $: CheerioAPI,
-        $container: Cheerio<AnyNode>,
+        $: QueryFn,
+        $container: QueryHandle,
         processedElements: Set<Element>,
         baseUrl: string,
     ): ContentBlock[] {
@@ -423,7 +413,7 @@ export class UrlContentFetcher {
      * Create a content block. Links within the block are preserved as
      * markdown [text](url) so the model can see them in context.
      */
-    private createBlock($: CheerioAPI, $el: Cheerio<AnyNode>, tagName: string, baseUrl: string): ContentBlock | null {
+    private createBlock($: QueryFn, $el: QueryHandle, tagName: string, baseUrl: string): ContentBlock | null {
         // Handle div/span specially — only direct text nodes and direct
         // <a> children (non-recursive) to avoid duplicating content from
         // child blocks that are extracted separately.
@@ -474,16 +464,15 @@ export class UrlContentFetcher {
      * to markdown [text](url) while preserving the rest of the structure.
      * Relative URLs are resolved against `baseUrl`.
      */
-    private getTextWithLinks($: CheerioAPI, $el: Cheerio<AnyNode>, baseUrl: string): string {
+    private getTextWithLinks($: QueryFn, $el: QueryHandle, baseUrl: string): string {
         const parts: string[] = [];
         $el.contents().each((_, node) => {
             if (isTextNode(node)) {
                 parts.push(node.data || '');
             } else {
-                const el = node as Element;
-                const childTag = el.tagName?.toLowerCase();
+                const childTag = node.tagName?.toLowerCase();
                 if (childTag === 'a') {
-                    const $a = $(el);
+                    const $a = $(node);
                     const href = $a.attr('href') || '';
                     const linkText = $a.text().trim();
                     if (href && linkText) {
@@ -498,7 +487,7 @@ export class UrlContentFetcher {
                     }
                 } else {
                     // Recurse into other inline elements
-                    parts.push(this.getTextWithLinks($, $(el), baseUrl));
+                    parts.push(this.getTextWithLinks($, $(node), baseUrl));
                 }
             }
         });
@@ -511,15 +500,14 @@ export class UrlContentFetcher {
      * avoid pulling in text from child blocks that are already extracted
      * separately.
      */
-    private getDirectTextWithLinks($: CheerioAPI, $el: Cheerio<AnyNode>, baseUrl: string): string {
+    private getDirectTextWithLinks($: QueryFn, $el: QueryHandle, baseUrl: string): string {
         const parts: string[] = [];
         $el.contents().each((_, node) => {
             if (isTextNode(node)) {
                 parts.push(node.data || '');
             } else {
-                const el = node as Element;
-                if (el.tagName?.toLowerCase() === 'a') {
-                    const $a = $(el);
+                if (node.tagName?.toLowerCase() === 'a') {
+                    const $a = $(node);
                     const href = $a.attr('href') || '';
                     const linkText = $a.text().trim();
                     if (href && linkText) {
@@ -584,7 +572,7 @@ function sumBlockText(regions: ContentElement[]): number {
     return total;
 }
 
-function looksLikeAntiBotPage($: CheerioAPI): boolean {
+function looksLikeAntiBotPage($: QueryFn): boolean {
     // Sample the visible body text once and search for any known
     // signature. Lower-cased + whitespace-collapsed to keep matches
     // robust against minor layout/casing variants.

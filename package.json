@@ -44,7 +44,5 @@
 		"typescript-eslint": "8.35.1",
 		"vitest": "^4.1.5"
 	},
-	"dependencies": {
-		"cheerio": "^1.2.0"
-	}
+	"dependencies": {}
 }
