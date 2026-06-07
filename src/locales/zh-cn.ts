@@ -508,6 +508,7 @@ export const zhCN: Record<string, string> = {
 	// ── Generated-asset panel ─────────────────────────────
 	'assetPanel.title': '生成的资源',
 	'assetPanel.empty': '当前会话尚未生成任何资源。',
+	'assetPanel.deleted': '资源已不存在：{{path}}',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '搜索要引用的文件或文件夹…',

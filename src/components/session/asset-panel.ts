@@ -1,4 +1,4 @@
-import { setIcon, setTooltip, type App, TFile } from 'obsidian';
+import { setIcon, setTooltip, Notice, type App, TFile } from 'obsidian';
 import type { GeneratedAsset } from '../../services/generated-asset-collection';
 import { t } from '../../i18n';
 
@@ -95,23 +95,25 @@ export class AssetPanelButton {
 				const file = this.app.vault.getAbstractFileByPath(asset.path);
 				if (file instanceof TFile) {
 					const url = this.app.vault.getResourcePath(file);
-					const img = thumb.createEl('img', {
+					thumb.createEl('img', {
 						cls: 'asset-panel__img',
 						attr: { src: url, loading: 'lazy' },
 					});
-					setTooltip(img, asset.path);
 				} else {
 					this.renderBrokenIcon(thumb);
 				}
 			} catch {
 				this.renderBrokenIcon(thumb);
 			}
+			setTooltip(thumb, asset.path);
 
 			// Click to open the asset in Obsidian
 			cell.addEventListener('click', () => {
 				const file = this.app.vault.getAbstractFileByPath(asset.path);
 				if (file instanceof TFile) {
 					void this.app.workspace.getLeaf().openFile(file);
+				} else {
+					new Notice(t('assetPanel.deleted', { path: asset.path }));
 				}
 			});
 		}

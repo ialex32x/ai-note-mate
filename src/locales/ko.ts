@@ -509,6 +509,7 @@ export const ko: Record<string, string> = {
 	// ── Generated-asset panel ─────────────────────────────
 	'assetPanel.title': '생성된 애셋',
 	'assetPanel.empty': '이 세션에서 아직 애셋이 생성되지 않았습니다.',
+	'assetPanel.deleted': '애셋이 더 이상 존재하지 않습니다: {{path}}',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '참조할 파일 또는 폴더 검색…',

@@ -508,6 +508,7 @@ export const zhTW: Record<string, string> = {
 	// ── Generated-asset panel ─────────────────────────────
 	'assetPanel.title': '生成的資源',
 	'assetPanel.empty': '當前會話尚未生成任何資源。',
+	'assetPanel.deleted': '資源已不存在：{{path}}',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '搜尋要引用的檔案或資料夾…',

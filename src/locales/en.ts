@@ -508,6 +508,7 @@ Write the result directly into the note — do not reply with the edited text in
 	// ── Generated-asset panel ─────────────────────────────
 	'assetPanel.title': 'Generated assets',
 	'assetPanel.empty': 'No assets have been generated in this session yet.',
+	'assetPanel.deleted': 'Asset no longer exists: {{path}}',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': 'Search for a file or folder to reference…',

@@ -509,6 +509,7 @@ export const ja: Record<string, string> = {
 	// ── Generated-asset panel ─────────────────────────────
 	'assetPanel.title': '生成されたアセット',
 	'assetPanel.empty': 'このセッションではまだアセットが生成されていません。',
+	'assetPanel.deleted': 'アセットは既に存在しません：{{path}}',
 
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '参照するファイルまたはフォルダを検索…',
