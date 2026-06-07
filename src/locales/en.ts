@@ -482,7 +482,7 @@ Write the result directly into the note — do not reply with the edited text in
 	'statusLabel.prompt': 'Prompt',
 	'statusLabel.completion': 'Completion',
 	'statusLabel.total': 'Total',
-	'statusLabel.contextUsage': 'Context used',
+	'statusLabel.context': 'Context',
 	'statusLabel.messages': 'Messages',
 	'statusLabel.summaries': 'Summaries',
 	'statusLabel.embedding': 'Embedding',

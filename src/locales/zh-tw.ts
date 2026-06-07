@@ -482,7 +482,7 @@ export const zhTW: Record<string, string> = {
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '完成',
 	'statusLabel.total': '總計',
-	'statusLabel.contextUsage': '上下文用量',
+	'statusLabel.context': 'Context',
 	'statusLabel.messages': '訊息',
 	'statusLabel.summaries': '摘要',
 	'statusLabel.embedding': '嵌入',

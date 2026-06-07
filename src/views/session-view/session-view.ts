@@ -907,7 +907,7 @@ export class SessionView extends ItemView {
         // Holds buttons that should sit on the right edge of the toolbar.
         // Pushed right via `margin-left: auto` on the group itself, so the
         // left-aligned controls above keep their natural packing order.
-        // Order inside the group: session status → context ring → refine prompt → send.
+        // Order inside the group: session status → refine prompt → send.
         const thinkingRowRight = thinkingRow.createEl('div', {
             cls: 'session-thinking-row__right',
         });
@@ -953,14 +953,6 @@ export class SessionView extends ItemView {
             },
         });
 
-        // ── Context-window usage ring ──────────────────────────────────────
-        // Percentage ring showing how much of the context window the most
-        // recent API call consumed. Lives to the right of session status
-        // so the eye-flow is "check status/usage → optimize prompt → send".
-        const contextRingEl = thinkingRowRight.createEl('span', {
-            cls: 'session-context-ring-host',
-        });
-
         // ── Refine-prompt button ──────────────────────────────────────────
         // Calls the summarizer-tier LLM to rewrite the current draft for
         // clarity / AI-friendliness. Lives one slot to the left of the
@@ -985,16 +977,15 @@ export class SessionView extends ItemView {
         this.sendBtn.addEventListener('click', () => void this.handleSend());
 
         // ── Construct status controller ─────────────────────────────────
-        // Owns title rendering and the session-status indicator (token
-        // usage, context ring, detail panel). Constructed here because
-        // it needs DOM elements from both buildToolbar (sessionTitleEl)
-        // and buildInputArea (status elements).
+        // Owns title rendering and the session-status indicator (context
+        // usage badge, detail panel). Constructed here because it needs
+        // DOM elements from both buildToolbar (sessionTitleEl) and
+        // buildInputArea (status elements).
         this.statusController = new SessionStatusController({
             sessionTitleEl,
             sessionStatusEl,
             sessionStatusMainEl,
             sessionStatusPanelEl,
-            contextRingEl,
             sessionManager: this.sessionManager,
             mcpManager: this.plugin.mcpManager,
             settings: this.plugin.settings,

@@ -14,7 +14,6 @@ export interface SessionStatusControllerDeps {
     sessionStatusEl: HTMLElement;
     sessionStatusMainEl: HTMLElement;
     sessionStatusPanelEl: HTMLElement;
-    contextRingEl: HTMLElement;
     sessionManager: SessionManager;
     mcpManager: MCPManager | undefined;
     settings: NoteAssistantPluginSettings;
@@ -29,7 +28,7 @@ export interface SessionStatusControllerDeps {
 
 /**
  * Manages the toolbar session title and the session-status indicator
- * (compact token-usage badge, context-ring, and detailed dropdown panel).
+ * (compact context-usage badge and detailed dropdown panel).
  *
  * Owns the DOM element references and all rendering logic so the view
  * delegates to this controller instead of operating on DOM fields directly.
@@ -94,14 +93,13 @@ export class SessionStatusController {
 
     /**
      * Refresh the session-status indicator in the input toolbar:
-     * the compact token-usage badge, the context-window ring, and
-     * (when open) the detailed dropdown panel.
+     * the compact context-usage badge and (when open) the detailed
+     * dropdown panel.
      */
     updateStatusDisplay(): void {
         const chat = this.deps.chat();
         if (!chat) {
             this.deps.sessionStatusMainEl.empty();
-            this.deps.contextRingEl.empty();
             if (this.deps.dropdownManager.isActive(this.deps.sessionStatusEl)) {
                 this.deps.sessionStatusPanelEl.empty();
             }
@@ -114,18 +112,6 @@ export class SessionStatusController {
             : inferModelContextWindow(profile.model);
 
         SessionStatusDisplay.render(this.deps.sessionStatusMainEl, chat, max);
-
-        // Context-window usage ring in the input toolbar.
-        const lastCallTotal = chat.sessionTokenUsage.lastCallTotalTokens ?? 0;
-        const ringTooltip = max > 0 && lastCallTotal > 0
-            ? `${lastCallTotal} / ${max} (${Math.round((lastCallTotal / max) * 100)}%)`
-            : '';
-        SessionStatusDisplay.renderContextRing(
-            this.deps.contextRingEl,
-            chat,
-            max,
-            ringTooltip,
-        );
 
         // Keep the panel in sync when it is currently open.
         if (this.deps.dropdownManager.isActive(this.deps.sessionStatusEl)) {

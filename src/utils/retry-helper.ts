@@ -77,7 +77,7 @@ function isRetryableError(err: unknown, httpStatus?: number): boolean {
  */
 function backoffDelay(attempt: number): Promise<void> {
     const ms = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 // ─────────────────────────────────────────────

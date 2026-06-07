@@ -482,7 +482,7 @@ export const zhCN: Record<string, string> = {
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '补全',
 	'statusLabel.total': '总计',
-	'statusLabel.contextUsage': '上下文用量',
+	'statusLabel.context': 'Context',
 	'statusLabel.messages': '消息',
 	'statusLabel.summaries': '摘要',
 	'statusLabel.embedding': '嵌入',

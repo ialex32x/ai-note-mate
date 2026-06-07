@@ -288,40 +288,6 @@
     to   { transform: rotate(360deg); }
 }
 
-// Context-window usage ring — lives inside `.session-thinking-row__right`,
-// to the left of the refine-prompt button. Renders as a compact inline SVG
-// circle whose stroke fills proportionally to the most recent API call's
-// token usage vs the model's context window.
-.session-context-ring-host {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.session-context-ring {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    cursor: default;
-
-    &__svg {
-        display: block;
-    }
-
-    &__track {
-        // instant visual feedback on theme switch
-        transition: stroke @duration-normal;
-    }
-
-    &__arc {
-        transition: stroke-dashoffset @duration-slow ease, stroke @duration-normal;
-    }
-
-    &__text {
-        // instant visual feedback on theme switch
-        transition: fill @duration-normal;
-    }
-}
 
 // Profile selector
 .session-profile-selector {

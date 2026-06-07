@@ -483,7 +483,7 @@ export const ja: Record<string, string> = {
 	'statusLabel.prompt': 'プロンプト',
 	'statusLabel.completion': '補完',
 	'statusLabel.total': '合計',
-	'statusLabel.contextUsage': 'コンテキスト使用量',
+	'statusLabel.context': 'Context',
 	'statusLabel.messages': 'メッセージ',
 	'statusLabel.summaries': '要約',
 	'statusLabel.embedding': '埋め込み',

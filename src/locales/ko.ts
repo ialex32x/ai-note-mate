@@ -483,7 +483,7 @@ export const ko: Record<string, string> = {
 	'statusLabel.prompt': '프롬프트',
 	'statusLabel.completion': '완성',
 	'statusLabel.total': '합계',
-	'statusLabel.contextUsage': '컨텍스트 사용량',
+	'statusLabel.context': 'Context',
 	'statusLabel.messages': '메시지',
 	'statusLabel.summaries': '요약',
 	'statusLabel.embedding': '임베딩',

@@ -1,7 +1,7 @@
 import { setIcon, setTooltip } from 'obsidian';
 import { t } from '../../i18n';
 import type { SessionManager } from '../../session-manager';
-import { SessionStatusDisplay } from '../../components/session';
+import { formatCompact } from '../../utils/format';
 
 /**
  * Lifecycle status of a session as reflected in the runtime pool.
@@ -151,8 +151,8 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         const usage = session.tokenUsage;
         if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
             const tokensEl = metaRow.createEl('span', { cls: 'session-dropdown__item-time' });
-            const promptStr = SessionStatusDisplay.formatCompact(usage.promptTokens);
-            const completionStr = SessionStatusDisplay.formatCompact(usage.completionTokens);
+            const promptStr = formatCompact(usage.promptTokens);
+            const completionStr = formatCompact(usage.completionTokens);
             tokensEl.createEl('span', {
                 cls: 'session-dropdown__item-token',
                 text: `↑${promptStr}`,
