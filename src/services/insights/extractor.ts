@@ -12,6 +12,7 @@ import type {
     ExtractInsightsInput,
     ExtractInsightsOptions,
 } from './types';
+import { isAbortError } from '../../utils/abortable-request';
 
 const DEFAULT_LIMIT = 3;
 const DEFAULT_MAX_INPUT_CHARS = 8000;
@@ -87,7 +88,7 @@ export async function extractInsights(
         // runner uses this distinction to skip the "extraction failed"
         // UI state (which would mislabel a disposed-runtime cancellation
         // as a real failure).
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         console.warn('[Insights] extraction LLM call failed:', err);
         return [];
     }

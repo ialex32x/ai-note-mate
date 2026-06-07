@@ -26,6 +26,7 @@ import type { MinimalModelConfig } from './llm-provider';
 import { retrieve, isQueryTooShort } from './retriever';
 import { bm25Rank } from './retriever/bm25';
 import type { SubAgentConfig } from './sub-agent';
+import { isAbortError } from '../utils/abortable-request';
 
 /**
  * Build the embedding / BM25 text for a single sub-agent.
@@ -174,7 +175,7 @@ export async function selectMatchingSubAgents(
         });
         rankedIndices = result.map(r => r.index);
     } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         console.warn('[SubAgentRouter] retriever failed, falling back to full sub-agent set:', err);
         return applySticky([...available]);
     }

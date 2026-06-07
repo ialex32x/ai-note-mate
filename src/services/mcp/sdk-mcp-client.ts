@@ -1,5 +1,6 @@
 import type { IMCPClient, MCPToolInfo } from './mcp-types';
 import { requestUrl } from 'obsidian';
+import { parseSSEFrames } from '../../utils/sse-parser';
 
 // ─────────────────────────────────────────────
 // MCP Protocol Constants
@@ -164,70 +165,52 @@ async function readMCPResult(resp: Response): Promise<unknown> {
  * `data:` lines within a single event — they must be concatenated with
  * `\n` before parsing.
  */
+
+/**
+ * Process a single SSE frame, extracting the JSON-RPC result if present.
+ */
+function processSSEFrameForResult(frame: string): unknown {
+    // Collect ALL `data:` lines (SSE multi-line values)
+    const dataLines: string[] = [];
+    for (const line of frame.split("\n")) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data:")) {
+            // Value starts after "data:" — leading space is optional
+            const val = trimmed.slice(5).replace(/^ /, "");
+            dataLines.push(val);
+        }
+    }
+    if (dataLines.length === 0) return undefined;
+    const jsonStr = dataLines.join("\n");
+    if (!jsonStr || jsonStr === "{}") return undefined;
+    try {
+        const parsed = JSON.parse(jsonStr) as JsonRpcResponse;
+        console.debug("[mcp] SSE frame parsed, has result:", parsed.result !== undefined, "has error:", parsed.error !== undefined);
+        if (parsed.result !== undefined) {
+            return parseResponse(parsed);
+        }
+        console.debug("[mcp] SSE frame skipped (no result):", jsonStr.slice(0, 200));
+    } catch (e) {
+        console.debug("[mcp] SSE frame JSON parse failed:", jsonStr.slice(0, 200), String(e));
+    }
+    return undefined;
+}
+
 async function readSSEResult(
     body: ReadableStream<Uint8Array>,
 ): Promise<unknown> {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    const processFrame = (frame: string): unknown => {
-        // Collect ALL `data:` lines (SSE multi-line values)
-        const dataLines: string[] = [];
-        for (const line of frame.split("\n")) {
-            const trimmed = line.trim();
-            if (trimmed.startsWith("data:")) {
-                // Value starts after "data:" — leading space is optional
-                const val = trimmed.slice(5).replace(/^ /, "");
-                dataLines.push(val);
-            }
-        }
-        if (dataLines.length === 0) return undefined;
-        const jsonStr = dataLines.join("\n");
-        if (!jsonStr || jsonStr === "{}") return undefined;
-        try {
-            const parsed = JSON.parse(jsonStr) as JsonRpcResponse;
-            console.debug("[mcp] SSE frame parsed, has result:", parsed.result !== undefined, "has error:", parsed.error !== undefined);
-            if (parsed.result !== undefined) {
-                return parseResponse(parsed);
-            }
-            console.debug("[mcp] SSE frame skipped (no result):", jsonStr.slice(0, 200));
-        } catch (e) {
-            console.debug("[mcp] SSE frame JSON parse failed:", jsonStr.slice(0, 200), String(e));
-        }
-        return undefined;
-    };
-
+    let lastBuffer = "";
     try {
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-            while (true) {
-                const frameEnd = buffer.indexOf("\n\n");
-                if (frameEnd === -1) break;
-
-                const frame = buffer.slice(0, frameEnd);
-                buffer = buffer.slice(frameEnd + 2);
-
-                const result = processFrame(frame);
-                if (result !== undefined) return result;
-            }
-        }
-
-        // Flush trailing frame (may lack final \n\n)
-        if (buffer.trim()) {
-            const result = processFrame(buffer);
+        for await (const frame of parseSSEFrames(body)) {
+            lastBuffer = frame;
+            const result = processSSEFrameForResult(frame);
             if (result !== undefined) return result;
         }
-    } finally {
-        reader.releaseLock();
+    } catch {
+        // Fall through to error
     }
 
-    const lastBuf = buffer.trim().slice(0, 300);
+    const lastBuf = lastBuffer.trim().slice(0, 300);
     throw new Error(
         `MCP tool call returned no result` +
         (lastBuf ? ` (last buffer: ${lastBuf})` : ""),

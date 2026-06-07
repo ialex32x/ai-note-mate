@@ -3,6 +3,7 @@ import type { MinimalModelConfig } from "./llm-provider";
 import { createEmbeddings } from "./text-embedding";
 import { sha256 } from "../utils/hash";
 import { truncate } from "../utils/string-truncate";
+import { isAbortError } from "../utils/abortable-request";
 
 // ─────────────────────────────────────────────
 // Types
@@ -215,7 +216,7 @@ export class Embedder {
                 fresh = await createEmbeddings(this.config, missTexts, signal);
             } catch (err) {
                 // Do not mark the service as unavailable for user-initiated aborts.
-                if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                if (!isAbortError(err)) {
                     this._status = 'unavailable';
                     this._lastErrorMessage = Embedder.normalizeErrorMessage(err);
                 }

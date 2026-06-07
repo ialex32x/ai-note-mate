@@ -3,6 +3,7 @@ import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
 import { DEFAULT_RSS_FETCH_HARD_LIMIT, DEFAULT_RSS_FETCH_SOFT_LIMIT } from "../../settings/defaults";
 import { RSSParser } from "../search/rss-parser";
+import { isAbortError } from "../../utils/abortable-request";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registration entry
@@ -76,7 +77,7 @@ function rssFetch(_plugin: NoteAssistantPlugin): RegisteredTool {
                     },
                 };
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                if (isAbortError(err)) throw err;
 
                 // Handle specific error cases
                 if (err instanceof TypeError && err.message.includes('URL')) {

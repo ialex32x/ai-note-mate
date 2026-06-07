@@ -66,6 +66,19 @@ export function checkAbort(signal: AbortSignal | undefined): void {
 }
 
 /**
+ * Type guard: returns true if the given error is an AbortError.
+ * Handles both DOMException and Error instances with name 'AbortError'.
+ *
+ * Usage in catch blocks:
+ *   catch (err) { if (isAbortError(err)) throw err; ... }
+ */
+export function isAbortError(err: unknown): boolean {
+    if (err instanceof DOMException && err.name === 'AbortError') return true;
+    if (err instanceof Error && err.name === 'AbortError') return true;
+    return false;
+}
+
+/**
  * Issue an Obsidian `requestUrl` with cooperative abort support.
  *
  * NOTE: Obsidian's `requestUrl` has no native cancellation mechanism.

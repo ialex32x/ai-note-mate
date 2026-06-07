@@ -14,6 +14,7 @@ import { findTailTurn } from '../../services/turn-utils';
 import { optimizePrompt, PromptOptimizationError } from '../../services/prompt-optimizer';
 import { getActiveProfile } from '../../settings';
 import { exportSessionToVault } from '../../services/session-exporter';
+import { isAbortError } from '../../utils/abortable-request';
 
 import NoteAssistantPlugin from 'main';
 import { t } from '../../i18n';
@@ -1676,7 +1677,7 @@ export class SessionView extends ItemView {
 
             this.messageWindow.mountSentinel(() => { void this.loadOlderMessages(); });
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') {
+            if (isAbortError(err)) {
                 return;
             }
             throw err;
@@ -1764,7 +1765,7 @@ export class SessionView extends ItemView {
                         this.scroller.restoreAnchorScroll(anchor, anchorOffset);
                     }
                 } catch (err) {
-                    if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                    if (!isAbortError(err)) {
                         throw err;
                     }
                 } finally {
@@ -1843,7 +1844,7 @@ export class SessionView extends ItemView {
                     this.scroller.restoreAnchorScroll(anchor, anchorOffset);
                 }
             } catch (err) {
-                if (!(err instanceof DOMException && err.name === 'AbortError')) {
+                if (!isAbortError(err)) {
                     throw err;
                 }
             } finally {
@@ -2530,7 +2531,7 @@ export class SessionView extends ItemView {
             this.cmInput.focus();
             this.draftController?.scheduleSave();
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') {
+            if (isAbortError(err)) {
                 // Silent — caller-initiated cancellation needs no notice.
                 return;
             }

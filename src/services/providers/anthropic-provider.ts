@@ -9,6 +9,7 @@ import type {
     ThinkingLevel,
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
+import { parseSSEFrames } from "../../utils/sse-parser";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -424,43 +425,19 @@ export async function* parseAnthropicSSEStream(
 ): AsyncIterable<StreamChunk> {
     let promptTokens = 0;
 
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
+    for await (const frame of parseSSEFrames(body, signal)) {
+        const payload = parseSSEFrame(frame);
+        if (!payload) continue;
 
-    try {
-        while (true) {
-            if (signal?.aborted) break;
-
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // SSE frames are separated by double newlines
-            while (true) {
-                const frameEnd = buffer.indexOf("\n\n");
-                if (frameEnd === -1) break;
-
-                const frame = buffer.slice(0, frameEnd);
-                buffer = buffer.slice(frameEnd + 2);
-
-                const payload = parseSSEFrame(frame);
-                if (!payload) continue;
-
-                // message_start carries the prompt-token count the trailing
-                // message_delta needs; capture it before emitting so the
-                // total is accurate regardless of event ordering.
-                if (payload.type === "message_start" && payload.message) {
-                    promptTokens = payload.message.usage.input_tokens;
-                }
-
-                const chunk = processSSEPayload(payload, promptTokens);
-                if (chunk) yield chunk;
-            }
+        // message_start carries the prompt-token count the trailing
+        // message_delta needs; capture it before emitting so the
+        // total is accurate regardless of event ordering.
+        if (payload.type === "message_start" && payload.message) {
+            promptTokens = payload.message.usage.input_tokens;
         }
-    } finally {
-        reader.releaseLock();
+
+        const chunk = processSSEPayload(payload, promptTokens);
+        if (chunk) yield chunk;
     }
 }
 

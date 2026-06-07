@@ -9,6 +9,7 @@ import type {
     ThinkingLevel,
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
+import { parseSSEFrames } from "../../utils/sse-parser";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -36,76 +37,27 @@ async function* parseOpenAISSEStream(
     body: ReadableStream<Uint8Array>,
     signal?: AbortSignal,
 ): AsyncIterable<Record<string, unknown>> {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-        while (true) {
-            if (signal?.aborted) break;
-
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // Normalise line endings to LF (SSE spec allows \r\n and \r).
-            buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-            // SSE frames are separated by double newlines
-            while (true) {
-                const frameEnd = buffer.indexOf("\n\n");
-                if (frameEnd === -1) break;
-
-                const frame = buffer.slice(0, frameEnd);
-                buffer = buffer.slice(frameEnd + 2);
-
-                // Extract data: payload from the frame
-                for (const line of frame.split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed.startsWith("data: ")) {
-                        const jsonStr = trimmed.slice(6);
-                        // [DONE] signals end of stream
-                        if (jsonStr === "[DONE]") return;
-                        // Skip empty data (ping frames)
-                        if (jsonStr === "" || jsonStr === "{}") break;
-                        try {
-                            yield JSON.parse(jsonStr) as Record<string, unknown>;
-                        } catch {
-                            console.warn(
-                                "[openai-provider] SSE JSON parse error:",
-                                jsonStr.slice(0, 200),
-                            );
-                        }
-                        break;
-                    }
+    for await (const frame of parseSSEFrames(body, signal)) {
+        // Extract data: payload from the frame
+        for (const line of frame.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data: ")) {
+                const jsonStr = trimmed.slice(6);
+                // [DONE] signals end of stream
+                if (jsonStr === "[DONE]") return;
+                // Skip empty data (ping frames)
+                if (jsonStr === "" || jsonStr === "{}") break;
+                try {
+                    yield JSON.parse(jsonStr) as Record<string, unknown>;
+                } catch {
+                    console.warn(
+                        "[openai-provider] SSE JSON parse error:",
+                        jsonStr.slice(0, 200),
+                    );
                 }
+                break;
             }
         }
-
-        // Flush trailing frame
-        if (buffer.trim()) {
-            for (const line of buffer.split("\n")) {
-                const trimmed = line.trim();
-                if (trimmed.startsWith("data: ")) {
-                    const jsonStr = trimmed.slice(6);
-                    if (jsonStr === "[DONE]") return;
-                    if (jsonStr && jsonStr !== "{}") {
-                        try {
-                            yield JSON.parse(jsonStr) as Record<string, unknown>;
-                        } catch {
-                            console.warn(
-                                "[openai-provider] SSE final fragment parse error:",
-                                jsonStr.slice(0, 200),
-                            );
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    } finally {
-        reader.releaseLock();
     }
 }
 

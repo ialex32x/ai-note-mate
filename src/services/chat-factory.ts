@@ -31,6 +31,7 @@ import { createRecallArtifactTool } from './tools/recall-artifact-toolcall';
 import { createTodoTool, type TodoStateSource } from './tools/todo-toolcall';
 import { inferModelContextWindow } from './model-context-window';
 import { resolveSecret } from 'utils/secret-helper';
+import { isAbortError } from '../utils/abortable-request';
 
 function createModelConfigFromProfile(
     plugin: NoteAssistantPlugin,
@@ -266,7 +267,7 @@ export function createChatAgent(
                     embeddingConfig,
                     signal,
                 }).catch(err => {
-                    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                    if (isAbortError(err)) throw err;
                     console.warn('[chat-factory] memory prefix failed, ignoring:', err);
                     return '';
                 }),

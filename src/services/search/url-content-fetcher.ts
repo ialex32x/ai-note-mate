@@ -1,6 +1,6 @@
 import { requestUrl, RequestUrlParam } from "obsidian";
 import { getUserAgent } from "./types";
-import { withAbort, checkAbort } from "utils/abortable-request";
+import { withAbort, checkAbort, isAbortError } from "utils/abortable-request";
 import { parseDocument, extractTitle, type QueryFn, type QueryHandle } from "./dom-utils";
 
 function isTextNode(node: Node): node is Text {
@@ -174,7 +174,7 @@ export class UrlContentFetcher {
             }
             return [];
         } catch (error) {
-            if (error instanceof DOMException && error.name === 'AbortError') throw error;
+            if (isAbortError(error)) throw error;
             console.error(`[Crawler] Error fetching ${url}:`, error instanceof Error ? error.message : String(error));
             return [];
         }
@@ -292,7 +292,7 @@ export class UrlContentFetcher {
             // Without this re-throw, an abort during web_fetch_url would
             // be logged as a normal "Request failed" and silently turned
             // into an empty result set instead of unwinding the turn.
-            if (error instanceof DOMException && error.name === 'AbortError') throw error;
+            if (isAbortError(error)) throw error;
             throw new Error(`Request failed: ${error instanceof Error ? error.message : String(error)}`);
         }
     }

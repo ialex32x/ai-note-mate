@@ -12,6 +12,7 @@ import { generateImageWithOpenAI } from "../image-gen/openai-image";
 import { generateImageWithSeedream } from "../image-gen/seedream-image";
 import { getMimeType, mimeTypeToExt } from "../../utils/mime-helper";
 import { recordIssue } from "../diagnostics/issue-tracer";
+import { isAbortError } from "../../utils/abortable-request";
 
 /**
  * Create the image generation tool based on the active image gen config.
@@ -470,7 +471,7 @@ async function handleImageGenResult(plugin: NoteAssistantPlugin, result: ImageGe
  * Handle image generation error.
  */
 function handleImageGenError(err: unknown): ToolCallResult {
-    if (err instanceof DOMException && err.name === 'AbortError') throw err;
+    if (isAbortError(err)) throw err;
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[generate_image] Error:", err);
     recordIssue({

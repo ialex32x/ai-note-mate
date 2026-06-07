@@ -22,6 +22,7 @@ import type {
 import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
 import { getLocale, tIn } from "../i18n";
+import { isAbortError } from "../utils/abortable-request";
 
 // ─────────────────────────────────────────────
 // Task 1: Core types & interfaces
@@ -1339,7 +1340,7 @@ export class ChatStream implements IChatAgent {
                 );
                 if (prefix) segments.push(prefix);
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') {
+                if (isAbortError(err)) {
                     throw err;
                 }
                 console.warn('ChatStream: systemPromptPrefix threw, falling back to base prompt', err);
@@ -1356,7 +1357,7 @@ export class ChatStream implements IChatAgent {
                 );
                 if (suffix) segments.push(suffix);
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') {
+                if (isAbortError(err)) {
                     throw err;
                 }
                 console.warn('ChatStream: systemPromptSuffix threw, falling back to base prompt', err);
@@ -1963,7 +1964,7 @@ export class ChatStream implements IChatAgent {
                                     }
                                 }
                             } catch (err) {
-                                if (err instanceof DOMException && err.name === 'AbortError') {
+                                if (isAbortError(err)) {
                                     // Finalize the in-flight tool_call message before
                                     // unwinding. Without this the bubble stays stuck
                                     // in `streaming: true` with `toolCallResult ===
@@ -2157,7 +2158,7 @@ export class ChatStream implements IChatAgent {
             });
 
             // Check if this was a user-initiated abort
-            if (err instanceof Error && err.name === 'AbortError') {
+            if (isAbortError(err)) {
                 this._state = "aborted";
 
                 // Record the abort as a system message in history (display-only, not sent to API)
@@ -2494,7 +2495,7 @@ export class ChatStream implements IChatAgent {
             // (which then has to detect the abort itself, costing a full
             // tool-schema serialisation + a provider round-trip's worth of
             // latency before the user finally sees the abort take effect).
-            if (err instanceof DOMException && err.name === 'AbortError') throw err;
+            if (isAbortError(err)) throw err;
             // The retriever already logged the underlying cause; fall
             // back to the full tool set so the model never gets stuck
             // with an empty surface.

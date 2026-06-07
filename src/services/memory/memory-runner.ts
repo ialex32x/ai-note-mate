@@ -28,6 +28,7 @@ import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from '../session-runtime/session-runtime';
 import { extractMemoryOps, type MemoryExtractOp } from './memory-extractor';
 import { isMemoryConfigured, MemoryStoreError } from './memory-store';
+import { isAbortError } from '../../utils/abortable-request';
 
 export async function maybeExtractMemoriesAfterFinish(
     plugin: NoteAssistantPlugin,
@@ -82,7 +83,7 @@ export async function maybeExtractMemoriesAfterFinish(
         // Disposal-cancellation isn't a real failure — the runtime is
         // gone. Bail silently so the console isn't spammed with a
         // misleading "extractor threw" on every closed session.
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (isAbortError(err)) return;
         console.warn('[Memory] extractor threw:', err);
         return;
     }

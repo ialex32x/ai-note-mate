@@ -44,6 +44,7 @@
 import { retrieve, isQueryTooShort } from '../services/retriever';
 import type { MinimalModelConfig } from '../services/llm-provider';
 import type { SkillManager, SkillDefinition } from './skill-manager';
+import { isAbortError } from '../utils/abortable-request';
 
 /**
  * Built-in fallback for the auto-inject cosine-similarity floor — used
@@ -281,7 +282,7 @@ export async function buildSkillSystemPromptForQuery(
         // the surrounding prompt() flow handle them; for everything
         // else log + fall back so a broken retriever path never
         // blocks skill discovery.
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isAbortError(err)) {
             throw err;
         }
         console.error('SkillCatalogue: retriever failed, falling back to full catalogue', err);

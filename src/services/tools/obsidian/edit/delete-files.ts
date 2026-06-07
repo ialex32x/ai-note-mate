@@ -1,7 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { isFailure, requireFile } from "../_shared";
+import { isFailure, normalizeVaultPathsArg, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -41,25 +41,20 @@ export function vaultDeleteFiles(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["delete_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal) => {
             // Accept `paths` (array, canonical), `file_paths` (alternative), and `path` (single string).
-            let rawPaths = args["paths"] ?? args["file_paths"];
-            if (!rawPaths && typeof args["path"] === "string") {
-                rawPaths = [args["path"]];
+            const argsCopy = { ...args };
+            if (argsCopy["file_paths"] !== undefined && argsCopy["paths"] === undefined) {
+                argsCopy["paths"] = argsCopy["file_paths"];
             }
-            if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
-                return { success: false, type: "text", content: "`paths` must be a non-empty array of strings." };
-            }
+            const normalized = normalizeVaultPathsArg(argsCopy);
+            if (!Array.isArray(normalized)) return normalized;
 
             // Deduplicate while preserving order to avoid trashing the same file twice.
             const seen = new Set<string>();
             const paths: string[] = [];
-            for (const p of rawPaths) {
-                if (typeof p !== "string" || p.length === 0) continue;
+            for (const p of normalized) {
                 if (seen.has(p)) continue;
                 seen.add(p);
                 paths.push(p);
-            }
-            if (paths.length === 0) {
-                return { success: false, type: "text", content: "`paths` must contain at least one non-empty string." };
             }
 
             const deleted: string[] = [];

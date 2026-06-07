@@ -15,6 +15,7 @@ import { extractSuggestions, extractSuggestionsViaLLM, type SuggestionCardState 
 import { createSummarizerConfig } from '../chat-factory';
 import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from './session-runtime';
+import { isAbortError } from '../../utils/abortable-request';
 
 /** Minimum assistant reply length (chars) to trigger LLM fallback. */
 const MIN_REPLY_CHARS = 50;
@@ -65,7 +66,7 @@ export async function maybeExtractSuggestionsAfterFinish(
             runtime.disposeSignal,
         );
     } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (isAbortError(err)) return;
         console.warn('[Suggestions] LLM extraction failed:', err);
         failed = true;
     }

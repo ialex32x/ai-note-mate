@@ -5,7 +5,7 @@ import { EnhancedWebSearcher } from "../search/enhanced-web-searcher";
 import { ImageWebSearcher } from "../search/image-web-searcher";
 import { joinPath } from "../../utils/path-helper";
 import { DEFAULT_SETTINGS } from "settings";
-import { checkAbort } from "../../utils/abortable-request";
+import { checkAbort, isAbortError } from "../../utils/abortable-request";
 
 export function createWebSearchTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     if (!plugin.settings.builtinWebSearchEnabled) return [];
@@ -89,7 +89,7 @@ function webSearch(_plugin: NoteAssistantPlugin): RegisteredTool {
                 const results = await searcher.search(query, limit, signal);
                 return { success: true, type: "object", content: results };
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                if (isAbortError(err)) throw err;
                 const msg = err instanceof Error ? err.message : String(err);
                 return { success: false, type: "text", content: `Search failed: ${msg}` };
             }
@@ -133,7 +133,7 @@ function imageSearch(_plugin: NoteAssistantPlugin): RegisteredTool {
                 const urls = await searcher.search(query, signal);
                 return { success: true, type: "object", content: urls };
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                if (isAbortError(err)) throw err;
                 const msg = err instanceof Error ? err.message : String(err);
                 return { success: false, type: "text", content: `Image search failed: ${msg}` };
             }
@@ -193,7 +193,7 @@ async function downloadImagesFromUrls(
             return { success: false, type: "text", content: "Failed to save any image: all URLs resulted in errors." };
         }
     } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         return { success: false, type: "text", content: `Save image failed: ${msg}` };
     }

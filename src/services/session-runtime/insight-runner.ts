@@ -10,6 +10,7 @@ import { stripStructuredBlock } from '../suggestions';
 import { createInsightsConfig } from '../chat-factory';
 import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from './session-runtime';
+import { isAbortError } from '../../utils/abortable-request';
 
 /**
  * Auto-extraction path: run on `onFinish` for the most recent
@@ -124,7 +125,7 @@ async function runExtraction(
         // gone, its UI state is being torn down, and committing a
         // terminal here would either be a no-op or (worse) wake the
         // pool to persist a misleading 'error' phase. Bail silently.
-        if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (isAbortError(err)) return;
         console.warn('[Insights] extraction failed:', err);
         failed = true;
     }

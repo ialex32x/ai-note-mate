@@ -3,6 +3,7 @@ import { summarizeConversationToTitle } from './context-reducer';
 import { TITLE_SUMMARIZE_PROMPT } from './prompts/session-prompts';
 import type { MinimalModelConfig } from './llm-provider';
 import { stripMarkdownToPlainText } from '../utils/markdown-sanitizer';
+import { isAbortError } from '../utils/abortable-request';
 
 /**
  * Automatically generate a session title from the conversation content
@@ -59,7 +60,7 @@ export async function maybeGenerateSessionTitle(
         // Disposal-cancellation is expected when a session is closed
         // mid-titling — don't spam the console with a misleading
         // "Failed to generate session title" on every such close.
-        if (e instanceof DOMException && e.name === 'AbortError') return;
+        if (isAbortError(e)) return;
         console.warn('Failed to generate session title:', e);
     }
 }

@@ -3,6 +3,7 @@ import { createGeminiCompletion } from "./providers/gemini-provider";
 import { createAnthropicCompletion } from "./providers/anthropic-provider";
 import { ChatMessageRole, CompleteToolCall, MediaAttachment, MinimalModelConfig } from "./llm-provider";
 import { safeSliceHead } from "../utils/string-safe";
+import { isAbortError } from "../utils/abortable-request";
 import {
     DELEGATE_ENVELOPE_KIND,
     DELEGATE_ENVELOPE_VERSION,
@@ -2149,7 +2150,7 @@ async function runSummarizerLLM(
         // being torn down, so silently returning null here would just
         // defer the abort response until the next aborted step trips
         // a check. Re-throw so the calling loop unwinds immediately.
-        if (e instanceof DOMException && e.name === 'AbortError') throw e;
+        if (isAbortError(e)) throw e;
         console.error(`[ContextReducer] ${logTag}: summarization failed:`, e);
         console.warn(`[ContextReducer] ${logTag}: returning null to signal fallback to the caller`);
         return null;

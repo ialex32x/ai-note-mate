@@ -36,6 +36,7 @@ import { getGlobalEmbedder } from '../embedder';
 import { cosineSimilarity, isQueryTooShort } from '../text-embedding';
 import { bm25Rank } from './bm25';
 import { reciprocalRankFusion, type RankList } from './rrf';
+import { isAbortError } from '../../utils/abortable-request';
 
 /** Re-exported for convenience so callers don't need two imports. */
 export { isQueryTooShort } from '../text-embedding';
@@ -209,7 +210,7 @@ async function runEmbeddingRanker(
         scored.sort((a, b) => b.cosine - a.cosine);
         return scored;
     } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         // The embedder marked itself unavailable already; we just
         // degrade to BM25-only and surface the issue through the
         // existing status channel.

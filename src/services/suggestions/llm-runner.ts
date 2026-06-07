@@ -16,6 +16,7 @@ import { createChatCompletion } from '../context-reducer';
 import { stripStructuredBlock } from './extractor';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
 import type { SuggestedAction } from './types';
+import { isAbortError } from 'utils/abortable-request';
 
 const DEFAULT_LIMIT = 4;
 const DEFAULT_LABEL_MAX = 40;
@@ -97,7 +98,7 @@ export async function extractSuggestionsViaLLM(
             { role: 'user', content: userPrompt },
         ], signal);
     } catch (err) {
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         console.warn('[Suggestions] LLM extraction call failed:', err);
         return [];
     }

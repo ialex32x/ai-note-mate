@@ -9,6 +9,7 @@ import {
     type WebPageContent,
 } from "../search/url-content-fetcher";
 import { DEFAULT_WEB_FETCH_HARD_LIMIT, DEFAULT_WEB_FETCH_SOFT_LIMIT } from "../../settings/defaults";
+import { isAbortError } from "../../utils/abortable-request";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registration entry
@@ -208,7 +209,7 @@ function webFetch(plugin: NoteAssistantPlugin, webSearchAvailable: boolean): Reg
                 }
                 return { success: true, type: "object", content: pages };
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                if (isAbortError(err)) throw err;
                 const msg = err instanceof Error ? err.message : String(err);
                 const catchHint = webSearchAvailable
                     ? `try web_search for an alternative source.`

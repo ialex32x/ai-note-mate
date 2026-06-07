@@ -47,6 +47,7 @@ import {
 } from "./sub-agent-router";
 import { buildDelegationSystemPrompt, type SubAgentDescriptor } from "./prompts/session-prompts";
 import { generateId } from "../settings/defaults";
+import { isAbortError } from "../utils/abortable-request";
 
 // Re-export sub-agent types for external consumers
 export type { SubAgentConfig, SubAgentResult, SubAgentExecutionLog };
@@ -1461,7 +1462,7 @@ export class AgentOrchestrator implements IChatAgent {
             const error = err instanceof Error ? err : new Error(String(err));
 
             // If it's an abort, re-throw to let ChatStream handle it
-            if (error.name === 'AbortError') {
+            if (isAbortError(error)) {
                 throw err;
             }
 
@@ -1520,7 +1521,7 @@ export class AgentOrchestrator implements IChatAgent {
                 fallbackOnShortQuery: this._lastMatchedSubAgents ?? undefined,
             });
         } catch (err) {
-            if (err instanceof DOMException && err.name === 'AbortError') throw err;
+            if (isAbortError(err)) throw err;
             // selectMatchingSubAgents already handles non-abort
             // failures internally (returns full set). This catch is
             // a belt-and-braces guard against any future regression

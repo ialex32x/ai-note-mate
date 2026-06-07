@@ -25,6 +25,7 @@ import type { MemoryEntry } from './memory-note-parser';
 import type { MemoryStore } from './memory-store';
 import { isMemoryConfigured } from './memory-store';
 import { stripCallouts } from './body-sanitizer';
+import { isAbortError } from '../../utils/abortable-request';
 
 /**
  * Inputs for {@link buildMemorySystemPromptPrefix}. Kept as a single
@@ -166,7 +167,7 @@ async function pickRelevant(opts: {
         // Aborts must propagate so the chat turn can cancel cleanly;
         // other errors are non-fatal — fall back to the same simple
         // first-N behaviour as the no-embedding / short-query paths.
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         console.warn('[Memory] retriever failed, falling back:', err);
         return candidates.slice(0, topK);
     }

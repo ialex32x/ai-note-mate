@@ -2,13 +2,8 @@ import { requestUrl, Vault } from 'obsidian';
 import { joinPath } from '../../utils/path-helper';
 import { sha256 } from 'utils/hash';
 import { SearchEngineScheduler } from './search-engine-scheduler';
-import { withAbort, checkAbort } from 'utils/abortable-request';
-
-const USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
-];
+import { withAbort, checkAbort, isAbortError } from 'utils/abortable-request';
+import { getUserAgent } from './types';
 
 type ImageEngineId = 'duckduckgo' | 'google' | 'bing';
 
@@ -34,7 +29,7 @@ export class ImageWebSearcher {
     }
 
     private _getHeaders(): Record<string, string> {
-        return { "User-Agent": USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)]! };
+        return { "User-Agent": getUserAgent() };
     }
 
     // ── DuckDuckGo ──────────────────────────────────────────────────────────
@@ -71,7 +66,7 @@ export class ImageWebSearcher {
             // loop in `search()` to spend another full iteration (next
             // engine + its own request) before its top-of-loop
             // `checkAbort` notices the cancellation.
-            if (e instanceof DOMException && e.name === 'AbortError') throw e;
+            if (isAbortError(e)) throw e;
             console.error(`Error getting VQD: ${String(e)}`);
         }
         return null;
@@ -253,7 +248,7 @@ export class ImageWebSearcher {
                     console.debug(`${engine.name} returned 0 results, trying next engine`);
                 }
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                if (isAbortError(err)) throw err;
                 this._scheduler.markFailure(engine.id);
                 console.warn(`${engine.name} failed or timed out, trying next engine`);
             }

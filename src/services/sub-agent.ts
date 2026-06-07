@@ -13,6 +13,7 @@ import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalMod
 import { type ContextReduceOptions } from "./context-reducer";
 import { safeSliceHead, stripLoneSurrogates } from "../utils/string-safe";
 import { createHandoffTools, createResultTools, type HandoffStore } from "./tools/handoff-toolcall";
+import { isAbortError } from "../utils/abortable-request";
 
 // ─────────────────────────────────────────────
 // Types
@@ -317,7 +318,7 @@ export class SubAgent {
                     embeddingFilter: options.embeddingFilter,
                 });
             } catch (err) {
-                if (err instanceof Error && err.name === 'AbortError') {
+                if (isAbortError(err)) {
                     aborted = true;
                 } else {
                     throw err;

@@ -9,6 +9,7 @@ import type {
     ThinkingLevel,
 } from "../llm-provider";
 import { sanitizeChatMessages } from "./_shared";
+import { parseSSEFrames } from "../../utils/sse-parser";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -61,76 +62,25 @@ export async function* parseGeminiSSEStream(
     body: ReadableStream<Uint8Array>,
     signal?: AbortSignal,
 ): AsyncIterable<Record<string, unknown>> {
-    const reader = body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-        while (true) {
-            if (signal?.aborted) break;
-
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-
-            // Normalise line endings to LF. The SSE spec allows \r\n
-            // and \r as line terminators, and some Gemini backends use
-            // \r\n. Without this normalisation, frames would fail to
-            // split on \n\n, causing dropped / delayed chunks.
-            buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-
-            // SSE frames are separated by double newlines
-            while (true) {
-                const frameEnd = buffer.indexOf("\n\n");
-                if (frameEnd === -1) break;
-
-                const frame = buffer.slice(0, frameEnd);
-                buffer = buffer.slice(frameEnd + 2);
-
-                // Extract data: payload from the frame
-                for (const line of frame.split("\n")) {
-                    const trimmed = line.trim();
-                    if (trimmed.startsWith("data: ")) {
-                        const jsonStr = trimmed.slice(6);
-                        // Skip empty data (ping frames)
-                        if (jsonStr === "" || jsonStr === "{}") break;
-                        try {
-                            yield JSON.parse(jsonStr) as Record<string, unknown>;
-                        } catch {
-                            console.warn(
-                                "[gemini-provider] SSE JSON parse error:",
-                                jsonStr.slice(0, 200),
-                            );
-                        }
-                        break; // one data: line per frame is enough
-                    }
+    for await (const frame of parseSSEFrames(body, signal)) {
+        // Extract data: payload from the frame
+        for (const line of frame.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("data: ")) {
+                const jsonStr = trimmed.slice(6);
+                // Skip empty data (ping frames)
+                if (jsonStr === "" || jsonStr === "{}") break;
+                try {
+                    yield JSON.parse(jsonStr) as Record<string, unknown>;
+                } catch {
+                    console.warn(
+                        "[gemini-provider] SSE JSON parse error:",
+                        jsonStr.slice(0, 200),
+                    );
                 }
+                break; // one data: line per frame is enough
             }
         }
-
-        // Flush trailing frame (may lack final \n\n)
-        if (buffer.trim()) {
-            for (const line of buffer.split("\n")) {
-                const trimmed = line.trim();
-                if (trimmed.startsWith("data: ")) {
-                    const jsonStr = trimmed.slice(6);
-                    if (jsonStr && jsonStr !== "{}") {
-                        try {
-                            yield JSON.parse(jsonStr) as Record<string, unknown>;
-                        } catch {
-                            console.warn(
-                                "[gemini-provider] SSE final fragment parse error:",
-                                jsonStr.slice(0, 200),
-                            );
-                        }
-                    }
-                    break;
-                }
-            }
-        }
-    } finally {
-        reader.releaseLock();
     }
 }
 

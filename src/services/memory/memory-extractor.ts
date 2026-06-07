@@ -18,6 +18,7 @@ import {
 import type { MemoryEntry } from './memory-note-parser';
 import { stripCriticalSuffix } from './heading-format';
 import { stripCallouts } from './body-sanitizer';
+import { isAbortError } from '../../utils/abortable-request';
 
 const DEFAULT_MAX_INPUT_CHARS = 8000;
 const MAX_HEADING_LEN = 60;
@@ -94,7 +95,7 @@ export async function extractMemoryOps(
         ], signal);
     } catch (err) {
         // Aborts MUST propagate — see the function-level doc.
-        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (isAbortError(err)) throw err;
         console.warn('[Memory] extraction LLM call failed:', err);
         return [];
     }

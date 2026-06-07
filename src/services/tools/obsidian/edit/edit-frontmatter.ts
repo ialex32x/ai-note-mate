@@ -2,7 +2,7 @@ import { TFile } from "obsidian";
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { isFailure, requireFile } from "../_shared";
+import { isFailure, normalizeVaultPathsArg, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,30 +184,11 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
         },
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
-            // Accept both `paths` (array, canonical) and `path` (single string, common LLM slip).
-            let rawPaths = args["paths"];
-            if (!rawPaths && typeof args["path"] === "string") {
-                rawPaths = [args["path"]];
-            }
+            const normalized = normalizeVaultPathsArg(args);
+            if (!Array.isArray(normalized)) return normalized;
+            const paths = normalized;
             const opName = args["op"] as string;
             const dryRun = (args["dry_run"] as boolean) ?? false;
-
-            // ─── Validate paths ───────────────────────────────────────────
-            if (!Array.isArray(rawPaths) || rawPaths.length === 0) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: "paths must be a non-empty array of vault-relative file paths.",
-                };
-            }
-            if (rawPaths.some((p) => typeof p !== "string" || p.length === 0)) {
-                return {
-                    success: false,
-                    type: "text",
-                    content: "Each entry in paths must be a non-empty string.",
-                };
-            }
-            const paths = rawPaths as string[];
 
             // ─── Validate op ──────────────────────────────────────────────
             if (opName !== "set" && opName !== "unset") {

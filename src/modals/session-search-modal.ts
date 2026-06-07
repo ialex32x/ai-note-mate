@@ -2,6 +2,7 @@ import { App, setIcon, debounce } from 'obsidian';
 import { t } from '../i18n';
 import { SessionManager, SessionSnapshot } from '../session-manager';
 import { PromiseModal } from './_promise-modal';
+import { isAbortError } from '../utils/abortable-request';
 
 export interface SessionSearchResult {
     sessionId: string;
@@ -238,7 +239,7 @@ export class SessionSearchModal extends PromiseModal<SessionSearchResult | null>
             this.updateResults(loadedResults, totalSearched, 0);
 
         } catch (err) {
-            if ((err as Error).name === 'AbortError') return;
+            if (isAbortError(err)) return;
             console.error('[SessionSearch] Search error:', err);
         } finally {
             this.loadingEl.hide();

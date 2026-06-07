@@ -1,7 +1,7 @@
 ﻿import { requestUrl } from 'obsidian';
 import { getUserAgent, SearchResult } from './types';
 import { SearchEngineScheduler } from './search-engine-scheduler';
-import { withAbort, checkAbort } from 'utils/abortable-request';
+import { withAbort, checkAbort, isAbortError } from 'utils/abortable-request';
 import { parseDocument } from './dom-utils';
 
 type SearchEngineId = 'bing' | 'baidu' | 'duckduckgo';
@@ -177,7 +177,7 @@ export class EnhancedWebSearcher {
                     console.debug(`${engine.name} returned 0 results, trying next engine`);
                 }
             } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') throw err;
+                if (isAbortError(err)) throw err;
                 this._scheduler.markFailure(engine.id);
                 console.warn(`${engine.name} failed or timed out, trying next engine`);
             }
