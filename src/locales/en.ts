@@ -505,6 +505,10 @@ Write the result directly into the note — do not reply with the edited text in
 	'statusTooltip.artifactsLive': 'Recoverable artifact entries currently held in memory',
 	'statusTooltip.artifactsTombstones': 'Entries already evicted; recall_artifact still reports the reason',
 
+	// ── Generated-asset panel ─────────────────────────────
+	'assetPanel.title': 'Generated assets',
+	'assetPanel.empty': 'No assets have been generated in this session yet.',
+
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': 'Search for a file or folder to reference…',
 

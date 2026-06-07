@@ -3,6 +3,10 @@ export { SessionRuntimePool, type SessionRuntimePoolOptions } from './session-ru
 export { createSessionRuntime } from './runtime-factory';
 export type { RuntimeEvent, RuntimeListener } from './runtime-events';
 export {
+    GeneratedAssetCollection,
+    type GeneratedAsset,
+} from '../generated-asset-collection';
+export {
     maybeExtractInsightsAfterFinish,
     extractInsightsForMessage,
 } from './insight-runner';

@@ -505,6 +505,10 @@ export const zhCN: Record<string, string> = {
 	'statusTooltip.artifactsLive': '当前内存中可恢复的产物条目数',
 	'statusTooltip.artifactsTombstones': '已被淘汰的条目；recall_artifact 仍可返回原因',
 
+	// ── Generated-asset panel ─────────────────────────────
+	'assetPanel.title': '生成的资源',
+	'assetPanel.empty': '当前会话尚未生成任何资源。',
+
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '搜索要引用的文件或文件夹…',
 

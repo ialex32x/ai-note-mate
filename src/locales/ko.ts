@@ -506,6 +506,10 @@ export const ko: Record<string, string> = {
 	'statusTooltip.artifactsLive': '현재 메모리에 보관된 복구 가능한 아티팩트 항목 수',
 	'statusTooltip.artifactsTombstones': '이미 제거된 항목. recall_artifact 가 계속 사유를 반환합니다',
 
+	// ── Generated-asset panel ─────────────────────────────
+	'assetPanel.title': '생성된 애셋',
+	'assetPanel.empty': '이 세션에서 아직 애셋이 생성되지 않았습니다.',
+
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '참조할 파일 또는 폴더 검색…',
 

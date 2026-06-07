@@ -2,6 +2,7 @@ import type NoteAssistantPlugin from "../../main";
 import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
 import type { ImageGenResult, ReferenceImage } from "../image-gen/types";
+import type { GeneratedAsset } from "../generated-asset-collection";
 import { DEFAULT_SETTINGS, getActiveImageGenConfig, type ImageGenConfig } from "../../settings";
 import { sha256 } from "../../utils/hash";
 import { base64ToArrayBuffer, arrayBufferToBase64, normalizePath, TFile, type App } from "obsidian";
@@ -144,7 +145,7 @@ function createGeminiImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
         },
         capabilities: ["network", "create_file", "read_file", "multimodal_generate"] as ToolCapability[],
         requiresConfirmation: true,
-        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
+        exec: async (_chatStream, args, signal, context): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
             const aspectRatio = args["aspect_ratio"] as string | undefined;
             const imageSize = args["image_size"] as string | undefined;
@@ -161,7 +162,7 @@ function createGeminiImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
                     refImages,
                     signal,
                 });
-                return handleImageGenResult(plugin, result);
+                return handleImageGenResult(plugin, result, context?.toolCallId ?? 'unknown');
             } catch (err) {
                 return handleImageGenError(err);
             }
@@ -226,7 +227,7 @@ function createQwenImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Imag
         },
         capabilities: ["network", "create_file", "read_file", "multimodal_generate"] as ToolCapability[],
         requiresConfirmation: true,
-        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
+        exec: async (_chatStream, args, signal, context): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
             const aspectRatio = args["aspect_ratio"] as string | undefined;
             const negativePrompt = (args["negative_prompt"] as string) || "";
@@ -243,7 +244,7 @@ function createQwenImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Imag
                     refImages,
                     signal,
                 });
-                return handleImageGenResult(plugin, result);
+                return handleImageGenResult(plugin, result, context?.toolCallId ?? 'unknown');
             } catch (err) {
                 return handleImageGenError(err);
             }
@@ -314,7 +315,7 @@ function createOpenAIImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
         },
         capabilities: ["network", "create_file", "read_file", "multimodal_generate"] as ToolCapability[],
         requiresConfirmation: true,
-        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
+        exec: async (_chatStream, args, signal, context): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
             const size = args["size"] as string | undefined;
             const quality = args["quality"] as string | undefined;
@@ -333,7 +334,7 @@ function createOpenAIImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<Im
                     refImages,
                     signal,
                 });
-                return handleImageGenResult(plugin, result);
+                return handleImageGenResult(plugin, result, context?.toolCallId ?? 'unknown');
             } catch (err) {
                 return handleImageGenError(err);
             }
@@ -398,7 +399,7 @@ function createSeedreamImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<
         },
         capabilities: ["network", "create_file", "read_file", "multimodal_generate"] as ToolCapability[],
         requiresConfirmation: true,
-        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
+        exec: async (_chatStream, args, signal, context): Promise<ToolCallResult> => {
             const prompt = args["prompt"] as string;
             const aspectRatio = args["aspect_ratio"] as string | undefined;
             const negativePrompt = (args["negative_prompt"] as string) || "";
@@ -415,7 +416,7 @@ function createSeedreamImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<
                     refImages,
                     signal,
                 });
-                return handleImageGenResult(plugin, result);
+                return handleImageGenResult(plugin, result, context?.toolCallId ?? 'unknown');
             } catch (err) {
                 return handleImageGenError(err);
             }
@@ -426,7 +427,11 @@ function createSeedreamImageTool(plugin: NoteAssistantPlugin, imageConfig: Pick<
 /**
  * Handle image generation result and save to vault.
  */
-async function handleImageGenResult(plugin: NoteAssistantPlugin, result: ImageGenResult): Promise<ToolCallResult> {
+async function handleImageGenResult(
+    plugin: NoteAssistantPlugin,
+    result: ImageGenResult,
+    toolCallId: string,
+): Promise<ToolCallResult> {
     if (!result.success) {
         return {
             success: false,
@@ -464,7 +469,13 @@ async function handleImageGenResult(plugin: NoteAssistantPlugin, result: ImageGe
     }
     content += `![generated image](${savedPath})`;
 
-    return { success: true, type: "text", content };
+    // Structured asset metadata so GeneratedAssetCollection can recover
+    // the asset list without parsing markdown text content.
+    const assets: GeneratedAsset[] = [
+        { path: savedPath, toolCallId, timestamp: Date.now() },
+    ];
+
+    return { success: true, type: "text", content, assets };
 }
 
 /**

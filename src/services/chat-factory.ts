@@ -1,5 +1,6 @@
 import type NoteAssistantPlugin from 'main';
 import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type ToolFilterOptions } from './chat-stream';
+import type { GeneratedAsset } from './generated-asset-collection';
 import { AgentOrchestrator } from './agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
 import type { TextGenConfig } from '../settings/types';
@@ -133,6 +134,8 @@ export interface ChatAgentCallbacks {
     onStart(): void;
     onMessageUpdate(msg: ChatMessage): void;
     onToolCallEnd(): void;
+    /** Called when a tool execution produces generated assets (e.g. images). */
+    onAssetGenerated?(assets: GeneratedAsset[]): void;
     onFinish(): void;
     onAbort(msg: ChatMessage): void;
     onUsageUpdate(): void;
@@ -348,6 +351,12 @@ export function createChatAgent(
             if (!callbacks.generationMatches()) return;
             callbacks.onToolCallEnd();
         },
+        onAssetGenerated: callbacks.onAssetGenerated
+            ? (assets: GeneratedAsset[]) => {
+                if (!callbacks.generationMatches()) return;
+                callbacks.onAssetGenerated!(assets);
+            }
+            : undefined,
         onFinish: () => {
             if (!callbacks.generationMatches()) return;
             callbacks.onFinish();

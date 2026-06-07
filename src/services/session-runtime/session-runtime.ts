@@ -6,6 +6,9 @@ import type { SuggestionCardState } from '../suggestions';
 import type { CheckpointStore } from '../vault';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
 import {
+    GeneratedAssetCollection,
+} from '../generated-asset-collection';
+import {
     emptyTodoState,
     type TodoItem,
     type TodoState,
@@ -208,6 +211,14 @@ export class SessionRuntime {
      * {@link dispose}).
      */
     readonly checkpointStore: CheckpointStore;
+
+    /**
+     * Per-session collection of assets (images, etc.) generated during
+     * the conversation. Populated in real time via
+     * {@link ChatStreamConfig.onAssetGenerated} and rebuilt on cold-load
+     * via {@link restoreAssets}.
+     */
+    readonly assetCollection = new GeneratedAssetCollection();
 
     private readonly sessionManager: SessionManager;
 
@@ -683,6 +694,17 @@ export class SessionRuntime {
     restoreSuggestionState(state: SuggestionCardState): void {
         this._suggestionGen++;
         this._suggestionState = state;
+    }
+
+    /**
+     * Rebuild the asset collection from all messages in a cold-loaded
+     * session. Called by {@link SessionView.hydrateRuntimeFromDisk}.
+     *
+     * Iterates every message and collects {@link ChatMessage.toolCallAssets}
+     * fields — no markdown parsing needed.
+     */
+    restoreAssets(messages: ReadonlyArray<ChatMessage>): void {
+        this.assetCollection.rebuildFromMessages(messages);
     }
 
     /**

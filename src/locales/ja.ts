@@ -506,6 +506,10 @@ export const ja: Record<string, string> = {
 	'statusTooltip.artifactsLive': '現在メモリに保持されている復元可能なアーティファクト数',
 	'statusTooltip.artifactsTombstones': '既に破棄済みのエントリ。recall_artifact は引き続き理由を返します',
 
+	// ── Generated-asset panel ─────────────────────────────
+	'assetPanel.title': '生成されたアセット',
+	'assetPanel.empty': 'このセッションではまだアセットが生成されていません。',
+
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '参照するファイルまたはフォルダを検索…',
 

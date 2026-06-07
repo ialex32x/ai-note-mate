@@ -126,6 +126,9 @@ export function createSessionRuntime(
         onToolCallEnd: () => {
             runtime.emit({ type: 'tool-call-end' });
         },
+        onAssetGenerated: (assets) => {
+            runtime.assetCollection.addAssets(assets);
+        },
         onFinish: () => {
             // Mark idle BEFORE persistence so pool compaction sees the
             // current state if persist triggers reentrancy (it does not

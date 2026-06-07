@@ -15,3 +15,4 @@ export type { AppendErrorBubbleOptions, AppendErrorBubbleResult } from './error-
 export { StreamingLoader } from './streaming-loader';
 export { showInitializationError } from './init-error-screen';
 export { SessionLoadingOverlay } from './session-loading-overlay';
+export { AssetPanelButton } from './asset-panel';

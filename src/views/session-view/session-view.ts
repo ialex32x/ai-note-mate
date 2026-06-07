@@ -33,6 +33,7 @@ import {
     StreamingLoader,
     SessionLoadingOverlay,
     showInitializationError,
+    AssetPanelButton,
 } from '../../components/session';
 import { extractSuggestions, type SuggestedAction, type SuggestionCardState } from '../../services/suggestions';
 import {
@@ -110,6 +111,8 @@ export class SessionView extends ItemView {
     private scrollToBottomBtn!: HTMLButtonElement;
     private newChatBtn!: HTMLButtonElement;
     private sessionNavigator!: SessionNavigator;
+    /** Generated-asset gallery button (left of session status in toolbar). */
+    private assetPanelBtn!: AssetPanelButton;
     // ── Session runtime ──────────────────────────────────────────────────────
     /**
      * The runtime currently bound to this view. Sourced from
@@ -278,6 +281,10 @@ export class SessionView extends ItemView {
     private attachRuntime(runtime: SessionRuntime): void {
         this.runtime = runtime;
         this.detachRuntime = runtime.attach((ev) => this.onRuntimeEvent(ev));
+        // Wire the asset gallery button to this runtime's collection.
+        this.assetPanelBtn?.bindCollection(
+            (listener) => runtime.assetCollection.onChange(listener),
+        );
         // Point the checkpoint dropdown at this runtime's store so its
         // count badge and dropdown contents reflect the new session.
         this.checkpointSelector?.setRuntime(runtime);
@@ -907,9 +914,26 @@ export class SessionView extends ItemView {
         // Holds buttons that should sit on the right edge of the toolbar.
         // Pushed right via `margin-left: auto` on the group itself, so the
         // left-aligned controls above keep their natural packing order.
-        // Order inside the group: session status → refine prompt → send.
+        // Order inside the group: assets → session status → refine prompt → send.
         const thinkingRowRight = thinkingRow.createEl('div', {
             cls: 'session-thinking-row__right',
+        });
+
+        // ── Generated-asset panel button ─────────────────────────────────
+        // Image icon + badge count. Hides when no assets have been generated
+        // in this session. Opens a popup grid of 128×128 thumbnails.
+        this.assetPanelBtn = new AssetPanelButton(
+            this.app,
+            () => this.runtime?.assetCollection.assets ?? [],
+        );
+        const { button: assetBtn, dropdown: assetDropdown } = this.assetPanelBtn.mount(thinkingRowRight);
+        this.dropdownManager.registerToggle({
+            wrapper: assetBtn.parentElement!,
+            button: assetBtn,
+            dropdown: assetDropdown,
+            onOpen: () => {
+                this.assetPanelBtn.renderPanel();
+            },
         });
 
         // ── Session status indicator ───────────────────────────────────────
@@ -1606,6 +1630,11 @@ export class SessionView extends ItemView {
         if (todos) {
             runtime.restoreTodos(todos);
         }
+
+        // Rebuild the generated-asset collection from all messages.
+        // Mirrors the pattern above: the asset button in the toolbar
+        // reads from `runtime.assetCollection.assets` on render.
+        runtime.restoreAssets(session.messages);
     }
 
     /**

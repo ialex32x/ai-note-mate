@@ -23,6 +23,7 @@ import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
 import { getLocale, tIn } from "../i18n";
 import { isAbortError } from "../utils/abortable-request";
+import type { GeneratedAsset } from "./generated-asset-collection";
 
 // ─────────────────────────────────────────────
 // Task 1: Core types & interfaces
@@ -112,6 +113,14 @@ export interface ChatMessage {
      * Contains the tool result and status (success/warning/error).
      */
     toolCallResult?: ToolCallResultInfo;
+    /**
+     * Structured asset metadata copied from {@link ToolCallResult.assets}
+     * when a tool call produced generated files (e.g. images saved to the
+     * vault). Persisted alongside the message so
+     * {@link GeneratedAssetCollection} can recover the asset list on
+     * cold-load without parsing text content.
+     */
+    toolCallAssets?: GeneratedAsset[];
     /**
      * Thinking/reasoning content from the model (if the model supports it).
      * Only present on assistant messages.
@@ -238,11 +247,17 @@ export interface ToolCallArgs {
  *   is responsible for routing each `kind` (image / audio / video / pdf)
  *   to its native part type and gracefully skipping unsupported ones.
  * - `content`: the actual result payload
+ * - `assets`: optional structured metadata about generated assets
+ *   (e.g. image files saved to the vault). Copied onto
+ *   {@link ChatMessage.toolCallAssets} so the
+ *   {@link GeneratedAssetCollection} can aggregate them without parsing
+ *   the text content.
  */
 export interface ToolCallResult {
     success: boolean;
     type: "object" | "text" | "media";
     content: unknown;
+    assets?: GeneratedAsset[];
 }
 
 /**
@@ -506,6 +521,14 @@ export interface ChatStreamConfig {
         result: string;
         isError: boolean;
     }) => void;
+
+    /**
+     * Called when a tool execution produces generated assets
+     * (e.g. images saved to the vault). Receives the structured asset
+     * metadata so the session-level {@link GeneratedAssetCollection}
+     * can update in real time without polling.
+     */
+    onAssetGenerated?: (assets: GeneratedAsset[]) => void;
 
     /**
      * Called when the entire prompt() flow completes successfully
@@ -1916,6 +1939,7 @@ export class ChatStream implements IChatAgent {
                             }
                         } else {
                             // Execute the registered tool and serialise the result
+                            let lastExecResult: ToolCallResult | undefined;
                             try {
                                 // Ask for user confirmation if required
                                 if (registered.requiresConfirmation && this._config.onConfirmToolCall) {
@@ -1946,6 +1970,7 @@ export class ChatStream implements IChatAgent {
                                             this._abortController?.signal,
                                             { toolCallId, toolCallMessage },
                                         );
+                                        lastExecResult = execResult;
                                         toolResult = ChatStream.serialiseToolResult(execResult);
                                         if (execResult.type === "media") {
                                             mediaAttachment = toMediaAttachment(execResult.content);
@@ -1958,10 +1983,19 @@ export class ChatStream implements IChatAgent {
                                         this._abortController?.signal,
                                         { toolCallId, toolCallMessage },
                                     );
+                                    lastExecResult = execResult;
                                     toolResult = ChatStream.serialiseToolResult(execResult);
                                     if (execResult.type === "media") {
                                         mediaAttachment = toMediaAttachment(execResult.content);
                                     }
+                                }
+
+                                // Copy generated-asset metadata from the tool
+                                // result onto the ChatMessage so it is persisted
+                                // and recoverable on cold-load.
+                                if (lastExecResult?.assets && lastExecResult.assets.length > 0) {
+                                    toolCallMessage.toolCallAssets = lastExecResult.assets;
+                                    this._config.onAssetGenerated?.(lastExecResult.assets);
                                 }
                             } catch (err) {
                                 if (isAbortError(err)) {

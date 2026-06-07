@@ -505,6 +505,10 @@ export const zhTW: Record<string, string> = {
 	'statusTooltip.artifactsLive': '目前記憶體中可恢復的產物條目數',
 	'statusTooltip.artifactsTombstones': '已被淘汰的條目；recall_artifact 仍可回報原因',
 
+	// ── Generated-asset panel ─────────────────────────────
+	'assetPanel.title': '生成的資源',
+	'assetPanel.empty': '當前會話尚未生成任何資源。',
+
 	// ── Suggest modal ─────────────────────────────────────
 	'suggest.placeholder': '搜尋要引用的檔案或資料夾…',
 

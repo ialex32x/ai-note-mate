@@ -159,6 +159,99 @@
     }
 }
 
+// ── Generated-asset gallery button ────────────────────────────
+.asset-panel-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+    padding: 0 4px;
+
+    &:hover {
+        opacity: 0.85;
+    }
+}
+
+.asset-panel-btn__icon {
+    display: inline-flex;
+
+    svg {
+        .icon-size(16px);
+    }
+}
+
+// ── Asset gallery popup panel ─────────────────────────────────
+.asset-panel {
+    min-width: 300px;
+    max-width: 520px;
+    padding: @spacing-md;
+    gap: @spacing-sm;
+    cursor: default;
+}
+
+.asset-panel__header {
+    display: flex;
+    align-items: baseline;
+    gap: @spacing-xs;
+    margin-bottom: @spacing-xs;
+}
+
+.asset-panel__title {
+    font-size: 0.82em;
+    font-weight: 600;
+    color: @text-primary;
+}
+
+.asset-panel__count {
+    font-size: 0.7em;
+    color: @text-secondary;
+}
+
+.asset-panel__empty {
+    font-size: 0.78em;
+    color: @text-secondary;
+    text-align: center;
+    padding: @spacing-md 0;
+}
+
+.asset-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(4, 64px);
+    gap: @spacing-xs;
+    justify-content: center;
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    padding-right: 2px;
+}
+
+.asset-panel__cell {
+    cursor: pointer;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.asset-panel__thumb {
+    width: 64px;
+    height: 64px;
+    background: @bg-secondary-alt;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.asset-panel__img {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    display: block;
+}
+
+.asset-panel__broken {
+    font-size: 2em;
+    color: @text-secondary;
+}
+
 .session-toolbar__title {
     .text-truncate();
     font-size: 0.85em;
