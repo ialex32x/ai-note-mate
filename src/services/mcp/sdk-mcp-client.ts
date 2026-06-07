@@ -127,25 +127,10 @@ async function readMCPResult(resp: Response): Promise<unknown> {
     console.debug("[mcp] response Content-Type:", contentType);
 
     if (contentType.includes("text/event-stream") && resp.body) {
-        try {
-            return await readSSEResult(resp.body);
-        } catch (err) {
-            // SSE parsing can fail for legitimate reasons (e.g. the server
-            // returned a single JSON frame without SSE framing).  Fall
-            // through to the text-backed JSON path instead of throwing.
-            const rawText = await resp.text().catch(() => "");
-            if (rawText) {
-                console.debug("[mcp] SSE path failed, trying JSON parse of raw body:", rawText.slice(0, 500));
-                try {
-                    return parseResponse(JSON.parse(rawText));
-                } catch {
-                    // Return the raw text so callTool can surface it
-                    console.warn("[mcp] SSE + JSON fallback both failed; returning raw text");
-                    return rawText;
-                }
-            }
-            throw err;
-        }
+        // SSE path.  If `readSSEResult` throws, the error already
+        // includes the last buffer content for diagnostics (see below)
+        // so we just let it propagate.
+        return readSSEResult(resp.body);
     }
 
     // Non-SSE: read raw text FIRST so we never lose the body.
