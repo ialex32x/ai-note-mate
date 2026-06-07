@@ -454,6 +454,7 @@ export class SdkMCPClient implements IMCPClient {
         this._sessionId = undefined;
         this._url = undefined;
         this._apiKey = undefined;
+        this._requestId = 0;
         this._fetch = window.fetch.bind(window);
     }
 }
