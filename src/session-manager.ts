@@ -726,9 +726,29 @@ export class SessionManager {
         return deletedCount;
     }
 
-    /** Save only the list.json file (session metadata) - public version for draft input saves */
+    /**
+     * Save only the list.json file (session metadata).
+     *
+     * Must share the same savePromise mutex with {@link saveToCache} so
+     * that concurrent writes from different code paths (draft flush,
+     * new-session creation, background runtime turn-finish) do not race
+     * on list.json.  Without this, a background turn finishing on a
+     * platform with slower I/O (e.g. mobile Capacitor) could overwrite
+     * a newly-created session with stale metadata, making the session
+     * appear to vanish and hiding the session-switcher toolbar buttons.
+     */
     async saveMetadata(): Promise<void> {
-        await this.saveListFile();
+        // Serialise with saveToCache so list.json is never written
+        // concurrently by two independent callers.
+        if (this.savePromise) {
+            await this.savePromise;
+        }
+        this.savePromise = this.saveListFile();
+        try {
+            await this.savePromise;
+        } finally {
+            this.savePromise = null;
+        }
     }
 
     /** Save only the list.json file (session metadata) */
