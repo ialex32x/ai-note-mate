@@ -618,16 +618,22 @@ export class SessionManager {
     }
 
     /**
-     * Delete a session by ID. If deleting the active session, auto-switches to another.
-     * Removes session from memory, saves list.json, and deletes the messages file.
-     * Messages file deletion failure does not affect the result.
-     * Returns the new active session ID if the deleted session was active, or null if no switch occurred.
+     * Delete a session by ID. Removes session from memory, saves list.json,
+     * and deletes the messages file. Messages file deletion failure does not
+     * affect the result.
+     *
+     * If the deleted session was the active one, its ID is cleared from the
+     * active-session slot so that the caller (typically the session navigator)
+     * can decide which session to switch to next.
+     *
+     * Returns true if the session was found and deleted, false otherwise.
      */
-    async deleteSession(id: string): Promise<string | null> {
-        if (!this.metadataMap.delete(id)) return null;
+    async deleteSession(id: string): Promise<boolean> {
+        if (!this.metadataMap.has(id)) return false;
 
         const wasActive = id === this._activeSessionId;
-        let newActiveId: string | null = null;
+
+        this.metadataMap.delete(id);
 
         // Clean up messages cache
         this.messagesCache.delete(id);
@@ -645,20 +651,11 @@ export class SessionManager {
         // Clean up generated-asset cache
         this.toolCallAssetsCache.delete(id);
 
-        // If deleted session was active, switch to another session
+        // If deleted session was active, clear the slot so the caller can
+        // decide the successor. The caller MUST re-establish a valid active
+        // session (via switchTo() or createSession()) after this call.
         if (wasActive) {
-            // Get remaining sessions sorted by updatedAt (most recent first)
-            const remaining = Array.from(this.metadataMap.values())
-                .sort((a, b) => b.updatedAt - a.updatedAt);
-
-            if (remaining.length > 0) {
-                // Switch to the most recently updated session
-                newActiveId = remaining[0]!.id;
-                this._activeSessionId = newActiveId;
-            } else {
-                // No remaining sessions, create a new empty one
-                newActiveId = this.createSession();
-            }
+            this._activeSessionId = '';
         }
 
         // Save list.json after successful memory deletion
@@ -691,7 +688,7 @@ export class SessionManager {
             console.warn('[SessionManager] Failed to delete messages file:', error);
         }
 
-        return newActiveId;
+        return true;
     }
 
     /**
@@ -716,9 +713,7 @@ export class SessionManager {
         let deletedCount = 0;
 
         for (const sessionId of sessionsToDelete) {
-            await this.deleteSession(sessionId);
-            // Check if session was successfully deleted by verifying it's no longer in metadataMap
-            if (!this.metadataMap.has(sessionId)) {
+            if (await this.deleteSession(sessionId)) {
                 deletedCount++;
             }
         }

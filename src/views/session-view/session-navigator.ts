@@ -290,8 +290,22 @@ export class SessionNavigator {
             this.deps.clearActiveDraftTimer();
         }
 
-        const newActiveId = await this.deps.sessionManager.deleteSession(sessionId);
-        if (newActiveId === undefined) {
+        // Determine successor before deletion: the dropdown list is sorted
+        // by updatedAt descending (newest first). Try the next session
+        // (older), then the previous (newer).
+        let successorId: string | null = null;
+        if (isActive) {
+            const sessions = this.deps.sessionManager.getAllSessions();
+            const deletedIndex = sessions.findIndex(s => s.id === sessionId);
+            if (deletedIndex >= 0) {
+                const next = sessions[deletedIndex + 1];
+                const prev = sessions[deletedIndex - 1];
+                successorId = next?.id ?? prev?.id ?? null;
+            }
+        }
+
+        const deleted = await this.deps.sessionManager.deleteSession(sessionId);
+        if (!deleted) {
             // Delete failed (session not found)
             return;
         }
@@ -313,9 +327,17 @@ export class SessionNavigator {
             }
         }, 200);
 
-        // If deleted session was active, switch to the new active session
-        if (isActive && newActiveId !== null) {
+        // If deleted session was active, re-establish an active session
+        if (isActive) {
             this.deps.dropdownManager.closeActive();
+
+            if (successorId !== null) {
+                await this.deps.sessionManager.switchTo(successorId);
+            } else {
+                // No remaining sessions, create a new empty one
+                this.deps.sessionManager.createSession();
+            }
+
             await this.deps.sessionManager.ensureActiveMessagesLoaded();
             await this.deps.onActiveSessionDeleted();
         }
