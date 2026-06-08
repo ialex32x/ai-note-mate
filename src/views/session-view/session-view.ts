@@ -2097,10 +2097,11 @@ export class SessionView extends ItemView {
             summarizer: createSummarizerConfig(this.plugin),
             embedding: createEmbeddingConfig(this.plugin),
             embeddingFilter: createToolFilterOptions(this.plugin),
-            onUserMessage: (msg) => {
-                this.bubbleList.append(msg);
-                this.forceScrollToBottom();
-            },
+        onUserMessage: (msg) => {
+            this.bubbleList.append(msg);
+            this.bubbleList.refreshJumpButtonsForPrevTurn(msg);
+            this.forceScrollToBottom();
+        },
         });
     }
 

@@ -324,6 +324,41 @@ export class BubbleListController {
     }
 
     /**
+     * When a new user message arrives, re-render the toolbar of messages
+     * from the previous turn. Without this, bubbles rendered before the
+     * next user message existed would never show the "jump down" button
+     * because {@link canJumpNext} is evaluated once at render time.
+     */
+    refreshJumpButtonsForPrevTurn(newUserMsg: ChatMessage): void {
+        const messages = this.deps.chat()?.messages ?? [];
+        const newIdx = messages.findIndex(m => m.id === newUserMsg.id);
+        if (newIdx < 0) return;
+
+        // Find the previous user message (the one that was the "last"
+        // before this new one arrived).
+        let prevUserIdx = -1;
+        for (let i = newIdx - 1; i >= 0; i--) {
+            if (messages[i]?.role === 'user') {
+                prevUserIdx = i;
+                break;
+            }
+        }
+        if (prevUserIdx < 0) return;
+
+        // Re-render bubbles from the previous user message up to
+        // (but not including) the new one so their toolbars pick up
+        // the now-available "next user message".
+        for (let i = prevUserIdx; i < newIdx; i++) {
+            const msg = messages[i];
+            if (!msg) continue;
+            const bubble = this.messageBubbles.get(msg.id);
+            if (bubble) {
+                this.updateContent(bubble, msg);
+            }
+        }
+    }
+
+    /**
      * Handle an aborted message: mark it, re-render its bubble, and
      * append any trailing system message.
      *
