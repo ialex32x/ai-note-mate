@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.8
+
+### Refinements
+
+- **Leaner fetch resolution** — The `resolve-fetch` utility now always uses `window.fetch` directly, dropping legacy fallback paths for a smaller, simpler bundle.
+- **Session delete flow** — Successor session selection on delete is now handled by the navigator, giving cleaner separation between session management and UI navigation.
+
+### Fixes
+
+- **Save metadata serialization** — Session save metadata is now properly serialized with `saveToCache`, preventing potential inconsistencies when session data is written to disk.
+
+---
+
 ## 1.4.7
 
 ### What's new
