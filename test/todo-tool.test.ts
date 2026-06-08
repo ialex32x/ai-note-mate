@@ -631,7 +631,7 @@ describe('SessionManager — TODO state round-trip', () => {
         return { mgr, adapter };
     }
 
-    it('migrates a v4 file (displayContent → brief) on load without rewriting', async () => {
+    it('purges a v4 session file on load and removes it from metadata', async () => {
         const sessionId = 'session-1';
         const v4File = {
             version: 4,
@@ -658,23 +658,22 @@ describe('SessionManager — TODO state round-trip', () => {
                 ],
             },
         };
-        const { mgr } = await seedColdStart(sessionId, v4File);
+        const { mgr, adapter } = await seedColdStart(sessionId, v4File);
 
         await mgr.ensureMessagesLoaded(sessionId);
-        const restored = mgr.getSessionTodos(sessionId);
-        expect(restored?.items).toHaveLength(2);
 
-        // Item A had no displayContent — `brief` synthesised from `content`.
-        expect(restored?.items[0]?.brief).toBe('Plain content only — no displayContent');
-        expect(restored?.items[0]?.content).toBe('Plain content only — no displayContent');
+        // v4 files are purged — TODO state should be undefined.
+        expect(mgr.getSessionTodos(sessionId)).toBeUndefined();
 
-        // Item B had displayContent — promoted verbatim to `brief`.
-        expect(restored?.items[1]?.brief).toBe('用户看到的中文摘要');
-        expect(restored?.items[1]?.content).toBe('Machine-side description for b');
-        expect((restored?.items[1] as unknown as { displayContent?: string }).displayContent).toBeUndefined();
+        // File should be deleted from disk.
+        expect(adapter.files.has(`sessions/${sessionId}.json`)).toBe(false);
+
+        // Metadata should be removed so the session no longer appears in lists.
+        const snapshots = mgr.getAllSessions();
+        expect(snapshots.find(s => s.id === sessionId)).toBeUndefined();
     });
 
-    it('truncates an over-long v4 content into an 80-char brief', async () => {
+    it('purges a v4 session with over-long content (no migration attempted)', async () => {
         const sessionId = 'session-1';
         const longContent = 'a'.repeat(300);
         const v4File = {
@@ -686,18 +685,16 @@ describe('SessionManager — TODO state round-trip', () => {
                 items: [{ id: 'a', content: longContent, status: 'pending', createdAt: 1, updatedAt: 1 }],
             },
         };
-        const { mgr } = await seedColdStart(sessionId, v4File);
+        const { mgr, adapter } = await seedColdStart(sessionId, v4File);
 
         await mgr.ensureMessagesLoaded(sessionId);
-        const restored = mgr.getSessionTodos(sessionId);
-        const brief = restored?.items[0]?.brief ?? '';
-        expect(brief.length).toBeLessThanOrEqual(80);
-        // Trailing ellipsis signals truncation, so the synthesised brief is
-        // recognisable as derived rather than authoritative.
-        expect(brief.endsWith('…')).toBe(true);
+
+        // v4 files are purged — no migration fallback is attempted.
+        expect(mgr.getSessionTodos(sessionId)).toBeUndefined();
+        expect(adapter.files.has(`sessions/${sessionId}.json`)).toBe(false);
     });
 
-    it('treats v1/v2/v3 files with no todos field as an empty TODO list', async () => {
+    it('purges v1/v2/v3 files on load and removes from metadata', async () => {
         const sessionId = 'session-1';
         const v2File = {
             version: 2,
@@ -705,10 +702,17 @@ describe('SessionManager — TODO state round-trip', () => {
             messages: [],
             subAgentMessages: {},
         };
-        const { mgr } = await seedColdStart(sessionId, v2File);
+        const { mgr, adapter } = await seedColdStart(sessionId, v2File);
 
         await mgr.ensureMessagesLoaded(sessionId);
+
+        // v2 files are purged — TODO state should be undefined (no cache entry).
         expect(mgr.getSessionTodos(sessionId)).toBeUndefined();
+        // File should be deleted from disk.
+        expect(adapter.files.has(`sessions/${sessionId}.json`)).toBe(false);
+        // Metadata should be removed.
+        const snapshots = mgr.getAllSessions();
+        expect(snapshots.find(s => s.id === sessionId)).toBeUndefined();
     });
 
     it('downgrades the schema version when todos are removed', async () => {
@@ -739,7 +743,7 @@ describe('SessionManager — TODO state round-trip', () => {
         let parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}.json`)!) as { version: number };
         expect(parsed.version).toBe(5);
 
-        // Second save: clear todos → falls back to v1 (no other v2/v3 fields).
+        // Second save: clear todos → falls back to v5 (minimum writable version).
         mgr.clearSessionTodos(sessionId);
         await mgr.saveSession(
             sessionId,
@@ -748,7 +752,7 @@ describe('SessionManager — TODO state round-trip', () => {
         );
         await mgr.saveToCache();
         parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}.json`)!) as { version: number; todos?: unknown };
-        expect(parsed.version).toBe(1);
+        expect(parsed.version).toBe(5);
         expect(parsed.todos).toBeUndefined();
     });
 
