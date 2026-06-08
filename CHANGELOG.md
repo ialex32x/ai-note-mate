@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.4.7
+
+### What's new
+
+- **Generated asset panel** — Session assets (images, etc.) are now collected in a dedicated panel within each session, moved to a top-level field with a redesigned layout.
+- **API retry logic** — LLM and image generation requests now automatically retry on failure, improving reliability when services are temporarily unavailable.
+
+### Refinements
+
+- **Session context usage** — The session status area now displays context usage information alongside the existing details.
+- **Leaner asset panel** — Asset thumbnails are smaller for a tidier look, and panel disposal is properly handled to avoid stale resources.
+- **Style consistency** — Extracted a shared `section-category-title` mixin for more uniform styling across settings sections.
+- **Deprecated migration removed** — Old v1-v4 session migration files have been purged, simplifying the codebase.
+
+### Fixes
+
+- **Jump buttons on new message** — Navigation jump buttons now properly refresh when a new user message is added to the session.
+- **Deleted asset notice** — The asset panel now shows a clean notice when referenced assets have been deleted.
+- **Parked auto-follow** — Follow-up suggestions now respect the parked auto-follow state, preventing unwanted scrolling during streaming.
+
+---
+
 ## 1.4.6
 
 ### Refinements
