@@ -114,14 +114,6 @@ export interface ChatMessage {
      */
     toolCallResult?: ToolCallResultInfo;
     /**
-     * Structured asset metadata copied from {@link ToolCallResult.assets}
-     * when a tool call produced generated files (e.g. images saved to the
-     * vault). Persisted alongside the message so
-     * {@link GeneratedAssetCollection} can recover the asset list on
-     * cold-load without parsing text content.
-     */
-    toolCallAssets?: GeneratedAsset[];
-    /**
      * Thinking/reasoning content from the model (if the model supports it).
      * Only present on assistant messages.
      */
@@ -1990,11 +1982,11 @@ export class ChatStream implements IChatAgent {
                                     }
                                 }
 
-                                // Copy generated-asset metadata from the tool
-                                // result onto the ChatMessage so it is persisted
-                                // and recoverable on cold-load.
+                                // Notify asset listeners so the runtime-level
+                                // GeneratedAssetCollection can aggregate them
+                                // (persisted independently by the runtime on
+                                // turn finish, not as message-level metadata).
                                 if (lastExecResult?.assets && lastExecResult.assets.length > 0) {
-                                    toolCallMessage.toolCallAssets = lastExecResult.assets;
                                     this._config.onAssetGenerated?.(lastExecResult.assets);
                                 }
                             } catch (err) {

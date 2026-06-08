@@ -7,6 +7,7 @@ import type { CheckpointStore } from '../vault';
 import type { RuntimeEvent, RuntimeListener } from './runtime-events';
 import {
     GeneratedAssetCollection,
+    type GeneratedAsset,
 } from '../generated-asset-collection';
 import {
     emptyTodoState,
@@ -427,6 +428,12 @@ export class SessionRuntime {
             }
         }
 
+        // Snapshot generated-asset collection for persistence as a
+        // top-level session field (peer to messages / agentTokenBreakdown).
+        const toolCallAssets = this.assetCollection.assets.length > 0
+            ? [...this.assetCollection.assets]
+            : undefined;
+
         await this.sessionManager.saveSession(
             this.sessionId,
             chat.messages,
@@ -436,6 +443,7 @@ export class SessionRuntime {
             chat.agentTokenBreakdown,
             this._todoState,
             quickAskTurns,
+            toolCallAssets,
         );
     }
 
@@ -697,14 +705,12 @@ export class SessionRuntime {
     }
 
     /**
-     * Rebuild the asset collection from all messages in a cold-loaded
-     * session. Called by {@link SessionView.hydrateRuntimeFromDisk}.
-     *
-     * Iterates every message and collects {@link ChatMessage.toolCallAssets}
-     * fields — no markdown parsing needed.
+     * Restore the asset collection from the persisted top-level
+     * `toolCallAssets` session field. Called by
+     * {@link SessionView.hydrateRuntimeFromDisk}.
      */
-    restoreAssets(messages: ReadonlyArray<ChatMessage>): void {
-        this.assetCollection.rebuildFromMessages(messages);
+    restoreAssets(assets: GeneratedAsset[]): void {
+        this.assetCollection.setAssets(assets);
     }
 
     /**

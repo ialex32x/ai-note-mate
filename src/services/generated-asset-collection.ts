@@ -1,8 +1,9 @@
 /**
  * A single generated asset record.
  *
- * Stored on {@link ChatMessage.toolCallAssets} (persisted) and aggregated
- * by {@link GeneratedAssetCollection} (per-session runtime view).
+ * Persisted as a top-level session field (`toolCallAssets`) alongside
+ * `messages`, `agentTokenBreakdown`, etc. — NOT nested inside individual
+ * ChatMessage objects.
  */
 export interface GeneratedAsset {
 	/** Vault-relative path of the generated file. */
@@ -21,9 +22,8 @@ export interface GeneratedAsset {
  *  1. **Real-time** — the chat factory wires `onAssetGenerated` so every
  *     successful tool call that produces assets pushes into the collection
  *     immediately.
- *  2. **Cache recovery** — on cold-load, `rebuildFromMessages` iterates the
- *     restored {@link ChatMessage} array and collects every
- *     `toolCallAssets` field.
+ *  2. **Cache recovery** — on cold-load, `setAssets` restores from the
+ *     persisted top-level `toolCallAssets` session field.
  *
  * The collection emits change notifications so the UI button can
  * show/hide/update its badge count reactively.
@@ -48,19 +48,13 @@ export class GeneratedAssetCollection {
 	}
 
 	/**
-	 * Rebuild the entire collection by iterating every message and
-	 * collecting all {@link ChatMessage.toolCallAssets} fields.
-	 *
-	 * Called once on cold-load from {@link SessionView.hydrateRuntimeFromDisk}.
+	 * Replace the entire collection with a pre-built array (cold-load
+	 * path). Called once from
+	 * {@link SessionView.hydrateRuntimeFromDisk} via
+	 * {@link SessionRuntime.restoreAssets}.
 	 */
-	rebuildFromMessages(messages: ReadonlyArray<{ toolCallAssets?: GeneratedAsset[] }>): void {
-		const collected: GeneratedAsset[] = [];
-		for (const msg of messages) {
-			if (msg.toolCallAssets && msg.toolCallAssets.length > 0) {
-				collected.push(...msg.toolCallAssets);
-			}
-		}
-		this._assets = collected;
+	setAssets(assets: GeneratedAsset[]): void {
+		this._assets = [...assets];
 		this.notify();
 	}
 

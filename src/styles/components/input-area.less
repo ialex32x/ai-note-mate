@@ -290,21 +290,65 @@
 
 
 // Profile selector
+//
+// Positioning strategy (mirrors .session-tips-popover):
+//   1. `position: static` escapes the wrapper's own relative
+//      positioning so the dropdown anchors to `.session-thinking-row`
+//      (which already has `position: relative` from
+//      `.session-thinking-row--has-tips`).
+//   2. `max-width` / `min-width` percentages are now relative to
+//      thinking-row width (= session-view content area width), so
+//      the dropdown never overflows the session view regardless of
+//      sidebar / viewport width — no JS positioning required.
+//   3. `left: 0` keeps the dropdown aligned to the row's left edge
+//      where the profile-selector button naturally sits.
 .session-profile-selector {
+    // Escape the inherited `position: relative` from `.session-selector`
+    // so the dropdown anchors to the thinking row.
+    position: static;
+
     .session-dropdown-btn {
         width: 8em;
     }
 
     .session-dropdown-menu {
-        min-width: 200px;
+        // 100% = thinking-row content width.
+        min-width: min(200px, calc(100% - 16px));
+        max-width: calc(100% - 16px);
+        // `--profile-dropdown-max-height` is set on open (see
+        // clampProfileDropdownHeight) so the menu stays inside session-view.
+        max-height: var(--profile-dropdown-max-height, none);
+        overflow-x: hidden;
+        overflow-y: auto;
+        scrollbar-gutter: stable;
+
+        // The base menu is a flex column; without this, children default to
+        // flex-shrink: 1 and get squashed to fit max-height instead of
+        // keeping their natural row height and scrolling.
+        .session-dropdown-item,
+        .session-dropdown-section-header {
+            flex-shrink: 0;
+        }
     }
 
     .session-dropdown-item {
-        .text-truncate();
+        // Override .text-truncate() so flex children can shrink
+        // independently while the item itself still clips overflow.
+        overflow: hidden;
+
+        > .session-dropdown-item__name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
 
         > .session-dropdown-item__model {
             overflow: hidden;
             text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+            flex-shrink: 1;
         }
     }
 }

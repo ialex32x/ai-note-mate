@@ -4,7 +4,7 @@ import { t } from '../../i18n';
 
 /**
  * Renders the generated-asset button (in the session toolbar) and its
- * popup panel (grid of 64×64 image thumbnails).
+ * popup panel (list of assets with thumbnail + details).
  *
  * The button hides when there are zero assets.  When clicked it opens a
  * dropdown whose content is re-rendered on every open so it stays in
@@ -32,7 +32,7 @@ export class AssetPanelButton {
 	 * toggle with {@link DropdownManager} and wire `onOpen` → `renderPanel`.
 	 */
 	mount(container: HTMLElement): { button: HTMLElement; dropdown: HTMLElement } {
-		const wrapper = container.createEl('div', { cls: 'session-toolbar__status' });
+		const wrapper = container.createEl('div', { cls: 'session-toolbar__status session-asset-wrapper' });
 
 		this.buttonEl = wrapper.createEl('div', {
 			cls: 'session-toolbar__status-main asset-panel-btn',
@@ -63,7 +63,7 @@ export class AssetPanelButton {
 	}
 
 	/**
-	 * Render the thumbnail grid into the dropdown panel.
+	 * Render the asset list into the dropdown panel.
 	 * Called on every dropdown-open so the content reflects the latest
 	 * collection state.
 	 */
@@ -84,34 +84,52 @@ export class AssetPanelButton {
 			return;
 		}
 
-		// Thumbnail grid — newest assets at bottom, scroll to end on open
-		const grid = this.panelEl.createEl('div', { cls: 'asset-panel__grid' });
+		// List layout — one row per asset, newest at bottom
+		const list = this.panelEl.createEl('div', { cls: 'asset-panel__list' });
 
 		for (const asset of assets) {
-			const cell = grid.createEl('div', { cls: 'asset-panel__cell' });
-			const thumb = cell.createEl('div', { cls: 'asset-panel__thumb' });
+			const row = list.createEl('div', { cls: 'asset-panel__row' });
 
+			// Thumbnail
+			const thumb = row.createEl('div', { cls: 'asset-panel__thumb' });
+
+			// Info area (2 lines)
+			const info = row.createEl('div', { cls: 'asset-panel__info' });
+
+			let file: TFile | null = null;
 			try {
-				const file = this.app.vault.getAbstractFileByPath(asset.path);
-				if (file instanceof TFile) {
-					const url = this.app.vault.getResourcePath(file);
-					thumb.createEl('img', {
-						cls: 'asset-panel__img',
-						attr: { src: url, loading: 'lazy' },
-					});
-				} else {
-					this.renderBrokenIcon(thumb);
+				const f = this.app.vault.getAbstractFileByPath(asset.path);
+				if (f instanceof TFile) {
+					file = f;
 				}
-			} catch {
+			} catch { /* file not found — handled below */ }
+
+			if (file) {
+				const url = this.app.vault.getResourcePath(file);
+
+				thumb.createEl('img', {
+					cls: 'asset-panel__img',
+					attr: { src: url, loading: 'lazy' },
+				});
+
+				// Line 1: file path
+				info.createEl('div', { cls: 'asset-panel__info-path', text: asset.path });
+
+				// Line 2: file size + creation time
+				const metaEl = info.createEl('div', { cls: 'asset-panel__info-meta' });
+				const stat = file.stat;
+				metaEl.setText(`${this.formatFileSize(stat.size)} · ${new Date(stat.ctime).toLocaleString()}`);
+			} else {
 				this.renderBrokenIcon(thumb);
+				info.createEl('div', { cls: 'asset-panel__info-path', text: asset.path });
+				info.createEl('div', { cls: 'asset-panel__info-meta', text: '' });
 			}
-			setTooltip(thumb, asset.path);
 
 			// Click to open the asset in Obsidian
-			cell.addEventListener('click', () => {
-				const file = this.app.vault.getAbstractFileByPath(asset.path);
-				if (file instanceof TFile) {
-					void this.app.workspace.getLeaf().openFile(file);
+			row.addEventListener('click', () => {
+				const f = this.app.vault.getAbstractFileByPath(asset.path);
+				if (f instanceof TFile) {
+					void this.app.workspace.getLeaf().openFile(f);
 				} else {
 					new Notice(t('assetPanel.deleted', { path: asset.path }));
 				}
@@ -120,7 +138,7 @@ export class AssetPanelButton {
 
 		// Scroll to bottom so the newest assets are visible
 		window.requestAnimationFrame(() => {
-			grid.scrollTop = grid.scrollHeight;
+			list.scrollTop = list.scrollHeight;
 		});
 	}
 
@@ -139,5 +157,12 @@ export class AssetPanelButton {
 			cls: 'asset-panel__broken',
 			text: '?',
 		});
+	}
+
+	/** Format file size in human-readable form. */
+	private formatFileSize(bytes: number): string {
+		if (bytes < 1024) return `${bytes} B`;
+		if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+		return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 	}
 }

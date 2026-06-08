@@ -119,6 +119,32 @@ function appendModelName(parent: HTMLElement, model: string): void {
     parent.createEl('span', { cls: 'session-dropdown-item__model', text: model });
 }
 
+/** Small gap between the dropdown top edge and the session-view top boundary. */
+const PROFILE_DROPDOWN_TOP_GAP_PX = 8;
+
+/**
+ * Cap an upward-opening toolbar dropdown so it never extends above
+ * `.session-view` (which clips overflow). The menu anchors to
+ * `.session-input-container` (see `.session-profile-selector {
+ * position: static }`), so the available height is the distance from
+ * the container's top edge to the session-view top.
+ */
+function clampProfileDropdownHeight(dropdown: HTMLElement): void {
+    const sessionView = dropdown.closest('.session-view');
+    if (!sessionView) return;
+
+    const viewRect = sessionView.getBoundingClientRect();
+    const anchor = dropdown.closest('.session-input-container');
+    const anchorTop = anchor
+        ? anchor.getBoundingClientRect().top
+        : dropdown.getBoundingClientRect().bottom;
+
+    const maxHeight = Math.floor(anchorTop - viewRect.top - PROFILE_DROPDOWN_TOP_GAP_PX);
+    if (maxHeight > 0) {
+        dropdown.setCssProps({ '--profile-dropdown-max-height': `${maxHeight}px` });
+    }
+}
+
 /**
  * Setup profile selector using DropdownManager.
  * Extracted from SessionView.setupProfileSelector.
@@ -188,7 +214,7 @@ export function createProfileSelector(
         for (const p of current.profiles) {
             const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
             const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-            item.createEl('span', { text: p.name });
+            item.createEl('span', { cls: 'session-dropdown-item__name', text: p.name });
             appendModelName(item, p.model);
             if (p.id === current.summarizerProfileId) {
                 const badge = item.createEl('span', {
@@ -238,7 +264,7 @@ export function createProfileSelector(
             for (const cfg of imageGenConfigs) {
                 const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
                 const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-                item.createEl('span', { text: cfg.name });
+                item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
                 appendModelName(item, cfg.model);
                 if (cfg.id === current.activeImageGenId) {
                     item.addClass('session-dropdown-item--active');
@@ -268,7 +294,7 @@ export function createProfileSelector(
             for (const cfg of current.embeddingConfigs) {
                 const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
                 const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-                item.createEl('span', { text: cfg.name });
+                item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
                 appendModelName(item, cfg.model);
                 if (cfg.id === current.activeEmbeddingId) {
                     item.addClass('session-dropdown-item--active');
@@ -293,6 +319,10 @@ export function createProfileSelector(
         button: profileBtnEl,
         dropdown: profileDropdownEl,
         onOpen: rebuildProfileDropdown,
+        onAfterOpen: () => clampProfileDropdownHeight(profileDropdownEl),
+        onClose: () => {
+            profileDropdownEl.setCssProps({ '--profile-dropdown-max-height': '' });
+        },
     });
 
     // Keep button text and icon in sync with active profile

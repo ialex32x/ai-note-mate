@@ -179,11 +179,24 @@
 
 // ── Asset gallery popup panel ─────────────────────────────────
 .asset-panel {
-    min-width: 300px;
-    max-width: 520px;
+    min-width: 320px;
+    max-width: 440px;
     padding: @spacing-md;
     gap: @spacing-sm;
     cursor: default;
+}
+
+// Escape the wrapper's position: relative so the dropdown
+// anchors to the nearest positioned ancestor. Sibling panels
+// (such as the session status panel) rely on the same mechanism.
+.session-asset-wrapper.session-toolbar__status {
+    position: static;
+}
+
+.session-asset-wrapper .asset-panel {
+    width: calc(100% - @spacing-md * 2);
+    max-width: 440px;
+    right: @spacing-md;
 }
 
 .asset-panel__header {
@@ -210,26 +223,38 @@
     padding: @spacing-md 0;
 }
 
-.asset-panel__grid {
-    display: grid;
-    grid-template-columns: repeat(4, 64px);
-    gap: @spacing-xs;
-    justify-content: center;
-    max-height: 320px;
+// ── Asset list (one row per asset) ────────────────────────────
+.asset-panel__list {
+    display: flex;
+    flex-direction: column;
+    gap: @spacing-sm;
+    max-height: 400px;
     overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-gutter: stable;
     padding-right: 2px;
 }
 
-.asset-panel__cell {
-    cursor: pointer;
+.asset-panel__row {
+    display: flex;
+    align-items: center;
+    gap: @spacing-md;
+    padding: @spacing-sm;
     border-radius: 4px;
-    overflow: hidden;
+    cursor: pointer;
+    transition: background @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-hover;
+    }
 }
 
 .asset-panel__thumb {
-    width: 64px;
-    height: 64px;
+    flex: 0 0 72px;
+    width: 72px;
+    height: 72px;
+    border-radius: 4px;
+    overflow: hidden;
     background: @bg-secondary-alt;
     display: flex;
     align-items: center;
@@ -237,10 +262,31 @@
 }
 
 .asset-panel__img {
-    width: 64px;
-    height: 64px;
+    width: 100%;
+    height: 100%;
     object-fit: cover;
     display: block;
+}
+
+.asset-panel__info {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    overflow: hidden;
+}
+
+.asset-panel__info-path {
+    font-size: 0.88em;
+    color: @text-primary;
+    .text-truncate();
+}
+
+.asset-panel__info-meta {
+    font-size: 0.82em;
+    color: @text-faint;
 }
 
 .asset-panel__broken {
@@ -428,7 +474,7 @@
     z-index: 20;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: start;
     background: color-mix(in srgb, var(--background-primary) 82%, transparent);
     backdrop-filter: blur(2px);
 
@@ -488,7 +534,7 @@
 .session-history-sentinel {
     flex: 0 0 auto;
     display: flex;
-    justify-content: center;
+    justify-content: start;
     padding: @spacing-sm 0 @spacing-md;
 
     &--loading .session-history-sentinel__btn {

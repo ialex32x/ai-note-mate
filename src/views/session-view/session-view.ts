@@ -961,6 +961,21 @@ export class SessionView extends ItemView {
             button: sessionStatusMainEl,
             dropdown: sessionStatusPanelEl,
             onOpen: () => {
+                // Align the dropdown panel's right edge close to the
+                // session-view right edge (with a small gap). The CSS
+                // `right: 0` anchors to the `session-toolbar__status`
+                // wrapper which sits partway across the thinking row;
+                // we push it further right by computing the distance
+                // from the status element to the session-view edge.
+                const sessionView = this.contentEl.closest('.session-view');
+                if (sessionView) {
+                    const viewRect = sessionView.getBoundingClientRect();
+                    const statusRect = sessionStatusEl.getBoundingClientRect();
+                    const gap = 4; // small visual gap from the session-view edge
+                    const rightOffset = viewRect.right - statusRect.right - gap;
+                    sessionStatusPanelEl.style.right = `-${rightOffset}px`;
+                }
+
                 // Refresh the compact toolbar indicator and context ring.
                 // Panel rendering is deferred to onAfterOpen so that
                 // DropdownManager.isActive() returns true (the guard
@@ -1634,10 +1649,14 @@ export class SessionView extends ItemView {
             runtime.restoreTodos(todos);
         }
 
-        // Rebuild the generated-asset collection from all messages.
-        // Mirrors the pattern above: the asset button in the toolbar
-        // reads from `runtime.assetCollection.assets` on render.
-        runtime.restoreAssets(session.messages);
+        // Restore the generated-asset collection from the persisted
+        // top-level session field (peer to messages / agentTokenBreakdown).
+        // The asset button in the toolbar reads from
+        // `runtime.assetCollection.assets` on render.
+        const toolCallAssets = this.sessionManager.getSessionToolCallAssets(runtime.sessionId);
+        if (toolCallAssets && toolCallAssets.length > 0) {
+            runtime.restoreAssets(toolCallAssets);
+        }
     }
 
     /**
