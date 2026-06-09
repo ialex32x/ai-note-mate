@@ -2,18 +2,28 @@ import type NoteAssistantPlugin from "../../main";
 import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
 import type { SpeechToTextConfig } from "../../settings";
+import type { ArtifactStore } from "../artifact-store";
 import { getActiveSpeechToTextConfig } from "../../settings";
 import { normalizePath, TFile, arrayBufferToBase64, type App } from "obsidian";
-import { transcribeWithQwenASR } from "../speech-to-text/qwen-asr";
+import { transcribeWithQwenASR, transcribeLargeFileWithAsyncASR } from "../speech-to-text/qwen";
 import { getMimeType } from "../../utils/mime-helper";
+import { resolveSecret } from "../../utils/secret-helper";
 import { recordIssue } from "../diagnostics/issue-tracer";
 import { isAbortError } from "../../utils/abortable-request";
 
 /**
  * Create the speech-to-text tool based on the active speech-to-text config.
  * Returns undefined if speech-to-text is not configured.
+ *
+ * @param getArtifactStore Optional getter for the per-session artifact store.
+ *   Required for large-file async transcription. If omitted (e.g. tests,
+ *   single-agent mode without a runtime), large files fall back to the
+ *   existing "file too large" error.
  */
-export function createSpeechToTextTool(plugin: NoteAssistantPlugin): RegisteredTool | undefined {
+export function createSpeechToTextTool(
+    plugin: NoteAssistantPlugin,
+    getArtifactStore?: () => ArtifactStore | null,
+): RegisteredTool | undefined {
     const sttConfig = getActiveSpeechToTextConfig(plugin.settings);
     if (!sttConfig) {
         return undefined;
@@ -22,14 +32,18 @@ export function createSpeechToTextTool(plugin: NoteAssistantPlugin): RegisteredT
     switch (sttConfig.apiScheme) {
         case 'qwen-asr':
         default:
-            return createQwenASRTool(plugin, sttConfig);
+            return createQwenASRTool(plugin, sttConfig, getArtifactStore);
     }
 }
 
 /**
  * Create Qwen ASR speech-to-text tool.
  */
-function createQwenASRTool(plugin: NoteAssistantPlugin, sttConfig: Pick<SpeechToTextConfig, 'apiKey' | 'model' | 'baseUrl'>): RegisteredTool {
+function createQwenASRTool(
+    plugin: NoteAssistantPlugin,
+    sttConfig: Pick<SpeechToTextConfig, 'apiKey' | 'model' | 'baseUrl'>,
+    getArtifactStore?: () => ArtifactStore | null,
+): RegisteredTool {
     return {
         ondemand: true,
 
@@ -41,7 +55,10 @@ function createQwenASRTool(plugin: NoteAssistantPlugin, sttConfig: Pick<SpeechTo
                     "Transcribe audio from a file in the vault to text using AI speech-to-text. " +
                     "Use this when the user asks to transcribe, convert speech to text, or get the text content " +
                     "from an audio file (mp3, wav, m4a, ogg, flac, webm). " +
-                    "Returns the transcribed text content.",
+                    "Returns the transcribed text content. " +
+                    "For large files, the transcription runs asynchronously and the result is saved " +
+                    "in the artifact store — use recall_artifact to retrieve it if the tool reports " +
+                    "the task is still running.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -78,29 +95,81 @@ function createQwenASRTool(plugin: NoteAssistantPlugin, sttConfig: Pick<SpeechTo
 
             try {
                 // Read the audio file from the vault
-                const { dataUri } = await readAudioFileAsDataUri(plugin.app, audioFilePath);
+                const readResult = await readAudioFileForTranscription(plugin.app, audioFilePath);
 
-                const result = await transcribeWithQwenASR(plugin, sttConfig, {
-                    audioDataUri: dataUri,
-                    stream: false,
-                    enableItn,
-                    language,
-                    signal,
-                });
+                // ── Small file: inline transcription via compatible-mode API ──
+                if (readResult.type === "dataUri") {
+                    const result = await transcribeWithQwenASR(plugin, sttConfig, {
+                        audioDataUri: readResult.dataUri,
+                        stream: false,
+                        enableItn,
+                        language,
+                        signal,
+                    });
 
-                if (!result.success) {
+                    if (!result.success) {
+                        return {
+                            success: false,
+                            type: "text",
+                            content: result.error || "Speech-to-text transcription failed.",
+                        };
+                    }
+
+                    const text = result.text || "";
                     return {
-                        success: false,
+                        success: true,
                         type: "text",
-                        content: result.error || "Speech-to-text transcription failed.",
+                        content: text,
                     };
                 }
 
-                const text = result.text || "";
+                // ── Large file: async transcription via OSS upload + task polling ──
+                const artifactStore = getArtifactStore?.();
+                if (!artifactStore) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `Audio file is too large for inline transcription (${(readResult.fileData.byteLength / 1024 / 1024).toFixed(1)} MB). ` +
+                            `Async transcription requires an artifact store, which is not available in this session mode.`,
+                    };
+                }
+
+                const apiKey = resolveSecret(plugin.app, sttConfig.apiKey);
+                if (!apiKey) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: "Qwen ASR API key is not configured.",
+                    };
+                }
+
+                // Derive the DashScope root URL from the configured baseUrl.
+                const dashscopeRootUrl = extractDashScopeRootUrl(sttConfig.baseUrl);
+
+                const asyncResult = await transcribeLargeFileWithAsyncASR({
+                    apiKey,
+                    dashscopeRootUrl,
+                    model: sttConfig.model || "qwen3-asr-flash",
+                    fileName: readResult.fileName,
+                    fileData: readResult.fileData,
+                    language,
+                    signal,
+                    artifactStore,
+                    vaultPath: audioFilePath,
+                });
+
+                if (!asyncResult.success) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: asyncResult.error || "Speech-to-text transcription failed.",
+                    };
+                }
+
                 return {
                     success: true,
                     type: "text",
-                    content: text,
+                    content: asyncResult.text || "",
                 };
             } catch (err) {
                 return handleSTTError(err);
@@ -110,12 +179,28 @@ function createQwenASRTool(plugin: NoteAssistantPlugin, sttConfig: Pick<SpeechTo
 }
 
 /**
- * Read an audio file from the vault and return it as a data URI.
+ * Result of reading an audio file for transcription.
  */
-async function readAudioFileAsDataUri(
+type AudioFileReadResult =
+    | { type: "dataUri"; dataUri: string; mimeType: string }
+    | { type: "binary"; fileName: string; fileData: ArrayBuffer };
+
+/**
+ * Max file size for inline (base64 data URI) transcription.
+ * Files larger than this are routed to the async OSS-upload path.
+ */
+const MAX_INLINE_BYTES = 7_864_320; // 7.5 MB
+
+/**
+ * Read an audio file from the vault.
+ *
+ * - Files ≤ 7.5 MB: return as a base64 data URI (for inline compatible-mode API).
+ * - Files > 7.5 MB: return raw binary (for async OSS-upload API).
+ */
+async function readAudioFileForTranscription(
     app: App,
     rawPath: string,
-): Promise<{ dataUri: string; mimeType: string }> {
+): Promise<AudioFileReadResult> {
     const normalizedPath = normalizePath(rawPath);
     const file = app.vault.getAbstractFileByPath(normalizedPath);
     if (!file || !(file instanceof TFile)) {
@@ -123,17 +208,6 @@ async function readAudioFileAsDataUri(
     }
 
     const ext = file.extension.toLowerCase();
-
-    // Temp file-size gate: base64 inlining is only practical up to ~7.5 MB.
-    // Larger recordings will be handled by an async task system (TBD)
-    // that processes the file first, then feeds a URL instead of a data URI.
-    const MAX_INLINE_BYTES = 7_864_320; // 7.5 MB
-    if (file.stat.size > MAX_INLINE_BYTES) {
-        throw new Error(
-            `Audio file is too large for transcription (${(file.stat.size / 1024 / 1024).toFixed(1)} MB > ${(MAX_INLINE_BYTES / 1024 / 1024).toFixed(1)} MB). ` +
-            `Large recordings will be supported via an async task system in a future update.`,
-        );
-    }
 
     // Supported audio formats for ASR
     const supportedExtensions = ["mp3", "wav", "m4a", "ogg", "flac", "webm", "aac", "opus", "wma"];
@@ -143,7 +217,6 @@ async function readAudioFileAsDataUri(
         );
     }
 
-    const mimeType = getMimeType(ext, "audio/mpeg");
     let arrayBuffer: ArrayBuffer;
     try {
         arrayBuffer = await app.vault.readBinary(file);
@@ -152,9 +225,45 @@ async function readAudioFileAsDataUri(
         throw new Error(`Failed to read audio file "${rawPath}": ${msg}`);
     }
 
+    // Large file: return raw binary for async OSS upload
+    if (file.stat.size > MAX_INLINE_BYTES) {
+        return {
+            type: "binary",
+            fileName: file.name,
+            fileData: arrayBuffer,
+        };
+    }
+
+    // Small file: encode as data URI for inline API
+    const mimeType = getMimeType(ext, "audio/mpeg");
     const base64 = arrayBufferToBase64(arrayBuffer);
     const dataUri = `data:${mimeType};base64,${base64}`;
-    return { dataUri, mimeType };
+    return { type: "dataUri", dataUri, mimeType };
+}
+
+/**
+ * Extract the DashScope root URL (origin) from the configured baseUrl.
+ *
+ * @example
+ *   "https://dashscope.aliyuncs.com/compatible-mode/v1"
+ *   → "https://dashscope.aliyuncs.com"
+ *
+ * @example
+ *   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+ *   → "https://dashscope-intl.aliyuncs.com"
+ */
+function extractDashScopeRootUrl(baseUrl: string | undefined): string {
+    if (!baseUrl) {
+        return "https://dashscope.aliyuncs.com";
+    }
+    try {
+        const url = new URL(baseUrl);
+        return url.origin;
+    } catch {
+        // Fallback: strip path segments after host
+        const match = baseUrl.match(/^(https?:\/\/[^/]+)/);
+        return match?.[1] ?? "https://dashscope.aliyuncs.com";
+    }
 }
 
 /**

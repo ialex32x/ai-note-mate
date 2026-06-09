@@ -86,6 +86,7 @@ export function createSessionRuntime(
         generationMatches: () => true,
         getDynamicTools: () => buildDynamicTools(plugin, {
             hasContextCompressed: runtime.hasContextCompressed,
+            getArtifactStore: () => runtime.artifactStore,
         }),
         // Surface the runtime's per-session artifact store to the chat
         // factory so the main agent's `recall_artifact` tool can be

@@ -1,8 +1,8 @@
-import type NoteAssistantPlugin from "../../main";
-import type { SpeechToTextConfig } from "../../settings";
-import type { SpeechToTextResult } from "./types";
-import { resolveSecret } from "../../utils/secret-helper";
-import { fetchWithRetry } from "../../utils/retry-helper";
+import type NoteAssistantPlugin from "../../../main";
+import type { SpeechToTextConfig } from "../../../settings";
+import type { SpeechToTextResult } from "../types";
+import { resolveSecret } from "../../../utils/secret-helper";
+import { fetchWithRetry } from "../../../utils/retry-helper";
 
 const retryLogger = (ctx: string) =>
     (err: unknown, n: number) => console.warn(`[QwenASR] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);

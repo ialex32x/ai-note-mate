@@ -1,2 +1,3 @@
 export * from "./types";
-export { transcribeWithQwenASR } from "./qwen-asr";
+export { transcribeWithQwenASR, transcribeLargeFileWithAsyncASR } from "./qwen";
+export type { QwenASRParams, LargeFileASRParams, LargeFileASRResult } from "./qwen";

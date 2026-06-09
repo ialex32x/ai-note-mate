@@ -522,6 +522,7 @@ export function buildDynamicTools(
     plugin: NoteAssistantPlugin,
     opts: {
         hasContextCompressed: boolean;
+        getArtifactStore?: () => ArtifactStore | null;
     },
 ): ReturnType<typeof createBuiltinTools> {
     const tools: ReturnType<typeof createBuiltinTools> = [];
@@ -529,7 +530,7 @@ export function buildDynamicTools(
     const imageTool = createImageTool(plugin);
     if (imageTool) tools.push(imageTool);
 
-    const sttTool = createSpeechToTextTool(plugin);
+    const sttTool = createSpeechToTextTool(plugin, opts.getArtifactStore);
     if (sttTool) tools.push(sttTool);
 
     if (plugin.settings.memoryEnabled) {

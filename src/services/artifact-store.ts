@@ -258,6 +258,53 @@ export class ArtifactStore {
     }
 
     /**
+     * Replace the value of an existing live entry in-place.
+     *
+     * Unlike {@link put}, this does NOT generate a new key — it
+     * overwrites the value at `key`, preserving the same artifact
+     * identity. This allows a two-phase write pattern:
+     *   1. `put({ status: "RUNNING" })`  → key: "abc"
+     *   2. `replace("abc", { status: "SUCCEEDED", text: "..." })`
+     * where callers observing "abc" after step 2 see the final result.
+     *
+     * Semantics:
+     *  - The entry MUST already exist in `live`. If it doesn't, this
+     *    is a no-op (returns `false`) — the caller should have called
+     *    {@link put} first.
+     *  - `liveBytes` is adjusted: `old.size` is subtracted, `size` is
+     *    added. NO per-entry or total-byte cap check is performed
+     *    because the entry already had a slot. If the replacement is
+     *    dramatically larger it may push `liveBytes` over the cap, but
+     *    the next `put` call's LRU sweep will correct this — and for
+     *    the intended use case (RUNNING → SUCCEEDED with similar-sized
+     *    payloads) this is a non-issue.
+     *  - `lastAccess` is refreshed so the updated entry moves to the
+     *    LRU tail.
+     *  - In persistence mode the on-disk file is overwritten
+     *    fire-and-forget.
+     *
+     * @returns `true` if the entry was found and replaced, `false` if
+     *   `key` is not currently live.
+     */
+    replace(key: string, value: unknown, size: number): boolean {
+        const existing = this.live.get(key);
+        if (existing === undefined) return false;
+
+        this.liveBytes = this.liveBytes - existing.size + size;
+
+        // Re-insert to move to LRU tail (same pattern as get()'s touch).
+        this.live.delete(key);
+        this.live.set(key, { value, size, lastAccess: this.now() });
+
+        // Fire-and-forget: overwrite the on-disk file if persisted.
+        if (this.adapter && this.artifactsDir) {
+            void this.persistToFile(key, value, size);
+        }
+
+        return true;
+    }
+
+    /**
      * Look up `key`. Three outcomes:
      *   - Live hit: returns `{ found: true, value, size }`. Refreshes
      *     `lastAccess` (this is how LRU stays accurate).
