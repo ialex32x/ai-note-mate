@@ -470,7 +470,7 @@ export function createChatAgent(
         // through a getter avoids capturing the wrong instance in any
         // future refactor that introduces store rebuilds.
         //
-        // Sub-agents do NOT receive this tool (plan §1.4): they upload
+        // Sub-agents do NOT receive this tool (plan §1.4): they deliver
         // structured data through their own handoff store; the main
         // agent reads via the envelope and recalls via this tool.
         if (callbacks.getArtifactStore) {

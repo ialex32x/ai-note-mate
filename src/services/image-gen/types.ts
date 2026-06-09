@@ -26,6 +26,6 @@ export interface ReferenceImage {
     base64: string;
     /** MIME type inferred from the file extension. */
     mimeType: string;
-    /** File name with extension, useful for constructing multipart uploads. */
+    /** File name with extension, useful for constructing multipart requests. */
     fileName: string;
 }

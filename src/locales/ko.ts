@@ -334,18 +334,6 @@ export const ko: Record<string, string> = {
 	'mcp.regenerateSlugWarning': '이전 도구 이름을 참조하는 모든 Skill은 업데이트할 때까지 작동을 멈춥니다.',
 	'mcp.regenerateSlugConfirm': '재생성',
 
-	// ── Upload ─────────────────────────────────────────────
-	'settings.uploadConfig': '활성 업로드 설정',
-	'settings.uploadConfigDesc': '저장된 업로드 설정을 선택하세요.',
-	'settings.addUploadConfig': '설정 추가',
-	'settings.uploadName': '설정 이름',
-	'settings.uploadNamePlaceholder': '이 설정의 이름을 입력하세요',
-	'settings.uploadProvider': '공급자',
-	'settings.uploadProviderDesc': '업로드 공급자 유형을 선택하세요.',
-	'settings.uploadProviderBailianOss': 'Bailian OSS',
-	'settings.uploadApiKeyDesc': '업로드 공급자의 API 키.',
-	'settings.deleteUploadConfigDesc': '이 업로드 설정을 제거합니다.',
-
 	// ── Skills ─────────────────────────────────────────────
 	'settings.skills': 'Skills',
 	'settings.skillsDesc': '스킬 정의를 검색할 디렉토리를 설정합니다. AI가 이 디렉토리에서 스킬을 로드합니다.',

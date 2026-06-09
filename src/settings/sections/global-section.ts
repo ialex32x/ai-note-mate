@@ -9,7 +9,6 @@ import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
-	markSettingExperimental,
 	markSettingRequiresSessionRestart,
 } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
@@ -61,7 +60,6 @@ export class GlobalSettingsSection implements SettingsSection {
 		this.renderActiveEmbeddingSelector(container);
 		this.renderActiveImageGenSelector(container);
 		this.renderActiveSpeechToTextSelector(container);
-		this.renderActiveUploadSelector(container);
 
 		// Reset usage tips (action-only row, not a real config value).
 		// Clearing `knownTipIds` makes every previously-dismissed/run tip
@@ -423,36 +421,6 @@ export class GlobalSettingsSection implements SettingsSection {
 				});
 			});
 		this.addJumpToSectionButton(setting, SPEECH_TO_TEXT_SECTION_ID);
-	}
-
-	private renderActiveUploadSelector(container: HTMLElement): void {
-		const { plugin, refreshAll } = this.ctx;
-		const uploadConfigs = plugin.settings.uploadConfigs;
-
-		const setting = new Setting(container)
-			.setName(t('settings.uploadConfig'))
-			.setDesc(t('settings.uploadConfigDesc'))
-			.addDropdown((dropdown: DropdownComponent) => {
-				for (const c of uploadConfigs) {
-					dropdown.addOption(c.id, c.name || 'Unnamed');
-				}
-				dropdown.setValue(plugin.settings.activeUploadId);
-				dropdown.onChange(async (value: string) => {
-					plugin.settings.activeUploadId = value;
-					await plugin.saveSettings();
-					refreshAll();
-				});
-			});
-
-		// Mark as experimental (always shown).
-		markSettingExperimental(setting);
-
-		// Advanced: show badge when advanced settings are visible, hide otherwise.
-		if (isAdvancedSettingsVisible()) {
-			markSettingAdvanced(setting);
-		} else {
-			setting.settingEl.addClass('oap-setting--advanced-collapsed');
-		}
 	}
 }
 

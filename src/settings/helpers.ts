@@ -8,7 +8,6 @@ import type {
 	NoteAssistantPluginSettings,
 	SpeechToTextConfig,
 	TextGenConfig,
-	UploadConfig,
 } from "./types";
 
 /**
@@ -116,15 +115,6 @@ export function isActiveSpeechToTextConfigured(
 	if ((config.model?.trim() ?? '').length === 0) return false;
 	if ((config.baseUrl?.trim() ?? '').length === 0) return false;
 	return resolveSecret(app, config.apiKey).trim().length > 0;
-}
-
-/** Helper: get the currently active upload config from settings (may be null) */
-export function getActiveUploadConfig(settings: NoteAssistantPluginSettings): UploadConfig | null {
-	if (settings.uploadConfigs.length === 0) return null;
-	const config = settings.uploadConfigs.find(c => c.id === settings.activeUploadId);
-	if (config) return config;
-	// Fallback to the first config
-	return settings.uploadConfigs[0]!;
 }
 
 /**

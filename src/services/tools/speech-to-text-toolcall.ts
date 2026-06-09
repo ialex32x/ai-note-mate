@@ -125,13 +125,13 @@ async function readAudioFileAsDataUri(
     const ext = file.extension.toLowerCase();
 
     // Temp file-size gate: base64 inlining is only practical up to ~7.5 MB.
-    // Larger recordings will be handled by an async upload task system (TBD)
-    // that uploads the file first, then feeds a URL instead of a data URI.
+    // Larger recordings will be handled by an async task system (TBD)
+    // that processes the file first, then feeds a URL instead of a data URI.
     const MAX_INLINE_BYTES = 7_864_320; // 7.5 MB
     if (file.stat.size > MAX_INLINE_BYTES) {
         throw new Error(
             `Audio file is too large for transcription (${(file.stat.size / 1024 / 1024).toFixed(1)} MB > ${(MAX_INLINE_BYTES / 1024 / 1024).toFixed(1)} MB). ` +
-            `Large recordings will be supported via an async upload task system in a future update.`,
+            `Large recordings will be supported via an async task system in a future update.`,
         );
     }
 

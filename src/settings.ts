@@ -9,7 +9,6 @@ export {
 	createDefaultImageGenConfig,
 	createDefaultSpeechToTextConfig,
 	createDefaultProfile,
-	createDefaultUploadConfig,
 } from "./settings/defaults";
 export {
 	getActiveEmbeddingConfig,
@@ -18,7 +17,6 @@ export {
 	getActiveProfile,
 	getSummarizerProfile,
 	getInsightsProfile,
-	getActiveUploadConfig,
 	isActiveTextGenConfigured as isActiveProfileConfigured,
 	isActiveImageGenConfigured,
 	isActiveSpeechToTextConfigured,

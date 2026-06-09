@@ -6,13 +6,10 @@ import { copyToClipboard } from "../../utils/clipboard";
 import { RegenerateSlugConfirmModal } from "../../modals/regenerate-slug-confirm-modal";
 import { ALL_TOOL_CAPABILITIES, type ToolCapability } from "../../services/llm-provider";
 import {
-	createDefaultUploadConfig,
 	DEFAULT_TOOL_FILTER_TOP_K,
 	DEFAULT_SUB_AGENT_FILTER_TOP_K,
 } from "../defaults";
-import type { UploadConfig, UploadProviderType } from "../types";
 import {
-	createApiKeyField,
 	createDropdownField,
 	createSettingsGroupHeading,
 	createTabBar,
@@ -108,9 +105,6 @@ export class ToolsSettingsSection implements SettingsSection {
 	private editorToolsSignature: string | null = null;
 	/** Coalesce rapid onChange emissions into a single update pass. */
 	private updateScheduled = false;
-
-	// ── Upload state ──
-	private editingUploadId: string | null = null;
 
 	constructor(private readonly ctx: SectionContext) {}
 
@@ -308,137 +302,6 @@ export class ToolsSettingsSection implements SettingsSection {
 	}
 
 	// ─────────────────────────────────────────────────────────────────────
-	// Upload config
-	// ─────────────────────────────────────────────────────────────────────
-
-	private renderUploadConfig(container: HTMLElement): void {
-		const { plugin, refreshSection } = this.ctx;
-		const uploadConfigs = plugin.settings.uploadConfigs;
-
-		createSettingsGroupHeading(container, {
-			name: t('settings.uploadConfig'),
-		});
-
-		// ── Upload tab bar (always visible, even with 0 configs) ──
-		const editingId = this.getEditingUploadId();
-		const editingUpload = uploadConfigs.length > 0
-			? (uploadConfigs.find(c => c.id === editingId) || uploadConfigs[0]!)
-			: null;
-		if (editingUpload) {
-			this.editingUploadId = editingUpload.id;
-		}
-
-		const tabBarResult = createTabBar({
-			container,
-			items: uploadConfigs.map(c => ({
-				id: c.id,
-				name: c.name,
-				tooltip: c.name || 'Unnamed',
-			})),
-			activeId: plugin.settings.activeUploadId,
-			editingId: editingUpload?.id ?? '',
-			onTabClick: (id) => {
-				this.editingUploadId = id;
-				refreshSection(this);
-			},
-			activeDotTooltip: t('settings.uploadConfig'),
-			extraClass: 'oap-upload-tabs',
-			onAdd: async () => {
-				const newConfig = createDefaultUploadConfig();
-				newConfig.name = `Upload ${uploadConfigs.length + 1}`;
-				uploadConfigs.push(newConfig);
-				plugin.settings.activeUploadId = newConfig.id;
-				this.editingUploadId = newConfig.id;
-				await plugin.saveSettings();
-				this.ctx.onProfilesChanged?.();
-				refreshSection(this);
-			},
-			addTooltip: t('settings.addUploadConfig'),
-			onDelete: editingUpload ? async () => {
-				if (uploadConfigs.length <= 1) return;
-				const idx = uploadConfigs.findIndex(c => c.id === editingUpload.id);
-				uploadConfigs.splice(idx, 1);
-				if (plugin.settings.activeUploadId === editingUpload.id) {
-					plugin.settings.activeUploadId = uploadConfigs[0]!.id;
-				}
-				this.editingUploadId = uploadConfigs[0]!.id;
-				await plugin.saveSettings();
-				this.ctx.onProfilesChanged?.();
-				refreshSection(this);
-			} : undefined,
-			deleteTooltip: t('settings.deleteUploadConfigDesc'),
-			disableDelete: !editingUpload || uploadConfigs.length <= 1,
-		});
-
-		// Editor (only when a config exists)
-		if (editingUpload) {
-			this.renderUploadEditor(
-				container,
-				editingUpload,
-				tabBarResult.refreshTabLabel,
-			);
-		}
-	}
-
-	private getEditingUploadId(): string {
-		const { plugin } = this.ctx;
-		if (this.editingUploadId) {
-			const exists = plugin.settings.uploadConfigs.some(c => c.id === this.editingUploadId);
-			if (exists) return this.editingUploadId;
-		}
-		return plugin.settings.activeUploadId
-			|| plugin.settings.uploadConfigs[0]?.id
-			|| '';
-	}
-
-	private renderUploadEditor(
-		container: HTMLElement,
-		config: UploadConfig,
-		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
-	): void {
-		const { app, plugin } = this.ctx;
-
-		createTextField({
-			container,
-			name: t('settings.uploadName'),
-			placeholder: t('settings.uploadNamePlaceholder'),
-			value: config.name,
-			onChange: async (value) => {
-				config.name = value || 'Unnamed';
-				await plugin.saveSettings();
-				refreshTabLabel(config.id, config.name, config.name);
-				this.ctx.onProfilesChanged?.();
-			},
-		});
-
-		createDropdownField({
-			container,
-			name: t('settings.uploadProvider'),
-			desc: t('settings.uploadProviderDesc'),
-			options: {
-				'bailian-oss': t('settings.uploadProviderBailianOss'),
-			},
-			value: config.provider,
-			onChange: async (value) => {
-				config.provider = value as UploadProviderType;
-				await plugin.saveSettings();
-			},
-		});
-
-		createApiKeyField({
-			container,
-			app,
-			name: t('common.apiKey'),
-			desc: t('settings.uploadApiKeyDesc'),
-			value: config.apiKey,
-			onChange: async (value) => {
-				config.apiKey = value;
-				await plugin.saveSettings();
-			},
-		});
-	}
-
-	// ─────────────────────────────────────────────────────────────────────
 	// Main render
 	// ─────────────────────────────────────────────────────────────────────
 
@@ -586,9 +449,6 @@ export class ToolsSettingsSection implements SettingsSection {
 		} else {
 			this.renderEditor(container, editingServer, tabBarResult.refreshTabLabel);
 		}
-
-		// ── Upload ──
-		this.renderUploadConfig(container);
 
 		// Subscribe to MCP state changes.
 		if (!this.onMcpStateChanged) {

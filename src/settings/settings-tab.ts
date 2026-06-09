@@ -169,7 +169,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 	 * Rebuild all config-related dropdowns in the Global section in-place.
 	 *
 	 * Handles every {@code <select>} in the Global section body whose
-	 * options map to profile / embedding / image-gen / upload config IDs.
+	 * options map to profile / embedding / image-gen / speech-to-text config IDs.
 	 * Preserves the currently-selected value when it still exists;
 	 * otherwise falls back to the first item of that list.
 	 *
@@ -190,7 +190,6 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		const embeddingIds = new Set(settings.embeddingConfigs.map(c => c.id));
 		const imageGenIds = new Set(settings.imageGenConfigs.map(c => c.id));
 		const sttIds = new Set(settings.speechToTextConfigs.map(c => c.id));
-		const uploadIds = new Set(settings.uploadConfigs.map(c => c.id));
 
 		const selects = body.querySelectorAll<HTMLSelectElement>('select');
 		for (const select of Array.from(selects)) {
@@ -215,9 +214,6 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 					c => c.name || 'Unnamed');
 			} else if (sttIds.has(firstVal)) {
 				this.rebuildSelect(select, settings.speechToTextConfigs, savedValue, sttIds,
-					c => c.name || 'Unnamed');
-			} else if (uploadIds.has(firstVal)) {
-				this.rebuildSelect(select, settings.uploadConfigs, savedValue, uploadIds,
 					c => c.name || 'Unnamed');
 			}
 		}

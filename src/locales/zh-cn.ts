@@ -334,18 +334,6 @@ export const zhCN: Record<string, string> = {
 	'mcp.regenerateSlugWarning': '所有引用旧工具名称的 Skill 都将失效，直到你更新它们。',
 	'mcp.regenerateSlugConfirm': '重新生成',
 
-	// ── Upload ─────────────────────────────────────────────
-	'settings.uploadConfig': '当前上传配置',
-	'settings.uploadConfigDesc': '选择已保存的上传配置。',
-	'settings.addUploadConfig': '添加配置',
-	'settings.uploadName': '配置名称',
-	'settings.uploadNamePlaceholder': '为此配置输入名称',
-	'settings.uploadProvider': '提供商',
-	'settings.uploadProviderDesc': '选择上传提供商类型。',
-	'settings.uploadProviderBailianOss': '百炼 OSS',
-	'settings.uploadApiKeyDesc': '上传提供商的 API 密钥。',
-	'settings.deleteUploadConfigDesc': '移除此上传配置。',
-
 	// ── Skills ─────────────────────────────────────────────
 	'settings.skills': 'Skills',
 	'settings.skillsDesc': '配置 Skills 搜索目录。AI 将从这些目录中加载技能定义。',

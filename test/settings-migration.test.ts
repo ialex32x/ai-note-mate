@@ -12,7 +12,6 @@ function cloneDefaultSettings(): NoteAssistantPluginSettings {
         allowedCapabilities: [...DEFAULT_SETTINGS.allowedCapabilities],
         imageGenConfigs: DEFAULT_SETTINGS.imageGenConfigs.map(config => ({ ...config })),
         mcpServers: DEFAULT_SETTINGS.mcpServers.map(config => ({ ...config })),
-        uploadConfigs: DEFAULT_SETTINGS.uploadConfigs.map(config => ({ ...config })),
         skillSearchPaths: [...DEFAULT_SETTINGS.skillSearchPaths],
         embeddingConfigs: DEFAULT_SETTINGS.embeddingConfigs.map(config => ({ ...config })),
         speechToTextConfigs: DEFAULT_SETTINGS.speechToTextConfigs.map(config => ({ ...config })),

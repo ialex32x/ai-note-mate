@@ -334,18 +334,6 @@ export const zhTW: Record<string, string> = {
 	'mcp.regenerateSlugWarning': '所有引用舊工具名稱的 Skill 都將失效，直到你更新它們。',
 	'mcp.regenerateSlugConfirm': '重新生成',
 
-	// ── Upload ─────────────────────────────────────────────
-	'settings.uploadConfig': '目前上傳配置',
-	'settings.uploadConfigDesc': '選擇已儲存的上傳配置。',
-	'settings.addUploadConfig': '新增配置',
-	'settings.uploadName': '配置名稱',
-	'settings.uploadNamePlaceholder': '為此配置輸入名稱',
-	'settings.uploadProvider': '提供者',
-	'settings.uploadProviderDesc': '選擇上傳提供者類型。',
-	'settings.uploadProviderBailianOss': '百煉 OSS',
-	'settings.uploadApiKeyDesc': '上傳提供者的 API 金鑰。',
-	'settings.deleteUploadConfigDesc': '移除此上傳配置。',
-
 	// ── Skills ─────────────────────────────────────────────
 	'settings.skills': 'Skills',
 	'settings.skillsDesc': '配置 Skills 搜尋目錄。AI 將從這些目錄中載入技能定義。',
