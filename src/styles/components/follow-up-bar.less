@@ -10,6 +10,9 @@
     margin: @spacing-sm 0 @spacing-md;
     padding: @spacing-sm @spacing-md;
     animation: session-followup-fade-in @duration-slow ease-out;
+    // Force fixed position in the flex-column parent so the follow-up bar
+    // always renders after insights, regardless of async completion order.
+    order: 2;
 }
 
 .session-followup-bar__title {

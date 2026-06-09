@@ -17,6 +17,9 @@
     margin: @spacing-sm 0 @spacing-md;
     padding: @spacing-sm @spacing-md;
     animation: session-insight-card-fade-in @duration-slow ease-out;
+    // Force fixed position in the flex-column parent so insights always
+    // render before the follow-up bar, regardless of async completion order.
+    order: 1;
 
     &.is-error {
         opacity: 0.85;

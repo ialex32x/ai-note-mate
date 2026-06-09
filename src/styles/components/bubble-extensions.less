@@ -159,6 +159,9 @@
     color: @text-faint;
     font-size: 1.4em;
     line-height: 1;
+    // Ensure the streaming loader always appears after all tail elements
+    // (insights and follow-up bar) in the flex-column layout.
+    order: 10;
 }
 
 .session-streaming-loader--hidden {
