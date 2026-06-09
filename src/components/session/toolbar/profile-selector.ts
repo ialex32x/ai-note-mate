@@ -3,7 +3,7 @@ import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
 import { getActiveProfile } from '../../../settings';
 import { openPluginSettings } from '../../../utils/open-plugin-settings';
-import { TEXT_GEN_SECTION_ID, IMAGE_GEN_SECTION_ID, EMBEDDING_SECTION_ID } from '../../../settings/section-ids';
+import { TEXT_GEN_SECTION_ID, IMAGE_GEN_SECTION_ID, EMBEDDING_SECTION_ID, SPEECH_TO_TEXT_SECTION_ID } from '../../../settings/section-ids';
 import { getModelIconDef } from '../../../utils/model-icons';
 import type { ModelIconDef, SvgDefElement } from '../../../utils/model-icons';
 import type NoteAssistantPlugin from 'main';
@@ -272,6 +272,36 @@ export function createProfileSelector(
                 }
                 item.addEventListener('click', () => {
                     plugin.settings.activeImageGenId = cfg.id;
+                    void plugin.saveSettings();
+                    DropdownManager.updateActiveState(
+                        profileDropdownEl.querySelectorAll('.session-dropdown-item'),
+                        item,
+                        'session-dropdown-item'
+                    );
+                    dropdownManager.closeActive();
+                });
+            }
+        }
+
+        // Speech-to-Text Section
+        if (current.speechToTextConfigs.length > 0) {
+            const sttHeader = profileDropdownEl.createEl('div', {
+                cls: 'session-dropdown-section-header',
+            });
+            sttHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.speechToTextSection') });
+            appendSectionSettingsAction(sttHeader, plugin, dropdownManager, SPEECH_TO_TEXT_SECTION_ID);
+
+            for (const cfg of current.speechToTextConfigs) {
+                const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
+                const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
+                item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
+                appendModelName(item, cfg.model);
+                if (cfg.id === current.activeSpeechToTextId) {
+                    item.addClass('session-dropdown-item--active');
+                    setIcon(checkIcon, 'check');
+                }
+                item.addEventListener('click', () => {
+                    plugin.settings.activeSpeechToTextId = cfg.id;
                     void plugin.saveSettings();
                     DropdownManager.updateActiveState(
                         profileDropdownEl.querySelectorAll('.session-dropdown-item'),

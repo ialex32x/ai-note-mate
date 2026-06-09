@@ -4,6 +4,8 @@ import type { ModalityCapability, ThinkingLevel, ToolCapability } from "../servi
 
 export const DefaultGeminiImageModel = "gemini-3-pro-image-preview";
 
+export const DefaultQwenASRModel = "qwen3-asr-flash";
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider Profile
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +120,29 @@ export interface EmbeddingConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Speech-to-Text
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type SpeechToTextApiScheme = 'qwen-asr';
+
+export interface SpeechToTextConfig {
+	/** Unique ID (auto-generated) */
+	id: string;
+	/** Display name for this config */
+	name: string;
+	/** API scheme to distinguish which API to use */
+	apiScheme: SpeechToTextApiScheme;
+
+	// ── Common fields ──────────────────────────────────────────────────────
+	/** API key for the selected provider */
+	apiKey: string;
+	/** Model to use for speech-to-text */
+	model: string;
+	/** Base URL for the API endpoint */
+	baseUrl: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Upload Config
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -212,6 +237,10 @@ export interface NoteAssistantPluginSettings {
 	showAdvanced: boolean;
 	/** Image generation configs array. If empty, image generation is disabled. */
 	imageGenConfigs: ImageGenConfig[];
+	/** ID of the currently active speech-to-text config */
+	activeSpeechToTextId: string;
+	/** Speech-to-text configs array. If empty, speech-to-text is disabled. */
+	speechToTextConfigs: SpeechToTextConfig[];
 	/**
 	 * Whether tools with `requiresConfirmation` need explicit user approval.
 	 * "auto" = always auto-approve (default), "always" = always ask for confirmation.

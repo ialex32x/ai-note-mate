@@ -6,6 +6,7 @@ import type {
 	EmbeddingConfig,
 	ImageGenConfig,
 	NoteAssistantPluginSettings,
+	SpeechToTextConfig,
 	TextGenConfig,
 	UploadConfig,
 } from "./types";
@@ -92,6 +93,29 @@ export function getActiveEmbeddingConfig(settings: NoteAssistantPluginSettings):
 	if (config) return config;
 	// Fallback to the first config
 	return settings.embeddingConfigs[0]!;
+}
+
+/** Helper: get the currently active speech-to-text config from settings (may be null) */
+export function getActiveSpeechToTextConfig(settings: NoteAssistantPluginSettings): SpeechToTextConfig | null {
+	if (settings.speechToTextConfigs.length === 0) return null;
+	const config = settings.speechToTextConfigs.find(c => c.id === settings.activeSpeechToTextId);
+	if (config) return config;
+	return settings.speechToTextConfigs[0]!;
+}
+
+/**
+ * True when the active speech-to-text config has a model, a resolvable
+ * API key, and a non-empty base URL.
+ */
+export function isActiveSpeechToTextConfigured(
+	app: App,
+	settings: NoteAssistantPluginSettings,
+): boolean {
+	const config = getActiveSpeechToTextConfig(settings);
+	if (!config) return false;
+	if ((config.model?.trim() ?? '').length === 0) return false;
+	if ((config.baseUrl?.trim() ?? '').length === 0) return false;
+	return resolveSecret(app, config.apiKey).trim().length > 0;
 }
 
 /** Helper: get the currently active upload config from settings (may be null) */

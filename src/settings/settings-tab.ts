@@ -8,6 +8,7 @@ import {
 	GlobalSettingsSection,
 	ImageGenSettingsSection,
 	MemorySettingsSection,
+	SpeechToTextSettingsSection,
 	TextGenSettingsSection,
 	SectionContext,
 	SettingsSection,
@@ -48,6 +49,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			new TextGenSettingsSection(ctx),
 			new EmbeddingSettingsSection(ctx),
 			new ImageGenSettingsSection(ctx),
+			new SpeechToTextSettingsSection(ctx),
 			new ToolsSettingsSection(ctx),
 			new SkillSettingsSection(ctx),
 			new MemorySettingsSection(ctx),
@@ -187,6 +189,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		const profileIds = new Set(settings.profiles.map(p => p.id));
 		const embeddingIds = new Set(settings.embeddingConfigs.map(c => c.id));
 		const imageGenIds = new Set(settings.imageGenConfigs.map(c => c.id));
+		const sttIds = new Set(settings.speechToTextConfigs.map(c => c.id));
 		const uploadIds = new Set(settings.uploadConfigs.map(c => c.id));
 
 		const selects = body.querySelectorAll<HTMLSelectElement>('select');
@@ -209,6 +212,9 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 					c => c.name || 'Unnamed');
 			} else if (imageGenIds.has(firstVal)) {
 				this.rebuildSelect(select, settings.imageGenConfigs, savedValue, imageGenIds,
+					c => c.name || 'Unnamed');
+			} else if (sttIds.has(firstVal)) {
+				this.rebuildSelect(select, settings.speechToTextConfigs, savedValue, sttIds,
 					c => c.name || 'Unnamed');
 			} else if (uploadIds.has(firstVal)) {
 				this.rebuildSelect(select, settings.uploadConfigs, savedValue, uploadIds,

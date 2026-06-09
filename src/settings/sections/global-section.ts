@@ -14,7 +14,7 @@ import {
 } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { openPluginSettings } from "../../utils/open-plugin-settings";
-import { TEXT_GEN_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID } from "../section-ids";
+import { TEXT_GEN_SECTION_ID, EMBEDDING_SECTION_ID, IMAGE_GEN_SECTION_ID, SPEECH_TO_TEXT_SECTION_ID } from "../section-ids";
 
 export class GlobalSettingsSection implements SettingsSection {
 	readonly titleKey = 'settings.globalSection';
@@ -60,6 +60,7 @@ export class GlobalSettingsSection implements SettingsSection {
 		this.renderInsightsProfileSelector(container);
 		this.renderActiveEmbeddingSelector(container);
 		this.renderActiveImageGenSelector(container);
+		this.renderActiveSpeechToTextSelector(container);
 		this.renderActiveUploadSelector(container);
 
 		// Reset usage tips (action-only row, not a real config value).
@@ -401,6 +402,27 @@ export class GlobalSettingsSection implements SettingsSection {
 				});
 			});
 		this.addJumpToSectionButton(setting, IMAGE_GEN_SECTION_ID);
+	}
+
+	private renderActiveSpeechToTextSelector(container: HTMLElement): void {
+		const { plugin, refreshAll } = this.ctx;
+		const sttConfigs = plugin.settings.speechToTextConfigs;
+
+		const setting = new Setting(container)
+			.setName(t('settings.speechToTextConfig'))
+			.setDesc(t('settings.speechToTextConfigDesc'))
+			.addDropdown((dropdown: DropdownComponent) => {
+				for (const c of sttConfigs) {
+					dropdown.addOption(c.id, c.name || 'Unnamed');
+				}
+				dropdown.setValue(plugin.settings.activeSpeechToTextId);
+				dropdown.onChange(async (value: string) => {
+					plugin.settings.activeSpeechToTextId = value;
+					await plugin.saveSettings();
+					refreshAll();
+				});
+			});
+		this.addJumpToSectionButton(setting, SPEECH_TO_TEXT_SECTION_ID);
 	}
 
 	private renderActiveUploadSelector(container: HTMLElement): void {

@@ -1,5 +1,5 @@
 import { Plugin, WorkspaceLeaf, TAbstractFile, MarkdownView, Editor, MarkdownFileInfo, debounce } from 'obsidian';
-import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig } from "./settings";
+import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig, createDefaultSpeechToTextConfig } from "./settings";
 import { SessionView } from 'views/session-view';
 import { resolveLocale, setLocale, t } from './i18n';
 import { MCPManager } from './services/mcp/mcp-manager';
@@ -471,6 +471,15 @@ export default class NoteAssistantPlugin extends Plugin {
 		} else if (!this.settings.imageGenConfigs.find(c => c.id === this.settings.activeImageGenId)) {
 			// Ensure activeImageGenId points to a valid config
 			this.settings.activeImageGenId = this.settings.imageGenConfigs[0]!.id;
+		}
+
+		// Ensure at least one speech-to-text config exists
+		if (this.settings.speechToTextConfigs.length === 0) {
+			const defaultStt = createDefaultSpeechToTextConfig();
+			this.settings.speechToTextConfigs.push(defaultStt);
+			this.settings.activeSpeechToTextId = defaultStt.id;
+		} else if (!this.settings.speechToTextConfigs.find(c => c.id === this.settings.activeSpeechToTextId)) {
+			this.settings.activeSpeechToTextId = this.settings.speechToTextConfigs[0]!.id;
 		}
 	}
 

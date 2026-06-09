@@ -20,5 +20,8 @@ export const EMBEDDING_SECTION_ID = 'settings.embeddingSection';
 /** Anchor id of the Image Generation section. */
 export const IMAGE_GEN_SECTION_ID = 'settings.imageGenSection';
 
+/** Anchor id of the Speech-to-Text section. */
+export const SPEECH_TO_TEXT_SECTION_ID = 'settings.speechToTextSection';
+
 /** Anchor id of the Tools (MCP) section. */
 export const TOOLS_SECTION_ID = 'settings.toolsSection';

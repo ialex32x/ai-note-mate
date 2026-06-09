@@ -1,8 +1,9 @@
-import { DefaultGeminiImageModel } from "./types";
+import { DefaultGeminiImageModel, DefaultQwenASRModel } from "./types";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
 	NoteAssistantPluginSettings,
+	SpeechToTextConfig,
 	TextGenConfig,
 	UploadConfig,
 } from "./types";
@@ -142,6 +143,17 @@ export function createDefaultImageGenConfig(): ImageGenConfig {
 	};
 }
 
+export function createDefaultSpeechToTextConfig(): SpeechToTextConfig {
+	return {
+		id: generateId(),
+		name: 'Qwen ASR',
+		apiScheme: 'qwen-asr',
+		apiKey: '',
+		model: DefaultQwenASRModel,
+		baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+	};
+}
+
 export function createDefaultEmbeddingConfig(): EmbeddingConfig {
 	return {
 		id: generateId(),
@@ -179,6 +191,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	allowedCapabilities: [...ALL_TOOL_CAPABILITIES],
 	imageGenConfigs: [],
 	activeImageGenId: '',
+	speechToTextConfigs: [],
+	activeSpeechToTextId: '',
 	enterToSend: true,
 	showAdvanced: false,
 	toolConfirmMode: 'auto',

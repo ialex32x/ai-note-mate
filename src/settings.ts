@@ -7,18 +7,21 @@ export {
 	DEFAULT_SETTINGS,
 	createDefaultEmbeddingConfig,
 	createDefaultImageGenConfig,
+	createDefaultSpeechToTextConfig,
 	createDefaultProfile,
 	createDefaultUploadConfig,
 } from "./settings/defaults";
 export {
 	getActiveEmbeddingConfig,
 	getActiveImageGenConfig,
+	getActiveSpeechToTextConfig,
 	getActiveProfile,
 	getSummarizerProfile,
 	getInsightsProfile,
 	getActiveUploadConfig,
 	isActiveTextGenConfigured as isActiveProfileConfigured,
 	isActiveImageGenConfigured,
+	isActiveSpeechToTextConfigured,
 	hasMcpServersConfigured,
 } from "./settings/helpers";
 export { NoteAssistantSettingTab } from "./settings/settings-tab";

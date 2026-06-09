@@ -27,6 +27,7 @@ import { createMemoryTools } from './tools/memory-toolcall';
 import { createJavaScriptTools } from './tools/js_toolcall';
 import { createSkillTools } from './tools/skill-toolcall';
 import { createImageTool } from './tools/image-toolcall';
+import { createSpeechToTextTool } from './tools/speech-to-text-toolcall';
 import { createConversationTools } from './tools/conversation-toolcall';
 import { createRecallArtifactTool } from './tools/recall-artifact-toolcall';
 import { createTodoTool, type TodoStateSource } from './tools/todo-toolcall';
@@ -527,6 +528,9 @@ export function buildDynamicTools(
 
     const imageTool = createImageTool(plugin);
     if (imageTool) tools.push(imageTool);
+
+    const sttTool = createSpeechToTextTool(plugin);
+    if (sttTool) tools.push(sttTool);
 
     if (plugin.settings.memoryEnabled) {
         tools.push(...createMemoryTools(plugin));
