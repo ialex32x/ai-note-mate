@@ -355,10 +355,15 @@ export class SessionView extends ItemView {
                 this.statusController.updateTitle();
                 this.maybeShowFollowUpSuggestions();
                 this.updateNewChatBtnState();
-                // Auto-trim at turn boundary: safe because autoFollow is
-                // now true — the MutationObserver from the trim will
-                // scroll to the bottom naturally.
-                this.messageWindow.maybeTrimTail();
+                // Auto-trim at turn boundary: only trim when NOT parked.
+                // When the user is reading an oversized message (parked),
+                // removing old bubbles from the top causes the browser to
+                // adjust scrollTop, which shifts the user's reading position.
+                // The trim will still happen on the next user message send
+                // (forceScrollToBottom) or abort/error (restoreAutoFollow).
+                if (!this.scroller.isAutoFollowParked()) {
+                    this.messageWindow.maybeTrimTail();
+                }
                 break;
             case 'abort':
                 this.scroller.restoreAutoFollow();
@@ -453,11 +458,14 @@ export class SessionView extends ItemView {
         // Manual gestures (clicking "Extract insights" on an action bar
         // that may be far up in the history) deserve assertive scroll:
         // every phase including the empty / error placeholders should
-        // be visible without further user effort. Auto extractions
-        // respect user scroll intent and only nudge when the user is
-        // already at the tail.
+        // be visible without further user effort — UNLESS the user is
+        // parked reading an oversized message or jumped to an earlier
+        // position.  In that case do not yank the view away from
+        // the user's current reading position.
         if (state.cause === 'manual') {
-            this.forceScrollToBottom();
+            if (!this.scroller.isAutoFollowParked()) {
+                this.forceScrollToBottom();
+            }
         } else if (state.phase === 'results') {
             this.maybeScrollToBottom();
         }
