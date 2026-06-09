@@ -1,4 +1,4 @@
-import { DefaultGeminiImageModel, DefaultQwenASRModel } from "./types";
+import { DefaultGeminiImageModel, DefaultDashScopeShortModel, DefaultDashScopeLongModel } from "./types";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
@@ -145,11 +145,13 @@ export function createDefaultImageGenConfig(): ImageGenConfig {
 export function createDefaultSpeechToTextConfig(): SpeechToTextConfig {
 	return {
 		id: generateId(),
-		name: 'Qwen ASR',
-		apiScheme: 'qwen-asr',
+		name: 'DashScope',
+		apiScheme: 'DashScope',
+		region: 'cn-beijing',
+		workspaceId: '',
 		apiKey: '',
-		model: DefaultQwenASRModel,
-		baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+		shortModel: DefaultDashScopeShortModel,
+		longModel: DefaultDashScopeLongModel,
 	};
 }
 

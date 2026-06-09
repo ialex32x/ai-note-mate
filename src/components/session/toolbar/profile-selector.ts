@@ -110,13 +110,14 @@ function buildSvgIcon(def: ModelIconDef): SVGSVGElement {
  * Append a model-name span to `parent`.  When the model string matches a
  * known provider keyword the span is preceded by the vendor's logo SVG.
  */
-function appendModelName(parent: HTMLElement, model: string): void {
-    const def = getModelIconDef(model);
+function appendModelName(parent: HTMLElement, model: string | undefined | null): void {
+    const safeModel = model ?? '';
+    const def = getModelIconDef(safeModel);
     if (def) {
         const iconEl = parent.createEl('span', { cls: 'session-dropdown-item__model-icon' });
         iconEl.appendChild(buildSvgIcon(def));
     }
-    parent.createEl('span', { cls: 'session-dropdown-item__model', text: model });
+    parent.createEl('span', { cls: 'session-dropdown-item__model', text: safeModel });
 }
 
 /** Small gap between the dropdown top edge and the session-view top boundary. */
@@ -295,7 +296,7 @@ export function createProfileSelector(
                 const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
                 const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
                 item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
-                appendModelName(item, cfg.model);
+                appendModelName(item, cfg.shortModel);
                 if (cfg.id === current.activeSpeechToTextId) {
                     item.addClass('session-dropdown-item--active');
                     setIcon(checkIcon, 'check');

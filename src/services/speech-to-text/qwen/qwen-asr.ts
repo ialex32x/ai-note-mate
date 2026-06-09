@@ -1,5 +1,4 @@
 import type NoteAssistantPlugin from "../../../main";
-import type { SpeechToTextConfig } from "../../../settings";
 import type { SpeechToTextResult } from "../types";
 import { resolveSecret } from "../../../utils/secret-helper";
 import { fetchWithRetry } from "../../../utils/retry-helper";
@@ -72,7 +71,7 @@ interface QwenASRErrorResponse {
  */
 export async function transcribeWithQwenASR(
     plugin: NoteAssistantPlugin,
-    config: Pick<SpeechToTextConfig, "apiKey" | "model" | "baseUrl">,
+    config: { apiKey: string; model: string; baseUrl: string },
     params: QwenASRParams,
 ): Promise<SpeechToTextResult> {
     const { audioDataUri, stream = false, enableItn = false, language, signal } = params;

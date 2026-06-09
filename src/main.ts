@@ -478,8 +478,37 @@ export default class NoteAssistantPlugin extends Plugin {
 			const defaultStt = createDefaultSpeechToTextConfig();
 			this.settings.speechToTextConfigs.push(defaultStt);
 			this.settings.activeSpeechToTextId = defaultStt.id;
-		} else if (!this.settings.speechToTextConfigs.find(c => c.id === this.settings.activeSpeechToTextId)) {
-			this.settings.activeSpeechToTextId = this.settings.speechToTextConfigs[0]!.id;
+		} else {
+			// Migrate legacy STT fields. Older versions stored a single
+			// `model: string` and `baseUrl: string` along with a
+			// `'qwen-asr'` apiScheme. We now use a `'DashScope'` scheme
+			// with `region` + optional `workspaceId`, and split the model
+			// into `shortModel` (inline API) and `longModel` (async file
+			// API). Migrate once on load and drop the legacy fields.
+			for (const stt of this.settings.speechToTextConfigs) {
+				const s = stt as unknown as Record<string, unknown>;
+				if (s.apiScheme === 'qwen-asr') {
+					s.apiScheme = 'DashScope';
+				}
+				if (typeof stt.region !== 'string') {
+					stt.region = 'cn-beijing';
+				}
+				if (typeof stt.workspaceId !== 'string') {
+					stt.workspaceId = '';
+				}
+				const legacyModel = typeof s.model === 'string' ? s.model : '';
+				if (typeof stt.shortModel !== 'string' || stt.shortModel.length === 0) {
+					stt.shortModel = legacyModel || 'qwen3-asr-flash';
+				}
+				if (typeof stt.longModel !== 'string' || stt.longModel.length === 0) {
+					stt.longModel = 'qwen3-asr-flash-filetrans';
+				}
+				if ('model' in s) delete s.model;
+				if ('baseUrl' in s) delete s.baseUrl;
+			}
+			if (!this.settings.speechToTextConfigs.find(c => c.id === this.settings.activeSpeechToTextId)) {
+				this.settings.activeSpeechToTextId = this.settings.speechToTextConfigs[0]!.id;
+			}
 		}
 	}
 

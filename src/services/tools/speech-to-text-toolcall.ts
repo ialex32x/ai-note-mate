@@ -3,7 +3,7 @@ import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
 import type { SpeechToTextConfig } from "../../settings";
 import type { ArtifactStore } from "../artifact-store";
-import { getActiveSpeechToTextConfig } from "../../settings";
+import { getActiveSpeechToTextConfig, getSttBaseUrl } from "../../settings";
 import { normalizePath, TFile, arrayBufferToBase64, type App } from "obsidian";
 import { transcribeWithQwenASR, transcribeLargeFileWithAsyncASR } from "../speech-to-text/qwen";
 import { getMimeType } from "../../utils/mime-helper";
@@ -30,7 +30,7 @@ export function createSpeechToTextTool(
     }
 
     switch (sttConfig.apiScheme) {
-        case 'qwen-asr':
+        case 'DashScope':
         default:
             return createQwenASRTool(plugin, sttConfig, getArtifactStore);
     }
@@ -41,7 +41,7 @@ export function createSpeechToTextTool(
  */
 function createQwenASRTool(
     plugin: NoteAssistantPlugin,
-    sttConfig: Pick<SpeechToTextConfig, 'apiKey' | 'model' | 'baseUrl'>,
+    sttConfig: SpeechToTextConfig,
     getArtifactStore?: () => ArtifactStore | null,
 ): RegisteredTool {
     return {
@@ -99,7 +99,12 @@ function createQwenASRTool(
 
                 // ── Small file: inline transcription via compatible-mode API ──
                 if (readResult.type === "dataUri") {
-                    const result = await transcribeWithQwenASR(plugin, sttConfig, {
+                    const dashscopeBaseUrl = getSttBaseUrl(sttConfig.region, sttConfig.workspaceId);
+                    const result = await transcribeWithQwenASR(plugin, {
+                        apiKey: sttConfig.apiKey,
+                        model: sttConfig.shortModel,
+                        baseUrl: `${dashscopeBaseUrl}/compatible-mode/v1`,
+                    }, {
                         audioDataUri: readResult.dataUri,
                         stream: false,
                         enableItn,
@@ -139,17 +144,16 @@ function createQwenASRTool(
                     return {
                         success: false,
                         type: "text",
-                        content: "Qwen ASR API key is not configured.",
+                        content: "DashScope API key is not configured.",
                     };
                 }
 
-                // Derive the DashScope root URL from the configured baseUrl.
-                const dashscopeRootUrl = extractDashScopeRootUrl(sttConfig.baseUrl);
+                const dashscopeRootUrl = getSttBaseUrl(sttConfig.region, sttConfig.workspaceId);
 
                 const asyncResult = await transcribeLargeFileWithAsyncASR({
                     apiKey,
                     dashscopeRootUrl,
-                    model: sttConfig.model || "qwen3-asr-flash",
+                    model: sttConfig.longModel,
                     fileName: readResult.fileName,
                     fileData: readResult.fileData,
                     language,
@@ -239,31 +243,6 @@ async function readAudioFileForTranscription(
     const base64 = arrayBufferToBase64(arrayBuffer);
     const dataUri = `data:${mimeType};base64,${base64}`;
     return { type: "dataUri", dataUri, mimeType };
-}
-
-/**
- * Extract the DashScope root URL (origin) from the configured baseUrl.
- *
- * @example
- *   "https://dashscope.aliyuncs.com/compatible-mode/v1"
- *   → "https://dashscope.aliyuncs.com"
- *
- * @example
- *   "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
- *   → "https://dashscope-intl.aliyuncs.com"
- */
-function extractDashScopeRootUrl(baseUrl: string | undefined): string {
-    if (!baseUrl) {
-        return "https://dashscope.aliyuncs.com";
-    }
-    try {
-        const url = new URL(baseUrl);
-        return url.origin;
-    } catch {
-        // Fallback: strip path segments after host
-        const match = baseUrl.match(/^(https?:\/\/[^/]+)/);
-        return match?.[1] ?? "https://dashscope.aliyuncs.com";
-    }
 }
 
 /**

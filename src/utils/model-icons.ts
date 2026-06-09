@@ -208,7 +208,8 @@ const MODEL_ICON_MAP: Record<string, ModelIconDef> = {
  * Return the vendor-logo definition for the given model name, or `null`
  * if no recognised provider keyword is found.
  */
-export function getModelIconDef(model: string): ModelIconDef | null {
+export function getModelIconDef(model: string | undefined | null): ModelIconDef | null {
+    if (!model) return null;
     const lower = model.toLowerCase();
     for (const [keyword, def] of Object.entries(MODEL_ICON_MAP)) {
         if (lower.includes(keyword)) {

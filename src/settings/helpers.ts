@@ -2,6 +2,7 @@ import type { App } from "obsidian";
 import { createDefaultProfile } from "./defaults";
 import { ARTIFACT_STORE_DEFAULTS, type ArtifactStoreOptions } from "../services/artifact-store";
 import { resolveSecret } from "../utils/secret-helper";
+import type { DashScopeRegion } from "./types";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
@@ -103,8 +104,30 @@ export function getActiveSpeechToTextConfig(settings: NoteAssistantPluginSetting
 }
 
 /**
- * True when the active speech-to-text config has a model, a resolvable
- * API key, and a non-empty base URL.
+ * Derive the DashScope base URL (origin only) from the region and optional
+ * Workspace ID.
+ *
+ *   - cn-beijing     → https://dashscope.aliyuncs.com
+ *   - us-east-1      → https://dashscope-us.aliyuncs.com
+ *   - ap-southeast-1 → https://{workspaceId}.ap-southeast-1.maas.aliyuncs.com
+ *   - eu-central-1   → https://{workspaceId}.eu-central-1.maas.aliyuncs.com
+ */
+export function getSttBaseUrl(region: DashScopeRegion, workspaceId: string): string {
+	switch (region) {
+		case 'cn-beijing':
+			return 'https://dashscope.aliyuncs.com';
+		case 'us-east-1':
+			return 'https://dashscope-us.aliyuncs.com';
+		case 'ap-southeast-1':
+			return `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com`;
+		case 'eu-central-1':
+			return `https://${workspaceId}.eu-central-1.maas.aliyuncs.com`;
+	}
+}
+
+/**
+ * True when the active speech-to-text config has models, a resolvable
+ * API key, and workspaceId for regions that require it.
  */
 export function isActiveSpeechToTextConfigured(
 	app: App,
@@ -112,8 +135,13 @@ export function isActiveSpeechToTextConfigured(
 ): boolean {
 	const config = getActiveSpeechToTextConfig(settings);
 	if (!config) return false;
-	if ((config.model?.trim() ?? '').length === 0) return false;
-	if ((config.baseUrl?.trim() ?? '').length === 0) return false;
+	if ((config.shortModel || '').trim().length === 0) return false;
+	if ((config.longModel || '').trim().length === 0) return false;
+	// workspaceId is required for Singapore and Frankfurt
+	if ((config.region === 'ap-southeast-1' || config.region === 'eu-central-1')
+		&& (config.workspaceId || '').trim().length === 0) {
+		return false;
+	}
 	return resolveSecret(app, config.apiKey).trim().length > 0;
 }
 

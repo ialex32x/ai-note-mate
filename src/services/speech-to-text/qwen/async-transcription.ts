@@ -92,8 +92,7 @@ export async function submitAsyncTranscription(
     const url = `${dashscopeRootUrl}/api/v1/services/audio/asr/transcription`;
 
     const payload: Record<string, unknown> = {
-        //TODO temporory hardcoding the model until we figure out how to config it properly
-        model: "qwen3-asr-flash-filetrans",
+        model,
         input: { file_url: ossUrl },
         // placeholders, not used in current version
         parameters: {

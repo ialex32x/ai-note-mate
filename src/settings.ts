@@ -17,6 +17,7 @@ export {
 	getActiveProfile,
 	getSummarizerProfile,
 	getInsightsProfile,
+	getSttBaseUrl,
 	isActiveTextGenConfigured as isActiveProfileConfigured,
 	isActiveImageGenConfigured,
 	isActiveSpeechToTextConfigured,

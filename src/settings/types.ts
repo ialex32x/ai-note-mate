@@ -4,7 +4,8 @@ import type { ModalityCapability, ThinkingLevel, ToolCapability } from "../servi
 
 export const DefaultGeminiImageModel = "gemini-3-pro-image-preview";
 
-export const DefaultQwenASRModel = "qwen3-asr-flash";
+export const DefaultDashScopeShortModel = "qwen3-asr-flash";
+export const DefaultDashScopeLongModel = "qwen3-asr-flash-filetrans";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider Profile
@@ -123,7 +124,10 @@ export interface EmbeddingConfig {
 // Speech-to-Text
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type SpeechToTextApiScheme = 'qwen-asr';
+export type SpeechToTextApiScheme = 'DashScope';
+
+/** DashScope region identifiers for speech-to-text. */
+export type DashScopeRegion = 'cn-beijing' | 'us-east-1' | 'ap-southeast-1' | 'eu-central-1';
 
 export interface SpeechToTextConfig {
 	/** Unique ID (auto-generated) */
@@ -133,13 +137,20 @@ export interface SpeechToTextConfig {
 	/** API scheme to distinguish which API to use */
 	apiScheme: SpeechToTextApiScheme;
 
-	// ── Common fields ──────────────────────────────────────────────────────
-	/** API key for the selected provider */
+	// ── DashScope-specific fields ───────────────────────────────────────────
+	/** DashScope region to use */
+	region: DashScopeRegion;
+	/**
+	 * Workspace ID. Required for Singapore and Frankfurt regions;
+	 * optional for cn-beijing and us-east-1.
+	 */
+	workspaceId: string;
+	/** API key for DashScope */
 	apiKey: string;
-	/** Model to use for speech-to-text */
-	model: string;
-	/** Base URL for the API endpoint */
-	baseUrl: string;
+	/** Model for short audio transcription (inline API) */
+	shortModel: string;
+	/** Model for long audio transcription (async file API) */
+	longModel: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

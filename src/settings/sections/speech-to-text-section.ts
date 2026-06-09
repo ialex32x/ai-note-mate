@@ -1,7 +1,7 @@
 import { t } from "../../i18n";
 import { createDefaultSpeechToTextConfig } from "../defaults";
-import { DefaultQwenASRModel } from "../types";
-import type { SpeechToTextApiScheme, SpeechToTextConfig } from "../types";
+import { DefaultDashScopeShortModel, DefaultDashScopeLongModel } from "../types";
+import type { DashScopeRegion, SpeechToTextApiScheme, SpeechToTextConfig } from "../types";
 import {
 	createApiKeyField,
 	createDropdownField,
@@ -117,7 +117,7 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 			name: t('settings.apiScheme'),
 			desc: t('settings.apiSchemeDesc'),
 			options: {
-				'qwen-asr': 'Qwen ASR (DashScope)',
+				'DashScope': 'DashScope',
 			},
 			value: config.apiScheme,
 			onChange: async (value) => {
@@ -127,18 +127,58 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 			},
 		});
 
-		// Base URL
-		createTextField({
+		// Scheme-specific fields
+		switch (config.apiScheme) {
+			case 'DashScope':
+				this.renderDashScopeFields(container, config, app, plugin, refreshSection);
+				break;
+		}
+	}
+
+	private renderDashScopeFields(
+		container: HTMLElement,
+		config: SpeechToTextConfig,
+		app: SectionContext['app'],
+		plugin: SectionContext['plugin'],
+		refreshSection: SectionContext['refreshSection'],
+	): void {
+		// Region selector
+		createDropdownField({
 			container,
-			name: t('settings.baseUrl'),
-			desc: t('settings.sttBaseUrlDesc'),
-			placeholder: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-			value: config.baseUrl || '',
+			name: t('settings.sttRegion'),
+			desc: t('settings.sttRegionDesc'),
+			options: {
+				'cn-beijing': t('settings.sttRegionCnBeijing'),
+				'us-east-1': t('settings.sttRegionUsEast1'),
+				'ap-southeast-1': t('settings.sttRegionApSoutheast1'),
+				'eu-central-1': t('settings.sttRegionEuCentral1'),
+			},
+			value: config.region,
 			onChange: async (value) => {
-				config.baseUrl = value;
+				config.region = value as DashScopeRegion;
+				// Clear workspaceId when switching to regions that don't need it
+				if (value === 'cn-beijing' || value === 'us-east-1') {
+					config.workspaceId = '';
+				}
 				await plugin.saveSettings();
+				refreshSection(this);
 			},
 		});
+
+		// Workspace ID (only for Singapore and Frankfurt)
+		if (config.region === 'ap-southeast-1' || config.region === 'eu-central-1') {
+			createTextField({
+				container,
+				name: t('settings.sttWorkspaceId'),
+				desc: t('settings.sttWorkspaceIdDesc'),
+				placeholder: '',
+				value: config.workspaceId || '',
+				onChange: async (value) => {
+					config.workspaceId = value;
+					await plugin.saveSettings();
+				},
+			});
+		}
 
 		// API Key
 		createApiKeyField({
@@ -153,26 +193,30 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 			},
 		});
 
-		// Model
-		const modelPlaceholder = getSttModelPlaceholder(config.apiScheme);
+		// Short audio model
 		createTextField({
 			container,
-			name: t('common.model'),
-			desc: t('settings.sttModelDesc'),
-			placeholder: modelPlaceholder,
-			value: config.model,
+			name: t('settings.sttShortModel'),
+			desc: t('settings.sttShortModelDesc'),
+			placeholder: DefaultDashScopeShortModel,
+			value: config.shortModel,
 			onChange: async (value) => {
-				config.model = value || modelPlaceholder;
+				config.shortModel = value || DefaultDashScopeShortModel;
 				await plugin.saveSettings();
 			},
 		});
-	}
-}
 
-function getSttModelPlaceholder(scheme: SpeechToTextApiScheme): string {
-	switch (scheme) {
-		case 'qwen-asr':
-		default:
-			return DefaultQwenASRModel;
+		// Long audio model
+		createTextField({
+			container,
+			name: t('settings.sttLongModel'),
+			desc: t('settings.sttLongModelDesc'),
+			placeholder: DefaultDashScopeLongModel,
+			value: config.longModel,
+			onChange: async (value) => {
+				config.longModel = value || DefaultDashScopeLongModel;
+				await plugin.saveSettings();
+			},
+		});
 	}
 }
