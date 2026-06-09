@@ -188,7 +188,7 @@ export const zhCN: Record<string, string> = {
 	'settings.sttModelDesc': '用于语音转文字的模型。',
 	'settings.sttBaseUrlDesc': '语音转文字 API 的基础 URL。',
 	'settings.sttEmpty': '尚未配置语音转文字。添加一个以启用音频转录功能。',
-	'settings.textGenSection': 'LLM',
+	'settings.textGenSection': 'Chat',
 	'settings.profileName': '方案名称',
 	'settings.profileNameDesc': '为此配置起一个显示名称。',
 	'settings.deleteProfile': '删除方案',

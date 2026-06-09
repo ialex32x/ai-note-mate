@@ -9,6 +9,7 @@ import type { ModalityCapability } from "../services/llm-provider";
  *   `null` instead of a fallback value.
  */
 export function getMimeType(extension: string): string;
+export function getMimeType(extension: string, fallback: string): string;
 export function getMimeType(extension: string, fallback: null): string | null;
 export function getMimeType(extension: string, fallback: string | null = "application/octet-stream"): string | null {
     const mimeMap: Record<string, string> = {

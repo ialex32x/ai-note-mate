@@ -188,7 +188,7 @@ export const zhTW: Record<string, string> = {
 	'settings.sttModelDesc': '用於語音轉文字的模型。',
 	'settings.sttBaseUrlDesc': '語音轉文字 API 的基礎 URL。',
 	'settings.sttEmpty': '尚未配置語音轉文字。新增一個以啟用音頻轉錄功能。',
-	'settings.textGenSection': 'LLM',
+	'settings.textGenSection': 'Chat',
 	'settings.profileName': '設定檔名稱',
 	'settings.profileNameDesc': '為此配置起一個顯示名稱。',
 	'settings.deleteProfile': '刪除設定檔',

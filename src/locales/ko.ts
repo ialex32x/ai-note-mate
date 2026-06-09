@@ -188,7 +188,7 @@ export const ko: Record<string, string> = {
 	'settings.sttModelDesc': '음성 텍스트 변환에 사용되는 모델.',
 	'settings.sttBaseUrlDesc': '음성 텍스트 변환 API의 기본 URL.',
 	'settings.sttEmpty': '음성 텍스트 변환이 설정되지 않았습니다. 추가하여 오디오 트랜스크립션을 활성화하세요.',
-	'settings.textGenSection': 'LLM',
+	'settings.textGenSection': 'Chat',
 	'settings.profileName': '프로필 이름',
 	'settings.profileNameDesc': '이 구성의 표시 이름을 입력하세요.',
 	'settings.deleteProfile': '프로필 삭제',

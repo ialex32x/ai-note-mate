@@ -188,7 +188,7 @@ export const ja: Record<string, string> = {
 	'settings.sttModelDesc': '音声テキスト化に使用するモデル。',
 	'settings.sttBaseUrlDesc': '音声テキスト化 API のベース URL。',
 	'settings.sttEmpty': '音声テキスト化が設定されていません。追加して音声文字起こしを有効にしてください。',
-	'settings.textGenSection': 'LLM',
+	'settings.textGenSection': 'Chat',
 	'settings.profileName': 'プロファイル名',
 	'settings.profileNameDesc': 'この構成の表示名を入力してください。',
 	'settings.deleteProfile': 'プロファイル削除',

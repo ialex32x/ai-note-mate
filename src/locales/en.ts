@@ -188,7 +188,7 @@ export const en: Record<string, string> = {
 	'settings.sttModelDesc': 'Model used for speech-to-text transcription.',
 	'settings.sttBaseUrlDesc': 'Base URL for the speech-to-text API endpoint.',
 	'settings.sttEmpty': 'No speech-to-text configured. Add one to enable audio transcription.',
-	'settings.textGenSection': 'LLM',
+	'settings.textGenSection': 'Chat',
 	'settings.profileName': 'Profile name',
 	'settings.profileNameDesc': 'A display name for this configuration.',
 	'settings.deleteProfile': 'Delete profile',
