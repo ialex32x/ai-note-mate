@@ -13,7 +13,6 @@ import type {
 } from "./llm-provider";
 import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
-import { getLocale, tIn } from "../i18n";
 import { isAbortError } from "../utils/abortable-request";
 
 import {
@@ -22,6 +21,17 @@ import {
     INTERRUPTED_ASSISTANT_API_NOTE,
     STREAM_EMIT_THROTTLE_MS,
 } from "./chat-stream-constants";
+
+import {
+    buildToolEmbeddingText,
+    buildToolTriggerLine,
+    toolResultApiContent,
+    backfillChatMessageBudgetHints,
+    generateId,
+    toMediaAttachment,
+    inferKindFromMime,
+    mediaKindLabel,
+} from "./chat-stream-helpers";
 
 import type {
     ToolCallResultInfo,
@@ -73,168 +83,6 @@ export type { ConversationSummary, ContextReduceOptions } from "./context-reduce
 // ─────────────────────────────────────────────
 
 export { TokenUsage };
-
-// ─────────────────────────────────────────────
-// Internal helpers (kept in this file)
-// ─────────────────────────────────────────────
-
-/**
- * Build the text used to embed a tool for similarity ranking.
- *
- * Composition (newline-separated):
- *   1. `function.name` — usually a strong, language-neutral signal
- *      (e.g. `vault_grep_file`, `web_search`).
- *   2. {@link RegisteredTool.embeddingDescription} when present, otherwise
- *      `function.description` — the bulk of the semantic payload.
- *   3. Top-level parameter names, when discoverable from
- *      `function.parameters.properties` — surfaces hints the description
- *      may not spell out (e.g. `tags`, `query`, `path`).
- *   4. Multilingual trigger keywords from the locale bundle (see
- *      {@link buildToolTriggerLine}) — gives BM25 lexical traction on
- *      queries in the user's UI language even when the (English)
- *      description shares zero tokens with them.
- *
- * Step 4 is ranker-only: the model still sees the original English
- * `function.description` in the schema. Keeping the schema language-
- * stable avoids any risk of locale-dependent tool-calling regressions
- * in providers that were trained predominantly on English function
- * specs.
- *
- * Changes to this composition invalidate the embedder's per-text cache
- * (entries are keyed by sha256(text)). That's acceptable: a one-shot
- * re-embed of all on-demand tools on first use after the change.
- */
-function buildToolEmbeddingText(tool: RegisteredTool): string {
-    const fn = tool.schema.function;
-    const description = tool.embeddingDescription ?? fn.description ?? '';
-    const properties = fn.parameters['properties'];
-    const paramNames = (properties && typeof properties === 'object' && !Array.isArray(properties))
-        ? Object.keys(properties as Record<string, unknown>)
-        : [];
-    const paramLine = paramNames.length > 0 ? `Parameters: ${paramNames.join(', ')}` : '';
-    const triggerLine = buildToolTriggerLine(fn.name);
-    return [fn.name, description, paramLine, triggerLine].filter(Boolean).join('\n');
-}
-
-/**
- * Build a comma-separated trigger line for `schemaName` by looking up
- * `tool.triggers.<schemaName>` in the active locale bundle AND in the
- * English bundle.
- *
- * Why concatenate both:
- *   - The active locale's keywords cover queries written entirely in
- *     the user's UI language (typical CJK chat-style prompts).
- *   - The English keywords cover the very common mixed-language case
- *     ("帮我 search markdown 文件", "RSSフィード を fetch して") that
- *     non-English users naturally produce around tech terms.
- *
- * Tools without an entry (most MCP-supplied tools, long-tail built-in
- * tools we haven't authored yet) yield an empty string and degrade
- * silently — they still benefit from the description-based ranking
- * just as before.
- *
- * The BM25 tokenizer treats commas as separators, so the exact
- * delimiter doesn't carry semantic weight; the comma+space form is
- * picked purely for readability when the composed text shows up in
- * debug logs.
- */
-function buildToolTriggerLine(schemaName: string): string {
-    const key = `tool.triggers.${schemaName}`;
-    const currentLocale = getLocale();
-    const cur = tIn(currentLocale, key);
-    const en = tIn('en', key);
-    // `tIn` returns the key verbatim when the entry is missing — that's the
-    // sentinel for "no triggers here, skip silently". The empty-string check
-    // is defensive against a future locale entry that's authored as `''`
-    // (which would otherwise yield `Triggers: , <en>` with a stray comma).
-    const parts: string[] = [];
-    if (cur && cur !== key) parts.push(cur);
-    // Skip the English bundle when the active locale entry is already the
-    // English string (active locale IS 'en', or a translator happened to
-    // copy the English value verbatim) — avoids duplicating the same tokens.
-    if (en && en !== key && en !== cur) parts.push(en);
-    return parts.length > 0 ? `Triggers: ${parts.join(', ')}` : '';
-}
-
-/** Tool_result `content` as sent to the LLM (matches `prompt()` reconstruction). */
-function toolResultApiContent(res: ToolCallResultInfo): string {
-    return res.status === "error" && !res.result.startsWith("Error:")
-        ? `Error: ${res.result}`
-        : res.result;
-}
-
-/**
- * Copy shrink cache from assembled API tool_results onto UI `tool_call`
- * messages ({@link ChatMessage.contentBudgetHint}).
- */
-function backfillChatMessageBudgetHints(
-    chatMessages: ChatMessage[],
-    apiToolResults: ChatMessageParam[],
-): void {
-    const hints = new Map<string, { hint: string; hintLen: number }>();
-    for (const src of apiToolResults) {
-        if (src.role !== "tool_result" || !src.toolCallId) continue;
-        const hint = src.contentBudgetHint;
-        const hintLen = src.contentBudgetHintForLength;
-        if (hint == null || hintLen == null) continue;
-        hints.set(src.toolCallId, { hint, hintLen });
-    }
-    if (hints.size === 0) return;
-
-    for (const msg of chatMessages) {
-        if (msg.role !== "tool_call" || !msg.toolCallMeta || !msg.toolCallResult) continue;
-        const entry = hints.get(msg.toolCallMeta.toolCallId);
-        if (!entry) continue;
-        const apiContent = toolResultApiContent(msg.toolCallResult);
-        if (apiContent.length !== entry.hintLen) continue;
-        msg.contentBudgetHint = entry.hint;
-        msg.contentBudgetHintForLength = entry.hintLen;
-    }
-}
-
-function generateId(): string {
-    return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-/**
- * Convert a tool's `media` result payload into a `MediaAttachment`.
- * Tools may either include an explicit `kind` or rely on `mimeType` for inference;
- * unknown MIME types default to `image` to preserve backward behaviour.
- */
-function toMediaAttachment(content: unknown): MediaAttachment | null {
-    if (typeof content !== "object" || content === null) return null;
-    const c = content as {
-        path?: string;
-        kind?: ModalityCapability;
-        mimeType?: string;
-        base64?: string;
-    };
-    if (typeof c.mimeType !== "string" || typeof c.base64 !== "string") return null;
-    const kind: ModalityCapability = c.kind ?? inferKindFromMime(c.mimeType);
-    return {
-        kind,
-        mimeType: c.mimeType,
-        base64: c.base64,
-        sourcePath: typeof c.path === "string" ? c.path : undefined,
-    };
-}
-
-function inferKindFromMime(mime: string): ModalityCapability {
-    const m = mime.toLowerCase();
-    if (m.startsWith("audio/")) return "audio";
-    if (m.startsWith("video/")) return "video";
-    if (m === "application/pdf") return "pdf";
-    return "image";
-}
-
-function mediaKindLabel(kind: ModalityCapability): string {
-    switch (kind) {
-        case "image": return "Image";
-        case "audio": return "Audio";
-        case "video": return "Video";
-        case "pdf":   return "PDF";
-    }
-}
 
 // ─────────────────────────────────────────────
 // ChatStream class
@@ -674,156 +522,9 @@ export class ChatStream implements IChatAgent {
         //   * Orphan `tool_call` messages (no preceding assistant, or no
         //     completed result yet) are skipped \u2014 they would produce orphan
         //     tool_results that the validator would drop anyway.
-        // Resolve the effective system prompt for this turn. Static
-        // `systemPrompt` is the baseline; `systemPromptPrefix` /
-        // `systemPromptSuffix` can wrap a per-turn, query-aware fragment
-        // around it (e.g. an embedding-shortlisted skill catalogue at
-        // the very top — see `src/skills/skill-catalogue.ts`). Prefix /
-        // suffix failures degrade silently to the baseline so a broken
-        // provider can never block the LLM call. The final order is:
-        //   [prefix] · "\n\n" · [baseline] · "\n\n" · [suffix]
-        // with empty segments simply dropped from the join.
-        const baseline = this._config.systemPrompt ?? '';
-        const segments: string[] = [];
+        const effectiveSystemPrompt = await this._buildEffectiveSystemPrompt(userInput);
 
-        if (this._config.systemPromptPrefix) {
-            try {
-                const prefix = await this._config.systemPromptPrefix(
-                    userInput,
-                    this._abortController?.signal,
-                );
-                if (prefix) segments.push(prefix);
-            } catch (err) {
-                if (isAbortError(err)) {
-                    throw err;
-                }
-                console.warn('ChatStream: systemPromptPrefix threw, falling back to base prompt', err);
-            }
-        }
-
-        if (baseline) segments.push(baseline);
-
-        if (this._config.systemPromptSuffix) {
-            try {
-                const suffix = await this._config.systemPromptSuffix(
-                    userInput,
-                    this._abortController?.signal,
-                );
-                if (suffix) segments.push(suffix);
-            } catch (err) {
-                if (isAbortError(err)) {
-                    throw err;
-                }
-                console.warn('ChatStream: systemPromptSuffix threw, falling back to base prompt', err);
-            }
-        }
-
-        const effectiveSystemPrompt = segments.join('\n\n');
-
-        const rawMessages: ChatMessageParam[] = [];
-        if (effectiveSystemPrompt) {
-            rawMessages.push({ role: "system", content: effectiveSystemPrompt });
-        }
-        for (let i = 0; i < this._messages.length; i++) {
-            const msg = this._messages[i]!;
-            if (msg.role === "user") {
-                rawMessages.push({ role: "user", content: msg.content, id: msg.id });
-                continue;
-            }
-            if (msg.role === "assistant" || msg.role === "tool_call") {
-                // The assistant turn that emitted these tool calls. May
-                // be the current message (text-or-thinking + toolCalls
-                // turn — assistant pushed to `_messages`), or absent
-                // (pure tool-call turn — `isPureToolCallTurn` skipped
-                // pushing the assistant to avoid an empty UI bubble).
-                //
-                // For the "absent" case we synthesise a stand-in
-                // assistant with empty content, so the reconstructed
-                // sequence still satisfies the protocol invariant the
-                // pre-sanitiser checks ("every tool_result has an
-                // assistant(toolCalls) owner with a matching id").
-                //
-                // Without this synthesis, every pure tool-call turn's
-                // tool_calls fall through the original `else` branch,
-                // get silently dropped, and on the NEXT prompt() call
-                // the model sees no record of having invoked any
-                // tool — i.e. it "forgets" the search/read it just
-                // performed and re-fires the same tools on the next
-                // user turn. Combined with a sub-agent's already-
-                // narrow loop budget this surfaces as the agent
-                // "走两步就忘": after a couple of pure-tool-call
-                // iterations the conversation is reduced to a stub
-                // and the model falls back to its initial reflex.
-                const isAssistantNode = msg.role === "assistant";
-                const assistantContent = isAssistantNode
-                    ? this._assistantContentForApi(msg)
-                    : "";
-                const assistantId = isAssistantNode ? msg.id : undefined;
-                const assistantThinking = isAssistantNode ? msg.thinkingContent : undefined;
-
-                const toolCalls: NonNullable<ChatMessageParam["toolCalls"]> = [];
-                const toolResultParams: ChatMessageParam[] = [];
-                let j = isAssistantNode ? i + 1 : i;
-                while (j < this._messages.length && this._messages[j]!.role === "tool_call") {
-                    const tcMsg = this._messages[j]!;
-                    const meta = tcMsg.toolCallMeta;
-                    const res = tcMsg.toolCallResult;
-                    if (meta && res) {
-                        toolCalls.push({
-                            id: meta.toolCallId,
-                            type: "function",
-                            function: {
-                                name: meta.toolName,
-                                arguments: JSON.stringify(meta.toolArgs ?? {}),
-                            },
-                        });
-                        // Re-materialize the tool_result. Errors are stored
-                        // in `res.result` without the "Error:" prefix; restore
-                        // it so downstream consumers keep the same semantics
-                        // they had during the original turn.
-                        const content = toolResultApiContent(res);
-                        const tr: ChatMessageParam = {
-                            role: "tool_result",
-                            toolCallId: meta.toolCallId,
-                            content,
-                        };
-                        if (
-                            tcMsg.contentBudgetHint != null
-                            && tcMsg.contentBudgetHintForLength === content.length
-                        ) {
-                            tr.contentBudgetHint = tcMsg.contentBudgetHint;
-                            tr.contentBudgetHintForLength = tcMsg.contentBudgetHintForLength;
-                        }
-                        toolResultParams.push(tr);
-                    }
-                    j++;
-                }
-
-                // Skip degenerate orphans: a `tool_call` node with no
-                // valid meta+result pair wouldn't add anything useful
-                // to the prompt and would synthesise an empty
-                // assistant — which pre-sanitize would then drop. Bail
-                // before mutating rawMessages so the outer loop just
-                // moves on.
-                if (!isAssistantNode && toolCalls.length === 0) {
-                    i = j - 1;
-                    continue;
-                }
-
-                rawMessages.push({
-                    role: "assistant",
-                    content: assistantContent,
-                    id: assistantId,
-                    thinkingContent: assistantThinking,
-                    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-                });
-                for (const tr of toolResultParams) rawMessages.push(tr);
-                // Skip the consumed tool_call messages on the outer loop.
-                i = j - 1;
-                continue;
-            }
-            // Other roles (system, etc.): skip.
-        }
+        const rawMessages = this._rebuildApiMessages(effectiveSystemPrompt);
 
         // Filter tools based on allowed capabilities
         const allowedCapabilities = options?.allowedCapabilities;
@@ -1089,358 +790,10 @@ export class ChatStream implements IChatAgent {
                             throw new DOMException("Aborted", "AbortError");
                         }
 
-                        const toolName = toolCall.function.name;
-                        const toolCallId = toolCall.id;
-                        let toolArgs: Record<string, unknown>;
-                        let argParseError: string | null = null;
-
-                        try {
-                            toolArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-                        } catch {
-                            // Surface the parse failure as a tool_result error rather than
-                            // throwing — otherwise a single malformed tool_call (often caused
-                            // by an over-long / truncated arguments string from the model)
-                            // would abort the entire conversation. Returning an error result
-                            // lets the LLM observe the failure and self-correct (retry with
-                            // smaller / properly escaped arguments).
-                            toolArgs = {};
-                            argParseError = `Failed to parse arguments for tool "${toolName}": ${toolCall.function.arguments}`;
-                        }
-
-                        // Add a tool_call message to UI-facing history
-                        const toolCallStartTime = Date.now();
-                        const toolCallMessage: ChatMessage = {
-                            id: generateId(),
-                            role: "tool_call",
-                            content: toolName,
-                            streaming: true,   // mark as in-progress until result arrives
-                            timestamp: toolCallStartTime,
-                            toolCallMeta: { toolCallId, toolName, toolArgs },
-                        };
-                        this._messages.push(toolCallMessage);
-                        this._config.onMessageUpdate?.({ ...toolCallMessage });
-
-                        // Find the registered handler.
-                        //
-                        // Two-stage lookup:
-                        //
-                        //   1) `filteredTools.find(...)` — the tool was offered
-                        //      to the model this iteration (passed both capability
-                        //      and embedding filters). This is the normal case.
-                        //
-                        //   2) Fallback: the model called a tool that did NOT
-                        //      pass the embedding filter this iteration, but is
-                        //      otherwise capability-allowed. This happens when
-                        //      the model recalls a tool from system-prompt or
-                        //      conversation memory whose description didn't
-                        //      score well against the current query. We MUST
-                        //      dispatch it anyway: refusing to (the previous
-                        //      behaviour) left the tool_call message stuck in
-                        //      `streaming: true` forever because the throw at
-                        //      the bottom of this branch bypassed finalization,
-                        //      producing the "handoff bubble shows `…`
-                        //      forever, never gets a ✓/✕" bug — see
-                        //      `_finalizeStuckToolCallMessages` for the
-                        //      defensive safety net that catches the symptom.
-                        //
-                        // Capability-rejected tools are deliberately NOT
-                        // recovered: a profile that disabled e.g. `write_file`
-                        // wants the call refused, not silently honoured.
-                        const filterHit = filteredTools.find((t) => {
-                            return t.schema.function.name === toolName;
-                        });
-                        const registered: RegisteredTool | undefined = filterHit
-                            ?? capabilityFilteredTools.find(
-                                t => t.schema.function.name === toolName,
-                            );
-                        const recoveredFromFilterMiss = !filterHit && !!registered;
-
-                        // ── Sticky on-demand bookkeeping ───────────────────
-                        // The model has now invoked this tool — mark it
-                        // sticky so the next iteration's embedding filter
-                        // cannot drop it out from under us. We mark on the
-                        // *registered hit* (not after successful exec) so
-                        // budget-blocked / arg-parse-error attempts still
-                        // count: the model demonstrated interest, and
-                        // keeping the tool visible lets it retry with
-                        // corrected args instead of hallucinating around
-                        // a now-invisible schema. Always-on tools never
-                        // need stickiness (they're never filtered) so
-                        // gate on `ondemand`. This also applies to the
-                        // recovered path: if we just rescued a filtered-out
-                        // tool, pin it for the rest of the turn so the
-                        // model gets a stable schema on follow-up calls.
-                        if (registered?.ondemand) {
-                            stickyOndemandToolNames.add(toolName);
-                        }
-
-                        // ── Filter-miss telemetry ──────────────────────────
-                        // When the model calls a tool that is *registered* on
-                        // this agent (passes capability filtering) but didn't
-                        // make it through embedding-based filtering, log a
-                        // debug line. We now dispatch it instead of throwing
-                        // (see the two-stage lookup above), but the breadcrumb
-                        // is still the single most useful signal for
-                        // diagnosing "AI suddenly can't do X" reports — it
-                        // pinpoints whether the threshold / topK / tool
-                        // description quality should be tuned. Capability-
-                        // rejected tools and genuinely-unregistered names are
-                        // excluded; they are not embedding-filter misses.
-                        if (recoveredFromFilterMiss) {
-                            console.debug(
-                                `[embedding tool filter] miss recovered: model called "${toolName}" `
-                                + `but it was filtered out (capability-allowed, dispatching directly; `
-                                + `consider lowering threshold or revising its description)`,
-                            );
-                        }
-
-                        // ── Per-turn call-budget enforcement ────────────────
-                        // Bump the counter *before* dispatch so that hard
-                        // blocks see consistent numbers across the parse-error
-                        // and dispatch paths. Counting parse-error attempts is
-                        // intentional: it prevents a tool that keeps emitting
-                        // malformed args from spinning forever.
-                        const callCountAfter = (toolCallCounts.get(toolName) ?? 0) + 1;
-                        toolCallCounts.set(toolName, callCountAfter);
-                        const budget = registered?.maxCallsPerTurn;
-                        const hardLimit = budget?.hard;
-                        const softLimit = budget?.soft;
-                        const hardBlocked = typeof hardLimit === 'number' && callCountAfter > hardLimit;
-                        const softTripped = !hardBlocked
-                            && typeof softLimit === 'number'
-                            && callCountAfter > softLimit;
-                        // Pre-compose the reminder once so we can append it
-                        // uniformly on whichever success path executes below.
-                        const softReminder = softTripped
-                            ? `\n\n[Note: tool "${toolName}" has been called ${callCountAfter} times in this turn` +
-                              (typeof hardLimit === 'number' ? ` (hard limit ${hardLimit})` : '') +
-                              `. You very likely have enough material now — synthesize an answer from what you already have instead of calling this tool again.]`
-                            : null;
-
-                        let toolResult: string;
-                        let mediaAttachment: MediaAttachment | null = null;
-
-                        if (hardBlocked) {
-                            // Refuse to invoke the tool at all. The synthetic
-                            // error gives the model a concrete instruction so
-                            // it stops re-trying (instead of inferring "the
-                            // tool just failed, let me call it once more").
-                            toolResult = `Error: Tool "${toolName}" reached its per-turn call limit (${hardLimit}). ` +
-                                `Do NOT call this tool again in this turn. Synthesize an answer from the results you already have, ` +
-                                `try a different approach, or ask the user to clarify.`;
-                        } else if (argParseError) {
-                            // Skip handler dispatch entirely when arguments are unparseable —
-                            // there is nothing meaningful to execute. Report the error back
-                            // to the model so it can retry with corrected arguments.
-                            toolResult = `Error: ${argParseError}`;
-                        } else if (!registered) {
-                            // No handler registered → delegate to onToolCall callback
-                            if (this._config.onToolCall) {
-                                toolResult = await this._config.onToolCall({
-                                    toolCallId,
-                                    toolName,
-                                    toolArgs,
-                                    message: toolCallMessage,
-                                });
-                            } else {
-                                // Known-bug surface: this is the "unhandled
-                                // tool" mid-turn throw that historically left
-                                // handoff / sub-agent bubbles stuck at `…`.
-                                // The throw is preserved (the bubble safety
-                                // net needs it), but we add a tracer record
-                                // so mobile users see something more concrete
-                                // than the generic "no result captured" text.
-                                recordIssue({
-                                    severity: 'error',
-                                    source: 'chat-stream',
-                                    code: 'unhandled-tool',
-                                    message:
-                                        `Tool "${toolName}" was called but no handler is registered and ` +
-                                        `no onToolCall callback is provided. The dispatch loop will throw, ` +
-                                        `which may leave the tool_call bubble stuck pending a safety-net finalize.`,
-                                    context: {
-                                        toolName,
-                                        toolCallId,
-                                        messageId: toolCallMessage.id,
-                                    },
-                                });
-                                throw new Error(
-                                    `Tool "${toolName}" was called but no handler is registered and no onToolCall callback is provided.`
-                                );
-                            }
-                        } else {
-                            // Execute the registered tool and serialise the result
-                            let lastExecResult: ToolCallResult | undefined;
-                            try {
-                                // Ask for user confirmation if required
-                                if (registered.requiresConfirmation && this._config.onConfirmToolCall) {
-                                    toolCallMessage.confirmationState = 'pending';
-                                    this._config.onMessageUpdate?.({ ...toolCallMessage });
-
-                                    const approved = await this._config.onConfirmToolCall({
-                                        toolName,
-                                        toolArgs,
-                                        messageId: toolCallMessage.id,
-                                        signal: this._abortController?.signal,
-                                    });
-                                    toolCallMessage.confirmationState = approved ? 'allowed' : 'rejected';
-                                    // Notify the UI so it can transition from the
-                                    // pending (Allow button) state to the allowed
-                                    // badge + in-progress cursor immediately —
-                                    // otherwise long-running tools (e.g. image
-                                    // generation) would keep showing the Allow
-                                    // button until exec() finishes.
-                                    this._config.onMessageUpdate?.({ ...toolCallMessage });
-
-                                    if (!approved) {
-                                        toolResult = 'Error: User rejected this tool call. The user does not want to perform this operation.';
-                                    } else {
-                                        const execResult = await registered.exec(
-                                            this,
-                                            toolArgs,
-                                            this._abortController?.signal,
-                                            { toolCallId, toolCallMessage },
-                                        );
-                                        lastExecResult = execResult;
-                                        toolResult = ChatStream.serialiseToolResult(execResult);
-                                        if (execResult.type === "media") {
-                                            mediaAttachment = toMediaAttachment(execResult.content);
-                                        }
-                                    }
-                                } else {
-                                    const execResult = await registered.exec(
-                                        this,
-                                        toolArgs,
-                                        this._abortController?.signal,
-                                        { toolCallId, toolCallMessage },
-                                    );
-                                    lastExecResult = execResult;
-                                    toolResult = ChatStream.serialiseToolResult(execResult);
-                                    if (execResult.type === "media") {
-                                        mediaAttachment = toMediaAttachment(execResult.content);
-                                    }
-                                }
-
-                                // Notify asset listeners so the runtime-level
-                                // GeneratedAssetCollection can aggregate them
-                                // (persisted independently by the runtime on
-                                // turn finish, not as message-level metadata).
-                                if (lastExecResult?.assets && lastExecResult.assets.length > 0) {
-                                    this._config.onAssetGenerated?.(lastExecResult.assets);
-                                }
-                            } catch (err) {
-                                if (isAbortError(err)) {
-                                    // Finalize the in-flight tool_call message before
-                                    // unwinding. Without this the bubble stays stuck
-                                    // in `streaming: true` with `toolCallResult ===
-                                    // undefined` — i.e. only the ARGUMENTS section
-                                    // renders, the RESULT section is silently
-                                    // omitted, and the user reasonably reads that
-                                    // as "the tool returned nothing" even though
-                                    // the model never actually saw a result either.
-                                    // See `renderToolCallContent` for the
-                                    // `if (msg.toolCallResult)` gate this restores.
-                                    //
-                                    // Distinguish two abort sub-cases by looking at
-                                    // confirmationState: when it's still 'pending',
-                                    // the user aborted while the Allow / Reject
-                                    // dialog was up — the tool never actually ran,
-                                    // so the bubble should say so instead of
-                                    // claiming an "interrupted execution" that
-                                    // never started. We also clear the pending
-                                    // state itself so the UI doesn't try to
-                                    // re-render the dialog when this message is
-                                    // restored from history later (streaming=false
-                                    // already suppresses it on the live render,
-                                    // but persisted snapshots round-trip the field).
-                                    const wasAwaitingConfirm = toolCallMessage.confirmationState === 'pending';
-                                    if (wasAwaitingConfirm) {
-                                        toolCallMessage.confirmationState = 'rejected';
-                                    }
-                                    this._finalizeAbortedToolCallMessage(
-                                        toolCallMessage,
-                                        Date.now() - toolCallStartTime,
-                                        wasAwaitingConfirm
-                                            ? '[Aborted before confirmation: the tool was waiting for user approval and did not run.]'
-                                            : '[Aborted during tool execution: the tool was interrupted before it could return a result.]',
-                                    );
-                                    throw err;
-                                }
-                                const error = err instanceof Error ? err : new Error(String(err));
-                                toolResult = `Error: ${error.message}`;
-                            }
-                        }
-
-                        // Check if aborted after tool execution
-                        if (!this._abortController || this._abortController.signal.aborted) {
-                            // Symmetric finalization for the "tool finished but the
-                            // turn was aborted before we got to record the result"
-                            // path. The exec itself ran to completion (we just
-                            // can't surface its result to the model because the
-                            // turn is being torn down), so the bubble would
-                            // otherwise stay in the same "streaming forever"
-                            // limbo as the catch path above. We mark this branch
-                            // distinctly so the user can tell "the tool actually
-                            // ran but its output was discarded" apart from "the
-                            // tool itself was interrupted mid-flight".
-                            this._finalizeAbortedToolCallMessage(
-                                toolCallMessage,
-                                Date.now() - toolCallStartTime,
-                                '[Aborted after tool returned: the tool finished but the turn was interrupted before its result reached the model.]',
-                            );
-                            throw new DOMException("Aborted", "AbortError");
-                        }
-
-                        // Determine result status
-                        const isError = toolResult.startsWith('Error:');
-                        const resultStatus: 'success' | 'warning' | 'error' = isError ? 'error' : 'success';
-
-                        // Soft-budget reminder: only attach on success so we
-                        // don't dilute error messages, and so the model sees
-                        // the nudge in the same payload as the data it just
-                        // collected.
-                        if (softReminder && !isError) {
-                            toolResult = toolResult + softReminder;
-                        }
-
-                        // Mark the tool_call message as complete, update content with elapsed time
-                        const toolCallElapsed = Date.now() - toolCallStartTime;
-                        toolCallMessage.streaming = false;
-                        toolCallMessage.content = `${toolName}  (${toolCallElapsed}ms)`;
-                        toolCallMessage.toolCallResult = {
-                            status: resultStatus,
-                            result: isError ? toolResult.slice('Error:'.length).trim() : toolResult,
-                        };
-                        this._config.onMessageUpdate?.({ ...toolCallMessage });
-
-                        // Notify UI that tool execution has finished - this is the gap before
-                        // the AI starts its next response (which may include thinking)
-                        this._config.onToolCallEnd?.({
-                            toolName,
-                            toolArgs,
-                            result: toolResult,
-                            isError,
-                        });
-
-                        // Append tool result to the raw messages buffer (used for next LLM call)
-                        rawMessages.push({
-                            role: "tool_result",
-                            toolCallId,
-                            content: toolResult,
-                        });
-
-                        // If the tool returned media content (image/audio/video/pdf),
-                        // inject a user message so the LLM can actually perceive it.
-                        // (Tool role messages are text-only in OpenAI/Gemini APIs.)
-                        if (mediaAttachment) {
-                            const label = mediaKindLabel(mediaAttachment.kind);
-                            const src = mediaAttachment.sourcePath ?? "tool result";
-                            rawMessages.push({
-                                role: "user",
-                                content: `[${label} content from ${src}]`,
-                                media: [mediaAttachment],
-                            });
-                        }
+                        await this._handleSingleToolCall(
+                            toolCall, filteredTools, capabilityFilteredTools,
+                            stickyOndemandToolNames, toolCallCounts, rawMessages,
+                        );
                     }
 
                     // Capture the assistant's prose for the next iteration's
@@ -1554,6 +907,392 @@ export class ChatStream implements IChatAgent {
     }
 
     // ── Private methods ─────────────────────────────────────────────────────
+
+    /**
+     * Resolve the effective system prompt for this turn.
+     *
+     * Static `systemPrompt` is the baseline; `systemPromptPrefix` /
+     * `systemPromptSuffix` can wrap a per-turn, query-aware fragment
+     * around it.  Prefix / suffix failures degrade silently to the
+     * baseline.  The final order is:
+     *   [prefix] · "\n\n" · [baseline] · "\n\n" · [suffix]
+     */
+    private async _buildEffectiveSystemPrompt(userInput: string): Promise<string> {
+        const baseline = this._config.systemPrompt ?? '';
+        const segments: string[] = [];
+
+        if (this._config.systemPromptPrefix) {
+            try {
+                const prefix = await this._config.systemPromptPrefix(
+                    userInput,
+                    this._abortController?.signal,
+                );
+                if (prefix) segments.push(prefix);
+            } catch (err) {
+                if (isAbortError(err)) throw err;
+                console.warn('ChatStream: systemPromptPrefix threw, falling back to base prompt', err);
+            }
+        }
+
+        if (baseline) segments.push(baseline);
+
+        if (this._config.systemPromptSuffix) {
+            try {
+                const suffix = await this._config.systemPromptSuffix(
+                    userInput,
+                    this._abortController?.signal,
+                );
+                if (suffix) segments.push(suffix);
+            } catch (err) {
+                if (isAbortError(err)) throw err;
+                console.warn('ChatStream: systemPromptSuffix threw, falling back to base prompt', err);
+            }
+        }
+
+        return segments.join('\n\n');
+    }
+
+    /**
+     * Rebuild the flat API message list from `_messages` for a new LLM call.
+     *
+     * Walks the stored conversation history and reconstructs a valid
+     * `ChatMessageParam[]` sequence: user → assistant(toolCalls) →
+     * tool_result(s).  Orphan tool_call messages (no completed result)
+     * are skipped.  Pure tool-call turns (assistant with no text/thinking)
+     * get a synthesised empty-content assistant so the protocol invariant
+     * ("every tool_result has an assistant owner") holds.
+     */
+    private _rebuildApiMessages(effectiveSystemPrompt: string): ChatMessageParam[] {
+        const rawMessages: ChatMessageParam[] = [];
+        if (effectiveSystemPrompt) {
+            rawMessages.push({ role: "system", content: effectiveSystemPrompt });
+        }
+        for (let i = 0; i < this._messages.length; i++) {
+            const msg = this._messages[i]!;
+            if (msg.role === "user") {
+                rawMessages.push({ role: "user", content: msg.content, id: msg.id });
+                continue;
+            }
+            if (msg.role === "assistant" || msg.role === "tool_call") {
+                const isAssistantNode = msg.role === "assistant";
+                const assistantContent = isAssistantNode
+                    ? this._assistantContentForApi(msg)
+                    : "";
+                const assistantId = isAssistantNode ? msg.id : undefined;
+                const assistantThinking = isAssistantNode ? msg.thinkingContent : undefined;
+
+                const toolCalls: NonNullable<ChatMessageParam["toolCalls"]> = [];
+                const toolResultParams: ChatMessageParam[] = [];
+                let j = isAssistantNode ? i + 1 : i;
+                while (j < this._messages.length && this._messages[j]!.role === "tool_call") {
+                    const tcMsg = this._messages[j]!;
+                    const meta = tcMsg.toolCallMeta;
+                    const res = tcMsg.toolCallResult;
+                    if (meta && res) {
+                        toolCalls.push({
+                            id: meta.toolCallId,
+                            type: "function",
+                            function: {
+                                name: meta.toolName,
+                                arguments: JSON.stringify(meta.toolArgs ?? {}),
+                            },
+                        });
+                        const content = toolResultApiContent(res);
+                        const tr: ChatMessageParam = {
+                            role: "tool_result",
+                            toolCallId: meta.toolCallId,
+                            content,
+                        };
+                        if (
+                            tcMsg.contentBudgetHint != null
+                            && tcMsg.contentBudgetHintForLength === content.length
+                        ) {
+                            tr.contentBudgetHint = tcMsg.contentBudgetHint;
+                            tr.contentBudgetHintForLength = tcMsg.contentBudgetHintForLength;
+                        }
+                        toolResultParams.push(tr);
+                    }
+                    j++;
+                }
+
+                // Skip degenerate orphans.
+                if (!isAssistantNode && toolCalls.length === 0) {
+                    i = j - 1;
+                    continue;
+                }
+
+                rawMessages.push({
+                    role: "assistant",
+                    content: assistantContent,
+                    id: assistantId,
+                    thinkingContent: assistantThinking,
+                    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+                });
+                for (const tr of toolResultParams) rawMessages.push(tr);
+                i = j - 1;
+                continue;
+            }
+            // Other roles (system, etc.): skip.
+        }
+        return rawMessages;
+    }
+
+    /**
+     * Handle a single tool call from the model during the prompt loop.
+     *
+     * Extracted from {@link prompt} so the ~360-line tool-handling path
+     * lives in a focused method rather than inflating the main method to
+     * nearly 1000 lines.
+     *
+     * @param toolCall - The parsed tool call from the assistant's response.
+     * @param filteredTools - Tools that passed embedding filtering this iteration.
+     * @param capabilityFilteredTools - All capability-allowed tools (fallback for filter misses).
+     * @param stickyOndemandToolNames - Mutable set; on-demand tools the model has called are added.
+     * @param toolCallCounts - Mutable per-tool call counter for budget enforcement.
+     * @param rawMessages - Mutable API message buffer; tool results are appended here.
+     */
+    private async _handleSingleToolCall(
+        toolCall: CompleteToolCall,
+        filteredTools: RegisteredTool[],
+        capabilityFilteredTools: RegisteredTool[],
+        stickyOndemandToolNames: Set<string>,
+        toolCallCounts: Map<string, number>,
+        rawMessages: ChatMessageParam[],
+    ): Promise<void> {
+        const toolName = toolCall.function.name;
+        const toolCallId = toolCall.id;
+        let toolArgs: Record<string, unknown>;
+        let argParseError: string | null = null;
+
+        try {
+            toolArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+        } catch {
+            // Surface the parse failure as a tool_result error rather than
+            // throwing — otherwise a single malformed tool_call (often caused
+            // by an over-long / truncated arguments string from the model)
+            // would abort the entire conversation. Returning an error result
+            // lets the LLM observe the failure and self-correct (retry with
+            // smaller / properly escaped arguments).
+            toolArgs = {};
+            argParseError = `Failed to parse arguments for tool "${toolName}": ${toolCall.function.arguments}`;
+        }
+
+        // Add a tool_call message to UI-facing history
+        const toolCallStartTime = Date.now();
+        const toolCallMessage: ChatMessage = {
+            id: generateId(),
+            role: "tool_call",
+            content: toolName,
+            streaming: true,   // mark as in-progress until result arrives
+            timestamp: toolCallStartTime,
+            toolCallMeta: { toolCallId, toolName, toolArgs },
+        };
+        this._messages.push(toolCallMessage);
+        this._config.onMessageUpdate?.({ ...toolCallMessage });
+
+        // Find the registered handler.
+        //
+        // Two-stage lookup:
+        //   1) `filteredTools.find(...)` — the tool was offered
+        //      to the model this iteration (passed both capability
+        //      and embedding filters). This is the normal case.
+        //   2) Fallback: the model called a tool that did NOT
+        //      pass the embedding filter this iteration, but is
+        //      otherwise capability-allowed. This happens when
+        //      the model recalls a tool from system-prompt or
+        //      conversation memory whose description didn't
+        //      score well against the current query. We MUST
+        //      dispatch it anyway: refusing to (the previous
+        //      behaviour) left the tool_call message stuck in
+        //      `streaming: true` forever because the throw at
+        //      the bottom of this branch bypassed finalization,
+        //      producing the "handoff bubble shows `…`
+        //      forever, never gets a ✓/✕" bug.
+        //
+        // Capability-rejected tools are deliberately NOT
+        // recovered: a profile that disabled e.g. `write_file`
+        // wants the call refused, not silently honoured.
+        const filterHit = filteredTools.find((t) => {
+            return t.schema.function.name === toolName;
+        });
+        const registered: RegisteredTool | undefined = filterHit
+            ?? capabilityFilteredTools.find(
+                t => t.schema.function.name === toolName,
+            );
+        const recoveredFromFilterMiss = !filterHit && !!registered;
+
+        // ── Sticky on-demand bookkeeping ───────────────────
+        if (registered?.ondemand) {
+            stickyOndemandToolNames.add(toolName);
+        }
+
+        // ── Filter-miss telemetry ──────────────────────────
+        if (recoveredFromFilterMiss) {
+            console.debug(
+                `[embedding tool filter] miss recovered: model called "${toolName}" `
+                + `but it was filtered out (capability-allowed, dispatching directly; `
+                + `consider lowering threshold or revising its description)`,
+            );
+        }
+
+        // ── Per-turn call-budget enforcement ────────────────
+        const callCountAfter = (toolCallCounts.get(toolName) ?? 0) + 1;
+        toolCallCounts.set(toolName, callCountAfter);
+        const budget = registered?.maxCallsPerTurn;
+        const hardLimit = budget?.hard;
+        const softLimit = budget?.soft;
+        const hardBlocked = typeof hardLimit === 'number' && callCountAfter > hardLimit;
+        const softTripped = !hardBlocked
+            && typeof softLimit === 'number'
+            && callCountAfter > softLimit;
+        const softReminder = softTripped
+            ? `\n\n[Note: tool "${toolName}" has been called ${callCountAfter} times in this turn` +
+              (typeof hardLimit === 'number' ? ` (hard limit ${hardLimit})` : '') +
+              `. You very likely have enough material now — synthesize an answer from what you already have instead of calling this tool again.]`
+            : null;
+
+        let toolResult: string;
+        let mediaAttachment: MediaAttachment | null = null;
+
+        if (hardBlocked) {
+            toolResult = `Error: Tool "${toolName}" reached its per-turn call limit (${hardLimit}). ` +
+                `Do NOT call this tool again in this turn. Synthesize an answer from the results you already have, ` +
+                `try a different approach, or ask the user to clarify.`;
+        } else if (argParseError) {
+            toolResult = `Error: ${argParseError}`;
+        } else if (!registered) {
+            if (this._config.onToolCall) {
+                toolResult = await this._config.onToolCall({
+                    toolCallId,
+                    toolName,
+                    toolArgs,
+                    message: toolCallMessage,
+                });
+            } else {
+                recordIssue({
+                    severity: 'error',
+                    source: 'chat-stream',
+                    code: 'unhandled-tool',
+                    message:
+                        `Tool "${toolName}" was called but no handler is registered and ` +
+                        `no onToolCall callback is provided. The dispatch loop will throw, ` +
+                        `which may leave the tool_call bubble stuck pending a safety-net finalize.`,
+                    context: { toolName, toolCallId, messageId: toolCallMessage.id },
+                });
+                throw new Error(
+                    `Tool "${toolName}" was called but no handler is registered and no onToolCall callback is provided.`
+                );
+            }
+        } else {
+            let lastExecResult: ToolCallResult | undefined;
+            try {
+                if (registered.requiresConfirmation && this._config.onConfirmToolCall) {
+                    toolCallMessage.confirmationState = 'pending';
+                    this._config.onMessageUpdate?.({ ...toolCallMessage });
+
+                    const approved = await this._config.onConfirmToolCall({
+                        toolName,
+                        toolArgs,
+                        messageId: toolCallMessage.id,
+                        signal: this._abortController?.signal,
+                    });
+                    toolCallMessage.confirmationState = approved ? 'allowed' : 'rejected';
+                    this._config.onMessageUpdate?.({ ...toolCallMessage });
+
+                    if (!approved) {
+                        toolResult = 'Error: User rejected this tool call. The user does not want to perform this operation.';
+                    } else {
+                        const execResult = await registered.exec(
+                            this,
+                            toolArgs,
+                            this._abortController?.signal,
+                            { toolCallId, toolCallMessage },
+                        );
+                        lastExecResult = execResult;
+                        toolResult = ChatStream.serialiseToolResult(execResult);
+                        if (execResult.type === "media") {
+                            mediaAttachment = toMediaAttachment(execResult.content);
+                        }
+                    }
+                } else {
+                    const execResult = await registered.exec(
+                        this,
+                        toolArgs,
+                        this._abortController?.signal,
+                        { toolCallId, toolCallMessage },
+                    );
+                    lastExecResult = execResult;
+                    toolResult = ChatStream.serialiseToolResult(execResult);
+                    if (execResult.type === "media") {
+                        mediaAttachment = toMediaAttachment(execResult.content);
+                    }
+                }
+
+                if (lastExecResult?.assets && lastExecResult.assets.length > 0) {
+                    this._config.onAssetGenerated?.(lastExecResult.assets);
+                }
+            } catch (err) {
+                if (isAbortError(err)) {
+                    const wasAwaitingConfirm = toolCallMessage.confirmationState === 'pending';
+                    if (wasAwaitingConfirm) {
+                        toolCallMessage.confirmationState = 'rejected';
+                    }
+                    this._finalizeAbortedToolCallMessage(
+                        toolCallMessage,
+                        Date.now() - toolCallStartTime,
+                        wasAwaitingConfirm
+                            ? '[Aborted before confirmation: the tool was waiting for user approval and did not run.]'
+                            : '[Aborted during tool execution: the tool was interrupted before it could return a result.]',
+                    );
+                    throw err;
+                }
+                const error = err instanceof Error ? err : new Error(String(err));
+                toolResult = `Error: ${error.message}`;
+            }
+        }
+
+        // Check if aborted after tool execution
+        if (!this._abortController || this._abortController.signal.aborted) {
+            this._finalizeAbortedToolCallMessage(
+                toolCallMessage,
+                Date.now() - toolCallStartTime,
+                '[Aborted after tool returned: the tool finished but the turn was interrupted before its result reached the model.]',
+            );
+            throw new DOMException("Aborted", "AbortError");
+        }
+
+        // Determine result status
+        const isError = toolResult.startsWith('Error:');
+        const resultStatus: 'success' | 'warning' | 'error' = isError ? 'error' : 'success';
+
+        if (softReminder && !isError) {
+            toolResult = toolResult + softReminder;
+        }
+
+        // Mark the tool_call message as complete
+        const toolCallElapsed = Date.now() - toolCallStartTime;
+        toolCallMessage.streaming = false;
+        toolCallMessage.content = `${toolName}  (${toolCallElapsed}ms)`;
+        toolCallMessage.toolCallResult = {
+            status: resultStatus,
+            result: isError ? toolResult.slice('Error:'.length).trim() : toolResult,
+        };
+        this._config.onMessageUpdate?.({ ...toolCallMessage });
+
+        this._config.onToolCallEnd?.({ toolName, toolArgs, result: toolResult, isError });
+
+        rawMessages.push({ role: "tool_result", toolCallId, content: toolResult });
+
+        if (mediaAttachment) {
+            const label = mediaKindLabel(mediaAttachment.kind);
+            const src = mediaAttachment.sourcePath ?? "tool result";
+            rawMessages.push({
+                role: "user",
+                content: `[${label} content from ${src}]`,
+                media: [mediaAttachment],
+            });
+        }
+    }
 
     /** Whether an assistant message carries text/thinking worth persisting. */
     private _assistantHasPersistablePayload(msg: ChatMessage): boolean {
