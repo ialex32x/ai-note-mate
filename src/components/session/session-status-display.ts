@@ -37,7 +37,7 @@ export interface EmbeddingPanelInfo {
 /**
  * Session status display (top toolbar).
  *
- * - `render()` renders the compact top-toolbar indicator (context usage %).
+ * - `render()` renders the compact top-toolbar indicator (context usage ring).
  * - `renderPanel()` renders the structured pop-up panel shown when the user
  *   clicks the indicator. The panel is expected to be managed by the shared
  *   `DropdownManager` (click-to-open, click-outside-to-close).
@@ -50,8 +50,9 @@ export class SessionStatusDisplay {
     /**
      * Render the compact top-toolbar indicator into `el`.
      * Shows the single-turn context-window usage as a percentage
-     * (e.g. "45%"). The tooltip on hover reveals the exact
-     * token breakdown.
+     * ring whose arc fills proportionally to usage. The centre
+     * displays the percentage; the tooltip on hover reveals the
+     * exact token breakdown.
      */
     static render(el: HTMLElement, chat: IChatAgent, maxTokens: number): void {
         const pct = computeContextPercent(chat, maxTokens);
@@ -61,16 +62,85 @@ export class SessionStatusDisplay {
 
         const container = el.createEl('div', { cls: 'session-status-display' });
 
-        // Icon
-        const iconRow = container.createEl('span', { cls: 'session-status-display__icon' });
-        setIcon(iconRow, 'activity');
+        // Colour tiers: ≤50 green, ≤80 amber, >80 red; faint when empty
+        let colourVar: string;
+        if (pct <= 0) {
+            colourVar = 'var(--text-faint)';
+        } else if (pct <= 50) {
+            colourVar = 'var(--text-success)';
+        } else if (pct <= 80) {
+            colourVar = 'var(--text-warning)';
+        } else {
+            colourVar = 'var(--text-error)';
+        }
 
-        // Value: context usage percentage
-        const valueRow = container.createEl('span', { cls: 'session-status-display__value' });
-        valueRow.setText(`${pct}%`);
+        // The outer ring circumference ≈ 2π × 15.9 ≈ 99.9
+        const circumference = 99.9;
+        const dashOffset = circumference - (circumference * pct) / 100;
 
+        const wrapper = container.createEl('span', { cls: 'session-context-ring' });
         if (tooltipText) {
-            setTooltip(container, tooltipText);
+            setTooltip(wrapper, tooltipText);
+        }
+
+        const NS = 'http://www.w3.org/2000/svg';
+        const doc = activeDocument;
+
+        const svg = doc.createElementNS(NS, 'svg');
+        svg.setAttribute('viewBox', '0 0 36 36');
+        svg.setAttribute('width', '16');
+        svg.setAttribute('height', '16');
+        svg.classList.add('session-context-ring__svg');
+        wrapper.appendChild(svg);
+
+        // Background track
+        const track = doc.createElementNS(NS, 'circle');
+        track.setAttribute('cx', '18');
+        track.setAttribute('cy', '18');
+        track.setAttribute('r', '15.9');
+        track.setAttribute('fill', 'none');
+        track.setAttribute('stroke', 'var(--text-faint)');
+        track.setAttribute('stroke-width', '2.5');
+        track.classList.add('session-context-ring__track');
+        svg.appendChild(track);
+
+        // Foreground arc
+        if (pct > 0) {
+            const arc = doc.createElementNS(NS, 'circle');
+            arc.setAttribute('cx', '18');
+            arc.setAttribute('cy', '18');
+            arc.setAttribute('r', '15.9');
+            arc.setAttribute('fill', 'none');
+            arc.setAttribute('stroke', colourVar);
+            arc.setAttribute('stroke-width', '2.5');
+            arc.setAttribute('stroke-linecap', 'round');
+            arc.setAttribute('stroke-dasharray', `${circumference}`);
+            arc.setAttribute('stroke-dashoffset', `${dashOffset}`);
+            arc.setAttribute('transform', 'rotate(-90 18 18)');
+            arc.classList.add('session-context-ring__arc');
+            svg.appendChild(arc);
+        }
+
+        // Centre percentage text (omit when usage rounds to 0, i.e. < 1%)
+        if (pct >= 1) {
+            const fontSize = pct >= 100 ? 14 : 18;
+            // Optical vertical centering — numeral glyphs sit low within the
+            // em-box even when dominant-baseline is "central".
+            const yCenter = 18 - fontSize * 0.1;
+
+            const text = doc.createElementNS(NS, 'text');
+            text.setAttribute('transform', `translate(18 ${yCenter})`);
+            text.setAttribute('x', '0');
+            text.setAttribute('y', '0');
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('dominant-baseline', 'central');
+            text.setAttribute('fill', colourVar);
+            // SVG renders at 16×16 px but viewBox is 36×36 units;
+            // scale factor ≈ 0.444, so use ~16–18 units to get ~7–8 px on screen.
+            text.setAttribute('font-size', `${fontSize}`);
+            text.classList.add('session-context-ring__text');
+            text.textContent = `${pct}`;
+            svg.appendChild(text);
         }
     }
 

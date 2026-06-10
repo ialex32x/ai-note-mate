@@ -150,7 +150,7 @@ export class SessionView extends ItemView {
 
     /**
      * Controller that owns the toolbar title display and the
-     * session-status indicator (token usage, context ring, detail
+     * session-status indicator (context usage ring, detail
      * panel). Constructed in {@link buildInputArea} once all related
      * DOM elements exist — before that, the view uses inline fallbacks.
      */
@@ -802,7 +802,7 @@ export class SessionView extends ItemView {
     /**
      * Build the docked input area: TODO panel, checkpoint row,
      * CodeMirror compose card, and the thinking row (file-ref, profile,
-     * issue tracer, tips, session-status panel, context ring, refine
+     * issue tracer, tips, session-status panel, refine
      * prompt, send). Also constructs the {@link SessionStatusController}
      * which owns title rendering and the status indicator.
      *
@@ -945,9 +945,9 @@ export class SessionView extends ItemView {
         });
 
         // ── Session status indicator ───────────────────────────────────────
-        // Primary metric: compact token usage badge that also opens a
-        // detailed panel on click. Placed first in the right toolbar so
-        // the eye-flow is "status → context ring → refine → send".
+        // Primary metric: context-usage ring that also opens a
+        // detailed panel on click. Placed before refine → send so
+        // the eye-flow is "status → refine → send".
         const sessionStatusEl = thinkingRowRight.createEl('div', {
             cls: 'session-toolbar__status',
         });
@@ -984,7 +984,7 @@ export class SessionView extends ItemView {
                     sessionStatusPanelEl.style.right = `-${rightOffset}px`;
                 }
 
-                // Refresh the compact toolbar indicator and context ring.
+                // Refresh the compact toolbar indicator.
                 // Panel rendering is deferred to onAfterOpen so that
                 // DropdownManager.isActive() returns true (the guard
                 // inside updateStatusDisplay relies on it).
@@ -1025,7 +1025,7 @@ export class SessionView extends ItemView {
 
         // ── Construct status controller ─────────────────────────────────
         // Owns title rendering and the session-status indicator (context
-        // usage badge, detail panel). Constructed here because it needs
+        // usage ring, detail panel). Constructed here because it needs
         // DOM elements from both buildToolbar (sessionTitleEl) and
         // buildInputArea (status elements).
         this.statusController = new SessionStatusController({

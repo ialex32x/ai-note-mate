@@ -90,23 +90,37 @@
 }
 
 .session-status-display {
-    display: flex;
-    flex-direction: row;
+    display: inline-flex;
     align-items: center;
-    gap: @spacing-xs;
-    line-height: 1.2;
+    justify-content: center;
+    line-height: 1;
 }
 
-.session-status-display__icon {
-    .flex-center();
-    
-    svg {
-        .icon-size(12px);
+.session-context-ring {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: default;
+
+    &__svg {
+        display: block;
     }
-}
 
-.session-status-display__value {
-    font-size: 0.9em;
+    &__track {
+        // instant visual feedback on theme switch
+        transition: stroke @duration-normal;
+    }
+
+    &__arc {
+        transition: stroke-dashoffset @duration-slow ease, stroke @duration-normal;
+    }
+
+    &__text {
+        text-anchor: middle;
+        dominant-baseline: central;
+        // instant visual feedback on theme switch
+        transition: fill @duration-normal;
+    }
 }
 
 // Session status pop-up panel (opened via click, managed by DropdownManager)

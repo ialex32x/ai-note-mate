@@ -28,7 +28,7 @@ export interface SessionStatusControllerDeps {
 
 /**
  * Manages the toolbar session title and the session-status indicator
- * (compact context-usage badge and detailed dropdown panel).
+ * (compact context-usage ring and detailed dropdown panel).
  *
  * Owns the DOM element references and all rendering logic so the view
  * delegates to this controller instead of operating on DOM fields directly.
@@ -93,7 +93,7 @@ export class SessionStatusController {
 
     /**
      * Refresh the session-status indicator in the input toolbar:
-     * the compact context-usage badge and (when open) the detailed
+     * the compact context-usage ring and (when open) the detailed
      * dropdown panel.
      */
     updateStatusDisplay(): void {
