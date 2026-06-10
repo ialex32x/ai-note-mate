@@ -79,7 +79,8 @@ jobs:
             found { print }
           ' CHANGELOG.md > release-notes.md
           if [ ! -s release-notes.md ]; then
-            echo "::warning::No changelog entry found for '## ${TAG}' in CHANGELOG.md; release body will be empty."
+            echo "::error::No changelog entry found for '## ${TAG}' in CHANGELOG.md."
+            exit 1
           fi
 
       - name: Create release
@@ -89,7 +90,6 @@ jobs:
         run: |
           gh release create "$TAG" \
             --title="$TAG" \
-            --draft \
             --notes-file=release-notes.md \
             main.js manifest.json styles.css
 
