@@ -48,5 +48,7 @@ export default tseslint.config(
 		"**/*.json",
 		// stylelint config is not part of the plugin bundle
 		".stylelintrc.js",
+		// Ignore all dot-directories at root (e.g. .github, etc.)
+		".*",
 	]),
 );

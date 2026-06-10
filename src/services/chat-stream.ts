@@ -1,24 +1,20 @@
-import { ContextReducer, ConversationSummary, estimateTokens, createChatCompletion, type ContextReduceOptions } from "./context-reducer";
+import { ContextReducer, ConversationSummary, estimateTokens, createChatCompletion } from "./context-reducer";
 import type { MinimalModelConfig } from "./llm-provider";
-import type { ArtifactStore } from "./artifact-store";
 import type {
     LLMProvider,
     MediaAttachment,
     ModalityCapability,
-    ToolDefinition,
     CompleteToolCall,
     TokenUsage,
     ChatMessageParam,
     StreamChunk,
     ThinkingLevel,
     ToolCapability,
-    ChatMessageRole,
 } from "./llm-provider";
 import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
 import { getLocale, tIn } from "../i18n";
 import { isAbortError } from "../utils/abortable-request";
-import type { GeneratedAsset } from "./generated-asset-collection";
 
 import {
     SUMMARIZER_SYSTEM_PROMPT,
@@ -28,20 +24,15 @@ import {
 } from "./chat-stream-constants";
 
 import type {
-    MessageId,
-    ToolCallMeta,
-    ToolCallStatus,
     ToolCallResultInfo,
     ChatMessage,
     QuickAskTurn,
     ChatSessionState,
-    ToolCallArgs,
     ToolCallResult,
     ToolFilterOptions,
     RegisteredTool,
     ChatStreamConfig,
     StreamResultInternal,
-    AgentTokenBreakdown,
     IChatAgent,
 } from "./chat-stream-types";
 

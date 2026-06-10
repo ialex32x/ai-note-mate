@@ -8,12 +8,9 @@
 
 import type {
     LLMProvider,
-    MediaAttachment,
-    ModalityCapability,
     ToolDefinition,
     CompleteToolCall,
     TokenUsage,
-    ChatMessageParam,
     ThinkingLevel,
     ToolCapability,
     ChatMessageRole,
