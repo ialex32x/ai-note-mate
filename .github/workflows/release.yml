@@ -68,6 +68,20 @@ jobs:
         with:
           subject-path: styles.css
 
+      - name: Extract changelog for release
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          awk -v tag="## ${TAG}" '
+            $0 == tag { found=1; next }
+            found && /^---$/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::warning::No changelog entry found for '## ${TAG}' in CHANGELOG.md; release body will be empty."
+          fi
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,6 +90,7 @@ jobs:
           gh release create "$TAG" \
             --title="$TAG" \
             --draft \
+            --notes-file=release-notes.md \
             main.js manifest.json styles.css
 
       - name: Sync manifest.json / versions.json back to main
