@@ -49,7 +49,7 @@ export interface SubAgentConfig {
      * the reducer's built-in defaults.
      */
     compressionOptions?: Pick<ContextReduceOptions,
-        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold'
+        'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
     >;
 }
 
