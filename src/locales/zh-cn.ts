@@ -38,10 +38,10 @@ export const zhCN: Record<string, string> = {
 	'view.deleteSession': '删除会话',
 	'view.sessionDeleted': '会话已删除。',
 	'view.exportSession': '保存为笔记',
-	'view.exportNoDirConfigured': '请先在 设置 → Note Mate → 通用 中配置“保存为笔记目录”。',
-	'view.exportDirIsFile': '无法保存：“{path}” 已存在但是文件，不是文件夹。',
+	'view.exportNoDirConfigured': '请先在 设置 → Note Mate → 通用 中配置"保存为笔记目录"。',
+	'view.exportDirIsFile': '无法保存："{path}" 已存在但是文件，不是文件夹。',
 	'view.exportCreateDirTitle': '创建文件夹？',
-	'view.exportCreateDirMessage': '文件夹 “{path}” 尚不存在。是否创建并将会话保存到该位置？',
+	'view.exportCreateDirMessage': '文件夹 "{path}" 尚不存在。是否创建并将会话保存到该位置？',
 	'view.exportCreateDirConfirm': '创建并保存',
 	'view.exportSucceeded': '会话已保存到 {path}',
 	'view.exportFailed': '保存失败：{error}',
@@ -409,7 +409,7 @@ export const zhCN: Record<string, string> = {
 
 	// ── Save as note ───────────────────────────────────────
 	'settings.saveAsNoteDir': '保存为笔记目录',
-	'settings.saveAsNoteDirDesc': '“保存为笔记”操作将会话内容写入此库内相对目录。留空则禁用该操作。如果目录尚不存在，会在确认提示后按需创建。',
+	'settings.saveAsNoteDirDesc': '"保存为笔记"操作将会话内容写入此库内相对目录。留空则禁用该操作。如果目录尚不存在，会在确认提示后按需创建。',
 	'settings.saveAsNoteDirPlaceholder': '例如 AI Sessions',
 
 	// ── Customize ──────────────────────────────────────────
@@ -656,8 +656,10 @@ export const zhCN: Record<string, string> = {
 	// ── 工具触发关键词（仅用于 BM25 / 向量排序）─────────────
 	// 这些条目不会改变 LLM 看到的工具 schema；它们会拼接到工具
 	// 的 BM25 / 向量候选文本末尾，让排序器能用当前 UI 语言匹配
-	// 用户提问。请保持短小、逗号分隔、信号集中——分词器会把
-	// 逗号视为分隔符。顺序需要与其他语言文件保持一致。
+	// 用户提问。请保持短小、逗号分隔、信号集中——
+	// 分词器会把逗号视为分隔符。
+	// 顺序需要与其他语言文件保持
+	// 一致。
 	'tool.triggers.search_files':   '搜索文件, 查找文件, 找文件, 按名称查找, 文件名, 路径, 文件路径, 定位文件',
 	'tool.triggers.search_content': '全文搜索, 内容搜索, 搜索笔记, 搜笔记, 搜索内容, 关键词搜索, 笔记内容, 跨笔记搜索',
 	'tool.triggers.grep_file':      '文件内搜索, 行内搜索, 正则搜索, 模式匹配, 在文件中查找, 文件中搜索, 文件内查找',
@@ -671,10 +673,11 @@ export const zhCN: Record<string, string> = {
 	'tool.triggers.image_search':   '图片搜索, 搜索图片, 找图, 找图片, 搜图, 图像搜索, 搜索照片',
 	'tool.triggers.generate_image': '生成图片, 画图, 画一张, AI画图, AI绘图, 图片生成, 制作图片, 创作图片, 出图, AI作画',
 
-	// ─── 见解“深入”提示词 ─────────────────────────────────
-	// 用户点击见解卡片的“深入”按钮时，以用户身份发送的提示词。
-	// 文案随 UI 语言本地化；末尾的说明会额外要求模型使用对话
-	// 当前所用的语言来回复，以便对话语言偏离 UI 语言时也能匹配。
+	// ─── 见解"深入"提示词 ─────────────────────────────────
+	// 用户点击见解卡片的"深入"按钮时，以用户身份发送的提示词。
+	// 文案随 UI 语言本地化；末尾的说明会额外要求模型
+	// 使用对话当前所用的语言来回复，以便对话语言
+	// 偏离 UI 语言时也能匹配。
 	'prompt.insightDeepen.intro': '请基于我们对话中提取出的下列见解，进一步展开，将其整理成一段更完整、可独立成篇、可作为单独笔记保存的内容。',
 	'prompt.insightDeepen.titleLine': '- 标题：{title}',
 	'prompt.insightDeepen.summaryLine': '- 摘要：{summary}',

@@ -407,7 +407,6 @@ export const ko: Record<string, string> = {
 	'settings.memoriesEmpty': '저장된 기억이 없습니다.',
 	'settings.memoryCount': '{count}개의 기억 저장됨',
 
-	// ── Customize ──────────────────────────────────────────
 	// ── Save as note ───────────────────────────────────────
 	'settings.saveAsNoteDir': '노트로 저장 디렉토리',
 	'settings.saveAsNoteDirDesc': '"노트로 저장" 동작이 내보낸 세션을 기록하는 보관함 상대 폴더입니다. 비워두면 이 동작이 비활성화됩니다. 폴더가 없으면 확인 후 필요할 때 생성됩니다.',

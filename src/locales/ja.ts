@@ -407,7 +407,6 @@ export const ja: Record<string, string> = {
 	'settings.memoriesEmpty': '保存された記憶はありません。',
 	'settings.memoryCount': '{count} 件の記憶を保存',
 
-	// ── Customize ──────────────────────────────────────────
 	// ── Save as note ───────────────────────────────────────
 	'settings.saveAsNoteDir': 'ノートとして保存するディレクトリ',
 	'settings.saveAsNoteDirDesc': '「ノートとして保存」操作がエクスポートしたセッションを書き込むボールト相対フォルダ。空欄の場合この操作は無効になります。フォルダが存在しない場合は確認の後、必要に応じて作成されます。',
