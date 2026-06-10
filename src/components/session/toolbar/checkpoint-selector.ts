@@ -95,6 +95,54 @@ function lastPendingCheckpoint(checkpoints: readonly Checkpoint[]): Checkpoint |
     return undefined;
 }
 
+/**
+ * Shared async handler for accept / discard checkpoint actions (single
+ * and bulk). The 4 call sites (single-accept, single-discard, accept-all,
+ * discard-all) previously duplicated the same confirm-then-act pattern;
+ * this helper centralises it.
+ */
+function executeCheckpointAction(
+    app: App,
+    store: NonNullable<SessionRuntime['checkpointStore']>,
+    actions: {
+        action: 'accept' | 'discard';
+        checkpointId: string;
+        /** Whether any cascading pending checkpoints need a confirm modal. */
+        affectsCheck: (list: readonly Checkpoint[], id: string) => boolean;
+        /** Scope label for recordIssue context. */
+        scope: string;
+        /** Fallback error message for recordIssue when `err` is not an Error. */
+        errorLabel: string;
+    },
+): void {
+    void (async () => {
+        const list = store.checkpoints;
+        const needsConfirm = actions.affectsCheck(list, actions.checkpointId);
+        if (needsConfirm) {
+            const confirmed = await new CheckpointActionConfirmModal(
+                app,
+                t(`view.checkpoint${actions.action === 'accept' ? 'Accept' : 'Discard'}ConfirmTitle`),
+                t(`view.checkpoint${actions.action === 'accept' ? 'Accept' : 'Discard'}ConfirmMessage`),
+                t(`view.checkpoint${actions.action === 'accept' ? 'Accept' : 'Discard'}`),
+                actions.action,
+            ).waitForResult();
+            if (!confirmed) return;
+        }
+        void store[actions.action](actions.checkpointId).catch((err: unknown) => {
+            console.error(`[checkpoint-selector] ${actions.action} (${actions.scope}) failed`, err);
+            recordIssue({
+                severity: 'error',
+                source: 'checkpoint-selector',
+                code: 'checkpoint-action-failed',
+                message: `${actions.errorLabel}: ${errorMessage(err)}`,
+                context: { scope: actions.scope, checkpointId: actions.checkpointId },
+                error: err,
+            });
+            new Notice(t('view.checkpointActionFailed'));
+        });
+    })();
+}
+
 export function createCheckpointSelector(
     parent: HTMLElement,
     dropdownManager: DropdownManager,
@@ -297,32 +345,13 @@ export function createCheckpointSelector(
             () => {
                 if (!runtime) return;
                 dropdownManager.closeActive();
-                void (async () => {
-                    const list = runtime.checkpointStore.checkpoints;
-                    const needsConfirm = acceptAffectsEarlierPending(list, cp.id);
-                    if (needsConfirm) {
-                        const confirmed = await new CheckpointActionConfirmModal(
-                            options.app,
-                            t('view.checkpointAcceptConfirmTitle'),
-                            t('view.checkpointAcceptConfirmMessage'),
-                            t('view.checkpointAccept'),
-                            'accept',
-                        ).waitForResult();
-                        if (!confirmed) return;
-                    }
-                    void runtime.checkpointStore.accept(cp.id).catch((err: unknown) => {
-                        console.error('[checkpoint-selector] accept failed', err);
-                        recordIssue({
-                            severity: 'error',
-                            source: 'checkpoint-selector',
-                            code: 'checkpoint-action-failed',
-                            message: `Accepting checkpoint failed: ${errorMessage(err)}`,
-                            context: { scope: 'accept-single', checkpointId: cp.id },
-                            error: err,
-                        });
-                        new Notice(t('view.checkpointActionFailed'));
-                    });
-                })();
+                executeCheckpointAction(options.app, runtime.checkpointStore, {
+                    action: 'accept',
+                    checkpointId: cp.id,
+                    affectsCheck: acceptAffectsEarlierPending,
+                    scope: 'accept-single',
+                    errorLabel: 'Accepting checkpoint failed',
+                });
             },
         );
         buildActionIcon(
@@ -331,32 +360,13 @@ export function createCheckpointSelector(
             () => {
                 if (!runtime) return;
                 dropdownManager.closeActive();
-                void (async () => {
-                    const list = runtime.checkpointStore.checkpoints;
-                    const needsConfirm = discardAffectsLaterPending(list, cp.id);
-                    if (needsConfirm) {
-                        const confirmed = await new CheckpointActionConfirmModal(
-                            options.app,
-                            t('view.checkpointDiscardConfirmTitle'),
-                            t('view.checkpointDiscardConfirmMessage'),
-                            t('view.checkpointDiscard'),
-                            'discard',
-                        ).waitForResult();
-                        if (!confirmed) return;
-                    }
-                    void runtime.checkpointStore.discard(cp.id).catch((err: unknown) => {
-                        console.error('[checkpoint-selector] discard failed', err);
-                        recordIssue({
-                            severity: 'error',
-                            source: 'checkpoint-selector',
-                            code: 'checkpoint-action-failed',
-                            message: `Discarding checkpoint failed: ${errorMessage(err)}`,
-                            context: { scope: 'discard-single', checkpointId: cp.id },
-                            error: err,
-                        });
-                        new Notice(t('view.checkpointActionFailed'));
-                    });
-                })();
+                executeCheckpointAction(options.app, runtime.checkpointStore, {
+                    action: 'discard',
+                    checkpointId: cp.id,
+                    affectsCheck: discardAffectsLaterPending,
+                    scope: 'discard-single',
+                    errorLabel: 'Discarding checkpoint failed',
+                });
             },
         );
 
@@ -415,70 +425,32 @@ export function createCheckpointSelector(
         e.stopPropagation();
         if (acceptAllBtn.disabled || !runtime) return;
         const store = runtime.checkpointStore;
-        const list = store.checkpoints;
-        const target = lastPendingCheckpoint(list);
+        const target = lastPendingCheckpoint(store.checkpoints);
         if (!target) return;
         dropdownManager.closeActive();
-        void (async () => {
-            const needsConfirm = acceptAffectsEarlierPending(list, target.id);
-            if (needsConfirm) {
-                const confirmed = await new CheckpointActionConfirmModal(
-                    options.app,
-                    t('view.checkpointAcceptConfirmTitle'),
-                    t('view.checkpointAcceptConfirmMessage'),
-                    t('view.checkpointAccept'),
-                    'accept',
-                ).waitForResult();
-                if (!confirmed) return;
-            }
-            void store.accept(target.id).catch((err: unknown) => {
-                console.error('[checkpoint-selector] accept all failed', err);
-                recordIssue({
-                    severity: 'error',
-                    source: 'checkpoint-selector',
-                    code: 'checkpoint-action-failed',
-                    message: `Accept-all failed: ${errorMessage(err)}`,
-                    context: { scope: 'accept-all', checkpointId: target.id },
-                    error: err,
-                });
-                new Notice(t('view.checkpointActionFailed'));
-            });
-        })();
+        executeCheckpointAction(options.app, store, {
+            action: 'accept',
+            checkpointId: target.id,
+            affectsCheck: acceptAffectsEarlierPending,
+            scope: 'accept-all',
+            errorLabel: 'Accept-all failed',
+        });
     });
 
     discardAllBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         if (discardAllBtn.disabled || !runtime) return;
         const store = runtime.checkpointStore;
-        const list = store.checkpoints;
-        const target = firstPendingCheckpoint(list);
+        const target = firstPendingCheckpoint(store.checkpoints);
         if (!target) return;
         dropdownManager.closeActive();
-        void (async () => {
-            const needsConfirm = discardAffectsLaterPending(list, target.id);
-            if (needsConfirm) {
-                const confirmed = await new CheckpointActionConfirmModal(
-                    options.app,
-                    t('view.checkpointDiscardConfirmTitle'),
-                    t('view.checkpointDiscardConfirmMessage'),
-                    t('view.checkpointDiscard'),
-                    'discard',
-                ).waitForResult();
-                if (!confirmed) return;
-            }
-            void store.discard(target.id).catch((err: unknown) => {
-                console.error('[checkpoint-selector] discard all failed', err);
-                recordIssue({
-                    severity: 'error',
-                    source: 'checkpoint-selector',
-                    code: 'checkpoint-action-failed',
-                    message: `Discard-all failed: ${errorMessage(err)}`,
-                    context: { scope: 'discard-all', checkpointId: target.id },
-                    error: err,
-                });
-                new Notice(t('view.checkpointActionFailed'));
-            });
-        })();
+        executeCheckpointAction(options.app, store, {
+            action: 'discard',
+            checkpointId: target.id,
+            affectsCheck: discardAffectsLaterPending,
+            scope: 'discard-all',
+            errorLabel: 'Discard-all failed',
+        });
     });
 
     dropdownManager.registerToggle({

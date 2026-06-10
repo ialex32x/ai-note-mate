@@ -67,7 +67,7 @@
     // from the messages above. Sides match other docked chrome so
     // the card aligns horizontally with the compose area.
     margin: @spacing-sm @spacing-md @spacing-xs;
-    animation: session-todo-panel-fade-in @duration-slow ease-out;
+    animation: fade-in-up @duration-slow ease-out;
 }
 
 // Card-skin mixin re-used by both the header and the floating
@@ -131,15 +131,7 @@
 }
 
 .session-todo-panel__title-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: @session-todo-accent;
-
-    .svg-icon {
-        width: 14px;
-        height: 14px;
-    }
+    .section-title-icon(@session-todo-accent);
 }
 
 .session-todo-panel__title-label {
@@ -264,7 +256,7 @@
 .session-todo-panel__item--in_progress {
     .session-todo-panel__status {
         color: @session-todo-accent;
-        animation: session-todo-panel-spin 1.4s linear infinite;
+        animation: spin 1.4s linear infinite;
     }
 
     .session-todo-panel__text {
@@ -294,25 +286,6 @@
         text-decoration: line-through;
         font-style: italic;
     }
-}
-
-@keyframes session-todo-panel-fade-in {
-    from {
-        opacity: 0;
-        // Slide up from below — the panel lives just above the
-        // input, so the appearance reads as "rising from the
-        // compose area" rather than "dropping from the toolbar".
-        transform: translateY(4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes session-todo-panel-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 // Mobile: tighten the layout and drop the count chip if it would

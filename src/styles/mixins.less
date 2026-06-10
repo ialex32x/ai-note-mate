@@ -105,6 +105,30 @@
     -webkit-box-orient: vertical;
 }
 
+// ── Shared keyframes ─────────────────────────────────────────────────
+//
+// Global @keyframes shared across components.  Define here instead of
+// per-component .less files so every spinner / entrance animation across
+// the UI shares the same definition.  Durations are kept on each
+// `animation` shorthand — only the keyframe body is centralised.
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+// Slides in from below — used by todo panel, slide-up mixin below.
+@keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+// Slides in from above — used by insight card, follow-up bar.
+@keyframes fade-in-down {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 // Animation mixins
 .fade-in(@duration: @duration-normal) {
     animation: fade-in @duration ease-in-out;
@@ -167,6 +191,34 @@
     &:focus-visible {
         outline: 2px solid @text-accent;
         outline-offset: 2px;
+    }
+}
+
+// ── Section title pattern ──────────────────────────────────────────
+//
+// Small section heading (icon + label) shared by insight-card,
+// follow-up-bar, and similar "preview / suggestion" tail components.
+// Caller provides the accent colour via parameter.
+
+.section-title(@accent: @text-accent) {
+    display: inline-flex;
+    align-items: center;
+    gap: @spacing-xs;
+    font-size: 0.8em;
+    color: @text-secondary;
+    letter-spacing: 0.02em;
+    user-select: none;
+}
+
+.section-title-icon(@accent: @text-accent) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: @accent;
+
+    .svg-icon {
+        width: 14px;
+        height: 14px;
     }
 }
 

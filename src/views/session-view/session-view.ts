@@ -10,8 +10,6 @@ import {
     Menu,
 } from 'obsidian';
 import { ChatMessage, IChatAgent } from '../../services/chat-stream';
-import { findTailTurn } from '../../services/turn-utils';
-import { optimizePrompt, PromptOptimizationError } from '../../services/prompt-optimizer';
 import { getActiveProfile } from '../../settings';
 import { exportSessionToVault } from '../../services/session-exporter';
 import { isAbortError } from '../../utils/abortable-request';
@@ -70,6 +68,10 @@ import { replayUnitsInFrames } from './history-replay-controller';
 import { MessageWindowController } from './message-window-controller';
 import { HISTORY_LOADING } from './history-loading-config';
 import {
+    SessionPromptOptimizer,
+    type SessionPromptOptimizerDeps,
+} from './session-prompt-optimizer';
+import {
     SessionRuntime,
     extractInsightsForMessage,
     type RuntimeEvent,
@@ -83,12 +85,8 @@ export class SessionView extends ItemView {
     cmInput!: CMInput;
     private sendBtn!: HTMLButtonElement;
     private optimizeBtn!: HTMLButtonElement;
-    /**
-     * AbortController for an in-flight prompt-refinement call. Held on
-     * the view so a follow-up edit / send action can pre-empt a stale
-     * refinement without leaking the LLM request.
-     */
-    private optimizeAbort: AbortController | null = null;
+    /** Extracted controller for the "Refine prompt" button lifecycle. */
+    private promptOptimizer!: SessionPromptOptimizer;
     /** Singleton trailing "AI is working" loader (see StreamingLoader for rationale). */
     private streamingLoader!: StreamingLoader;
     /** Scroll container controller (user-scrolled-up tracking + scroll-to-bottom button). */
@@ -873,7 +871,7 @@ export class SessionView extends ItemView {
                 // actual draft text to refine. Cheap to recompute
                 // on every keystroke; the button just toggles its
                 // `disabled` attribute.
-                this.updateOptimizeBtnAvailability();
+                this.promptOptimizer.updateAvailability();
                 // Note: the follow-up suggestion bar and insight preview card
                 // are intentionally kept visible while the user is editing.
                 // They will be dismissed in `appendBubble` the moment a new
@@ -1013,7 +1011,16 @@ export class SessionView extends ItemView {
         setIcon(this.optimizeBtn, 'wand-sparkles');
         setTooltip(this.optimizeBtn, t('view.optimizePrompt'));
         this.optimizeBtn.disabled = true;
-        this.optimizeBtn.addEventListener('click', () => void this.handleOptimizePrompt());
+        // Wired AFTER cmInput, draftController, and optimizeBtn all exist.
+        this.promptOptimizer = new SessionPromptOptimizer({
+            cmInput: this.cmInput,
+            optimizeBtn: this.optimizeBtn,
+            isStreaming: () => this.isStreaming,
+            draftController: this.draftController,
+            getChatMessages: () => this.chat?.messages ?? [],
+            plugin: this.plugin,
+        });
+        this.optimizeBtn.addEventListener('click', this.promptOptimizer.handleClick);
 
         this.sendBtn = thinkingRowRight.createEl('button', {
             cls: 'session-thinking-row__icon-btn session-send-btn',
@@ -1051,7 +1058,7 @@ export class SessionView extends ItemView {
         // Cancel any in-flight prompt-refinement request — the
         // resulting draft would have nowhere to land once the view
         // is torn down, and the LLM bill is best avoided.
-        this.abortInFlightOptimize();
+        this.promptOptimizer.abort();
 
         // Detach (NOT abort) the runtime so a background turn can keep
         // running in the pool. The pool decides retention based on
@@ -1205,7 +1212,7 @@ export class SessionView extends ItemView {
 
         // Stop an in-flight reply before truncating chat state.
         if (this.isStreaming) {
-            this.abortInFlightOptimize();
+            this.promptOptimizer.abort();
             this.chat?.abort();
             if (!await this.waitForChatIdle()) {
                 new Notice(t('view.editAbortTimeout'));
@@ -1530,7 +1537,7 @@ export class SessionView extends ItemView {
         // target draft is about to disappear with the session switch,
         // so the result would just be discarded by the draft-change
         // guard while still costing LLM tokens.
-        this.abortInFlightOptimize();
+        this.promptOptimizer.abort();
         this.historyReplayAbort?.abort();
         this.historyReplayAbort = null;
         this.messageWindow?.reset();
@@ -2025,7 +2032,7 @@ export class SessionView extends ItemView {
             // running on the side — the user clearly wants the chat
             // engine to wind down, and a stale refinement coming back
             // afterwards would write into an already-cleared draft.
-            this.abortInFlightOptimize();
+            this.promptOptimizer.abort();
             this.chat?.abort();
             return;
         }
@@ -2036,7 +2043,7 @@ export class SessionView extends ItemView {
         // they want to ship — anything coming back from an in-flight
         // refinement would be applied to an empty input (post-clear)
         // or, worse, the next turn's draft. Cancel before we clear.
-        this.abortInFlightOptimize();
+        this.promptOptimizer.abort();
 
         this.cmInput.clear();
 
@@ -2458,163 +2465,13 @@ export class SessionView extends ItemView {
         // the result would land on a draft the user can't actually send
         // until the turn finishes. Lock the affordance in lockstep with
         // the send button to keep the two states coherent.
-        this.updateOptimizeBtnAvailability();
+        this.promptOptimizer.updateAvailability();
         // Keep the insight card's "Deepen" buttons in lockstep with the
         // chat send button: while a turn is in flight, no new turn may
         // be triggered (including from the insight card).
         this.insightCard?.setBusy(locked);
         // Note: Input remains editable during streaming - user can type but cannot send
         // The send button becomes a stop button when locked
-    }
-
-    /**
-     * Recompute whether the "Refine prompt" button should be clickable.
-     *
-     * Disabled when ANY of:
-     *   - the draft is empty / whitespace-only (nothing to refine);
-     *   - a turn is currently streaming (the resulting draft would have
-     *     nowhere to go until the user can press send again);
-     *   - a refinement call is already in flight (the spinner state
-     *     locks the button until the previous call resolves).
-     *
-     * Cheap enough to call on every keystroke + every lock change.
-     */
-    private updateOptimizeBtnAvailability(): void {
-        if (!this.optimizeBtn) return;
-        const busy = this.optimizeAbort !== null;
-        const empty = this.cmInput.getContent().trim().length === 0;
-        const locked = this.isStreaming;
-        this.optimizeBtn.disabled = busy || empty || locked;
-    }
-
-    /**
-     * Cancel any in-flight prompt-refinement request and reset the
-     * button's busy visuals immediately.
-     *
-     * Called from every code path that invalidates the refinement's
-     * target draft — view close, session switch, and "send now" —
-     * so the LLM tokens aren't spent on a result we'd just discard
-     * via the draft-change guard.
-     *
-     * Synchronously clears `this.optimizeAbort` so a follow-up
-     * `handleOptimizePrompt()` started in the same JS turn can install
-     * a fresh controller without colliding with the just-aborted one;
-     * the in-flight handler's `finally` block detects this via a
-     * controller-identity check and skips its own cleanup.
-     */
-    private abortInFlightOptimize(): void {
-        const controller = this.optimizeAbort;
-        if (!controller) return;
-        this.optimizeAbort = null;
-        controller.abort();
-        // Touch the button defensively — the handler is awaiting an
-        // abort rejection in microtask-land and won't run its finally
-        // until this turn yields, so we own the visuals (icon swap +
-        // busy class) until then.
-        if (this.optimizeBtn) {
-            this.optimizeBtn.removeClass('is-busy');
-            setIcon(this.optimizeBtn, 'wand-sparkles');
-        }
-        this.updateOptimizeBtnAvailability();
-    }
-
-    /**
-     * Click handler for the toolbar's "Refine prompt" button.
-     *
-     * Pipeline:
-     *   1. Validate the draft is non-empty and no other refinement is
-     *      already running (defensive; the button's own disabled state
-     *      should already prevent both).
-     *   2. Resolve the summarizer model config. When no summarizer
-     *      profile is configured, surface a Notice pointing at the
-     *      relevant settings section and bail.
-     *   3. Locate the most recent COMPLETED assistant turn (via
-     *      {@link findTailTurn}) for disambiguation context. Missing
-     *      context is fine — the optimizer omits the block entirely
-     *      in that case.
-     *   4. Issue the one-shot LLM call. The button enters a "busy"
-     *      visual state (spinning-wand class + disabled attr) until
-     *      the call resolves; a stored {@link AbortController} lets us
-     *      pre-empt the call if the input changes underneath us.
-     *   5. On success, replace the draft with the refined text, push
-     *      it through the draft controller so it survives reloads,
-     *      and refocus the editor for an immediate "send" follow-up.
-     */
-    private async handleOptimizePrompt(): Promise<void> {
-        const draft = this.cmInput.getContent().trim();
-        if (!draft) return;
-        if (this.isStreaming) {
-            new Notice(t('view.sessionBusy'));
-            return;
-        }
-        if (this.optimizeAbort) return;
-
-        const modelConfig = createSummarizerConfig(this.plugin);
-        if (!modelConfig) {
-            new Notice(t('view.optimizePromptUnavailable'));
-            return;
-        }
-
-        // Tail context is optional — the optimizer treats both sides of
-        // the previous turn as elidable, so we forward whatever
-        // `findTailTurn` finds. Including the user side disambiguates
-        // contrastive references ("again", "this time", "like before")
-        // that the AI-side reply alone cannot resolve; see the
-        // PREVIOUS_TURN section of prompt-optimizer.ts.
-        const { user, assistant } = findTailTurn(this.chat?.messages ?? []);
-        const userMessage = (user?.content ?? '').trim();
-        const assistantReply = (assistant?.content ?? '').trim();
-
-        const controller = new AbortController();
-        this.optimizeAbort = controller;
-        // Swap the wand icon for a dedicated spinner while the LLM
-        // call is in flight. Rotating the wand directly looked wrong
-        // because the icon isn't rotationally symmetric; `loader-2`
-        // is the codebase-wide convention for in-flight feedback and
-        // pairs cleanly with the `is-busy` keyframe animation.
-        setIcon(this.optimizeBtn, 'loader-2');
-        this.optimizeBtn.addClass('is-busy');
-        this.updateOptimizeBtnAvailability();
-
-        try {
-            const refined = await optimizePrompt(
-                modelConfig,
-                { draft, userMessage, assistantReply },
-                controller.signal,
-            );
-            // Only apply the result when the draft hasn't changed
-            // underneath us during the call — otherwise the user has
-            // already started a new thought and we'd clobber it.
-            const currentDraft = this.cmInput.getContent().trim();
-            if (currentDraft !== draft) return;
-
-            this.cmInput.setContent(refined);
-            this.cmInput.focus();
-            this.draftController?.scheduleSave();
-        } catch (err) {
-            if (isAbortError(err)) {
-                // Silent — caller-initiated cancellation needs no notice.
-                return;
-            }
-            if (err instanceof PromptOptimizationError) {
-                new Notice(t('view.optimizePromptFailed'));
-                return;
-            }
-            console.warn('[PromptOptimizer] refinement failed:', err);
-            new Notice(t('view.optimizePromptFailed'));
-        } finally {
-            // Identity guard — `abortInFlightOptimize()` (view close /
-            // session switch / send) may have already nulled the field
-            // and reset visuals on our behalf; running again would
-            // clobber a freshly-installed controller from a new
-            // refinement that was started during the same turn.
-            if (this.optimizeAbort === controller) {
-                this.optimizeAbort = null;
-                this.optimizeBtn.removeClass('is-busy');
-                setIcon(this.optimizeBtn, 'wand-sparkles');
-                this.updateOptimizeBtnAvailability();
-            }
-        }
     }
 
     private showStreamingLoader() {

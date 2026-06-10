@@ -278,16 +278,10 @@
 // loading affordance instead of the stop affordance.
 .session-optimize-btn {
     &.is-busy svg {
-        animation: session-optimize-btn-spin 1s linear infinite;
+        animation: spin 1s linear infinite;
         transform-origin: 50% 50%;
     }
 }
-
-@keyframes session-optimize-btn-spin {
-    from { transform: rotate(0deg); }
-    to   { transform: rotate(360deg); }
-}
-
 
 // Profile selector
 //

@@ -16,7 +16,7 @@
     gap: @spacing-sm;
     margin: @spacing-sm 0 @spacing-md;
     padding: @spacing-sm @spacing-md;
-    animation: session-insight-card-fade-in @duration-slow ease-out;
+    animation: fade-in-down @duration-slow ease-out;
     // Force fixed position in the flex-column parent so insights always
     // render before the follow-up bar, regardless of async completion order.
     order: 1;
@@ -27,24 +27,11 @@
 }
 
 .session-insight-card__title {
-    display: inline-flex;
-    align-items: center;
-    gap: @spacing-xs;
-    font-size: 0.8em;
-    color: @text-secondary;
-    letter-spacing: 0.02em;
-    user-select: none;
+    .section-title();
 }
 
 .session-insight-card__title-icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: @text-accent;
-    .svg-icon {
-        width: 14px;
-        height: 14px;
-    }
+    .section-title-icon();
 }
 
 .session-insight-card__title-label {
@@ -69,7 +56,7 @@
     align-items: center;
     justify-content: center;
     color: @text-accent;
-    animation: session-insight-card-spin 1.2s linear infinite;
+    animation: spin 1.2s linear infinite;
 
     .svg-icon {
         width: 14px;
@@ -253,22 +240,6 @@ a.tag.session-insight-card__tag {
         width: 14px;
         height: 14px;
     }
-}
-
-@keyframes session-insight-card-fade-in {
-    from {
-        opacity: 0;
-        transform: translateY(-4px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-@keyframes session-insight-card-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 // Mobile: stack the action button under the text to keep summaries readable.

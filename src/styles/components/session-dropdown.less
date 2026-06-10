@@ -110,7 +110,7 @@
 .session-dropdown__item-status--busy {
     color: @text-accent;
     opacity: 1;
-    animation: session-dropdown-status-spin 1.2s linear infinite;
+    animation: spin 1.2s linear infinite;
 }
 
 .session-dropdown__item-status--awaiting-confirm {
@@ -120,11 +120,6 @@
 
 .session-dropdown__item-status--unloaded {
     opacity: 0.4;
-}
-
-@keyframes session-dropdown-status-spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
 }
 
 .session-dropdown__item-text {

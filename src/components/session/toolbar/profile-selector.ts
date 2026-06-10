@@ -147,6 +147,80 @@ function clampProfileDropdownHeight(dropdown: HTMLElement): void {
 }
 
 /**
+ * Generic config-section renderer shared across the four sections inside
+ * {@link rebuildProfileDropdown} (profiles, image-gen, speech-to-text,
+ * embedding). Each section follows the same pattern: section header with
+ * settings gear → loop through configs → item with check/name/model →
+ * optional badges → active-state management → click handler.
+ */
+function renderConfigSection<T>(
+    host: HTMLElement,
+    plugin: NoteAssistantPlugin,
+    dropdownManager: DropdownManager,
+    opts: {
+        titleKey: string;
+        sectionId: string;
+        configs: readonly T[];
+        activeId: string | undefined;
+        getId: (c: T) => string;
+        getName: (c: T) => string;
+        getModel: (c: T) => string | undefined | null;
+        setActive: (id: string) => void;
+        /** Per-item badges (summarizer / insights labels). */
+        badges?: (item: HTMLElement, c: T) => void;
+        /** Empty-state message. When undefined and configs is empty, the
+         *  section is omitted entirely (used by sections that are never
+         *  empty, like profiles). */
+        emptyMessage?: string;
+        /** Called after `setActive` but before dropdown close — the
+         *  profiles section uses this to refresh the button text. */
+        onSelect?: (c: T) => void;
+    },
+): void {
+    if (opts.configs.length === 0 && !opts.emptyMessage) return;
+
+    const header = host.createEl('div', { cls: 'session-dropdown-section-header' });
+    header.createEl('span', {
+        cls: 'session-dropdown-section-header__text',
+        text: t(opts.titleKey),
+    });
+    appendSectionSettingsAction(header, plugin, dropdownManager, opts.sectionId);
+
+    if (opts.configs.length === 0 && opts.emptyMessage) {
+        host.createEl('div', {
+            cls: 'session-dropdown-item session-dropdown-item--disabled',
+        }).createEl('span', { text: opts.emptyMessage });
+        return;
+    }
+
+    for (const cfg of opts.configs) {
+        const item = host.createEl('div', { cls: 'session-dropdown-item' });
+        const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
+        item.createEl('span', { cls: 'session-dropdown-item__name', text: opts.getName(cfg) });
+        appendModelName(item, opts.getModel(cfg));
+
+        opts.badges?.(item, cfg);
+
+        const id = opts.getId(cfg);
+        if (id === opts.activeId) {
+            item.addClass('session-dropdown-item--active');
+            setIcon(checkIcon, 'check');
+        }
+        item.addEventListener('click', () => {
+            opts.setActive(id);
+            opts.onSelect?.(cfg);
+            void plugin.saveSettings();
+            DropdownManager.updateActiveState(
+                host.querySelectorAll('.session-dropdown-item'),
+                item,
+                'session-dropdown-item',
+            );
+            dropdownManager.closeActive();
+        });
+    }
+}
+
+/**
  * Setup profile selector using DropdownManager.
  * Extracted from SessionView.setupProfileSelector.
  *
@@ -197,13 +271,6 @@ export function createProfileSelector(
         profileBtnTextEl.setText(currentActive.name);
         updateButtonIcon();
 
-        // Profiles Section
-        const profilesHeader = profileDropdownEl.createEl('div', {
-            cls: 'session-dropdown-section-header',
-        });
-        profilesHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.textGenSection') });
-        appendSectionSettingsAction(profilesHeader, plugin, dropdownManager, TEXT_GEN_SECTION_ID);
-
         // Effective insights extractor id: dedicated profile when set
         // and valid, otherwise the summarizer.
         const dedicatedInsightsId = current.insightsProfileId;
@@ -212,137 +279,71 @@ export function createProfileSelector(
                 ? dedicatedInsightsId
                 : current.summarizerProfileId;
 
-        for (const p of current.profiles) {
-            const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
-            const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-            item.createEl('span', { cls: 'session-dropdown-item__name', text: p.name });
-            appendModelName(item, p.model);
-            if (p.id === current.summarizerProfileId) {
-                const badge = item.createEl('span', {
-                    cls: 'session-dropdown-item__badge session-dropdown-item__badge--summarizer',
-                });
-                setIcon(badge, 'scroll-text');
-                setTooltip(badge, t('view.profileSummarizerBadge'));
-            }
-            if (effectiveInsightsId && p.id === effectiveInsightsId) {
-                const badge = item.createEl('span', {
-                    cls: 'session-dropdown-item__badge session-dropdown-item__badge--insights',
-                });
-                setIcon(badge, 'lightbulb');
-                setTooltip(badge, t('view.profileInsightsBadge'));
-            }
-            if (p.id === current.activeProfileId) {
-                item.addClass('session-dropdown-item--active');
-                setIcon(checkIcon, 'check');
-            }
-            item.addEventListener('click', () => {
-                plugin.settings.activeProfileId = p.id;
-                void plugin.saveSettings();
-                profileBtnTextEl.setText(p.name);
-                DropdownManager.updateActiveState(
-                    profileDropdownEl.querySelectorAll('.session-dropdown-item'),
-                    item,
-                    'session-dropdown-item'
-                );
-                dropdownManager.closeActive();
-            });
-        }
-
-        // Image Generation Section
-        const imageGenHeader = profileDropdownEl.createEl('div', {
-            cls: 'session-dropdown-section-header',
+        // ── Profiles ─────────────────────────────────────────────
+        renderConfigSection(profileDropdownEl, plugin, dropdownManager, {
+            titleKey: 'settings.textGenSection',
+            sectionId: TEXT_GEN_SECTION_ID,
+            configs: current.profiles,
+            activeId: current.activeProfileId,
+            getId: p => p.id,
+            getName: p => p.name,
+            getModel: p => p.model,
+            setActive: id => { plugin.settings.activeProfileId = id; },
+            onSelect: p => { profileBtnTextEl.setText(p.name); },
+            badges: (item, p) => {
+                if (p.id === current.summarizerProfileId) {
+                    const badge = item.createEl('span', {
+                        cls: 'session-dropdown-item__badge session-dropdown-item__badge--summarizer',
+                    });
+                    setIcon(badge, 'scroll-text');
+                    setTooltip(badge, t('view.profileSummarizerBadge'));
+                }
+                if (effectiveInsightsId && p.id === effectiveInsightsId) {
+                    const badge = item.createEl('span', {
+                        cls: 'session-dropdown-item__badge session-dropdown-item__badge--insights',
+                    });
+                    setIcon(badge, 'lightbulb');
+                    setTooltip(badge, t('view.profileInsightsBadge'));
+                }
+            },
         });
-        imageGenHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.imageGenSection') });
-        appendSectionSettingsAction(imageGenHeader, plugin, dropdownManager, IMAGE_GEN_SECTION_ID);
 
-        const imageGenConfigs = current.imageGenConfigs;
-        if (imageGenConfigs.length === 0) {
-            const noConfigItem = profileDropdownEl.createEl('div', {
-                cls: 'session-dropdown-item session-dropdown-item--disabled',
-            });
-            noConfigItem.createEl('span', { text: t('settings.imageGenEmpty') });
-        } else {
-            for (const cfg of imageGenConfigs) {
-                const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
-                const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-                item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
-                appendModelName(item, cfg.model);
-                if (cfg.id === current.activeImageGenId) {
-                    item.addClass('session-dropdown-item--active');
-                    setIcon(checkIcon, 'check');
-                }
-                item.addEventListener('click', () => {
-                    plugin.settings.activeImageGenId = cfg.id;
-                    void plugin.saveSettings();
-                    DropdownManager.updateActiveState(
-                        profileDropdownEl.querySelectorAll('.session-dropdown-item'),
-                        item,
-                        'session-dropdown-item'
-                    );
-                    dropdownManager.closeActive();
-                });
-            }
-        }
+        // ── Image Generation ─────────────────────────────────────
+        renderConfigSection(profileDropdownEl, plugin, dropdownManager, {
+            titleKey: 'settings.imageGenSection',
+            sectionId: IMAGE_GEN_SECTION_ID,
+            configs: current.imageGenConfigs,
+            activeId: current.activeImageGenId,
+            getId: c => c.id,
+            getName: c => c.name,
+            getModel: c => c.model,
+            setActive: id => { plugin.settings.activeImageGenId = id; },
+            emptyMessage: t('settings.imageGenEmpty'),
+        });
 
-        // Speech-to-Text Section
-        if (current.speechToTextConfigs.length > 0) {
-            const sttHeader = profileDropdownEl.createEl('div', {
-                cls: 'session-dropdown-section-header',
-            });
-            sttHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.speechToTextSection') });
-            appendSectionSettingsAction(sttHeader, plugin, dropdownManager, SPEECH_TO_TEXT_SECTION_ID);
+        // ── Speech-to-Text ───────────────────────────────────────
+        renderConfigSection(profileDropdownEl, plugin, dropdownManager, {
+            titleKey: 'settings.speechToTextSection',
+            sectionId: SPEECH_TO_TEXT_SECTION_ID,
+            configs: current.speechToTextConfigs,
+            activeId: current.activeSpeechToTextId,
+            getId: c => c.id,
+            getName: c => c.name,
+            getModel: c => c.shortModel,
+            setActive: id => { plugin.settings.activeSpeechToTextId = id; },
+        });
 
-            for (const cfg of current.speechToTextConfigs) {
-                const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
-                const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-                item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
-                appendModelName(item, cfg.shortModel);
-                if (cfg.id === current.activeSpeechToTextId) {
-                    item.addClass('session-dropdown-item--active');
-                    setIcon(checkIcon, 'check');
-                }
-                item.addEventListener('click', () => {
-                    plugin.settings.activeSpeechToTextId = cfg.id;
-                    void plugin.saveSettings();
-                    DropdownManager.updateActiveState(
-                        profileDropdownEl.querySelectorAll('.session-dropdown-item'),
-                        item,
-                        'session-dropdown-item'
-                    );
-                    dropdownManager.closeActive();
-                });
-            }
-        }
-
-        // Embedding Section (only shown when at least one config exists)
-        if (current.embeddingConfigs.length > 0) {
-            const embeddingHeader = profileDropdownEl.createEl('div', {
-                cls: 'session-dropdown-section-header',
-            });
-            embeddingHeader.createEl('span', { cls: 'session-dropdown-section-header__text', text: t('settings.embeddingSection') });
-            appendSectionSettingsAction(embeddingHeader, plugin, dropdownManager, EMBEDDING_SECTION_ID);
-
-            for (const cfg of current.embeddingConfigs) {
-                const item = profileDropdownEl.createEl('div', { cls: 'session-dropdown-item' });
-                const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-                item.createEl('span', { cls: 'session-dropdown-item__name', text: cfg.name });
-                appendModelName(item, cfg.model);
-                if (cfg.id === current.activeEmbeddingId) {
-                    item.addClass('session-dropdown-item--active');
-                    setIcon(checkIcon, 'check');
-                }
-                item.addEventListener('click', () => {
-                    plugin.settings.activeEmbeddingId = cfg.id;
-                    void plugin.saveSettings();
-                    DropdownManager.updateActiveState(
-                        profileDropdownEl.querySelectorAll('.session-dropdown-item'),
-                        item,
-                        'session-dropdown-item'
-                    );
-                    dropdownManager.closeActive();
-                });
-            }
-        }
+        // ── Embedding ────────────────────────────────────────────
+        renderConfigSection(profileDropdownEl, plugin, dropdownManager, {
+            titleKey: 'settings.embeddingSection',
+            sectionId: EMBEDDING_SECTION_ID,
+            configs: current.embeddingConfigs,
+            activeId: current.activeEmbeddingId,
+            getId: c => c.id,
+            getName: c => c.name,
+            getModel: c => c.model,
+            setActive: id => { plugin.settings.activeEmbeddingId = id; },
+        });
     };
 
     dropdownManager.registerToggle({
