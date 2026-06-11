@@ -177,6 +177,15 @@ export interface NoteAssistantPluginSettings {
 
 	// ── Global settings (not per-profile) ───────────────────────────────────
 	systemPrompt: string;
+	/**
+	 * Vault-relative path of a markdown note whose content is appended
+	 * to the system prompt for every AI session. When the file exists,
+	 * its content overrides {@link systemPrompt}. The file is read once
+	 * at session creation and cached until the next session restart.
+	 *
+	 * Default: `'AGENT.md'`. Empty string disables the file-based prompt.
+	 */
+	agentMdPath: string;
 	imageDownloadDir: string;
 	/**
 	 * Vault-relative directory where the "Save as note" action writes the

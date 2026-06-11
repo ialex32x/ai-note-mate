@@ -512,6 +512,26 @@ export function applyAdvancedOnlyGroupHeading(setting: Setting): void {
 	}
 }
 
+/**
+ * Adds a visual indicator to a setting to show it is deprecated and may be
+ * removed in a future version. Users should migrate to the recommended
+ * alternative.
+ *
+ * Layer 1: An `archive` icon badge appended to the setting name, with a
+ *          tooltip describing the deprecated status.
+ * Layer 2: A small text hint appended to the setting description.
+ */
+export function markSettingDeprecated(setting: Setting): void {
+	// Layer 1: Icon badge
+	const badge = setting.nameEl.createSpan({ cls: 'oap-deprecated-badge' });
+	setIcon(badge, 'archive');
+	setTooltip(badge, t('settings.deprecated'));
+
+	// Layer 2: Text hint in description
+	const hint = setting.descEl.createSpan({ cls: 'oap-deprecated-hint' });
+	hint.textContent = t('settings.deprecatedHint');
+}
+
 /** Shared visual class for in-section group dividers (Artifacts, MCP servers, …). */
 export function markSettingsGroupHeading(setting: Setting): void {
 	setting.settingEl.addClass('oap-settings-group-heading');
@@ -545,11 +565,15 @@ interface SettingIndicatorOptions {
 	sessionRestartRequired?: boolean;
 	experimental?: boolean;
 	advanced?: boolean;
+	deprecated?: boolean;
 }
 
 function applySettingIndicators(setting: Setting, options: SettingIndicatorOptions): void {
-	const { sessionRestartRequired, experimental, advanced } = options;
+	const { sessionRestartRequired, experimental, advanced, deprecated } = options;
 
+	if (deprecated) {
+		markSettingDeprecated(setting);
+	}
 	if (sessionRestartRequired) {
 		markSettingRequiresSessionRestart(setting);
 	}

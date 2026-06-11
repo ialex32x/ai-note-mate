@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TAbstractFile, MarkdownView, Editor, MarkdownFileInfo, debounce } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo, debounce, normalizePath } from 'obsidian';
 import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig, createDefaultSpeechToTextConfig } from "./settings";
 import { SessionView } from 'views/session-view';
 import { resolveLocale, setLocale, t } from './i18n';
@@ -15,6 +15,7 @@ import { VaultMutator, GlobalFileLockManager, SnapshotManager } from './services
 import { MemoryStore } from './services/memory';
 import { CustomMenuService } from './services/custom-menu/custom-menu-service';
 import { replaceMenuVariables } from './services/custom-menu/variable-replacer';
+import { parseFrontmatterFromContent } from './utils/frontmatter';
 
 export default class NoteAssistantPlugin extends Plugin {
 	settings!: NoteAssistantPluginSettings;
@@ -79,6 +80,13 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * read them without awaiting.
 	 */
 	customMenuService!: CustomMenuService;
+	/**
+	 * Cached content of the AGENT.md file (if configured and exists).
+	 * Read eagerly on plugin load and refreshed whenever the path setting
+	 * changes. {@link createChatAgent} reads this synchronously so session
+	 * creation stays fast. `null` means the file is absent or not configured.
+	 */
+	agentMdCache: { content: string; mtime: number; path: string } | null = null;
 
 	private readonly _settingsListeners: Array<() => void> = [];
 
@@ -97,8 +105,51 @@ export default class NoteAssistantPlugin extends Plugin {
 		for (const cb of this._settingsListeners) cb();
 	}
 
+	/**
+	 * Read AGENT.md from the vault (async) and populate {@link agentMdCache}.
+	 * Called on plugin load and whenever the path setting changes.
+	 *
+	 * Errors are swallowed — a missing or unreadable AGENT.md simply
+	 * means the cache stays null and the runtime falls back to the
+	 * inline Initial Prompt string.
+	 */
+	async refreshAgentMd(): Promise<void> {
+		try {
+			const raw = this.settings.agentMdPath?.trim() ?? '';
+			if (!raw) {
+				this.agentMdCache = null;
+				return;
+			}
+			const path = normalizePath(raw);
+			const af = this.app.vault.getAbstractFileByPath(path);
+			if (!(af instanceof TFile)) {
+				this.agentMdCache = null;
+				return;
+			}
+			const mtime = af.stat.mtime;
+			if (
+				this.agentMdCache &&
+				this.agentMdCache.path === af.path &&
+				this.agentMdCache.mtime === mtime
+			) {
+				return; // Cache is fresh
+			}
+			const rawContent = await this.app.vault.cachedRead(af);
+			// Strip YAML front matter (between --- delimiters) so that
+			// Obsidian metadata like tags/aliases don't pollute the prompt.
+			const content = parseFrontmatterFromContent(rawContent).body;
+			this.agentMdCache = { content, mtime, path: af.path };
+		} catch {
+			// Swallow — a broken AGENT.md should never block anything.
+			this.agentMdCache = null;
+		}
+	}
+
 	async onload() {
 		await this.loadSettings();
+
+		// Pre-read AGENT.md so createChatAgent can access it synchronously.
+		void this.refreshAgentMd();
 
 		// Initialize i18n before registering any UI strings
 		setLocale(resolveLocale());
@@ -174,16 +225,53 @@ export default class NoteAssistantPlugin extends Plugin {
 		};
 
 		// `modify` fires on every keystroke — debounce to avoid
-		// excessive re-parsing while the user types.
-		const debouncedModify = debounce(onMenuFileChanged, 500);
+		// excessive re-parsing while the user types. Path check is
+		// outside the debounce so a fast switch to another file
+		// within the 500 ms window won't silently drop the menu
+		// file's own pending refresh.
+		const debouncedMenuRefresh = debounce(() => {
+			void this.customMenuService.refresh();
+		}, 500);
 
-		this.registerEvent(this.app.vault.on('modify', (file) => debouncedModify(file)));
+		this.registerEvent(this.app.vault.on('modify', (file) => {
+			if (menuPath() && file.path === menuPath()) {
+				debouncedMenuRefresh();
+			}
+		}));
 		this.registerEvent(this.app.vault.on('create', onMenuFileChanged));
 		this.registerEvent(this.app.vault.on('delete', onMenuFileChanged));
 		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
 			const path = menuPath();
 			if (path && (file.path === path || oldPath === path)) {
 				void this.customMenuService.refresh();
+			}
+		}));
+
+		// Keep the AGENT.md cache fresh via vault events, mirroring the
+		// custom-menu pattern above. `modify` is debounced per-file to
+		// avoid re-reading on every keystroke.
+		const agentMdPath = () => (this.settings.agentMdPath ?? '').trim();
+		const onAgentMdFileChanged = (file: TAbstractFile) => {
+			const path = agentMdPath();
+			if (path && file.path === path) {
+				void this.refreshAgentMd();
+			}
+		};
+		const debouncedAgentMdRefresh = debounce(() => {
+			void this.refreshAgentMd();
+		}, 500);
+		this.registerEvent(this.app.vault.on('modify', (file) => {
+			const path = agentMdPath();
+			if (path && file.path === path) {
+				debouncedAgentMdRefresh();
+			}
+		}));
+		this.registerEvent(this.app.vault.on('create', onAgentMdFileChanged));
+		this.registerEvent(this.app.vault.on('delete', onAgentMdFileChanged));
+		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => {
+			const path = agentMdPath();
+			if (path && (file.path === path || oldPath === path)) {
+				void this.refreshAgentMd();
 			}
 		}));
 		this.registerView(

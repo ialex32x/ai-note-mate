@@ -232,6 +232,13 @@ export const zhCN: Record<string, string> = {
 	'settings.initialPromptDesc': 'AI 会话的系统提示词，定义 AI 的行为和角色。',
 	'settings.initialPromptPlaceholder': '输入系统提示词…',
 	'settings.editInitialPrompt': '编辑',
+	'settings.agentMdPath': 'AGENT.md 路径',
+	'settings.agentMdPathDesc': '一个 Markdown 笔记的库内相对路径，其内容会被追加到每次 AI 会话的系统提示词中。当文件存在时，会覆盖上方的初始提示词设置。',
+	'settings.agentMdPathPlaceholder': '例如 AGENT.md',
+	'settings.agentMdCreateDefault': '从模板创建 AGENT.md',
+	'settings.agentMdOpenNote': '打开 AGENT.md',
+	'settings.agentMdNoteMissing': 'AGENT.md 尚未存在。',
+	'settings.agentMdCreated': '已在 {path} 创建 AGENT.md。',
 	'settings.enterToSend': 'Enter 发送',
 	'settings.enterToSendDesc': '开启后，Enter 发送消息，Shift+Enter 换行。关闭后行为相反。',
 	'settings.resetTips': '重置使用提示',
@@ -546,6 +553,10 @@ export const zhCN: Record<string, string> = {
 	// ── Advanced parameter indicator ──────────────────────
 	'settings.advanced': '进阶参数；如不确定用法，请勿随意修改。',
 	'settings.advancedHint': '进阶',
+
+	// ── Deprecated setting indicator ─────────────────────
+	'settings.deprecated': '已废弃；此设置可能在后续版本中移除。请改用 AGENT.md。',
+	'settings.deprecatedHint': '已废弃',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '打开会话',

@@ -232,6 +232,13 @@ export const en: Record<string, string> = {
 	'settings.initialPromptDesc': 'System prompt for AI sessions, defining the AI behavior and role.',
 	'settings.initialPromptPlaceholder': 'Enter system prompt…',
 	'settings.editInitialPrompt': 'Edit',
+	'settings.agentMdPath': 'AGENT.md path',
+	'settings.agentMdPathDesc': 'Vault-relative path of a markdown note whose content is appended to the system prompt for every AI session. When the file exists, it overrides the Initial Prompt setting above.',
+	'settings.agentMdPathPlaceholder': 'e.g. AGENT.md',
+	'settings.agentMdCreateDefault': 'Create AGENT.md from template',
+	'settings.agentMdOpenNote': 'Open AGENT.md',
+	'settings.agentMdNoteMissing': 'AGENT.md does not exist yet.',
+	'settings.agentMdCreated': 'Created AGENT.md at {path}.',
 	'settings.enterToSend': 'Enter to send',
 	'settings.enterToSendDesc': 'When enabled, Enter sends the message and Shift+Enter inserts a newline. When disabled, the behavior is reversed.',
 	'settings.resetTips': 'Reset usage tips',
@@ -546,6 +553,10 @@ Write the result directly into the note — do not reply with the edited text in
 	// ── Advanced parameter indicator ──────────────────────
 	'settings.advanced': 'Advanced parameter; only change if you understand how it affects the plugin.',
 	'settings.advancedHint': 'Advanced',
+
+	// ── Deprecated setting indicator ─────────────────────
+	'settings.deprecated': 'Deprecated; this setting may be removed in a future version. Use AGENT.md instead.',
+	'settings.deprecatedHint': 'Deprecated',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': 'Open Chat',

@@ -172,6 +172,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	summarizerProfileId: '',
 	insightsProfileId: '',
 	systemPrompt: '',
+	agentMdPath: 'AGENT.md',
 	imageDownloadDir: 'Attachments',
 	saveAsNoteDir: '',
 	builtinWebSearchEnabled: true,

@@ -1179,6 +1179,43 @@
     white-space: nowrap;
 }
 
+/* ── Deprecated setting indicator ─────────────────────── */
+// Layer 1: Icon badge next to setting name
+.oap-deprecated-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 6px;
+    color: @text-faint;
+    opacity: 0.6;
+    cursor: help;
+    vertical-align: middle;
+    flex-shrink: 0;
+
+    svg {
+        .icon-size(12px);
+    }
+
+    &:hover {
+        opacity: 0.9;
+    }
+}
+
+// Layer 2: Text hint tag in description
+.oap-deprecated-hint {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 6px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: @text-secondary;
+    border: 1px solid ~"color-mix(in srgb, var(--text-muted) 30%, transparent)";
+    border-radius: @radius-sm;
+    opacity: 0.8;
+    line-height: 1.5;
+    white-space: nowrap;
+}
+
 /* Allowed capabilities: rendered as its own row directly below the matching
    Setting (name + desc). Each capability is a label-only checkbox; the full
    description is shown via the native title tooltip. Items are laid out

@@ -1,4 +1,4 @@
-import { DropdownComponent, Notice, Setting } from "obsidian";
+import { DropdownComponent, Notice, Setting, TFile, TFolder, normalizePath } from "obsidian";
 import { t } from "../../i18n";
 import type { TextGenConfig } from "../types";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
@@ -9,6 +9,7 @@ import {
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
+	markSettingDeprecated,
 	markSettingRequiresSessionRestart,
 } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
@@ -25,6 +26,9 @@ export class GlobalSettingsSection implements SettingsSection {
 
 		// System prompt (display-only with edit button)
 		this.renderSystemPromptField(container);
+
+		// AGENT.md path (file-based alternative to Initial Prompt)
+		this.renderAgentMdPathField(container);
 
 		createToggleField({
 			container,
@@ -270,6 +274,106 @@ export class GlobalSettingsSection implements SettingsSection {
 				}));
 
 		markSettingRequiresSessionRestart(setting);
+		markSettingDeprecated(setting);
+	}
+
+	/** Default template for newly-created AGENT.md. */
+	private static readonly AGENT_MD_TEMPLATE = [
+		'You are a knowledgeable AI assistant.',
+		'',
+		'## Rules',
+		'- Use clear, concise language. Prefer Markdown for formatting.',
+		'- Cite specific notes with wiki links when relevant.',
+		'- Ask clarifying questions when the request is ambiguous.',
+	].join('\n');
+
+	private renderAgentMdPathField(container: HTMLElement): void {
+		const { app, plugin, refreshSection } = this.ctx;
+		const agentMdPath = plugin.settings.agentMdPath;
+		const fileExists = this._findAgentMdFile() !== null;
+
+		const pathSetting = new Setting(container)
+			.setName(t('settings.agentMdPath'))
+			.setDesc(t('settings.agentMdPathDesc'))
+			.addText(text => {
+				text.setPlaceholder(t('settings.agentMdPathPlaceholder'));
+				text.setValue(agentMdPath);
+				text.onChange(async (value) => {
+					plugin.settings.agentMdPath = value.trim();
+					await plugin.saveSettings();
+					// Refresh cached content so next session creation can pick it up.
+					void plugin.refreshAgentMd();
+					refreshSection(this);
+				});
+			});
+
+		// "Create default" / "Open" toggle button
+		pathSetting.addExtraButton(btn => {
+			btn.setIcon(fileExists ? 'external-link' : 'file-plus-2');
+			btn.setTooltip(
+				fileExists
+					? t('settings.agentMdOpenNote')
+					: t('settings.agentMdCreateDefault'),
+			);
+			btn.onClick(async () => {
+				const existing = this._findAgentMdFile();
+				if (existing) {
+					await app.workspace.openLinkText(existing.path, '', true);
+					return;
+				}
+				try {
+					const file = await this._ensureAgentMdFile();
+					new Notice(t('settings.agentMdCreated', { path: file.path }));
+					// Refresh the runtime cache so new sessions use the file.
+					void plugin.refreshAgentMd();
+					refreshSection(this);
+				} catch (err) {
+					new Notice(
+						err instanceof Error ? err.message : String(err),
+					);
+				}
+			});
+		});
+
+		markSettingRequiresSessionRestart(pathSetting);
+	}
+
+	/** Find the AGENT.md file (if any) based on the configured path. */
+	private _findAgentMdFile(): TFile | null {
+		const { plugin } = this.ctx;
+		const raw = plugin.settings.agentMdPath?.trim() ?? '';
+		if (!raw) return null;
+		const path = normalizePath(raw);
+		const af = this.ctx.app.vault.getAbstractFileByPath(path);
+		return af instanceof TFile ? af : null;
+	}
+
+	/** Ensure AGENT.md exists, creating it with the default template. */
+	private async _ensureAgentMdFile(): Promise<TFile> {
+		const { app, plugin } = this.ctx;
+		const raw = plugin.settings.agentMdPath?.trim() ?? '';
+		if (!raw) throw new Error('AGENT.md path is empty.');
+
+		const path = normalizePath(raw);
+		const existing = app.vault.getAbstractFileByPath(path);
+		if (existing instanceof TFile) return existing;
+		if (existing) {
+			throw new Error(`"${path}" exists but is not a file.`);
+		}
+
+		// Create missing parent folders.
+		const parts = path.split('/');
+		if (parts.length > 1) {
+			const parentPath = parts.slice(0, -1).join('/');
+			const parent = app.vault.getAbstractFileByPath(parentPath);
+			if (!parent) {
+				await app.vault.createFolder(parentPath);
+			} else if (!(parent instanceof TFolder)) {
+				throw new Error(`Parent "${parentPath}" exists but is not a folder.`);
+			}
+		}
+
+		return app.vault.create(path, GlobalSettingsSection.AGENT_MD_TEMPLATE);
 	}
 
 	// ── Active config selectors ─────────────────────────────────────

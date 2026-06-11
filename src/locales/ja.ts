@@ -232,6 +232,13 @@ export const ja: Record<string, string> = {
 	'settings.initialPromptDesc': 'AI セッションのシステムプロンプト。AIの動作と役割を定義します。',
 	'settings.initialPromptPlaceholder': 'システムプロンプトを入力…',
 	'settings.editInitialPrompt': '編集',
+	'settings.agentMdPath': 'AGENT.md のパス',
+	'settings.agentMdPathDesc': 'AI セッションごとにシステムプロンプトに追加される Markdown ノートのボールト相対パス。ファイルが存在する場合、上記の初期プロンプト設定を上書きします。',
+	'settings.agentMdPathPlaceholder': '例: AGENT.md',
+	'settings.agentMdCreateDefault': 'テンプレートから AGENT.md を作成',
+	'settings.agentMdOpenNote': 'AGENT.md を開く',
+	'settings.agentMdNoteMissing': 'AGENT.md はまだ存在しません。',
+	'settings.agentMdCreated': '{path} に AGENT.md を作成しました。',
 	'settings.enterToSend': 'Enter で送信',
 	'settings.enterToSendDesc': '有効にすると、Enterでメッセージを送信し、Shift+Enterで改行します。無効にすると動作が逆になります。',
 	'settings.resetTips': '使い方のヒントをリセット',
@@ -546,6 +553,10 @@ export const ja: Record<string, string> = {
 	// ── Advanced parameter indicator ──────────────────────
 	'settings.advanced': '上級者向けパラメータです。効果を理解していない場合は変更しないでください。',
 	'settings.advancedHint': '上級',
+
+	// ── Deprecated setting indicator ─────────────────────
+	'settings.deprecated': '非推奨：この設定は将来のバージョンで削除される可能性があります。代わりに AGENT.md を使用してください。',
+	'settings.deprecatedHint': '非推奨',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': 'チャットを開く',

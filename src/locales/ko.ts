@@ -232,6 +232,13 @@ export const ko: Record<string, string> = {
 	'settings.initialPromptDesc': 'AI 세션의 시스템 프롬프트로, AI의 동작과 역할을 정의합니다.',
 	'settings.initialPromptPlaceholder': '시스템 프롬프트 입력…',
 	'settings.editInitialPrompt': '편집',
+	'settings.agentMdPath': 'AGENT.md 경로',
+	'settings.agentMdPathDesc': 'AI 세션마다 시스템 프롬프트에 추가되는 Markdown 노트의 보관함 상대 경로. 파일이 존재하면 위의 초기 프롬프트 설정을 덮어씁니다.',
+	'settings.agentMdPathPlaceholder': '예: AGENT.md',
+	'settings.agentMdCreateDefault': '템플릿에서 AGENT.md 생성',
+	'settings.agentMdOpenNote': 'AGENT.md 열기',
+	'settings.agentMdNoteMissing': 'AGENT.md가 아직 존재하지 않습니다.',
+	'settings.agentMdCreated': '{path}에 AGENT.md를 생성했습니다.',
 	'settings.enterToSend': 'Enter로 전송',
 	'settings.enterToSendDesc': '활성화하면 Enter로 메시지를 전송하고 Shift+Enter로 줄바꿈합니다. 비활성화하면 동작이 반대로 됩니다.',
 	'settings.resetTips': '사용 팁 초기화',
@@ -546,6 +553,10 @@ export const ko: Record<string, string> = {
 	// ── Advanced parameter indicator ──────────────────────
 	'settings.advanced': '고급 매개변수입니다. 동작을 이해하지 못하면 변경하지 마세요.',
 	'settings.advancedHint': '고급',
+
+	// ── Deprecated setting indicator ─────────────────────
+	'settings.deprecated': '지원 중단: 이 설정은 향후 버전에서 제거될 수 있습니다. 대신 AGENT.md를 사용하세요.',
+	'settings.deprecatedHint': '지원 중단',
 
 	// ── Commands ──────────────────────────────────────────
 	'command.openChat': '채팅 열기',

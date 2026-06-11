@@ -217,7 +217,18 @@ export function createChatAgent(
     // (see `src/skills/skill-catalogue.ts`). The full-catalogue fallback
     // (no embedding configured / query too short / embed failed) is
     // handled inside the catalogue builder.
-    const fullSystemPrompt = builtinSystemPrompt + (settings.systemPrompt || '');
+    // AGENT.md takes priority over the inline Initial Prompt string.
+    // The file content is cached on plugin startup / settings change by
+    // `plugin.refreshAgentMd()` so this read is always synchronous.
+    // An explicit section heading is added so the model unambiguously
+    // interprets the custom instructions as being ABOUT the AI itself,
+    // not about the user.
+    const agentMdContent = plugin.agentMdCache?.content;
+    const customPrompt = agentMdContent ?? (settings.systemPrompt || '');
+    const customPromptSection = customPrompt
+        ? `\n\n## Custom Instructions\n${customPrompt}`
+        : '';
+    const fullSystemPrompt = builtinSystemPrompt + customPromptSection;
 
     // Resolve per-profile context-compression overrides from the active
     // profile. Stored on disk as 0 = "use plugin default", which the
