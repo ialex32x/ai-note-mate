@@ -24,7 +24,6 @@ import {
 
 import {
     buildToolEmbeddingText,
-    buildToolTriggerLine,
     toolResultApiContent,
     backfillChatMessageBudgetHints,
     generateId,
@@ -34,7 +33,6 @@ import {
 } from "./chat-stream-helpers";
 
 import type {
-    ToolCallResultInfo,
     ChatMessage,
     QuickAskTurn,
     ChatSessionState,

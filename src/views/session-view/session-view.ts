@@ -10,15 +10,12 @@ import {
     Menu,
 } from 'obsidian';
 import { ChatMessage, IChatAgent } from '../../services/chat-stream';
-import { getActiveProfile } from '../../settings';
 import { exportSessionToVault } from '../../services/session-exporter';
-import { isAbortError } from '../../utils/abortable-request';
 
 import NoteAssistantPlugin from 'main';
 import { t } from '../../i18n';
 import { SessionManager } from '../../session-manager';
-import { SessionSearchModal, SessionSearchResult } from '../../modals/session-search-modal';
-import { CheckpointActionConfirmModal } from '../../modals/checkpoint-action-confirm-modal';
+import { SessionSearchModal } from '../../modals/session-search-modal';
 import {
     DropdownManager,
     BubbleRenderer,
@@ -33,14 +30,10 @@ import {
     showInitializationError,
     AssetPanelButton,
 } from '../../components/session';
-import { extractSuggestions, type SuggestedAction, type SuggestionCardState } from '../../services/suggestions';
 import {
     buildInsightDeepenPrompt,
     type ConversationInsight,
-    type InsightCardState,
 } from '../../services/insights';
-import { resolveLinkOpenText } from '../../utils/workspace-utils';
-
 import {
     createProfileSelector, type ProfileSelectorHandle,
     createCheckpointSelector, type CheckpointSelectorHandle,
@@ -48,33 +41,29 @@ import {
     createIssueTracerButton, type IssueTracerButtonHandle,
 } from '../../components/session/toolbar';
 import type { TipSessionViewAdapter } from '../../services/tips';
-import type { TokenUsage } from '../../services/llm-provider';
 import { CMInput } from '../../components/cm-input';
 import {
     ScrollController,
     BubbleListController,
     SessionStatusController,
     updateSessionTitle as renderSessionTitle,
-    maybeGenerateSessionTitle,
-    createSummarizerConfig,
     createInsightsConfig,
-    createEmbeddingConfig,
-    createToolFilterOptions,
-    createProviderForActiveProfileOf,
     SessionNavigator,
 } from './index';
-import { buildDisplayUnits } from './display-units';
-import { replayUnitsInFrames } from './history-replay-controller';
 import { MessageWindowController } from './message-window-controller';
-import { HISTORY_LOADING } from './history-loading-config';
 import {
     SessionPromptOptimizer,
-    type SessionPromptOptimizerDeps,
 } from './session-prompt-optimizer';
+import { SessionRuntimeBinder } from './session-runtime-binder';
+import { SessionSwitchController } from './session-switch-controller';
+import { QuickAskHandler } from './quick-ask-handler';
+import { SendHandler } from './send-handler';
+import { HistoryLoader } from './history-loader';
+import { FollowUpController } from './follow-up-controller';
+import { MessageEditHandler } from './message-edit-handler';
 import {
     SessionRuntime,
     extractInsightsForMessage,
-    type RuntimeEvent,
 } from '../../services/session-runtime';
 
 export class SessionView extends ItemView {
@@ -95,17 +84,6 @@ export class SessionView extends ItemView {
     private historyLoadingOverlay!: SessionLoadingOverlay;
     /** Tracks which history units are rendered (tail-first windowing). */
     private messageWindow!: MessageWindowController;
-    /** Cancels an in-flight history replay when switching sessions. */
-    private historyReplayAbort: AbortController | null = null;
-    /**
-     * Serializes history-prepend operations so {@link loadOlderMessages} and
-     * {@link ensureMessageVisible} never interleave their `replayUnitsInFrames`
-     * batches against a stale anchor / window bounds (which would scramble
-     * message order). See {@link runHistoryMutation}.
-     */
-    private historyMutationChain: Promise<void> = Promise.resolve();
-    /** Flag to prevent concurrent session switches */
-    private isSwitchingSession = false;
     private scrollToBottomBtn!: HTMLButtonElement;
     private newChatBtn!: HTMLButtonElement;
     private sessionNavigator!: SessionNavigator;
@@ -113,24 +91,35 @@ export class SessionView extends ItemView {
     private assetPanelBtn!: AssetPanelButton;
     // ── Session runtime ──────────────────────────────────────────────────────
     /**
-     * The runtime currently bound to this view. Sourced from
-     * `plugin.runtimePool`; the view does NOT own its lifecycle (the
-     * pool does). When the view switches sessions or closes, it
-     * detaches its listener and tells the pool to `release()`; the
-     * pool decides whether the runtime keeps running in the background.
+     * Owns the binding lifecycle between this view and the
+     * {@link SessionRuntime} sourced from `plugin.runtimePool`: attach/
+     * detach listeners, hydrate from disk, replay UI state, and route
+     * the runtime event channel onto the view's controllers. Constructed
+     * in {@link buildInputArea} once all UI controllers exist.
      */
-    private runtime?: SessionRuntime;
-    /** Detach fn returned by `runtime.attach(...)`. Cleared after detach. */
-    private detachRuntime?: () => void;
+    private runtimeBinder!: SessionRuntimeBinder;
+    /** Session new/switch/branch/search-navigation flows (P1). */
+    private switchController!: SessionSwitchController;
+    /** User-message send pipeline (P4). */
+    private sendHandler!: SendHandler;
+    /** QuickAsk side-inquiry submission/deletion (P2). */
+    private quickAskHandler!: QuickAskHandler;
+    /** Lazy history-window expansion + jump navigation (P6). */
+    private historyLoader!: HistoryLoader;
+    /** Deterministic follow-up suggestion bar (P3). */
+    private followUpController!: FollowUpController;
+    /** In-place message-edit (rollback + re-edit) flow (P5). */
+    private messageEditHandler!: MessageEditHandler;
 
     /**
-     * View-local once-per-attach guard for the emergency-shrink Notice.
-     * Kept on the view (not the runtime) so a background continuation
-     * that already tripped the shrink while detached still surfaces the
-     * Notice the first time the user opens / switches back to the view.
-     * Reset on `bindToSession` so each session-switch starts fresh.
+     * The runtime currently bound to this view, proxied from the
+     * {@link SessionRuntimeBinder}. The view does NOT own its lifecycle
+     * (the pool does). Read-only on the view side — only the binder
+     * mutates the binding.
      */
-    private _shownEmergencyShrinkNotice = false;
+    private get runtime(): SessionRuntime | undefined {
+        return this.runtimeBinder?.runtime;
+    }
 
     private plugin!: NoteAssistantPlugin;
 
@@ -173,8 +162,6 @@ export class SessionView extends ItemView {
     private checkpointSelector!: CheckpointSelectorHandle;
     private tipsButton: TipsButtonHandle | null = null;
     private issueTracerButton: IssueTracerButtonHandle | null = null;
-    /** Tear-down for active-runtime checkpoint change subscription. */
-    private unsubCheckpointChange: (() => void) | null = null;
     // ── Refactored components ────────────────────────────────────────────────
     private dropdownManager = new DropdownManager();
     private bubbleRenderer!: BubbleRenderer;
@@ -247,228 +234,6 @@ export class SessionView extends ItemView {
         return this.runtime?.pendingConfirmations ?? new Map();
     }
 
-    /**
-     * Resolve (or create) the runtime that should be bound to this
-     * view's active session, and ensure this view is attached to it.
-     *
-     * Replaces the old `getChatStream()` accessor. Unlike that one,
-     * this method does NOT lazily create state on first read inside
-     * UI helpers; the only places that may create a runtime are the
-     * switch / new / open flows. Other call sites should treat
-     * `this.runtime` as readonly.
-     */
-    private ensureRuntimeAttached(): SessionRuntime {
-        const targetId = this.sessionManager.activeSessionId;
-        if (this.runtime && this.runtime.sessionId === targetId) return this.runtime;
-        // Mismatch: this is a logic error — the caller forgot to run the
-        // switch flow before calling something that requires a chat.
-        // Recover by attaching to the correct runtime so the user isn't
-        // left with a broken view, but log so we notice during dev.
-        console.warn(
-            '[SessionView] ensureRuntimeAttached invoked with mismatched runtime; reattaching.',
-        );
-        this.attachRuntime(this.plugin.runtimePool.getOrCreate(targetId));
-        return this.runtime!;
-    }
-
-    /**
-     * Wire this view as a listener on the given runtime. Replaces any
-     * previously attached runtime (caller is responsible for having
-     * already detached/released it).
-     */
-    private attachRuntime(runtime: SessionRuntime): void {
-        this.runtime = runtime;
-        this.detachRuntime = runtime.attach((ev) => this.onRuntimeEvent(ev));
-        // Wire the asset gallery button to this runtime's collection.
-        this.assetPanelBtn?.bindCollection(
-            (listener) => runtime.assetCollection.onChange(listener),
-        );
-        // Point the checkpoint dropdown at this runtime's store so its
-        // count badge and dropdown contents reflect the new session.
-        this.checkpointSelector?.setRuntime(runtime);
-        // Subscribe to checkpoint-store changes on the active runtime
-        // so the session-navigator badge stays live even when the
-        // dropdown isn't open.
-        this.unsubCheckpointChange?.();
-        this.unsubCheckpointChange = runtime.checkpointStore.on('change', () => {
-            this.sessionNavigator?.updatePendingBadge();
-        });
-        // The emergency-shrink Notice gate resets per attach: each
-        // session deserves an independent "have we told the user yet?"
-        // budget. If the runtime was already in the shrunk state when
-        // we attached (background continuation tripped it while the
-        // view was elsewhere), surface the Notice once on attach so
-        // the warning isn't lost.
-        this._shownEmergencyShrinkNotice = false;
-        if (runtime.hasEmergencyShrunk) {
-            this._shownEmergencyShrinkNotice = true;
-            new Notice(t('view.contextEmergencyShrink'), 8000);
-        }
-    }
-
-    /**
-     * Central event handler for the attached SessionRuntime. Mirrors
-     * what `buildChatAgentCallbacks` used to do inline, but routed
-     * through a single typed event channel so the runtime can keep
-     * pushing events even when no view is attached (in which case
-     * this function simply isn't called).
-     */
-    private onRuntimeEvent(ev: RuntimeEvent): void {
-        switch (ev.type) {
-            case 'start':
-                this.setInputLocked(true);
-                this.showStreamingLoader();
-                break;
-            case 'message-update':
-                this.handleMessageUpdate(ev.msg);
-                break;
-            case 'sub-agent-message-update':
-                this.handleSubAgentMessageUpdate(ev.msg, ev.agentName);
-                break;
-            case 'tool-call-end':
-                // No-op for the view: the trailing loader stays visible
-                // for the entire busy turn, so we don't need to retoggle
-                // anything between tool calls. Kept as an explicit case
-                // so an exhaustiveness check would catch a missing branch.
-                break;
-            case 'finish':
-                // When auto-follow is "parked" — because the user was
-                // reading a long streaming message that outgrew the viewport,
-                // OR because they explicitly jumped to an earlier message —
-                // keep it off so async trailing content (insight card,
-                // follow-up bar rendered after the turn) does not yank the
-                // view to the bottom. The user stays parked until they send a
-                // new message. Abort / error paths restore immediately
-                // because the turn was interrupted.
-                if (!this.scroller.isAutoFollowParked()) {
-                    this.scroller.restoreAutoFollow();
-                }
-                this.hideStreamingLoader();
-                this.setInputLocked(false);
-                // Persistence + title generation + insight extraction
-                // are all owned by the runtime; the view only needs to
-                // refresh derived UI and re-render the (deterministic,
-                // cheap) follow-up suggestion bar from the new tail
-                // assistant reply.
-                this.statusController.updateTitle();
-                this.maybeShowFollowUpSuggestions();
-                this.updateNewChatBtnState();
-                // Auto-trim at turn boundary: only trim when NOT parked.
-                // When the user is reading an oversized message (parked),
-                // removing old bubbles from the top causes the browser to
-                // adjust scrollTop, which shifts the user's reading position.
-                // The trim will still happen on the next user message send
-                // (forceScrollToBottom) or abort/error (restoreAutoFollow).
-                if (!this.scroller.isAutoFollowParked()) {
-                    this.messageWindow.maybeTrimTail();
-                }
-                break;
-            case 'abort':
-                this.scroller.restoreAutoFollow();
-                this.hideStreamingLoader();
-                this.bubbleList.handleAbort(ev.msg);
-                this.messageWindow.maybeTrimTail();
-                break;
-            case 'usage-update':
-                this.statusController.updateStatusDisplay();
-                break;
-            case 'error':
-                console.warn('ChatStream error:', ev.err);
-                this.scroller.restoreAutoFollow();
-                this.hideStreamingLoader();
-                this.setInputLocked(false);
-                this.errorBubbles.append(ev.err.message);
-                this.messageWindow.maybeTrimTail();
-                break;
-            case 'context-summarizing':
-                // The summarizer LLM is about to be called — surface
-                // a transient status update so the user understands
-                // the pause before the assistant reply appears.
-                this.streamingLoader.showStatus(t('view.contextSummarizing'));
-                break;
-            case 'context-compressed':
-                // The summarizer LLM returned — restore the normal
-                // streaming loader dots (hide the summarizing text).
-                this.streamingLoader.hideStatus();
-                break;
-            case 'emergency-shrink-applied':
-                // Only surface the toast the first time it happens in a
-                // session — the same warning would otherwise repeat on
-                // every subsequent over-budget turn and become noise.
-                // The runtime's `hasEmergencyShrunk` flag is flipped
-                // BEFORE this event is emitted, so we use the local
-                // `_shownEmergencyShrinkNotice` guard instead to detect
-                // "first arrival at this view instance" — that way a
-                // background-continuation session that previously
-                // tripped the shrink will still notify the user the
-                // first time they actually look at it.
-                if (!this._shownEmergencyShrinkNotice) {
-                    this._shownEmergencyShrinkNotice = true;
-                    new Notice(t('view.contextEmergencyShrink'), 8000);
-                }
-                break;
-            case 'title-updated':
-                // Runtime finished a post-turn title-generation pass;
-                // refresh the toolbar title display.
-                this.statusController.updateTitle();
-                break;
-            case 'confirm-tool-call': {
-                // The runtime already recorded the resolver in its
-                // pendingConfirmations map. We need the corresponding
-                // bubble to re-render its Allow / Deny UI now that a
-                // resolver exists; trigger that by re-rendering the
-                // bubble if it's already on screen.
-                const bubble = this.bubbleList.messageBubbles.get(ev.messageId);
-                if (bubble) {
-                    const msg = this.chat?.messages.find(m => m.id === ev.messageId);
-                    if (msg) this.bubbleList.updateContent(bubble, msg);
-                }
-                break;
-            }
-            case 'insight-update':
-                this.renderInsightFromRuntimeState(ev.state);
-                break;
-            case 'suggestion-update':
-                this.renderSuggestionFromRuntimeState(ev.state);
-                break;
-            case 'todo-update':
-                // The runtime mutated its TODO snapshot — refresh the
-                // pinned panel. Empty snapshots are translated into
-                // `applyState(null)` by the runtime ... wait, no: the
-                // runtime always emits the snapshot it just committed,
-                // even when empty. TodoPanel.applyState handles the
-                // empty case by tearing itself down.
-                this.todoPanel.applyState(ev.state);
-                break;
-        }
-    }
-
-    /**
-     * Project a runtime insight state onto the DOM, with appropriate
-     * scroll behaviour for auto vs manual extractions. Called from the
-     * `insight-update` event handler and (on bind) from
-     * {@link replayRuntimeUI}.
-     */
-    private renderInsightFromRuntimeState(state: InsightCardState | null): void {
-        this.insightCard.applyState(state);
-        if (state === null) return;
-
-        // Manual gestures (clicking "Extract insights" on an action bar
-        // that may be far up in the history) deserve assertive scroll:
-        // every phase including the empty / error placeholders should
-        // be visible without further user effort — UNLESS the user is
-        // parked reading an oversized message or jumped to an earlier
-        // position.  In that case do not yank the view away from
-        // the user's current reading position.
-        if (state.cause === 'manual') {
-            if (!this.scroller.isAutoFollowParked()) {
-                this.forceScrollToBottom();
-            }
-        } else if (state.phase === 'results') {
-            this.maybeScrollToBottom();
-        }
-    }
-
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
     async onOpen() {
@@ -492,7 +257,7 @@ export class SessionView extends ItemView {
             this.buildInputArea(root, sessionTitleEl);
 
             // ── Restore session UI from cache ────────────────────────────────
-            await this.bindActiveSessionRuntime();
+            await this.runtimeBinder.bindActiveSessionRuntime();
         } catch (error) {
             showInitializationError(this.contentEl, error, () => { void this.onOpen(); });
         }
@@ -566,17 +331,16 @@ export class SessionView extends ItemView {
             },
             evictRuntime: (id) => this.plugin.runtimePool.evict(id),
             clearActiveDraftTimer: () => this.draftController.clearTimer(),
-            onSwitchSession: (id) => { void this.handleSwitchSession(id); },
+            onSwitchSession: (id) => { void this.switchController.handleSwitchSession(id); },
             onActiveSessionDeleted: async () => {
                 // The active session's runtime was already evicted
                 // by SessionNavigator (via plugin.runtimePool.evict);
                 // we just need to detach our listener (no-op since
                 // the runtime is gone) and rebind to whichever
                 // session SessionManager auto-selected.
-                this.detachRuntime = undefined;
-                this.runtime = undefined;
-                this.clearViewDOM();
-                await this.bindActiveSessionRuntime();
+                this.runtimeBinder.resetBindingForDeletedSession();
+                this.runtimeBinder.clearViewDOM();
+                await this.runtimeBinder.bindActiveSessionRuntime();
             },
             onAcceptAllPendingCheckpoints: async () => {
                 const sessions = this.sessionManager.getAllSessions();
@@ -627,7 +391,7 @@ export class SessionView extends ItemView {
             attr: { 'aria-label': t('view.newChat') },
         });
         setIcon(newChatBtn, 'file-plus');
-        newChatBtn.addEventListener('click', () => void this.handleNewChat());
+        newChatBtn.addEventListener('click', () => void this.switchController.handleNewChat());
         this.newChatBtn = newChatBtn;
 
         // More actions dropdown button
@@ -708,12 +472,12 @@ export class SessionView extends ItemView {
             // container so they don't leak onto document.body and are
             // cleaned up naturally when the view is detached.
             this.containerEl,
-            (msg) => { void this.handleBranchFromMessage(msg); },
-            (msg) => { void this.handleEditMessage(msg); },
-            (msg) => { void this.handleJumpToPrevUser(msg); },
-            (msg) => { void this.handleJumpToNextUser(msg); },
-            (msg) => this.canJumpToPrevUser(msg),
-            (msg) => this.canJumpToNextUser(msg),
+            (msg) => { void this.switchController.handleBranchFromMessage(msg); },
+            (msg) => { void this.messageEditHandler.handleEditMessage(msg); },
+            (msg) => { this.historyLoader.handleJumpToPrevUser(msg); },
+            (msg) => { this.historyLoader.handleJumpToNextUser(msg); },
+            (msg) => this.historyLoader.canJumpToPrevUser(msg),
+            (msg) => this.historyLoader.canJumpToNextUser(msg),
             (msg) => { void this.handleQuickAskRequest(msg); },
             () => new Set((this.runtime?.quickAskTurns ?? []).map(t => t.parentMessageId)),
         );
@@ -721,7 +485,7 @@ export class SessionView extends ItemView {
 
         // Initialize follow-up suggestion bar (mounted on messagesEl on demand)
         this.followUpBar = new FollowUpBar(this.messagesEl, (action) => {
-            this.handleFollowUpPick(action);
+            this.followUpController.handleFollowUpPick(action);
         });
 
         // Conversation-insight preview card. The card is purely a
@@ -747,7 +511,7 @@ export class SessionView extends ItemView {
         this.scroller.attach();
         this.scroller.setNearTopCallback(() => {
             if (this.messageWindow.shouldAutoLoadOlder(this.messagesEl.scrollTop)) {
-                void this.loadOlderMessages();
+                void this.historyLoader.loadOlderMessages();
             }
         });
 
@@ -767,7 +531,7 @@ export class SessionView extends ItemView {
                 // delivers the user message via onUserMessage →
                 // appendBubble, which clears the singleton as part of
                 // its normal "new tail" handling.
-                void this.sendPrompt(t('view.continueAfterError'));
+                void this.sendHandler.sendPrompt(t('view.continueAfterError'));
             },
         });
 
@@ -795,6 +559,16 @@ export class SessionView extends ItemView {
         // their (now detached) entries from the bubble map so jump navigation
         // doesn't resolve a stale node.
         this.messageWindow.setOnUnitsTrimmed((ids) => this.bubbleList.dropFromMap(ids));
+
+        // QuickAsk side-inquiry handler (P2). Constructed here because it
+        // depends on `bubbleList`; the panel itself is built later in
+        // buildInputArea and refreshed via the late-bound callback.
+        this.quickAskHandler = new QuickAskHandler({
+            plugin: this.plugin,
+            getRuntime: () => this.runtime,
+            bubbleList: this.bubbleList,
+            refreshQuickAskPanel: () => this.quickAskPanel?.refresh(),
+        });
     }
 
     /**
@@ -828,9 +602,9 @@ export class SessionView extends ItemView {
             (messageId) => this.bubbleList.messageBubbles.get(messageId),
             () => this.runtime?.quickAskTurns ?? [],
             async (parentMessageId, input) => {
-                await this.handleQuickAskSubmit(parentMessageId, input);
+                await this.quickAskHandler.handleQuickAskSubmit(parentMessageId, input);
             },
-            (parentMessageId) => { void this.handleQuickAskDelete(parentMessageId); },
+            (parentMessageId) => { void this.quickAskHandler.handleQuickAskDelete(parentMessageId); },
         );
 
         // ── Input container ───────────────────────────────────────────────────────
@@ -841,7 +615,7 @@ export class SessionView extends ItemView {
         const checkpointRow = inputContainer.createEl('div', { cls: 'session-checkpoint-row' });
         this.checkpointSelector = createCheckpointSelector(checkpointRow, this.dropdownManager, {
             app: this.app,
-            onGotoMessage: (messageId) => { void this.scrollToMessage(messageId); },
+            onGotoMessage: (messageId) => { void this.historyLoader.scrollToMessage(messageId); },
         });
 
         // Input area with CodeMirror 6 editor
@@ -852,7 +626,7 @@ export class SessionView extends ItemView {
             placeholder: t('view.inputPlaceholder'),
             onEnter: () => {
                 if (this.plugin.settings.enterToSend) {
-                    void this.handleSend();
+                    void this.sendHandler.handleSend();
                     return true;
                 }
                 return false;
@@ -885,6 +659,144 @@ export class SessionView extends ItemView {
             (v) => this.cmInput.setContent(v),
         );
 
+        // ── Thinking row (file-ref, profile, issue tracer, tips, assets,
+        //    session status, refine, send) ──────────────────────────────
+        const { sessionStatusEl, sessionStatusMainEl, sessionStatusPanelEl } =
+            this.buildThinkingRow(inputContainer);
+
+        // ── Construct status controller ─────────────────────────────────
+        // Owns title rendering and the session-status indicator (context
+        // usage ring, detail panel). Constructed here because it needs
+        // DOM elements from both buildToolbar (sessionTitleEl) and
+        // buildInputArea (status elements).
+        this.statusController = new SessionStatusController({
+            sessionTitleEl,
+            sessionStatusEl,
+            sessionStatusMainEl,
+            sessionStatusPanelEl,
+            sessionManager: this.sessionManager,
+            mcpManager: this.plugin.mcpManager,
+            settings: this.plugin.settings,
+            dropdownManager: this.dropdownManager,
+            chat: () => this.chat,
+            artifactStats: () => this.runtime?.artifactStore.stats() ?? null,
+            isStreaming: () => this.isStreaming,
+        });
+        this.statusController.updateStatusDisplay();
+
+        // ── Runtime binder (P0) ─────────────────────────────────────────
+        // Owns the attach/detach/replay lifecycle between this view and
+        // the SessionRuntime from the pool. Constructed last because it
+        // depends on every UI controller created above.
+        this.runtimeBinder = new SessionRuntimeBinder({
+            plugin: this.plugin,
+            sessionManager: this.sessionManager,
+            messagesEl: this.messagesEl,
+            scroller: this.scroller,
+            bubbleList: this.bubbleList,
+            bubbleRenderer: this.bubbleRenderer,
+            messageWindow: this.messageWindow,
+            streamingLoader: this.streamingLoader,
+            followUpBar: this.followUpBar,
+            insightCard: this.insightCard,
+            todoPanel: this.todoPanel,
+            historyLoadingOverlay: this.historyLoadingOverlay,
+            errorBubbles: this.errorBubbles,
+            draftController: this.draftController,
+            statusController: this.statusController,
+            promptOptimizer: this.promptOptimizer,
+            cmInput: this.cmInput,
+            assetPanelBtn: this.assetPanelBtn,
+            checkpointSelector: this.checkpointSelector,
+            sessionNavigator: this.sessionNavigator,
+            scrollToBottomBtn: this.scrollToBottomBtn,
+            updateNewChatBtnState: () => this.updateNewChatBtnState(),
+            setInputLocked: (locked) => this.setInputLocked(locked),
+            showStreamingLoader: () => this.showStreamingLoader(),
+            hideStreamingLoader: () => this.hideStreamingLoader(),
+            maybeScrollToBottom: () => this.maybeScrollToBottom(),
+            forceScrollToBottom: () => this.forceScrollToBottom(),
+            maybeShowFollowUpSuggestions: () => this.followUpController.maybeShowFollowUpSuggestions(),
+            loadOlderMessages: () => void this.historyLoader.loadOlderMessages(),
+        });
+
+        // ── Send handler (P4) ───────────────────────────────────────────
+        this.sendHandler = new SendHandler({
+            plugin: this.plugin,
+            cmInput: this.cmInput,
+            draftController: this.draftController,
+            promptOptimizer: this.promptOptimizer,
+            scroller: this.scroller,
+            bubbleList: this.bubbleList,
+            runtimeBinder: this.runtimeBinder,
+            getStreaming: () => this.isStreaming,
+            getChat: () => this.chat,
+        });
+
+        // ── History loader (P6) ─────────────────────────────────────────
+        this.historyLoader = new HistoryLoader({
+            scroller: this.scroller,
+            bubbleList: this.bubbleList,
+            messageWindow: this.messageWindow,
+            historyLoadingOverlay: this.historyLoadingOverlay,
+            getHistoryReplaySignal: () => this.runtimeBinder.getReplaySignal(),
+        });
+
+        // ── Session switch controller (P1) ──────────────────────────────
+        this.switchController = new SessionSwitchController({
+            plugin: this.plugin,
+            sessionManager: this.sessionManager,
+            runtimeBinder: this.runtimeBinder,
+            draftController: this.draftController,
+            cmInput: this.cmInput,
+            getStreaming: () => this.isStreaming,
+            scrollToMessage: (id) => this.historyLoader.scrollToMessage(id),
+        });
+
+        // ── Follow-up suggestion controller (P3) ────────────────────────
+        this.followUpController = new FollowUpController({
+            app: this.app,
+            plugin: this.plugin,
+            followUpBar: this.followUpBar,
+            bubbleList: this.bubbleList,
+            scroller: this.scroller,
+            getChat: () => this.chat,
+            sendPrompt: (text) => this.sendHandler.sendPrompt(text),
+            getStreaming: () => this.isStreaming,
+        });
+
+        // ── Message edit handler (P5) ───────────────────────────────────
+        this.messageEditHandler = new MessageEditHandler({
+            app: this.app,
+            runtimeBinder: this.runtimeBinder,
+            sessionManager: this.sessionManager,
+            promptOptimizer: this.promptOptimizer,
+            draftController: this.draftController,
+            cmInput: this.cmInput,
+            getRuntime: () => this.runtime,
+            waitForChatIdle: (timeoutMs) => this.sendHandler.waitForChatIdle(timeoutMs),
+            guardSwitchSession: () => this.switchController.guardSwitchSession(),
+            getStreaming: () => this.isStreaming,
+        });
+    }
+
+    /**
+     * Build the thinking row docked above the compose card: file-ref,
+     * profile selector, issue tracer, tips (left side) and the
+     * right-aligned group (assets → session status → refine → send).
+     *
+     * Sets `this.profileSelector`, `this.issueTracerButton`,
+     * `this.tipsButton`, `this.assetPanelBtn`, `this.optimizeBtn`,
+     * `this.promptOptimizer`, `this.sendBtn`.
+     *
+     * @returns The session-status DOM elements needed by the
+     *          {@link SessionStatusController} constructed afterwards.
+     */
+    private buildThinkingRow(inputContainer: HTMLElement): {
+        sessionStatusEl: HTMLElement;
+        sessionStatusMainEl: HTMLElement;
+        sessionStatusPanelEl: HTMLElement;
+    } {
         // ── Thinking level selector ───────────────────────────────────────────
         const thinkingRow = inputContainer.createEl('div', { cls: 'session-thinking-row' });
 
@@ -943,6 +855,54 @@ export class SessionView extends ItemView {
         });
 
         // ── Session status indicator ───────────────────────────────────────
+        const status = this.buildSessionStatus(thinkingRowRight);
+
+        // ── Refine-prompt button ──────────────────────────────────────────
+        // Calls the summarizer-tier LLM to rewrite the current draft for
+        // clarity / AI-friendliness. Lives one slot to the left of the
+        // send button so the natural eye-flow is "tweak → send".
+        // Only enabled when (a) the draft is non-empty and (b) the
+        // session is not currently streaming.
+        this.optimizeBtn = thinkingRowRight.createEl('button', {
+            cls: 'session-thinking-row__icon-btn session-optimize-btn',
+            attr: { 'aria-label': t('view.optimizePrompt') },
+        });
+        setIcon(this.optimizeBtn, 'wand-sparkles');
+        setTooltip(this.optimizeBtn, t('view.optimizePrompt'));
+        this.optimizeBtn.disabled = true;
+        // Wired AFTER cmInput, draftController, and optimizeBtn all exist.
+        this.promptOptimizer = new SessionPromptOptimizer({
+            cmInput: this.cmInput,
+            optimizeBtn: this.optimizeBtn,
+            isStreaming: () => this.isStreaming,
+            draftController: this.draftController,
+            getChatMessages: () => this.chat?.messages ?? [],
+            plugin: this.plugin,
+        });
+        this.optimizeBtn.addEventListener('click', this.promptOptimizer.handleClick);
+
+        this.sendBtn = thinkingRowRight.createEl('button', {
+            cls: 'session-thinking-row__icon-btn session-send-btn',
+            attr: { 'aria-label': t('view.sendMessage') },
+        });
+        setIcon(this.sendBtn, 'send');
+        setTooltip(this.sendBtn, t('view.send'));
+        this.sendBtn.addEventListener('click', () => void this.sendHandler.handleSend());
+
+        return status;
+    }
+
+    /**
+     * Build the session-status indicator (compact context-usage ring +
+     * detail dropdown panel) inside the thinking row's right-aligned
+     * group, wiring its dropdown toggle. The rendering itself is owned
+     * by the {@link SessionStatusController}; this only builds the DOM.
+     */
+    private buildSessionStatus(thinkingRowRight: HTMLElement): {
+        sessionStatusEl: HTMLElement;
+        sessionStatusMainEl: HTMLElement;
+        sessionStatusPanelEl: HTMLElement;
+    } {
         // Primary metric: context-usage ring that also opens a
         // detailed panel on click. Placed before refine → send so
         // the eye-flow is "status → refine → send".
@@ -998,74 +958,29 @@ export class SessionView extends ItemView {
             },
         });
 
-        // ── Refine-prompt button ──────────────────────────────────────────
-        // Calls the summarizer-tier LLM to rewrite the current draft for
-        // clarity / AI-friendliness. Lives one slot to the left of the
-        // send button so the natural eye-flow is "tweak → send".
-        // Only enabled when (a) the draft is non-empty and (b) the
-        // session is not currently streaming.
-        this.optimizeBtn = thinkingRowRight.createEl('button', {
-            cls: 'session-thinking-row__icon-btn session-optimize-btn',
-            attr: { 'aria-label': t('view.optimizePrompt') },
-        });
-        setIcon(this.optimizeBtn, 'wand-sparkles');
-        setTooltip(this.optimizeBtn, t('view.optimizePrompt'));
-        this.optimizeBtn.disabled = true;
-        // Wired AFTER cmInput, draftController, and optimizeBtn all exist.
-        this.promptOptimizer = new SessionPromptOptimizer({
-            cmInput: this.cmInput,
-            optimizeBtn: this.optimizeBtn,
-            isStreaming: () => this.isStreaming,
-            draftController: this.draftController,
-            getChatMessages: () => this.chat?.messages ?? [],
-            plugin: this.plugin,
-        });
-        this.optimizeBtn.addEventListener('click', this.promptOptimizer.handleClick);
-
-        this.sendBtn = thinkingRowRight.createEl('button', {
-            cls: 'session-thinking-row__icon-btn session-send-btn',
-            attr: { 'aria-label': t('view.sendMessage') },
-        });
-        setIcon(this.sendBtn, 'send');
-        setTooltip(this.sendBtn, t('view.send'));
-        this.sendBtn.addEventListener('click', () => void this.handleSend());
-
-        // ── Construct status controller ─────────────────────────────────
-        // Owns title rendering and the session-status indicator (context
-        // usage ring, detail panel). Constructed here because it needs
-        // DOM elements from both buildToolbar (sessionTitleEl) and
-        // buildInputArea (status elements).
-        this.statusController = new SessionStatusController({
-            sessionTitleEl,
-            sessionStatusEl,
-            sessionStatusMainEl,
-            sessionStatusPanelEl,
-            sessionManager: this.sessionManager,
-            mcpManager: this.plugin.mcpManager,
-            settings: this.plugin.settings,
-            dropdownManager: this.dropdownManager,
-            chat: () => this.chat,
-            artifactStats: () => this.runtime?.artifactStore.stats() ?? null,
-            isStreaming: () => this.isStreaming,
-        });
-        this.statusController.updateStatusDisplay();
+        return { sessionStatusEl, sessionStatusMainEl, sessionStatusPanelEl };
     }
 
     async onClose() {
+        // All members below are created during onOpen's build* phase. Guard
+        // every access with `?.` so a teardown that follows a partially
+        // failed onOpen (e.g. an exception before buildInputArea ran) cleans
+        // up whatever exists instead of throwing on the first missing field.
+
         // Clear draft save timer and save any pending draft
-        this.draftController.clearTimer();
+        this.draftController?.clearTimer();
 
         // Cancel any in-flight prompt-refinement request — the
         // resulting draft would have nowhere to land once the view
         // is torn down, and the LLM bill is best avoided.
-        this.promptOptimizer.abort();
+        this.promptOptimizer?.abort();
 
         // Detach (NOT abort) the runtime so a background turn can keep
         // running in the pool. The pool decides retention based on
         // busy/idle state.
-        this.detachFromCurrentRuntime();
+        this.runtimeBinder?.detachFromCurrentRuntime();
 
-        this.profileSelector.dispose();
+        this.profileSelector?.dispose();
         this.checkpointSelector?.dispose();
         this.tipsButton?.dispose();
         this.tipsButton = null;
@@ -1091,31 +1006,6 @@ export class SessionView extends ItemView {
     }
 
     /**
-     * Whether a session switch / new-session operation is currently allowed.
-     *
-     * Streaming no longer blocks switches — switching while the AI is
-     * mid-turn is the core feature this view now supports (the runtime
-     * keeps running in the background; the pool decides retention).
-     * We only need to serialize concurrent switches against each other.
-     */
-    canSwitchSession(): boolean {
-        return !this.isSwitchingSession;
-    }
-
-    /**
-     * Convenience guard for external callers: returns `true` if a session
-     * switch is currently possible, otherwise emits a Notice and returns
-     * `false`.
-     */
-    guardSwitchSession(): boolean {
-        if (this.isSwitchingSession) {
-            new Notice(t('view.sessionSwitchInProgress'));
-            return false;
-        }
-        return true;
-    }
-
-    /**
      * Create a new session, persisting the current one and switching the
      * view to a fresh, empty chat. Public so callers (e.g. editor menu
      * actions) can chain "create new session → drop a snippet into the
@@ -1124,327 +1014,12 @@ export class SessionView extends ItemView {
      * Returns `false` if the operation could not run because another
      * switch is in progress; in that case a Notice has already been shown
      * to the user. Returns `true` after a successful switch.
-     *
-     * NOTE: if the OLD session was streaming, its runtime is retained in
-     * the pool so the background turn finishes and persists into its
-     * own session file. See SessionRuntimePool for retention rules.
      */
     async startNewSession(): Promise<boolean> {
-        if (!this.guardSwitchSession()) return false;
-
-        this.isSwitchingSession = true;
-        try {
-            await this.draftController.flush();
-            // Detach from the old runtime (pool decides retention) BEFORE
-            // creating the new session, so the runtime's own onFinish can
-            // still write into its session file even if the user never
-            // comes back to it.
-            //
-            // Critically: do NOT pipe an empty snapshot of "current chat"
-            // into SessionManager here. The previous active session's
-            // messages / token usage / sub-agent data are owned by its
-            // SessionRuntime (which persists per turn), and SessionManager's
-            // own `messagesCache` already mirrors the last persisted state.
-            // Calling something like `saveCurrentSession([], 0, [])` would
-            // unconditionally overwrite that cache with empty messages and
-            // zero tokens; the next `saveToCache()` then flushes the wiped
-            // state to disk, silently destroying the session's history.
-            this.detachFromCurrentRuntime();
-            this.sessionManager.createSession();
-            await this.sessionManager.saveMetadata();
-            this.clearViewDOM();
-            await this.bindActiveSessionRuntime();
-            new Notice(t('view.newSessionCreated'));
-            return true;
-        } finally {
-            this.isSwitchingSession = false;
-        }
-    }
-
-    /**
-     * Roll back the conversation to before the given user message,
-     * discarding any affected checkpoints, and restore the message
-     * content to the input box for re-editing.
-     *
-     * Unlike branching, this operates in-place — the current session
-     * is truncated rather than forked.
-     */
-    private async handleEditMessage(msg: ChatMessage): Promise<void> {
-        if (msg.role !== 'user') return;
-        if (!this.guardSwitchSession()) return;
-        if (!this.runtime) return;
-
-        const chat = this.runtime.chat;
-        const messages = chat.messages;
-        const anchorIdx = messages.findIndex(m => m.id === msg.id);
-        if (anchorIdx < 0) return;
-
-        // ── Check for affected checkpoints ──────────────────────────
-        // Build a set of message IDs that will be truncated (from the
-        // target message onwards). Any pending checkpoint whose anchor
-        // falls into this set must be discarded.
-        const truncatedIds = new Set<string>();
-        for (let i = anchorIdx; i < messages.length; i++) {
-            const m = messages[i];
-            if (m) truncatedIds.add(m.id);
-        }
-
-        const store = this.runtime.checkpointStore;
-        const checkpoints = store.checkpoints;
-        const affectedPending = checkpoints.filter(
-            cp => cp.status === 'pending' && truncatedIds.has(cp.anchorMessageId),
-        );
-
-        // ── Confirm before editing ──────────────────────────────────
-        const streamingNow = this.isStreaming;
-        let confirmMessage = t('view.editMessageConfirmMessage');
-        if (streamingNow) {
-            confirmMessage = `${confirmMessage}\n\n${t('view.editMessageConfirmAbortStreaming')}`;
-        }
-        const confirmed = await new CheckpointActionConfirmModal(
-            this.app,
-            t('view.editMessageConfirmTitle'),
-            confirmMessage,
-            t('view.editMessage'),
-            'discard',
-        ).waitForResult();
-        if (!confirmed) return;
-
-        // Stop an in-flight reply before truncating chat state.
-        if (this.isStreaming) {
-            this.promptOptimizer.abort();
-            this.chat?.abort();
-            if (!await this.waitForChatIdle()) {
-                new Notice(t('view.editAbortTimeout'));
-                return;
-            }
-        }
-
-        // Discard affected checkpoints if any, earliest first so the
-        // cascade rule (discard(id) → also discards all later pending)
-        // handles the rest naturally.
-        if (affectedPending.length > 0) {
-            const [earliest] = affectedPending;
-            if (earliest) await store.discard(earliest.id);
-        }
-
-        // ── Truncate messages before the anchor ─────────────────────
-        const prefix = messages.slice(0, anchorIdx).map(m => ({
-            ...m,
-            streaming: false,
-        }));
-
-        const currentTokenUsage: TokenUsage = {
-            promptTokens: 0,
-            completionTokens: 0,
-            totalTokens: 0,
-        };
-
-        // Restore the chat agent to the truncated state
-        chat.restoreState(prefix, currentTokenUsage);
-
-        // Persist the truncated state via SessionManager
-        await this.sessionManager.saveSession(
-            this.runtime.sessionId,
-            prefix,
-            currentTokenUsage,
-        );
-
-        // ── Rebuild the view DOM ────────────────────────────────────
-        this.clearViewDOM();
-        // The runtime is still the same instance; we just truncated its
-        // chat messages. Replay the UI from the new (truncated) state.
-        await this.replayRuntimeUI(this.runtime, { fromCache: true });
-
-        // ── Restore the message content to the input ────────────────
-        this.cmInput.setContent(msg.content);
-        this.cmInput.focus();
-        this.draftController?.scheduleSave();
-
-        new Notice(t('view.messageEdited'));
-    }
-
-    /**
-     * Scroll to the user message that precedes the given message
-     * (i.e. the user message that started the current turn).
-     *
-     * Uses message IDs from the data model, then looks up the
-     * corresponding bubble. If the target bubble hasn't been rendered
-     * yet (outside the lazy window), expands the window and scrolls to
-     * the target as a single integrated operation to avoid competing
-     * scroll-anchor-restore and scroll-to-target animations.
-     */
-    private handleJumpToPrevUser(msg: ChatMessage): void {
-        this.jumpToUserMessage(this.bubbleList.findPrevUserMessageId(msg));
-    }
-
-    /** Scroll to the next (following) user message (ID-based). */
-    private handleJumpToNextUser(msg: ChatMessage): void {
-        this.jumpToUserMessage(this.bubbleList.findNextUserMessageId(msg));
-    }
-
-    /**
-     * Single entry point for jump-to-user navigation. Always routes through
-     * {@link ensureMessageVisible} so the rendered and not-yet-rendered cases
-     * share one code path:
-     *
-     * - First latch auto-follow OFF. A jump is an explicit "leave the tail"
-     *   gesture; without this, during streaming the MutationObserver would
-     *   immediately re-pin the view to the bottom and undo the jump.
-     * - Then `ensureMessageVisible(targetId, targetId)` expands the lazy
-     *   window if needed and scrolls to the target with a synchronous
-     *   `scrollTop` (+ flash highlight), avoiding the smooth-scroll animation
-     *   that competing mutations can interrupt.
-     */
-    private jumpToUserMessage(targetId: string | null): void {
-        if (!targetId) return;
-        void this.jumpToMessageId(targetId);
-    }
-
-    /**
-     * Unified "jump to a specific message by id" path shared by the
-     * jump-to-prev/next-user buttons, checkpoint goto, and search-result
-     * navigation. Routes through {@link ensureMessageVisible} (rendered and
-     * not-yet-rendered cases) which scrolls to the target via
-     * {@link ScrollController.jumpScrollTo}.
-     *
-     * Auto-follow is suppressed up-front only as a TRANSIENT guard: a jump is
-     * an explicit "leave the tail" gesture, so without this the
-     * MutationObserver (during streaming) or the async history load could
-     * re-pin to the bottom before the target lands. `jumpScrollTo` then makes
-     * the authoritative decision from the landing position — resuming follow
-     * when the target turns out to sit at the tail.
-     */
-    private jumpToMessageId(targetId: string): Promise<void> {
-        this.scroller.suppressAutoFollow();
-        return this.ensureMessageVisible(targetId, targetId);
-    }
-
-    /** Returns true if the message has a previous user message in the data model. */
-    private canJumpToPrevUser(msg: ChatMessage): boolean {
-        return this.bubbleList.canJumpPrev(msg);
-    }
-
-    /** Returns true if the message has a next user message in the data model. */
-    private canJumpToNextUser(msg: ChatMessage): boolean {
-        return this.bubbleList.canJumpNext(msg);
-    }
-
-    private async handleNewChat() {
-        await this.startNewSession();
-    }
-
-    private async handleSwitchSession(targetId: string) {
-        if (this.isSwitchingSession) {
-            new Notice(t('view.sessionSwitchInProgress'));
-            return;
-        }
-        if (targetId === this.sessionManager.activeSessionId) return;
-
-        this.isSwitchingSession = true;
-        try {
-            await this.draftController.flush();
-            this.detachFromCurrentRuntime();
-            // Just update list.json's activeSessionId. The old runtime's
-            // own persistence layer is responsible for its session file.
-            await this.sessionManager.switchTo(targetId);
-            await this.sessionManager.ensureMessagesLoaded(targetId);
-            this.clearViewDOM();
-            await this.bindActiveSessionRuntime();
-        } finally {
-            this.isSwitchingSession = false;
-        }
-    }
-
-    /**
-     * Branch the current session from a specific user message: fork into a
-     * new session that contains every message BEFORE the anchor, populate
-     * the input with the anchor's text so the user can edit and resend, and
-     * leave all other session state (token usage, summaries, sub-agent
-     * messages, title) at the defaults of a freshly-created session.
-     *
-     * Busy guard: if a turn is streaming we refuse, because branching while
-     * the assistant is still writing would surface a confusing "new session
-     * but token counter still climbing" state in the UI — the source
-     * session's runtime keeps counting even after we switch away.
-     */
-    private async handleBranchFromMessage(msg: ChatMessage): Promise<void> {
-        if (msg.role !== 'user') return;
-        if (this.isStreaming) {
-            new Notice(t('view.branchWhileStreamingBlocked'));
-            return;
-        }
-        if (!this.guardSwitchSession()) return;
-
-        const sourceId = this.sessionManager.activeSessionId;
-
-        this.isSwitchingSession = true;
-        try {
-            await this.draftController.flush();
-
-            const result = await this.sessionManager.branchSession(sourceId, msg.id);
-            if (!result) return;
-
-            // Mirror the handleSwitchSession flow so the view's runtime, DOM,
-            // and input state are rebuilt exactly as they would be after a
-            // manual session switch.
-            this.detachFromCurrentRuntime();
-            await this.sessionManager.switchTo(result.newSessionId);
-            await this.sessionManager.ensureMessagesLoaded(result.newSessionId);
-            this.clearViewDOM();
-            await this.bindActiveSessionRuntime();
-
-            // Seed the input with the branched message so the user can
-            // refine it before resending. draftController picks this up
-            // through its scheduled save, matching the follow-up flow.
-            this.cmInput.setContent(result.draftInput);
-            this.cmInput.focus();
-            this.draftController?.scheduleSave();
-
-            new Notice(t('view.sessionBranched'));
-        } finally {
-            this.isSwitchingSession = false;
-        }
+        return this.switchController.startNewSession();
     }
 
     // ── QuickAsk handlers ─────────────────────────────────────────────────
-
-    /**
-     * Delete a QuickAsk turn and re-render the parent bubble
-     * to remove the active button state.
-     */
-    private async handleQuickAskDelete(parentMessageId: string): Promise<void> {
-        const runtime = this.runtime;
-        if (!runtime) return;
-        const chat = runtime.chat;
-        if (!chat.removeQuickAskTurn) return;
-
-        chat.removeQuickAskTurn(parentMessageId);
-        await runtime.persist();
-        await this.plugin.sessionManager.saveToCache();
-
-        // Re-render the parent bubble to drop the orange underline
-        this.refreshParentBubble(parentMessageId, chat);
-    }
-
-    /** Check if a given assistant message already has QuickAsk side-turn data. */
-    private hasQuickAskData(msg: ChatMessage): boolean {
-        const quickAskTurns = this.runtime?.quickAskTurns ?? [];
-        return quickAskTurns.some(t => t.parentMessageId === msg.id);
-    }
-
-    /**
-     * Re-render the parent bubble after a QuickAsk completes so the button
-     * picks up the active (orange) state.
-     */
-    private refreshParentBubble(parentMessageId: string, chat: IChatAgent): void {
-        const bubble = this.bubbleList.messageBubbles.get(parentMessageId);
-        if (!bubble) return;
-        const msg = chat.messages.find(m => m.id === parentMessageId);
-        if (msg) {
-            this.bubbleList.updateContent(bubble, msg);
-        }
-    }
 
     /**
      * Toggle the QuickAsk panel for a given assistant message.
@@ -1459,497 +1034,6 @@ export class SessionView extends ItemView {
     }
 
     /**
-     * Execute a QuickAsk submission: call promptQuickAsk on the chat
-     * agent with a summarizer-model config, then persist.
-     */
-    private async handleQuickAskSubmit(
-        parentMessageId: string,
-        input: string,
-    ): Promise<void> {
-        const runtime = this.runtime;
-        if (!runtime) return;
-
-        const chat = runtime.chat;
-        if (!chat.promptQuickAsk) return;
-
-        const summarizerConfig = createSummarizerConfig(this.plugin);
-        if (!summarizerConfig) {
-            new Notice(t('view.noSummarizerConfigured'));
-            return;
-        }
-
-        try {
-            await chat.promptQuickAsk(parentMessageId, input, summarizerConfig);
-            // Refresh the panel now that side-turn data has been updated
-            this.quickAskPanel.refresh();
-            // Re-render the parent bubble so the QuickAsk button turns orange
-            this.refreshParentBubble(parentMessageId, chat);
-            // Persist side-turns to in-memory cache
-            await runtime.persist();
-            // Flush to disk immediately — QuickAsk is not a turn, so the
-            // normal turn-finish saveToCache trigger won't fire for it.
-            await this.plugin.sessionManager.saveToCache();
-        } catch (err) {
-            console.error('[SessionView] QuickAsk submission failed:', err);
-            new Notice(t('view.quickAskFailed'));
-        }
-    }
-
-    /**
-     * Detach the view's listener from the currently bound runtime and
-     * hand it back to the pool. The pool decides whether to keep the
-     * runtime warm (busy continuations are always retained; idle ones
-     * are LRU-capped at `maxIdle`).
-     *
-     * Idempotent: safe to call when no runtime is bound.
-     */
-    private detachFromCurrentRuntime(): void {
-        if (!this.runtime) return;
-        const id = this.runtime.sessionId;
-        try { this.detachRuntime?.(); } finally {
-            this.detachRuntime = undefined;
-        }
-        // Unbind the checkpoint selector before releasing the runtime so
-        // its change listener is removed cleanly.
-        this.checkpointSelector?.setRuntime(undefined);
-        // Unsubscribe from checkpoint-store changes; the badge will
-        // refresh on the next dropdown open.
-        this.unsubCheckpointChange?.();
-        this.unsubCheckpointChange = null;
-        // Unbind the asset panel from the old runtime's collection.
-        this.assetPanelBtn?.dispose();
-        this.runtime = undefined;
-        this.plugin.runtimePool.release(id);
-    }
-
-    /**
-     * Clear all view-private DOM and UI state, leaving the view ready
-     * to bind a new runtime. Replaces the old `clearViewForSessionSwitch`
-     * but, crucially, does NOT abort any chat or destroy any runtime —
-     * those are owned by the pool now.
-     */
-    private clearViewDOM(): void {
-        // speechSynthesis is a global singleton; cancel any in-flight
-        // utterances regardless of which session triggered them.
-        if ('speechSynthesis' in window && speechSynthesis.speaking) speechSynthesis.cancel();
-        this.bubbleRenderer?.cancelSpeech();
-        // Drop any pending refinement before the input is wiped — its
-        // target draft is about to disappear with the session switch,
-        // so the result would just be discarded by the draft-change
-        // guard while still costing LLM tokens.
-        this.promptOptimizer.abort();
-        this.historyReplayAbort?.abort();
-        this.historyReplayAbort = null;
-        this.messageWindow?.reset();
-        this.historyLoadingOverlay?.hide();
-        this.scroller.resetScrollIntent();
-        this.hideStreamingLoader();
-        this.setInputLocked(false);
-
-        // Clear draft save timer and reset draft state
-        this.draftController.reset();
-
-        this.followUpBar?.hide();
-        // DOM-level dismissal only. Persisted insights (owned by the
-        // SessionRuntime and stored in session metadata) survive the
-        // switch so they reappear when the user returns to this session.
-        this.insightCard?.hide();
-        // Same contract for the TODO panel: hide the DOM but leave
-        // the runtime's snapshot intact. `replayRuntimeUI` re-renders
-        // the new runtime's snapshot below.
-        this.todoPanel?.hide();
-        // Detach the singleton streaming loader before emptying, then
-        // reattach so it remains the sole instance and still lives at
-        // the tail of messagesEl.
-        this.streamingLoader.detach();
-        this.messagesEl.empty();
-        this.streamingLoader.reattachAfterEmpty();
-        // Clear bubble map + aborted-id set + drop continue-button ref
-        this.bubbleList?.clear();
-        // The bubbles are gone from the DOM, but their streaming controllers
-        // (throttle timers + pending render state) live in the renderer's map
-        // until explicitly disposed. Release them here so a session switch
-        // doesn't leak one controller per streamed message until view unload;
-        // they are recreated on demand when the next session replays.
-        this.bubbleRenderer?.disposeAllControllers();
-
-        this.cmInput.clear();
-        this.scrollToBottomBtn.hide();
-        this.statusController.updateStatusDisplay();
-        this.updateNewChatBtnState();
-    }
-
-    /**
-     * Resolve the runtime for the session manager's currently active
-     * id (from pool cache, or create one fresh), attach this view as a
-     * listener, and replay the runtime's current state to the DOM.
-     */
-    private async bindActiveSessionRuntime(): Promise<void> {
-        const id = this.sessionManager.activeSessionId;
-        const cached = this.plugin.runtimePool.get(id);
-        if (cached) {
-            this.attachRuntime(cached);
-            await this.replayRuntimeUI(cached, { fromCache: true });
-        } else {
-            // Fresh runtime — needs history loaded from disk first.
-            await this.sessionManager.ensureMessagesLoaded(id);
-            const runtime = this.plugin.runtimePool.create(id);
-            this.attachRuntime(runtime);
-            this.hydrateRuntimeFromDisk(runtime);
-            await this.replayRuntimeUI(runtime, { fromCache: false });
-        }
-    }
-
-    /**
-     * Pull the session's persisted state (messages, summaries, sub-agent
-     * messages, per-agent token breakdown) from SessionManager and inject
-     * it into the runtime's IChatAgent. Only called for FRESH runtimes;
-     * cached ones already have everything in memory.
-     */
-    private hydrateRuntimeFromDisk(runtime: SessionRuntime): void {
-        const session = this.sessionManager.getSessionSync(runtime.sessionId);
-        if (!session || session.messages.length === 0) return;
-
-        const chat = runtime.chat;
-        chat.restoreState(session.messages, session.tokenUsage);
-
-        const summaries = this.sessionManager.getSessionSummaries(runtime.sessionId);
-        if (summaries.length > 0) {
-            chat.restoreSummaries(summaries);
-            runtime.hasContextCompressed = true;
-        }
-
-        // Sub-agent inline messages (v2+ sessions only).
-        const subAgentMessages = this.sessionManager.getSubAgentMessages();
-        if (subAgentMessages && Object.keys(subAgentMessages).length > 0
-                && typeof chat.restoreSubAgentMessages === 'function') {
-            chat.restoreSubAgentMessages(subAgentMessages);
-        }
-
-        // QuickAsk side-turns (v6+ sessions only).
-        const quickAskTurns = this.sessionManager.getQuickAskTurns();
-        if (quickAskTurns && quickAskTurns.length > 0
-                && typeof chat.restoreQuickAskTurns === 'function') {
-            chat.restoreQuickAskTurns(quickAskTurns);
-        }
-
-        // Per-agent token usage breakdown (v3+ sessions only). Must be
-        // called AFTER restoreState — see AgentOrchestrator.restoreAgentTokenBreakdown.
-        const agentTokenBreakdown = this.sessionManager.getAgentTokenBreakdown();
-        if (agentTokenBreakdown && typeof chat.restoreAgentTokenBreakdown === 'function') {
-            chat.restoreAgentTokenBreakdown(agentTokenBreakdown);
-        }
-
-        // Persisted insight card state (post-feature sessions only).
-        // Mirrors the draft-input restore — the user's last view of the
-        // card should reappear when they return to (or reload into)
-        // this session, without re-spending tokens to recompute it.
-        const lastInsights = this.sessionManager.getSessionLastInsights(runtime.sessionId);
-        if (lastInsights) {
-            runtime.restoreInsightState(lastInsights);
-        }
-
-        // Persisted suggestion bar state (LLM fallback results).
-        const lastSuggestions = this.sessionManager.getSessionLastSuggestions(runtime.sessionId);
-        if (lastSuggestions) {
-            runtime.restoreSuggestionState(lastSuggestions);
-        }
-
-        // Persisted TODO state (v4 sessions only). Always restore the
-        // runtime's snapshot from disk before the replay pass — the
-        // panel is then projected from `runtime.getTodoState()` in
-        // `replayRuntimeUI`, matching how insight state is handled.
-        const todos = this.sessionManager.getSessionTodos(runtime.sessionId);
-        if (todos) {
-            runtime.restoreTodos(todos);
-        }
-
-        // Restore the generated-asset collection from the persisted
-        // top-level session field (peer to messages / agentTokenBreakdown).
-        // The asset button in the toolbar reads from
-        // `runtime.assetCollection.assets` on render.
-        const toolCallAssets = this.sessionManager.getSessionToolCallAssets(runtime.sessionId);
-        if (toolCallAssets && toolCallAssets.length > 0) {
-            runtime.restoreAssets(toolCallAssets);
-        }
-    }
-
-    /**
-     * Render the runtime's current chat state into the (just-cleared)
-     * view DOM. Used both for fresh runtimes (after disk hydration) and
-     * cached runtimes (after a switch back from another session).
-     *
-     * For a cached runtime that is currently busy, this also re-shows
-     * the typing indicator and locks the input so the UI immediately
-     * reflects the in-flight turn. Any pending tool confirmations are
-     * implicitly rendered via the bubble renderer reading
-     * `runtime.pendingConfirmations` through `this.pendingConfirmations`.
-     */
-    private async replayRuntimeUI(
-        runtime: SessionRuntime,
-        opts: { fromCache: boolean },
-    ): Promise<void> {
-        const chat = runtime.chat;
-        const messages = chat.messages;
-
-        if (messages.length === 0) {
-            this.messageWindow.reset();
-            this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
-            this.draftController.restore();
-            this.statusController.updateStatusDisplay();
-            this.updateNewChatBtnState();
-            return;
-        }
-
-        const allUnits = buildDisplayUnits(messages, {
-            getSubAgentMessages: typeof chat.getSubAgentMessages === 'function'
-                ? (id) => chat.getSubAgentMessages!(id)
-                : undefined,
-        });
-
-        const { initialStart, initialEnd } = this.messageWindow.init(allUnits);
-        const unitsToRender = allUnits.slice(initialStart, initialEnd);
-        const showOverlay = unitsToRender.length >= HISTORY_LOADING.showOverlayMinUnits;
-
-        const ac = new AbortController();
-        this.historyReplayAbort = ac;
-
-        if (showOverlay) {
-            this.historyLoadingOverlay.show(unitsToRender.length);
-            this.setInputLocked(true);
-        }
-
-        try {
-            await replayUnitsInFrames(unitsToRender, {
-                appendUnit: (unit) => {
-                    this.bubbleList.append({ ...unit.msg, streaming: false }, { trackInWindow: false });
-                },
-                onProgress: (done, total) => {
-                    this.historyLoadingOverlay.setProgress(done, total);
-                },
-                signal: ac.signal,
-            });
-
-            if (ac.signal.aborted) return;
-
-            this.messageWindow.mountSentinel(() => { void this.loadOlderMessages(); });
-        } catch (err) {
-            if (isAbortError(err)) {
-                return;
-            }
-            throw err;
-        } finally {
-            this.historyLoadingOverlay.hide();
-            this.historyReplayAbort = null;
-            if (!runtime.isBusy) {
-                this.setInputLocked(false);
-            }
-        }
-
-        this.draftController.restore();
-        this.forceScrollToBottom();
-        this.statusController.updateStatusDisplay();
-        this.updateNewChatBtnState();
-
-        this.maybeShowFollowUpSuggestions();
-        this.renderInsightFromRuntimeState(this.runtime?.getInsightState() ?? null);
-        this.renderSuggestionFromRuntimeState(this.runtime?.getSuggestionState() ?? null);
-        this.todoPanel.applyState(this.runtime?.getTodoState() ?? null);
-
-        if (opts.fromCache && runtime.isBusy) {
-            this.setInputLocked(true);
-            this.showStreamingLoader();
-        }
-    }
-
-    /**
-     * Serialize a history-prepend operation. Each call waits for the previous
-     * one to finish before running `work`, so {@link loadOlderMessages} and
-     * {@link ensureMessageVisible} can't interleave their `replayUnitsInFrames`
-     * batches against stale window bounds. The chain swallows errors internally
-     * to stay alive; callers still observe their own rejection via the returned
-     * promise.
-     */
-    private runHistoryMutation(work: () => Promise<void>): Promise<void> {
-        const run = this.historyMutationChain.then(work, work);
-        this.historyMutationChain = run.catch(() => { /* keep the chain alive */ });
-        return run;
-    }
-
-    /**
-     * Prepend older history bubbles above the current window, preserving
-     * scroll position via a scrollHeight delta anchor.
-     */
-    private async loadOlderMessages(): Promise<void> {
-        if (this.messageWindow.loadingOlder || !this.messageWindow.hasOlderUnrendered()) {
-            return;
-        }
-
-        this.messageWindow.setLoadingOlder(true);
-        try {
-            await this.runHistoryMutation(async () => {
-                // Re-check after acquiring the lock: an interleaved
-                // ensureMessageVisible may have already rendered these units
-                // while this load was queued behind it.
-                if (!this.messageWindow.hasOlderUnrendered()) return;
-
-                const newStart = Math.max(0, this.messageWindow.start - HISTORY_LOADING.olderBatchUnits);
-                const units = this.messageWindow.slice(newStart, this.messageWindow.start);
-                const anchor = this.messageWindow.getPrependAnchor();
-                const anchorOffset = anchor ? this.scroller.captureAnchorScroll(anchor) : null;
-
-                this.scroller.beginHistoryPrepend();
-                try {
-                    // Chronological order: each prepend inserts before the same anchor,
-                    // so later units stack after earlier ones (0, 1, …, anchor). Reversing
-                    // would yield descending order and scramble the conversation.
-                    await replayUnitsInFrames(units, {
-                        appendUnit: (unit) => {
-                            this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
-                        },
-                        onProgress: () => { /* sentinel shows loading state */ },
-                        signal: this.historyReplayAbort?.signal,
-                    });
-                    this.messageWindow.applyOlderBatch(newStart);
-                    // Trim oldest rendered bubbles if the window grew past the limit
-                    // BEFORE restoring the scroll anchor. trimTail removes DOM nodes
-                    // from the top, which changes every remaining node's offsetTop.
-                    // If we restore the scroll first and then trim, the anchor-based
-                    // scroll position becomes stale — the viewport jumps because the
-                    // anchor's offsetTop shrinks after trimming.
-                    this.messageWindow.maybeTrimTail();
-                    if (anchor && anchor.isConnected && anchorOffset !== null) {
-                        this.scroller.restoreAnchorScroll(anchor, anchorOffset);
-                    }
-                } catch (err) {
-                    if (!isAbortError(err)) {
-                        throw err;
-                    }
-                } finally {
-                    this.scroller.endHistoryPrepend();
-                }
-            });
-        } finally {
-            this.messageWindow.setLoadingOlder(false);
-        }
-    }
-
-    /**
-     * Expand the rendered window until `messageId` is in the DOM.
-     *
-     * @param messageId - The message whose display unit range must be loaded.
-     * @param scrollToId - Optional: when provided, scroll to this specific
-     *   bubble after loading instead of restoring the scroll anchor. Used
-     *   for jump-to-message operations where the user explicitly navigates
-     *   to a target; the anchor-restore path is for passive "load older"
-     *   scrolling where the viewport should stay put.
-     */
-    private async ensureMessageVisible(messageId: string, scrollToId?: string): Promise<void> {
-        await this.runHistoryMutation(async () => {
-            const idx = this.messageWindow.findUnitIndex(messageId);
-            if (idx < 0 || idx >= this.messageWindow.start) {
-                // Already visible. If we still need to scroll, do it after a
-                // double RAF so any in-flight layout from a concurrent load
-                // (unlikely here, but defensive) has settled.
-                if (scrollToId) {
-                    this.scrollToBubbleSync(scrollToId);
-                }
-                return;
-            }
-
-            const units = this.messageWindow.slice(idx, this.messageWindow.start);
-            // The prepend anchor is ALWAYS needed for correct DOM insertion
-            // position (older messages go before the first rendered bubble).
-            // When jumping we skip the scroll-anchor capture/restore because
-            // we're going to scroll to the target after loading — preserving
-            // the old viewport would create a visual "bounce".
-            const isJump = !!scrollToId;
-            const anchor = this.messageWindow.getPrependAnchor();
-            const anchorOffset = isJump ? null : (anchor ? this.scroller.captureAnchorScroll(anchor) : null);
-            const showOverlay = units.length >= HISTORY_LOADING.showOverlayMinUnits;
-
-            if (showOverlay) {
-                this.historyLoadingOverlay.show(units.length);
-            }
-
-            this.scroller.beginHistoryPrepend();
-            try {
-                await replayUnitsInFrames(units, {
-                    appendUnit: (unit) => {
-                        this.bubbleList.prepend({ ...unit.msg, streaming: false }, anchor);
-                    },
-                    onProgress: (done, total) => {
-                        if (showOverlay) {
-                            this.historyLoadingOverlay.setProgress(done, total);
-                        }
-                    },
-                    signal: this.historyReplayAbort?.signal,
-                });
-                this.messageWindow.expandRenderedStart(idx);
-                // Trim BEFORE any scroll, otherwise the anchor's / target's
-                // offsetTop changes after the scroll position was set and the
-                // viewport lands at a stale offset.
-                this.messageWindow.maybeTrimTail();
-                this.messageWindow.updateSentinel();
-                if (isJump && scrollToId) {
-                    // Jump mode: scroll to the target instead of restoring
-                    // the anchor. Use a double RAF to let the browser flush
-                    // layout after the bulk prepend + trim mutations before
-                    // we read offsetTop and set scrollTop.
-                    this.scheduleScrollToBubble(scrollToId);
-                } else if (anchor && anchor.isConnected && anchorOffset !== null) {
-                    this.scroller.restoreAnchorScroll(anchor, anchorOffset);
-                }
-            } catch (err) {
-                if (!isAbortError(err)) {
-                    throw err;
-                }
-            } finally {
-                if (showOverlay) {
-                    this.historyLoadingOverlay.hide();
-                }
-                this.scroller.endHistoryPrepend();
-            }
-        });
-    }
-
-    /**
-     * Schedule a scroll to a specific bubble after the next two animation
-     * frames. Double RAF ensures the browser has finished layout for any
-     * recently-inserted DOM nodes (e.g. from {@link replayUnitsInFrames})
-     * before we read `offsetTop`.
-     */
-    private scheduleScrollToBubble(messageId: string): void {
-        window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(() => {
-                this.scrollToBubbleSync(messageId);
-            });
-        });
-    }
-
-    /**
-     * Immediately scroll a bubble into view using synchronous `scrollTop`
-     * and flash the highlight class.
-     *
-     * Uses `scrollTop` (not `scrollIntoView`) to avoid the async smooth-
-     * scroll animation which can be interrupted by competing DOM mutations
-     * or conflicting scroll operations (e.g. after a bulk history prepend).
-     */
-    private scrollToBubbleSync(messageId: string): void {
-        const bubble = this.bubbleList.messageBubbles.get(messageId);
-        if (!bubble) return;
-        // 80 px padding from the top so the bubble isn't flush against the
-        // viewport edge and has some surrounding context visible. Routed
-        // through the scroller so the scroll is guarded and auto-follow is
-        // re-evaluated from the landing position (resume follow if the target
-        // sits at the tail, otherwise park at it).
-        this.scroller.jumpScrollTo(bubble.offsetTop - 80);
-        bubble.addClass('session-bubble--highlight');
-        window.setTimeout(() => bubble.removeClass('session-bubble--highlight'), 2000);
-    }
-
-
-    /**
      * Rebuild session dropdown content (called by DropdownManager onOpen)
      */
     private rebuildSessionDropdown(): void {
@@ -1961,118 +1045,12 @@ export class SessionView extends ItemView {
         const result = await modal.waitForResult();
 
         if (result) {
-            await this.handleSearchResultNavigation(result);
+            await this.switchController.handleSearchResultNavigation(result);
         }
-    }
-
-    private async handleSearchResultNavigation(result: SessionSearchResult) {
-        if (this.isSwitchingSession) {
-            new Notice(t('view.sessionSwitchInProgress'));
-            return;
-        }
-
-        this.isSwitchingSession = true;
-        try {
-            await this.draftController.flush();
-            this.detachFromCurrentRuntime();
-            await this.sessionManager.switchTo(result.sessionId);
-            await this.sessionManager.ensureMessagesLoaded(result.sessionId);
-            this.clearViewDOM();
-            await this.bindActiveSessionRuntime();
-
-            // Scroll to the specific message via the unified id-based jump
-            // (expands the lazy window if needed, then guarded landing-aware
-            // scroll + highlight).
-            await this.scrollToMessage(result.messageId);
-        } finally {
-            this.isSwitchingSession = false;
-        }
-    }
-
-    /**
-     * Scroll to a message by id (checkpoint goto / search-result navigation).
-     * Delegates to the unified {@link jumpToMessageId} path so it shares the
-     * same guarded, landing-aware scroll + highlight as jump-to-user — no more
-     * separate `scrollIntoView` smooth-scroll branch.
-     */
-    private async scrollToMessage(messageId: string) {
-        await this.jumpToMessageId(messageId);
     }
 
     // ── Send logic ───────────────────────────────────────────────────────────
 
-    /**
-     * Wait until the active runtime's chat turn finishes (idle), or
-     * until `timeoutMs` elapses. Used after {@link IChatAgent.abort}
-     * so follow-up mutations (edit / truncate) don't race the epilogue.
-     */
-    private waitForChatIdle(timeoutMs = 10_000): Promise<boolean> {
-        const deadline = Date.now() + timeoutMs;
-        return new Promise(resolve => {
-            const tick = () => {
-                if (!this.isStreaming) {
-                    resolve(true);
-                    return;
-                }
-                if (Date.now() >= deadline) {
-                    resolve(false);
-                    return;
-                }
-                window.setTimeout(tick, 50);
-            };
-            tick();
-        });
-    }
-
-    private async handleSend() {
-        const text = this.cmInput.getContent().trim();
-
-        if (this.isStreaming) {
-            // Pressing the stop button should also kill any refinement
-            // running on the side — the user clearly wants the chat
-            // engine to wind down, and a stale refinement coming back
-            // afterwards would write into an already-cleared draft.
-            this.promptOptimizer.abort();
-            this.chat?.abort();
-            return;
-        }
-
-        if (!text) return;
-
-        // A user clicking send has made up their mind about the draft
-        // they want to ship — anything coming back from an in-flight
-        // refinement would be applied to an empty input (post-clear)
-        // or, worse, the next turn's draft. Cancel before we clear.
-        this.promptOptimizer.abort();
-
-        this.cmInput.clear();
-
-        // Clear draft input since message is being sent
-        this.draftController.clearDraft();
-
-        await this.sendPrompt(text);
-    }
-
-    /**
-     * Send a user prompt to the active runtime's chat agent. Thin wrapper
-     * around `chat.prompt(text, ...)` that injects the per-turn options
-     * shared by every entry point that submits a user message — the
-     * primary input box (`handleSend`), follow-up suggestion clicks, and
-     * the inline "continue" button on the tail error bubble.
-     *
-     * Does NOT touch `cmInput` or the draft controller — those are
-     * responsibilities of input-bound entry points like `handleSend`.
-     * Also does NOT guard against `isStreaming`; callers that have
-     * abort-on-streaming semantics (e.g. the send button) must handle
-     * that themselves before calling.
-     *
-     * The user bubble is rendered from inside chat.prompt()'s
-     * synchronous onUserMessage callback so it can be keyed by the
-     * agent's real message id (not a separately-minted optimistic
-     * id). This is what keeps the message branch-able afterwards —
-     * SessionManager.branchSession looks up the anchor by id in the
-     * agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
-     */
     /**
      * Build the narrow adapter that the tips popover uses to interact
      * with this view. Kept as a per-call factory rather than a memoized
@@ -2094,87 +1072,10 @@ export class SessionView extends ItemView {
                     new Notice(t('view.sessionBusy'));
                     return;
                 }
-                await this.sendPrompt(text);
+                await this.sendHandler.sendPrompt(text);
             },
             fillPromptDraft: (text: string) => this.fillPromptDraft(text),
             triggerFileRefSuggest: () => this.cmInput.triggerFileRefSuggest(),
-        };
-    }
-
-    private async sendPrompt(text: string): Promise<void> {
-        await this.ensureRuntimeAttached().chat.prompt(text, {
-            allowedCapabilities: this.plugin.settings.allowedCapabilities,
-            provider: createProviderForActiveProfileOf(this.plugin),
-            // Pull thinkingLevel from the active profile. Older profiles
-            // saved before this field existed leave it `undefined`, which
-            // the providers treat the same as "auto" (param omitted).
-            thinkingLevel: getActiveProfile(this.plugin.settings).thinkingLevel,
-            summarizer: createSummarizerConfig(this.plugin),
-            embedding: createEmbeddingConfig(this.plugin),
-            embeddingFilter: createToolFilterOptions(this.plugin),
-        onUserMessage: (msg) => {
-            this.bubbleList.append(msg);
-            this.bubbleList.refreshJumpButtonsForPrevTurn(msg);
-            this.forceScrollToBottom();
-        },
-        });
-    }
-
-    // ── ChatStream callbacks ─────────────────────────────────────────────────
-
-    private handleMessageUpdate(msg: ChatMessage) {
-        if (msg.retireBubble) {
-            this.bubbleList.remove(msg.id);
-            return;
-        }
-
-        const existing = this.bubbleList.messageBubbles.get(msg.id);
-
-        if (existing) {
-            if (msg.role === 'tool_call') {
-                existing.classList.remove('session-bubble--tool-success', 'session-bubble--tool-warning', 'session-bubble--tool-error');
-                if (msg.toolCallResult) {
-                    existing.classList.add(`session-bubble--tool-${msg.toolCallResult.status}`);
-                }
-            }
-            this.bubbleList.updateContent(existing, msg);
-        } else {
-            this.bubbleList.append(msg);
-        }
-    }
-
-    /**
-     * Handle a message update produced by a sub-agent during delegate_task execution.
-     * Sub-agent messages are rendered inline as sibling bubbles in the main conversation,
-     * with a colored side bar + badge identifying the originating sub-agent.
-     *
-     * The sub-agent's final assistant reply IS rendered (it is the actual answer
-     * the user sees, since the delegate_task bubble no longer shows its result).
-     */
-    private handleSubAgentMessageUpdate(msg: ChatMessage, agentName: string): void {
-        if (msg.retireBubble) {
-            this.bubbleList.remove(msg.id);
-            return;
-        }
-
-        const tagged = this.ensureSubAgentTag(msg, agentName);
-        const existing = this.bubbleList.messageBubbles.get(tagged.id);
-        if (existing) {
-            this.bubbleList.updateContent(existing, tagged);
-        } else {
-            this.bubbleList.append(tagged);
-        }
-    }
-
-    /** Ensure inline sub-agent bubbles carry origin metadata for badge rendering. */
-    private ensureSubAgentTag(msg: ChatMessage, agentName: string): ChatMessage {
-        if (msg.subAgent?.agentName) return msg;
-        return {
-            ...msg,
-            subAgent: {
-                agentName,
-                parentToolCallId: msg.subAgent?.parentToolCallId ?? '',
-            },
         };
     }
 
@@ -2186,166 +1087,6 @@ export class SessionView extends ItemView {
 
     private forceScrollToBottom() {
         this.scroller.forceScrollToBottom();
-    }
-
-    // ── Follow-up suggestion bar ─────────────────────────────────────────
-
-    /**
-     * Inspect the most recent assistant reply and, if it ends with a set of
-     * proposed next actions (either a structured <!--suggestions--> block or
-     * a plain-text follow-up list), render them as one-shot quick-pick buttons
-     * at the tail of the message list.
-     *
-     * This is the DETERMINISTIC (instant) path only. The LLM-backed fallback
-     * runs in the runtime via {@link maybeExtractSuggestionsAfterFinish} and
-     * arrives through the `suggestion-update` event → {@link renderSuggestionFromRuntimeState}.
-     */
-    private maybeShowFollowUpSuggestions(): void {
-        if (!this.followUpBar) return;
-        const settings = this.plugin.settings;
-        if (!settings.followUpSuggestionsEnabled) {
-            this.followUpBar.hide();
-            return;
-        }
-
-        const messages = this.chat?.messages ?? [];
-        // Scan from the tail for the last non-aborted assistant message.
-        let target: ChatMessage | undefined;
-        for (let i = messages.length - 1; i >= 0; i--) {
-            const m = messages[i];
-            if (!m) continue;
-            if (m.role === 'assistant' && !m.streaming && m.content) {
-                if (this.bubbleList.isInterrupted(m)) break;
-                target = m;
-                break;
-            }
-            // Stop scanning if we already left the tail of the current turn.
-            if (m.role === 'user') break;
-        }
-        if (!target) {
-            this.followUpBar.hide();
-            return;
-        }
-
-        const actions = extractSuggestions(target.content, {
-            allowStructured: settings.followUpSuggestionsStructured === true,
-        });
-        if (actions.length === 0) {
-            this.followUpBar.hide();
-            return;
-        }
-
-        this.followUpBar.show(target.id, actions);
-        // When auto-follow is parked (last message was oversized and
-        // the user is reading), do NOT yank the view to the tail just
-        // because the follow-up bar appeared.  Respect the user's
-        // current reading position.
-        if (!this.scroller.isAutoFollowParked()) {
-            this.maybeScrollToBottom();
-        }
-    }
-
-    /**
-     * Render the follow-up bar from a runtime-owned suggestion state
-     * (LLM fallback path). Called from the `suggestion-update` event
-     * handler and (on bind) from {@link replayRuntimeUI}.
-     *
-     * Only renders when the deterministic path hasn't already populated
-     * the bar — we respect deterministic results as higher priority
-     * since they come from the main model's own intent.
-     */
-    private renderSuggestionFromRuntimeState(state: SuggestionCardState | null): void {
-        if (!this.followUpBar) return;
-        if (state === null || state.phase !== 'results' || state.suggestions.length === 0) {
-            // Don't hide here — the deterministic path may have already
-            // populated the bar, and clearing/error states from the runtime
-            // shouldn't clobber deterministic results.
-            return;
-        }
-
-        // If the bar is already showing (deterministic extraction found
-        // results), don't override with LLM-produced suggestions.
-        if (this.followUpBar.isVisible) return;
-
-        // Verify the assistant message hasn't been superseded.
-        const messages = this.chat?.messages ?? [];
-        let isLatest = false;
-        for (let i = messages.length - 1; i >= 0; i--) {
-            const m = messages[i];
-            if (!m) continue;
-            if (m.role === 'assistant' && !m.streaming) {
-                isLatest = m.id === state.messageId;
-                break;
-            }
-            if (m.role === 'user') break;
-        }
-        if (!isLatest) return;
-
-        this.followUpBar.show(state.messageId, state.suggestions);
-        // Respect parked auto-follow: don't yank the view when the
-        // user is reading an earlier part of a long message.
-        if (!this.scroller.isAutoFollowParked()) {
-            this.maybeScrollToBottom();
-        }
-    }
-
-    /**
-     * Handle a click on a follow-up suggestion button.
-     *
-     * Behavior:
-     * - If the suggestion carries a client-side `action` (e.g. `open-note`),
-     *   try to execute it directly. On success we stop there — the action is
-     *   self-explanatory and does not require a chat turn.
-     * - If the client action cannot be carried out (unknown kind, note not
-     *   found in the vault, ...), we transparently fall back to the default
-     *   prompt-based flow so the user still gets a useful response.
-     * - Default flow: send the picked prompt directly without touching the
-     *   input editor. Follow-up picks are self-contained and must preserve
-     *   any user draft already in progress.
-     */
-    private handleFollowUpPick(action: SuggestedAction): void {
-        // Client-side actions (e.g. open-note) don't start a chat turn, so
-        // they're always safe — even mid-stream.
-        if (action.action && this.tryRunClientAction(action.action)) {
-            return;
-        }
-        // Prompt-based picks start a new turn. In the normal single-view flow
-        // the bar can't be visible while streaming (it only renders on
-        // `finish`), but a bar can linger from a previous turn when another
-        // view (re)starts a stream on a SHARED runtime. Guard so chat.prompt's
-        // concurrency check doesn't throw an unhandled rejection, and dismiss
-        // the now-stale bar so the UI self-corrects. Mirrors the same guard on
-        // the continue-after-error action.
-        if (this.isStreaming) {
-            this.followUpBar?.hide();
-            return;
-        }
-        void this.sendPrompt(action.prompt);
-    }
-
-    /**
-     * Attempt to execute a client-side suggestion action. Returns `true` when
-     * the action was carried out (caller should stop), `false` when the
-     * caller should fall back to the prompt-based flow.
-     *
-     * Kept small and synchronous on purpose — each branch is expected to be a
-     * thin wrapper around an Obsidian API call. When more kinds are added,
-     * split this into a dispatcher module under `services/suggestions/`.
-     */
-    private tryRunClientAction(action: NonNullable<SuggestedAction['action']>): boolean {
-        switch (action.kind) {
-            case 'open-note': {
-                void this.app.workspace.openLinkText(
-                    resolveLinkOpenText(this.app, action.path),
-                    '',
-                    false,
-                );
-                return true;
-            }
-            default:
-                // Exhaustiveness: unknown kinds fall back to prompt flow.
-                return false;
-        }
     }
 
     // ── Conversation insights ────────────────────────────────────────────
@@ -2403,7 +1144,7 @@ export class SessionView extends ItemView {
         }
 
         this.cmInput.setContent(prompt);
-        void this.handleSend();
+        void this.sendHandler.handleSend();
     }
 
     /**
@@ -2495,19 +1236,6 @@ export class SessionView extends ItemView {
         // Title update is handled separately by callers when needed;
         // the status controller may not exist yet during buildToolbar.
         this.statusController?.updateTitle();
-    }
-
-    private async maybeGenerateSessionTitle() {
-        // Kept as a thin wrapper for parity with the previous API.
-        // The runtime owns automatic generation on turn completion
-        // now (see runtime-factory's onFinish); this remains so a
-        // future hook can force a regen without re-importing the
-        // helper.
-        await maybeGenerateSessionTitle(
-            this.sessionManager,
-            createSummarizerConfig(this.plugin),
-            () => this.statusController.updateTitle(),
-        );
     }
 
     // ── Export session ──────────────────────────────────────────────────────
