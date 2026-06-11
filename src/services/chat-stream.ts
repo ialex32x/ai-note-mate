@@ -130,6 +130,8 @@ export class ChatStream implements IChatAgent {
      * next prompt() rebuild sees what the user already saw in the UI.
      */
     private _inFlightAssistantMessage: ChatMessage | null = null;
+    /** Model identifier for the current turn, set from prompt() options. */
+    private _currentModelName = '';
 
     // ── Constructor ─────────────────────────────────────────────────────────
 
@@ -249,6 +251,7 @@ export class ChatStream implements IChatAgent {
                 streaming: false,
                 timestamp: Date.now(),
                 quickAsk: { parentMessageId },
+                modelName: modelConfig.model,
             },
             loading: true,
         };
@@ -461,6 +464,8 @@ export class ChatStream implements IChatAgent {
              * starts. See {@link IChatAgent.prompt} for rationale.
              */
             onUserMessage?: (userMessage: ChatMessage) => void,
+            /** Model identifier for this turn, stored on the assistant message. */
+            modelName?: string,
         }
     ): Promise<void> {
         // Guard: prevent concurrent calls
@@ -471,6 +476,7 @@ export class ChatStream implements IChatAgent {
         // Transition to streaming state and notify start
         this._state = "streaming";
         this._abortController = new AbortController();
+        this._currentModelName = options?.modelName ?? '';
         this._config.onStart?.();
 
         // Append user message to UI-facing history (store original text with [[path]] syntax)
@@ -738,7 +744,7 @@ export class ChatStream implements IChatAgent {
                     options?.thinkingLevel,
                 );
 
-                const result = await this._processStream(stream, currentTurn);
+                const result = await this._processStream(stream, currentTurn, this._currentModelName);
 
                 // Accumulate token usage
                 if (result.usage) {
@@ -846,6 +852,7 @@ export class ChatStream implements IChatAgent {
                     content: "",
                     streaming: false,
                     timestamp: Date.now(),
+                    modelName: this._currentModelName || undefined,
                 };
                 this._config.onAbort?.(partialMessage);
                 return;
@@ -892,6 +899,7 @@ export class ChatStream implements IChatAgent {
                     content: "",
                     streaming: false,
                     timestamp: Date.now(),
+                    modelName: this._currentModelName || undefined,
                 };
                 this._config.onAbort?.(partialMessage);
                 return;
@@ -1617,6 +1625,7 @@ export class ChatStream implements IChatAgent {
     private async _processStream(
         stream: AsyncIterable<StreamChunk>,
         currentTurn: number,
+        modelName: string,
     ): Promise<StreamResultInternal> {
         // Create the in-progress assistant message
         const streamingMessage: ChatMessage = {
@@ -1625,6 +1634,7 @@ export class ChatStream implements IChatAgent {
             content: "",
             streaming: true,
             timestamp: Date.now(),
+            modelName: modelName || undefined,
         };
         this._inFlightAssistantMessage = streamingMessage;
 

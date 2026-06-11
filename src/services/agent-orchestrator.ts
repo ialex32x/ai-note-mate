@@ -1217,6 +1217,8 @@ export class AgentOrchestrator implements IChatAgent {
              * {@link IChatAgent.prompt} for rationale.
              */
             onUserMessage?: (userMessage: ChatMessage) => void;
+            /** Model identifier for this turn, stored on assistant messages. */
+            modelName?: string;
         },
     ): Promise<void> {
         // Store options for sub-agent use during this prompt cycle.
@@ -1233,6 +1235,7 @@ export class AgentOrchestrator implements IChatAgent {
             summarizer: options.summarizer,
             embedding: options.embedding,
             embeddingFilter: options.embeddingFilter,
+            modelName: options.modelName,
         };
 
         try {
@@ -1264,6 +1267,7 @@ export class AgentOrchestrator implements IChatAgent {
         summarizer?: MinimalModelConfig;
         embedding?: MinimalModelConfig;
         embeddingFilter?: ToolFilterOptions;
+        modelName?: string;
     } | null = null;
 
     // ── Private: delegate_task tool ──────────────────────────────────────────
@@ -1365,6 +1369,7 @@ export class AgentOrchestrator implements IChatAgent {
                 summarizer: this._currentPromptOptions.summarizer,
                 embedding: this._currentPromptOptions.embedding,
                 embeddingFilter: this._currentPromptOptions.embeddingFilter,
+                modelName: this._currentPromptOptions.modelName,
                 context: taskContext,
                 parentToolCallId,
                 handoffStore,

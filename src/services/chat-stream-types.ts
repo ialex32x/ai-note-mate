@@ -158,6 +158,13 @@ export interface ChatMessage {
         /** ID of the assistant message being asked about */
         parentMessageId: string;
     };
+    /**
+     * Model identifier that generated this message (e.g. "gpt-4o",
+     * "claude-sonnet-4-20250514"). Only meaningful for assistant messages.
+     * Persisted to session JSON so the model is visible when reviewing
+     * past conversations.
+     */
+    modelName?: string;
 }
 
 /**
@@ -612,6 +619,12 @@ export interface IChatAgent {
              * worrying about mutation from inside the agent.
              */
             onUserMessage?: (userMessage: ChatMessage) => void;
+            /**
+             * Model identifier for this turn (e.g. "gpt-4o"). Stored on
+             * the resulting assistant message so the model is visible in
+             * the UI and persisted to session JSON.
+             */
+            modelName?: string;
         },
     ): Promise<void>;
 

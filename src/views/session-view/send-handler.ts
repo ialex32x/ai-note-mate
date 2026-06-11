@@ -5,8 +5,8 @@ import {
     createSummarizerConfig,
     createEmbeddingConfig,
     createToolFilterOptions,
-    createProviderForActiveProfileOf,
 } from '../../services/chat-factory';
+import { createProviderForActiveProfile } from '../../utils/provider-factory';
 import { CMInput } from '../../components/cm-input';
 import { DraftInputController } from '../../components/session';
 import { SessionPromptOptimizer } from './session-prompt-optimizer';
@@ -111,9 +111,11 @@ export class SendHandler {
      * agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
      */
     async sendPrompt(text: string): Promise<void> {
+        const activeProfile = createProviderForActiveProfile(this.deps.plugin);
         await this.deps.runtimeBinder.ensureRuntimeAttached().chat.prompt(text, {
             allowedCapabilities: this.deps.plugin.settings.allowedCapabilities,
-            provider: createProviderForActiveProfileOf(this.deps.plugin),
+            provider: activeProfile.provider,
+            modelName: activeProfile.modelName,
             // Pull thinkingLevel from the active profile. Older profiles
             // saved before this field existed leave it `undefined`, which
             // the providers treat the same as "auto" (param omitted).

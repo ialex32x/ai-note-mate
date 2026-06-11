@@ -479,10 +479,16 @@ export class ChatBubble {
         return getDefaultRoleLabel(msg.role);
     }
 
-    /** Append the role label element with a hover-revealed timestamp. */
+    /** Append the role label element with a hover-revealed model name and timestamp. */
     private static renderRole(bubble: HTMLElement, msg: ChatMessage, text: string): void {
         const roleEl = bubble.createEl('span', { cls: BUBBLE_ROLE_CLS });
         roleEl.createEl('span', { cls: 'session-bubble__role-label', text });
+        if (msg.role === 'assistant' && msg.modelName) {
+            roleEl.createEl('span', {
+                cls: 'session-bubble__role-model',
+                text: msg.modelName,
+            });
+        }
         if (msg.timestamp) {
             const timeStr = ChatBubble.formatTimestamp(msg.timestamp);
             roleEl.createEl('span', {

@@ -262,6 +262,8 @@ export class SubAgent {
              * back to the parent session.
              */
             contextTag?: string;
+            /** Model identifier for this dispatch, stored on assistant messages. */
+            modelName?: string;
         },
     ): Promise<SubAgentResult> {
         const startTime = Date.now();
@@ -316,6 +318,7 @@ export class SubAgent {
                     summarizer: options.summarizer,
                     embedding: options.embedding,
                     embeddingFilter: options.embeddingFilter,
+                    modelName: options.modelName,
                 });
             } catch (err) {
                 if (isAbortError(err)) {
