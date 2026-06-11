@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.5.0
+
+### What's new
+
+- **Speech-to-text transcription** — Audio files can now be transcribed directly in sessions via DashScope (Alibaba). Region-based configuration replaces the old base URL approach, and large files are handled with async transcription for reliability.
+- **AGENT.md project guidance** — The plugin now reads `AGENT.md` files for per-project AI instructions, replacing the older inline prompt mechanism with a more powerful, file-based approach.
+
+### Refinements
+
+- **"Chat" settings label** — The settings section previously labeled "Text Generation" is now called **Chat**, matching the plugin's primary interaction model.
+- **Unified session status** — The context usage ring and session status details have been merged into a single entry, giving a cleaner, consolidated view of session health and token consumption.
+- **Locale polish** — Punctuation and line length in localization strings across all supported languages have been standardized.
+
+### Fixes
+
+- **Parked auto-scroll stability** — When auto-follow is parked, scroll trim is now skipped and scroll position is preserved, preventing unwanted jumps during streaming.
+- **Flex ordering enforcement** — Insights, follow-up suggestions, and the loader now consistently respect flex ordering, eliminating layout glitches.
+- **Upload config removed** — Redundant upload configuration settings have been cleaned up, simplifying the speech-to-text setup.
+
+---
+
 ## 1.4.8
 
 ### Refinements

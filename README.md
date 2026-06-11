@@ -15,6 +15,7 @@ Under **Settings → Note Mate → Tools**, turn on the **vault tools** you want
 - **Read notes** — open by path or wiki link and quote what matters.
 - **Search the vault** — find notes by text or tags and follow links between them.
 - **Create & edit** — draft new notes or update existing ones; every change stays traceable.
+- **Speech-to-text** — transcribe audio files directly in chat. Works with DashScope (Alibaba) out of the box; configure your key under **Settings → Note Mate → Tools → Speech to Text** and attach audio files from your vault. More providers may be added in future releases.
 - **Auto-tag** — send a note to chat so the assistant can add tags that match your vault's conventions.
 
 ![ai-auto-tag](readme-assets/ai-auto-tag.png)
