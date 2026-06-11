@@ -74,6 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           awk -v tag="## ${TAG}" '
+            { gsub(/\r$/, "") }
             $0 == tag { found=1; next }
             found && /^---$/ { exit }
             found { print }
