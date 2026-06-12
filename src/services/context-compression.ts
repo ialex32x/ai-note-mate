@@ -16,7 +16,7 @@ import type { ArtifactStore } from "./artifact-store";
 // Defaults
 // ─────────────────────────────────────────────
 //
-// Each of these can be overridden per call via `ContextReduceOptions`
+// Each of these can be overridden per call via `ContextCompressionOptions`
 // (see below) which is the path used by ChatStream to honour the active
 // profile's `contextCompressionThreshold` / `slidingWindowSize` /
 // `maxSummariesThreshold` settings. Values <= 0 in the override fall back
@@ -35,7 +35,7 @@ const DEFAULT_COMPRESSION_THRESHOLD_FALLBACK = 48000;
 
 /**
  * Fraction of the model's **real-token** context window that the
- * default compression threshold targets. The reducer works in
+ * default compression threshold targets. the compressor works in
  * estimated tokens which are ~1.2× looser than real tokens, so the
  * effective estimated-token threshold is:
  *
@@ -51,7 +51,7 @@ const DEFAULT_COMPRESSION_THRESHOLD_FALLBACK = 48000;
 const COMPRESSION_WINDOW_FRACTION = 0.45;
 
 /**
- * Multiplier from the reducer's estimated tokens to real tokens.
+ * Multiplier from the compressor's estimated tokens to real tokens.
  * `estimateTokens` uses 4 chars/token for non-CJK, 1.5 for CJK;
  * modern tokenizers are 15–25% denser, so real ≈ estimated × 1.2.
  */
@@ -94,7 +94,7 @@ interface PromptConfig {
 }
 
 /**
- * Per-call overrides for the reducer's tunables.
+ * Per-call overrides for the compressor's tunables.
  *
  * Each numeric override is interpreted with the "<= 0 means use default"
  * convention used everywhere else in the plugin (see e.g. `maxTokens` on
@@ -103,7 +103,7 @@ interface PromptConfig {
  * a future bump to the built-in defaults takes effect for every existing
  * profile without forcing users to re-tune their numbers.
  */
-export interface ContextReduceOptions {
+export interface ContextCompressionOptions {
     /** Override the default compression threshold. <=0 falls back to a computed
      * default proportional to the model's context window (~45%). */
     compressionThreshold?: number;
@@ -136,7 +136,7 @@ export interface ContextReduceOptions {
      * tool-call chain), but the artifact keys are now auto-generated
      * by the store itself.
      *
-     * When omitted (or null), the reducer's behaviour is unchanged:
+     * When omitted (or null), the compressor's behaviour is unchanged:
      * envelopes that exceed the shrink threshold get the same opaque
      * `[Tool result truncated: …]` replacement as any other oversized
      * tool_result. This is the path used by tests and by single-agent
@@ -145,7 +145,7 @@ export interface ContextReduceOptions {
     artifactStore?: ArtifactStore | null;
     /**
      * Real-token context window of the target model, used by
-     * {@link ContextReducer.emergencyShrink} to compute an adaptive
+     * {@link ContextCompressor.emergencyShrink} to compute an adaptive
      * emergency line: the shrink is triggered at
      * `min(threshold × 1.5, modelContextWindow × 0.85 / 1.2)`, so
      * small-window models (e.g. legacy GPT-3.5 16k, Llama-2 4k) get
@@ -154,7 +154,7 @@ export interface ContextReduceOptions {
      *
      * Conventions:
      *   - Value is the model's **real** context window (not estimated
-     *     `estimateTokens()` units); the reducer applies the standard
+     *     `estimateTokens()` units); the compressor applies the standard
      *     ~1.2× drift factor internally.
      *   - `<= 0` / `undefined` falls back to the original "threshold
      *     × 1.5 only" rule. Useful for tests and ad-hoc callers that
@@ -190,7 +190,7 @@ export interface HistoryMessage {
      */
     toolCallId?: string;
     /**
-     * Token-budget view of {@link content} after {@link ContextReducer.shrinkLargeToolResults}.
+     * Token-budget view of {@link content} after {@link ContextCompressor.shrinkLargeToolResults}.
      * The full payload stays in `content` (UI / summarizer / persistence); this field
      * records what was (or will be) sent to the main chat LLM so threshold checks do not
      * re-count megabyte tool bodies on every agent loop iteration.
@@ -497,7 +497,7 @@ export function tryParseDelegateEnvelope(raw: string): DelegatePayload | null {
 /**
  * Produce a compact replacement for a single oversized tool_result `content`.
  *
- * Used by {@link ContextReducer.shrinkLargeToolResults} to reduce the token
+ * Used by {@link ContextCompressor.shrinkLargeToolResults} to reduce the token
  * footprint of historical `tool_result` messages **without changing the
  * protocol shape**: the resulting string is still returned as the `content`
  * of a `tool_result` message, keeping `toolCallId` and the assistant→tool
@@ -608,7 +608,7 @@ const ENVELOPE_FIELD_SPILL_MIN_BYTES = 256;
 /**
  * Per-field preview cap for {@link ArtifactRef.preview} produced by the
  * shrink path. Mirrors `ARTIFACT_PREVIEW_MAX_CHARS` in `agent-orchestrator`,
- * deliberately duplicated here (rather than imported) to keep the reducer
+ * deliberately duplicated here (rather than imported) to keep the compressor
  * dependency-light — the orchestrator imports types from this module's
  * sibling `delegate-envelope-shape`, and reaching back across the boundary
  * for a 200-char constant would re-introduce the cycle the shape module
@@ -778,7 +778,7 @@ function shrinkEnvelopeForPrompt(
 }
 
 // ─────────────────────────────────────────────
-// ContextReducer
+// ContextCompressor
 // ─────────────────────────────────────────────
 
 /**
@@ -788,13 +788,13 @@ function shrinkEnvelopeForPrompt(
  * - compressed: Whether any compression was performed
  * - lastMessageIndex: The index in rawMessages up to which has been summarized.
  *                     Only meaningful when compressed is true.
- * - emergencyShrunk: Whether the {@link ContextReducer.emergencyShrink}
+ * - emergencyShrunk: Whether the {@link ContextCompressor.emergencyShrink}
  *                    safety net actually rewrote any tool_result on this
  *                    turn. Surfaces upward so the caller can show a one-
  *                    shot Notice / event (the underlying content loss is
  *                    a user-perceivable trade-off, not a silent fix).
  */
-export interface ContextReduceResult<T extends HistoryMessage> {
+export interface ContextCompressionResult<T extends HistoryMessage> {
     messagesToSend: T[];
     newSummary: ConversationSummary | null;
     /**
@@ -822,7 +822,7 @@ export interface ContextReduceResult<T extends HistoryMessage> {
     emergencyShrunk: boolean;
 }
 
-export class ContextReducer {
+export class ContextCompressor {
     /**
      * Build the message list to send to the LLM with hierarchical context compression.
      *
@@ -836,15 +836,15 @@ export class ContextReducer {
      * @param existingSummaries - Previously generated summaries (stored externally)
      * @returns Messages to send to LLM, plus any new summary that should be persisted
      */
-    static async reduce<T extends HistoryMessage>(
+    static async compress<T extends HistoryMessage>(
         modelConfig: MinimalModelConfig,
         prompt: PromptConfig,
         rawMessages: T[],
         existingSummaries: ConversationSummary[] = [],
-        options?: ContextReduceOptions,
+        options?: ContextCompressionOptions,
         signal?: AbortSignal,
         onSummarizing?: () => void,
-    ): Promise<ContextReduceResult<T>> {
+    ): Promise<ContextCompressionResult<T>> {
         // ── 0. Resolve effective tunables ─────────────────────────────────
         // Each option follows the "<=0 = use built-in default" convention so
         // the on-disk profile shape stays trivial (0 means "I don't care").
@@ -913,13 +913,13 @@ export class ContextReducer {
             if (resolvedByID >= 0) {
                 cutoffIndex = resolvedByID;
                 if (resolvedByID !== lastSummary.lastMessageIndex) {
-                    console.debug("[ContextReducer] cutoff anchored by id (", anchorId,
+                    console.debug("[ContextCompressor] cutoff anchored by id (", anchorId,
                         ") →", resolvedByID, "(recorded index was", lastSummary.lastMessageIndex, ")");
                 }
             } else {
                 cutoffIndex = Math.max(...existingSummaries.map(s => s.lastMessageIndex));
                 if (anchorId) {
-                    console.warn("[ContextReducer] cutoff anchor id", anchorId,
+                    console.warn("[ContextCompressor] cutoff anchor id", anchorId,
                         "not found; falling back to recorded index", cutoffIndex);
                 }
             }
@@ -975,7 +975,7 @@ export class ContextReducer {
         const needsLevel2 = existingSummaries.length >= maxSummaries;
 
         if (!overThreshold && !needsLevel2) {
-            // console.log(`ContextReducer: No compression needed (effective tokens: ${effectiveTokens}, threshold: ${threshold})`);
+            // console.log(`ContextCompressor: No compression needed (effective tokens: ${effectiveTokens}, threshold: ${threshold})`);
             // No new compression needed - send summaries + unsummarized messages
             // (skip the raw messages that are already covered by existing summaries)
             const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
@@ -1000,7 +1000,7 @@ export class ContextReducer {
 
             const sanitizedNoCompress = this.validateAndSanitizeForLLM(finalMessagesToSend);
             const { messages: postEmergencyNoCompress, shrunk: emergencyShrunkNoCompress } =
-                ContextReducer.emergencyShrink(sanitizedNoCompress, accessoryTokens, threshold, artifactStore, modelContextWindow);
+                ContextCompressor.emergencyShrink(sanitizedNoCompress, accessoryTokens, threshold, artifactStore, modelContextWindow);
             return {
                 messagesToSend: postEmergencyNoCompress,
                 newSummary: null,
@@ -1056,7 +1056,7 @@ export class ContextReducer {
 
         // Edge case: if all messages fit in the window, no need to summarize
         if (splitIndex === 0) {
-            // console.log("ContextReducer: All messages fit within sliding window, no compression needed");
+            // console.log("ContextCompressor: All messages fit within sliding window, no compression needed");
             // Convert existingSummaries to message format for LLM
             const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
                 role: "assistant" as ChatMessageRole,
@@ -1076,7 +1076,7 @@ export class ContextReducer {
             ] as T[];
             const sanitizedFitsWindow = this.validateAndSanitizeForLLM(assembled);
             const { messages: postEmergencyFitsWindow, shrunk: emergencyShrunkFitsWindow } =
-                ContextReducer.emergencyShrink(sanitizedFitsWindow, accessoryTokens, threshold, artifactStore, modelContextWindow);
+                ContextCompressor.emergencyShrink(sanitizedFitsWindow, accessoryTokens, threshold, artifactStore, modelContextWindow);
             return {
                 messagesToSend: postEmergencyFitsWindow,
                 newSummary: null,
@@ -1142,7 +1142,7 @@ export class ContextReducer {
         // back to sending the raw (non-compressed) context this turn and let the
         // next turn try again.
         if (summaryContent === null) {
-            console.warn("[ContextReducer] summarizeConversation returned null; degrading to no-compression for this turn");
+            console.warn("[ContextCompressor] summarizeConversation returned null; degrading to no-compression for this turn");
             const fallbackSummaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
                 role: "assistant" as ChatMessageRole,
                 content: s.content,
@@ -1160,7 +1160,7 @@ export class ContextReducer {
             ] as T[];
             const sanitizedFallback = this.validateAndSanitizeForLLM(fallbackAssembled);
             const { messages: postEmergencyFallback, shrunk: emergencyShrunkFallback } =
-                ContextReducer.emergencyShrink(sanitizedFallback, accessoryTokens, threshold, artifactStore, modelContextWindow);
+                ContextCompressor.emergencyShrink(sanitizedFallback, accessoryTokens, threshold, artifactStore, modelContextWindow);
             return {
                 messagesToSend: postEmergencyFallback,
                 newSummary: null,
@@ -1232,11 +1232,11 @@ export class ContextReducer {
 
         const sanitizedCompressed = this.validateAndSanitizeForLLM(finalMessagesToSend);
         const { messages: postEmergencyCompressed, shrunk: emergencyShrunkCompressed } =
-            ContextReducer.emergencyShrink(sanitizedCompressed, accessoryTokens, threshold, artifactStore, modelContextWindow);
+            ContextCompressor.emergencyShrink(sanitizedCompressed, accessoryTokens, threshold, artifactStore, modelContextWindow);
 
         // Level-1 appends; Level-2+ replaces the whole summary set with the
         // single merged summary. The two are mutually exclusive — see
-        // `ContextReduceResult.summariesReplacement`.
+        // `ContextCompressionResult.summariesReplacement`.
         const isReplacement = newSummaryLevel >= 2;
         return {
             messagesToSend: postEmergencyCompressed,
@@ -1286,7 +1286,7 @@ export class ContextReducer {
         target: T[],
         source: T[],
     ): void {
-        ContextReducer.backfillBudgetHints(source, target);
+        ContextCompressor.backfillBudgetHints(source, target);
     }
 
     /**
@@ -1318,7 +1318,7 @@ export class ContextReducer {
      *   - `modelContextWindow × 0.85 / 1.2` — model-aware safety floor:
      *     0.85 leaves 15% of the real window for the response and
      *     provider-side overhead; the /1.2 converts the real-token
-     *     ceiling back into the reducer's estimated-token unit. So a
+     *     ceiling back into the compressor's estimated-token unit. So a
      *     16k-window model fires emergency shrink at ~11k estimated
      *     tokens regardless of how high the user's threshold is.
      *
@@ -1336,7 +1336,7 @@ export class ContextReducer {
      * own subsequent tool-call arguments anyway).
      *
      * Why incremental beats the previous "force-shrink everything"
-     * approach: once the outer reducer's `shrinkLargeToolResults`
+     * approach: once the outer compressor's `shrinkLargeToolResults`
      * (which now exempts the entire active reasoning chain — see its
      * JSDoc) leaves the active chain intact, the wholesale variant
      * here would force-truncate every active-chain tool_result the
@@ -1438,7 +1438,7 @@ export class ContextReducer {
                 : `consider raising the threshold, switching to a larger-context model, ` +
                   `or trimming the active tool set.`;
             console.warn(
-                `[ContextReducer] emergency shrink found nothing left to shrink: ` +
+                `[ContextCompressor] emergency shrink found nothing left to shrink: ` +
                 `${total} estimated tokens, emergency line ${Math.floor(emergencyLine)} ` +
                 `(threshold ${threshold}${limitedByModel ? `, model ${modelContextWindow}` : ""}). ` +
                 guidance,
@@ -1449,14 +1449,14 @@ export class ContextReducer {
         const newTotal = estimateMessagesTokens(working) + accessoryTokens;
         if (newTotal > emergencyLine) {
             console.warn(
-                `[ContextReducer] emergency shrink applied but prompt is still over budget: ` +
+                `[ContextCompressor] emergency shrink applied but prompt is still over budget: ` +
                 `${total} → ${newTotal} estimated tokens (limit ${Math.floor(emergencyLine)}` +
                 `${limitedByModel ? `, capped by model window ${modelContextWindow}` : ""}). ` +
                 `Provider may return a 400 if the model window is exceeded.`,
             );
         } else {
             console.warn(
-                `[ContextReducer] emergency shrink applied (incremental, oldest-first): ` +
+                `[ContextCompressor] emergency shrink applied (incremental, oldest-first): ` +
                 `${total} → ${newTotal} estimated tokens (limit ${Math.floor(emergencyLine)}` +
                 `${limitedByModel ? `, capped by model window ${modelContextWindow}` : ""}). ` +
                 `Earliest oversized tool_results were truncated to fit the budget; ` +
@@ -1504,7 +1504,7 @@ export class ContextReducer {
                 const len = typeof m.content === "string" ? m.content.length : 0;
                 return `[${idx}] ${m.role}${tcIds ? ` toolCalls=${tcIds}` : ""}${tcId ? ` toolCallId=${tcId}` : ""} len=${len}`;
             }).join("\n");
-            console.debug("[ContextReducer] validate: pre-sanitize sequence\n" + summary);
+            console.debug("[ContextCompressor] validate: pre-sanitize sequence\n" + summary);
         } catch { /* noop */ }
 
         // Pass 1 \u2014 drop empty assistant messages & leading orphan tool_results,        // and drop any tool_result whose owning assistant(toolCalls) is not the
@@ -1526,7 +1526,7 @@ export class ContextReducer {
                 const hasThinking = typeof msg.thinkingContent === "string" && msg.thinkingContent.length > 0;
                 const hasToolCalls = !!(toolCalls && toolCalls.length > 0);
                 if (!hasContent && !hasThinking && !hasToolCalls) {
-                    console.warn("[ContextReducer] validate: dropping empty assistant message at index", i);
+                    console.warn("[ContextCompressor] validate: dropping empty assistant message at index", i);
                     continue;
                 }
             }
@@ -1534,7 +1534,7 @@ export class ContextReducer {
             if (msg.role === "tool_result") {
                 // First non-system message must not be a tool_result.
                 if (!sawNonSystem) {
-                    console.warn("[ContextReducer] validate: dropping leading orphan tool_result");
+                    console.warn("[ContextCompressor] validate: dropping leading orphan tool_result");
                     continue;
                 }
                 // Find the nearest assistant predecessor already accepted.
@@ -1574,7 +1574,7 @@ export class ContextReducer {
                 const tcId = msg.toolCallId;
                 if (!owner || owner.role !== "assistant" || !ownerToolCalls || ownerToolCalls.length === 0
                     || !tcId || !ownerToolCalls.some((tc) => tc.id === tcId)) {
-                    console.warn("[ContextReducer] validate: dropping orphan tool_result (toolCallId=", tcId, ")");
+                    console.warn("[ContextCompressor] validate: dropping orphan tool_result (toolCallId=", tcId, ")");
                     continue;
                 }
             }
@@ -1612,7 +1612,7 @@ export class ContextReducer {
             // prompt. The model then reads its own tool calls as
             // failed and re-tries the whole batch.
             const gathered = new Map<string, T>();
-            const j = ContextReducer.toolResultRunEnd(pass1, i);
+            const j = ContextCompressor.toolResultRunEnd(pass1, i);
             for (let k = i + 1; k < j; k++) {
                 if (pass1[k]!.role === "tool_result") {
                     const tcId = pass1[k]!.toolCallId;
@@ -1640,9 +1640,9 @@ export class ContextReducer {
                     const { toolCalls: _droppedToolCalls, ...rest } = msg;
                     void _droppedToolCalls;
                     pass2.push(rest as T);
-                    console.warn("[ContextReducer] validate: trailing assistant(toolCalls) missing results — degraded to content-only");
+                    console.warn("[ContextCompressor] validate: trailing assistant(toolCalls) missing results — degraded to content-only");
                 } else {
-                    console.warn("[ContextReducer] validate: trailing assistant(toolCalls) missing results and no content — dropped");
+                    console.warn("[ContextCompressor] validate: trailing assistant(toolCalls) missing results and no content — dropped");
                 }
                 // Skip over the partial tool_results we already consumed.
                 i = j - 1;
@@ -1661,7 +1661,7 @@ export class ContextReducer {
                     toolCallId: mc.id,
                 } as unknown as T;
                 pass2.push(placeholder);
-                console.warn("[ContextReducer] validate: inserted placeholder tool_result for missing id=", mc.id);
+                console.warn("[ContextCompressor] validate: inserted placeholder tool_result for missing id=", mc.id);
             }
             i = j - 1; // skip consumed results
         }
@@ -1755,7 +1755,7 @@ export class ContextReducer {
         //   read_file (same path again) → write_handoff again → ...
         // Pre-fix the heuristic took **any** assistant as the
         // boundary, so once iter 2 emitted its `write_handoff`
-        // toolCall, iter 3's reduce() shrank read_file's result to a
+        // toolCall, iter 3's compress() shrank read_file's result to a
         // `[Tool result truncated: …]` placeholder. The model could
         // no longer see its own file content and retried the read
         // from scratch, looping the entire chain.
@@ -1875,7 +1875,7 @@ export class ContextReducer {
                 // Walk the whole tool-result run up to the next assistant,
                 // skipping any interleaved synthetic user(media) message so its
                 // sibling tool_results still make it into the summary (Bug 4).
-                const runEnd = ContextReducer.toolResultRunEnd(messages, i);
+                const runEnd = ContextCompressor.toolResultRunEnd(messages, i);
                 let j = i + 1;
                 for (; j < runEnd; j++) {
                     const resultMsg = messages[j]!;
@@ -1946,7 +1946,7 @@ export class ContextReducer {
         for (let i = 0; i < messages.length; i++) {
             if (messages[i]!.role === "user") {
                 if (i > 0) {
-                    console.debug("[ContextReducer] sliceFromNextTurnBoundary: dropped", i,
+                    console.debug("[ContextCompressor] sliceFromNextTurnBoundary: dropped", i,
                         "leading non-user messages to align with turn boundary");
                 }
                 return messages.slice(i);
@@ -2012,7 +2012,7 @@ export class ContextReducer {
                 break;
             } else if (msg.role === 'tool_result' || msg.role === 'tool_call') {
                 // Orphaned tool messages at the start - skip them
-                console.warn(`ContextReducer: Dropping orphaned ${msg.role} message at index ${i}`);
+                console.warn(`ContextCompressor: Dropping orphaned ${msg.role} message at index ${i}`);
                 continue;
             } else if (msg.role === 'assistant' && msg.toolCalls?.length) {
                 // An assistant message with tool_calls at the very start:
@@ -2022,7 +2022,7 @@ export class ContextReducer {
                 // would otherwise push the trailing sibling results out of.
                 const toolCalls = msg.toolCalls;
                 const requiredIds = new Set(toolCalls.map(tc => tc.id));
-                const runEnd = ContextReducer.toolResultRunEnd(messages, i);
+                const runEnd = ContextCompressor.toolResultRunEnd(messages, i);
                 for (let j = i + 1; j < runEnd; j++) {
                     const next = messages[j];
                     if (next?.role === 'tool_result' && next.toolCallId) {
@@ -2035,7 +2035,7 @@ export class ContextReducer {
                     break;
                 } else {
                     // Missing tool results - skip this assistant message and its partial results
-                    console.warn('ContextReducer: Dropping assistant message with incomplete tool_results');
+                    console.warn('ContextCompressor: Dropping assistant message with incomplete tool_results');
                     continue;
                 }
             } else {
@@ -2059,7 +2059,7 @@ export class ContextReducer {
                 // full run up to the next assistant so an interleaved
                 // user(media) message does not prematurely stop the scan and
                 // make us falsely truncate a complete batch (Bug 3).
-                const runEnd = ContextReducer.toolResultRunEnd(result, i);
+                const runEnd = ContextCompressor.toolResultRunEnd(result, i);
                 for (let j = i + 1; j < runEnd; j++) {
                     const next = result[j];
                     if (next?.role === 'tool_result' && next.toolCallId) {
@@ -2068,7 +2068,7 @@ export class ContextReducer {
                 }
                 if (requiredIds.size > 0) {
                     // Incomplete tool_results - truncate from this point
-                    console.warn('ContextReducer: Truncating incomplete tool call sequence at end');
+                    console.warn('ContextCompressor: Truncating incomplete tool call sequence at end');
                     return result.slice(0, i);
                 }
                 break; // Only need to check the last assistant-with-toolCalls
@@ -2088,7 +2088,7 @@ export class ContextReducer {
  * @param signal Optional AbortSignal forwarded to the underlying provider
  *   SDK so the call can be interrupted mid-flight (e.g. when the user
  *   hits the global stop button during a long summarization round).
- *   Without this the surrounding `reduce()` could block the abort
+ *   Without this the surrounding `compress()` could block the abort
  *   response by 15–40 s on large contexts.
  * @returns The assistant's reply content
  */
@@ -2140,7 +2140,7 @@ async function runSummarizerLLM(
         const summary = await createChatCompletion(modelConfig, summarizerMessages, signal);
         const trimmed = summary.trim();
         if (!trimmed) {
-            console.warn(`[ContextReducer] ${logTag}: summarizer returned empty content; treating as failure`);
+            console.warn(`[ContextCompressor] ${logTag}: summarizer returned empty content; treating as failure`);
             return null;
         }
         return trimmed;
@@ -2151,8 +2151,8 @@ async function runSummarizerLLM(
         // defer the abort response until the next aborted step trips
         // a check. Re-throw so the calling loop unwinds immediately.
         if (isAbortError(e)) throw e;
-        console.error(`[ContextReducer] ${logTag}: summarization failed:`, e);
-        console.warn(`[ContextReducer] ${logTag}: returning null to signal fallback to the caller`);
+        console.error(`[ContextCompressor] ${logTag}: summarization failed:`, e);
+        console.warn(`[ContextCompressor] ${logTag}: returning null to signal fallback to the caller`);
         return null;
     }
 }
@@ -2188,7 +2188,7 @@ export async function summarizeConversation(
     // so that tool call information is preserved in the summary.
     // Without this, the filter below would discard all tool_call/tool_result messages,
     // causing the summary to lose all tool interaction context.
-    const collapsedMessages = ContextReducer.collapseToolMessagesForSummary(messages);
+    const collapsedMessages = ContextCompressor.collapseToolMessagesForSummary(messages);
 
     const summarizerMessages = [
         { role: "system", content: prompt.content },
@@ -2237,7 +2237,7 @@ export async function summarizeConversationToTitle(
 ): Promise<string | null> {
     // Same tool-call collapsing as the context-compression path: keep
     // tool interaction context visible to the titler.
-    const collapsedMessages = ContextReducer.collapseToolMessagesForSummary(messages);
+    const collapsedMessages = ContextCompressor.collapseToolMessagesForSummary(messages);
 
     // Neutral marker: no implementation-specific verbs
     // ("summarize"/"title"), no language hints ("English"/"Chinese"),

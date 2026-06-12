@@ -18,7 +18,7 @@
  */
 
 import type { MinimalModelConfig } from './llm-provider';
-import { createChatCompletion } from './context-reducer';
+import { createChatCompletion } from './context-compression';
 
 /** Hard cap on draft length we forward to the LLM, mirroring the insight extractor budget. */
 const MAX_DRAFT_CHARS = 4000;

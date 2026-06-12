@@ -51,11 +51,11 @@ export type RuntimeEvent =
     /** Provider-side error; the chat is no longer running. */
     | { type: 'error'; err: Error }
 
-    /** Conversation history was compressed by the context reducer this turn. */
+    /** Conversation history was compressed by the context compressor this turn. */
     | { type: 'context-compressed' }
 
     /**
-     * The context reducer is about to call the summarizer LLM.
+     * The context compressor is about to call the summarizer LLM.
      * All threshold checks have passed so compression is guaranteed
      * to run (zero false-positive). Fires BEFORE the (potentially
      * slow, 15–40 s) LLM call so the UI can surface a transient

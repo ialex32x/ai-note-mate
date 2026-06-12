@@ -10,7 +10,7 @@
 
 import { ChatStream, ChatMessage, RegisteredTool, type ToolFilterOptions } from "./chat-stream";
 import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalModelConfig } from "./llm-provider";
-import { type ContextReduceOptions } from "./context-reducer";
+import { type ContextCompressionOptions } from "./context-compression";
 import { safeSliceHead, stripLoneSurrogates } from "../utils/string-safe";
 import { createHandoffTools, createResultTools, type HandoffStore } from "./tools/handoff-toolcall";
 import { isAbortError } from "../utils/abortable-request";
@@ -46,9 +46,9 @@ export interface SubAgentConfig {
      * ChatStream. Sub-agents share the user's active profile (we don't
      * expose a separate profile per sub-agent) so the orchestrator passes
      * the same numbers it gives the main agent. `undefined` falls back to
-     * the reducer's built-in defaults.
+     * the compressor's built-in defaults.
      */
-    compressionOptions?: Pick<ContextReduceOptions,
+    compressionOptions?: Pick<ContextCompressionOptions,
         'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
     >;
 }

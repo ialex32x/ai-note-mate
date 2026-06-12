@@ -16,7 +16,7 @@ import type {
     ChatMessageRole,
 } from "./llm-provider";
 import type { GeneratedAsset } from "./generated-asset-collection";
-import type { ConversationSummary, ContextReduceOptions } from "./context-reducer";
+import type { ConversationSummary, ContextCompressionOptions } from "./context-compression";
 import type { MinimalModelConfig } from "./llm-provider";
 import type { ArtifactStore } from "./artifact-store";
 // import type is safe here — the only usage is as a parameter type in
@@ -461,7 +461,7 @@ export interface ChatStreamConfig {
     }) => Promise<boolean>;
 
     /**
-     * Called when the context reducer is about to invoke the summarizer
+     * Called when the context compressor is about to invoke the summarizer
      * LLM — i.e. all threshold checks have passed and compression will
      * actually run (zero false-positive risk). Fires right before the
      * (potentially slow, 15–40 s) LLM call so the UI can surface a
@@ -477,7 +477,7 @@ export interface ChatStreamConfig {
     onContextCompressed?: () => void;
 
     /**
-     * Called when the context reducer's emergency shrink ran on this
+     * Called when the context compressor's emergency shrink ran on this
      * turn — i.e. the assembled prompt was still above 1.5× threshold
      * after primary compression, and one or more freshly-returned
      * tool_results had to be truncated to fit the budget.
@@ -493,10 +493,10 @@ export interface ChatStreamConfig {
     onEmergencyShrink?: () => void;
 
     /**
-     * Per-profile overrides for the context reducer.
+     * Per-profile overrides for the context compressor.
      *
      * Populated by the factory that constructs a ChatStream for a particular
-     * provider profile (see `chat-factory.ts`). When omitted, the reducer
+     * provider profile (see `chat-factory.ts`). When omitted, the compressor
      * falls back to its built-in defaults — the same behaviour as before
      * this option existed, so nothing breaks for callers that don't supply
      * it (e.g. tests, ad-hoc usage).
@@ -507,13 +507,13 @@ export interface ChatStreamConfig {
      * the threshold/window/maxSummaries values are fixed for the lifetime
      * of the ChatStream.
      */
-    compressionOptions?: Pick<ContextReduceOptions,
+    compressionOptions?: Pick<ContextCompressionOptions,
         'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
     >;
 
     /**
      * Returns the per-session artifact store this ChatStream should use
-     * when the context reducer's shrink stage spills inline envelope
+     * when the context compressor's shrink stage spills inline envelope
      * fields (B-1, plan §1.5) into out-of-prompt storage. The store
      * is owned by the {@link SessionRuntime}; passing a getter (vs. a
      * direct field) mirrors the dynamic-tools / artifact-promotion
@@ -522,10 +522,10 @@ export interface ChatStreamConfig {
      * config object.
      *
      * Returning `null` (or omitting the callback) disables envelope
-     * spilling: the reducer falls back to the legacy generic JSON
+     * spilling: the compressor falls back to the legacy generic JSON
      * truncation path. Single-agent mode (no `delegate_task`) sees no
      * envelopes and so this is a no-op for it; the field is hoisted
-     * here from `AgentOrchestratorConfig` purely so the reducer call
+     * here from `AgentOrchestratorConfig` purely so the compressor call
      * inside `ChatStream.prompt()` can read it without a downcast or
      * a separate field on the orchestrator.
      */
@@ -685,5 +685,5 @@ export interface IChatAgent {
     removeQuickAskTurn?(parentMessageId: string): void;
 }
 
-// Re-export ContextReduceOptions for convenience
-export type { ContextReduceOptions } from "./context-reducer";
+// Re-export ContextCompressionOptions for convenience
+export type { ContextCompressionOptions } from "./context-compression";

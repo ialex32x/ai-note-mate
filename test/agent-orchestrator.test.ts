@@ -290,7 +290,7 @@ describe('buildDelegatePayload', () => {
         const store: HandoffStore = new Map();
         const payload = buildDelegatePayload('plain summary', store);
 
-        // The envelope always carries the marker fields (so the reducer
+        // The envelope always carries the marker fields (so the compressor
         // can recognise it downstream — see plan doc §1.1) plus `text`.
         // No empty `result: null` / `extras: {}` leak when unused.
         expect(payload).toEqual({
@@ -416,7 +416,7 @@ describe('buildDelegatePayload', () => {
     });
 
     it('always stamps `__kind` and `__v` marker fields (envelope-detection contract)', () => {
-        // The shrink stage in `context-reducer.ts` will branch on these
+        // The shrink stage in `context-compression.ts` will branch on these
         // two fields to decide whether a tool_result string is a delegate
         // envelope (vs. a coincidentally JSON-shaped tool result). They
         // are part of the wire contract from this point on — pin them

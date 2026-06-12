@@ -218,7 +218,7 @@ export interface ChatMessageParam {
     thinkingContent?: string;
     /**
      * Shrink-stage budget view of tool_result {@link content}; see
-     * {@link import("./context-reducer").HistoryMessage.contentBudgetHint}.
+     * {@link import("./context-compression").HistoryMessage.contentBudgetHint}.
      */
     contentBudgetHint?: string;
     contentBudgetHintForLength?: number;

@@ -1,5 +1,5 @@
 import type { MinimalModelConfig } from '../llm-provider';
-import { createChatCompletion } from '../context-reducer';
+import { createChatCompletion } from '../context-compression';
 import { stripStructuredBlock } from '../suggestions';
 import {
     INSIGHT_EXTRACTION_SYSTEM_PROMPT,

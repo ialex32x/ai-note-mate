@@ -4,8 +4,8 @@
  *
  * Why this exists
  * ───────────────
- * The context reducer needs a "is this prompt about to blow the model
- * window?" judgement so its {@link ContextReducer.emergencyShrink}
+ * The context compressor needs a "is this prompt about to blow the model
+ * window?" judgement so its {@link ContextCompressor.emergencyShrink}
  * safety net can fire **early enough on small-window models** rather
  * than waiting for the generic 1.5× threshold rule to trigger. Without
  * any model-window awareness, the same `compressionThreshold` is

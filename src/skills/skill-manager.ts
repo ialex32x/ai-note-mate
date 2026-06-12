@@ -283,7 +283,7 @@ export class SkillManager {
   /**
    * Forget every previously-activated skill in this session.
    *
-   * Wired into ChatStream's `onContextCompressed` hook: after the reducer
+   * Wired into ChatStream's `onContextCompressed` hook: after the compressor
    * drops historical messages, any previously-loaded skill body is no
    * longer reliably in the model's context. Clearing the set lets the
    * catalogue stop labelling those skills as `[loaded]` and lets the

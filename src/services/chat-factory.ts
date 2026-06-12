@@ -1,5 +1,5 @@
 import type NoteAssistantPlugin from 'main';
-import { ChatStream, IChatAgent, ChatMessage, type ContextReduceOptions, type ToolFilterOptions } from './chat-stream';
+import { ChatStream, IChatAgent, ChatMessage, type ContextCompressionOptions, type ToolFilterOptions } from './chat-stream';
 import type { GeneratedAsset } from './generated-asset-collection';
 import { AgentOrchestrator } from './agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
@@ -232,7 +232,7 @@ export function createChatAgent(
 
     // Resolve per-profile context-compression overrides from the active
     // profile. Stored on disk as 0 = "use plugin default", which the
-    // ContextReducer interprets natively, so we just forward the raw
+    // ContextCompressor interprets natively, so we just forward the raw
     // numbers without translating sentinels.
     //
     // Sub-agents share these values (see plan §5.1 — we deliberately do
@@ -241,13 +241,13 @@ export function createChatAgent(
     // SubAgentConfig below.
     const activeProfile = getActiveProfile(settings);
     // Inferred from the active profile's model identifier — no user
-    // input required. The reducer uses this to derive an adaptive
+    // input required. the compressor uses this to derive an adaptive
     // emergency line so small-window models (e.g. legacy GPT-3.5 16k)
     // get force-shrunk **before** the prompt exceeds the model window,
     // even when the user's `compressionThreshold` is set for a much
     // larger model. Unknown models fall back to a conservative 32k
     // floor (see `inferModelContextWindow` / `SAFE_FALLBACK_TOKENS`).
-    const compressionOptions: Pick<ContextReduceOptions,
+    const compressionOptions: Pick<ContextCompressionOptions,
         'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
     > = {
         compressionThreshold: activeProfile.contextCompressionThreshold,
@@ -334,7 +334,7 @@ export function createChatAgent(
         //      branch below) — E-3, build-time promotion of 32–128 KB
         //      sub-agent returns into the store instead of dropping
         //      them to `omitted`.
-        //   2. `ChatStream`'s call to `ContextReducer.reduce` — B-1,
+        //   2. `ChatStream`'s call to `ContextCompressor.compress` — B-1,
         //      shrink-time spill of historical envelope `result` /
         //      `extras` into the same store with `reason: "shrunk"`.
         // Co-locating the getter on the base config (rather than only on

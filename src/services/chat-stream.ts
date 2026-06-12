@@ -1,4 +1,4 @@
-import { ContextReducer, ConversationSummary, estimateTokens, createChatCompletion } from "./context-reducer";
+import { ContextCompressor, ConversationSummary, estimateTokens, createChatCompletion } from "./context-compression";
 import type { MinimalModelConfig } from "./llm-provider";
 import type {
     LLMProvider,
@@ -73,8 +73,8 @@ export type {
     IChatAgent,
 } from "./chat-stream-types";
 
-// Re-exports from context-reducer for external consumers
-export type { ConversationSummary, ContextReduceOptions } from "./context-reducer";
+// Re-exports from context-compression for external consumers
+export type { ConversationSummary, ContextCompressionOptions } from "./context-compression";
 
 // ─────────────────────────────────────────────
 // TokenUsage re-export
@@ -510,7 +510,7 @@ export class ChatStream implements IChatAgent {
 
         // Build the raw messages array for UI display and context reduction.
         // The system prompt (if configured) is prepended as the first message so
-        // that both the LLM request path and ContextReducer (which treats
+        // that both the LLM request path and ContextCompressor (which treats
         // role:"system" specially) can see it consistently.
         //
         // Tool interaction history is reconstructed as follows (see
@@ -653,15 +653,15 @@ export class ChatStream implements IChatAgent {
                     // Estimate the byte cost of the tool schemas — they get
                     // serialised to JSON and shipped on every request, but
                     // never enter `rawMessages`, so without this term the
-                    // reducer's threshold check would systematically
+                    // compressor's threshold check would systematically
                     // under-count the real prompt size by 1–3k+ tokens on
                     // sessions with many tools attached. Use the same
-                    // heuristic estimator as the reducer itself for a
+                    // heuristic estimator as the compressor itself for a
                     // consistent budget unit.
                     const accessoryTokens = toolSchemas.length > 0
                         ? estimateTokens(JSON.stringify(toolSchemas))
                         : 0;
-                    const reduceResult = await ContextReducer.reduce(
+                    const reduceResult = await ContextCompressor.compress(
                         options.summarizer,
                         { content: SUMMARIZER_SYSTEM_PROMPT },
                         rawMessages,
@@ -690,7 +690,7 @@ export class ChatStream implements IChatAgent {
                     );
                     messagesToSend = reduceResult.messagesToSend;
                     // Cache shrink results on live buffers (full bodies stay in UI storage).
-                    ContextReducer.backfillBudgetHints(messagesToSend, rawMessages);
+                    ContextCompressor.backfillBudgetHints(messagesToSend, rawMessages);
                     backfillChatMessageBudgetHints(this._messages, messagesToSend);
                     // console.log("Context reduced", reduceResult.compressed);
                     // Persist summaries if compression occurred.
@@ -779,7 +779,7 @@ export class ChatStream implements IChatAgent {
                     thoughtSignatures: result.thoughtSignatures,
                     thinkingContent: result.reasoningContent || undefined,
                     // Carry the same id as the UI-side assistant message so
-                    // ContextReducer can stably anchor summary cutoffs.
+                    // ContextCompressor can stably anchor summary cutoffs.
                     id: assistantMessage?.id ?? generateId(),
                 };
                 rawMessages.push(assistantApiMsg);
@@ -1820,7 +1820,7 @@ export class ChatStream implements IChatAgent {
     /**
      * Dump the final assembled context being sent to the LLM so the
      * per-call token usage shown in the UI can be correlated with the
-     * exact message layout produced by the reducer + sanitizer +
+     * exact message layout produced by the compressor + sanitizer +
      * emergency-shrink pipeline.
      *
      * To disable this noisy per-turn log, return early at the top of

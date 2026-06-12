@@ -1,5 +1,5 @@
 import type { SessionManager } from '../session-manager';
-import { summarizeConversationToTitle } from './context-reducer';
+import { summarizeConversationToTitle } from './context-compression';
 import { TITLE_SUMMARIZE_PROMPT } from './prompts/session-prompts';
 import type { MinimalModelConfig } from './llm-provider';
 import { stripMarkdownToPlainText } from '../utils/markdown-sanitizer';

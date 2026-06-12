@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { estimateTokens } from '../src/services/context-reducer';
+import { estimateTokens } from '../src/services/context-compression';
 
 describe('estimateTokens', () => {
     it('should estimate tokens for pure Latin text (~4 chars per token)', () => {

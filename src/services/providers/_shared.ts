@@ -4,7 +4,7 @@ import type { ChatMessageParam } from "../llm-provider";
  * Last-line-of-defense sanitization of an outgoing chat-message array
  * before it is handed to a provider's native message-format converter.
  *
- * The {@link import("../context-reducer").ContextReducer} is supposed to
+ * The {@link import("../context-compression").ContextCompressor} is supposed to
  * keep tool_call / tool_result pairs balanced and prune empty assistant
  * turns, but bugs there have historically surfaced as opaque provider
  * 400s ("messages: an assistant message with 'tool_calls' must be

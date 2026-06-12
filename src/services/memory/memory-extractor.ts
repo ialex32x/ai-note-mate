@@ -9,7 +9,7 @@
  */
 
 import type { MinimalModelConfig } from '../llm-provider';
-import { createChatCompletion } from '../context-reducer';
+import { createChatCompletion } from '../context-compression';
 import { stripStructuredBlock } from '../suggestions';
 import {
     MEMORY_EXTRACTION_SYSTEM_PROMPT,

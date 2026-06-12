@@ -28,8 +28,8 @@ import {
 
 // Lowered from 200 → 50 to keep typical grep results comfortably under
 // `TOOL_RESULT_COLLAPSE_THRESHOLD` (500 estimated tokens, see
-// `context-reducer.ts`). When a `grep_file` result is small enough, the
-// reducer's "shrink large tool results" pass leaves it untouched, so the
+// `context-compression.ts`). When a `grep_file` result is small enough, the
+// compressor's "shrink large tool results" pass leaves it untouched, so the
 // concrete line numbers + matched content survive context compression
 // even after the model has moved on. With the previous 200 cap, a busy
 // grep on a long file routinely produced results that got collapsed to

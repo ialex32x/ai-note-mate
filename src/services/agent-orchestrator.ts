@@ -26,8 +26,8 @@ import {
     QUICK_ASK_SYSTEM_PROMPT,
     type ToolFilterOptions,
 } from "./chat-stream";
-import type { ConversationSummary } from "./context-reducer";
-import { createChatCompletion } from "./context-reducer";
+import type { ConversationSummary } from "./context-compression";
+import { createChatCompletion } from "./context-compression";
 import type {
     LLMProvider,
     TokenUsage,
@@ -95,9 +95,9 @@ export const HANDOFF_VALUE_MAX_BYTES = 32 * 1024;
  * sites (and so the orchestrator's public surface still advertises the
  * full envelope contract in one place).
  *
- * The split exists to break a value-level import cycle: `context-reducer.ts`
+ * The split exists to break a value-level import cycle: `context-compression.ts`
  * needs the markers to detect envelopes, and `agent-orchestrator.ts`
- * already `import type`s from the reducer for `ConversationSummary`.
+ * already `import type`s from the compressor for `ConversationSummary`.
  * Keeping the shape in a dependency-free leaf module keeps both imports
  * unidirectional. See `delegate-envelope-shape.ts` for the rationale.
  */

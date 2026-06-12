@@ -4,12 +4,12 @@
 //
 // This module holds the *pure shape* (types + literal markers) of the
 // envelope `buildDelegatePayload` emits. It is intentionally split out of
-// `agent-orchestrator.ts` so that `context-reducer.ts` (and, later,
+// `agent-orchestrator.ts` so that `context-compression.ts` (and, later,
 // `recall_artifact`) can `import` the markers without dragging in the
 // orchestrator's full dependency graph — and, crucially, without forming
 // a value-level import cycle. `agent-orchestrator.ts` already
-// `import type`s `ConversationSummary` from `context-reducer.ts`; once
-// the reducer needed to recognise envelopes, that type-only cycle would
+// `import type`s `ConversationSummary` from `context-compression.ts`; once
+// the compressor needed to recognise envelopes, that type-only cycle would
 // have escalated into a value cycle if the markers had stayed there.
 //
 // Keep this file dependency-free (no imports). It is the single source
@@ -18,7 +18,7 @@
 /**
  * Discriminator marker for `DelegatePayload`. Stamped on every envelope
  * by `buildDelegatePayload` so downstream consumers (currently: the
- * context reducer's shrink stage, future: `recall_artifact`) can
+ * context compressor's shrink stage, future: `recall_artifact`) can
  * recognise an envelope JSON in O(1) without shape-sniffing.
  *
  * The marker is intentionally a string literal rather than a Symbol /
@@ -46,11 +46,11 @@ export const DELEGATE_ENVELOPE_VERSION = 1 as const;
  *   (plan §1.6).
  * - `"shrunk"` — the value was originally inlined and survived envelope
  *   build, but a later history-compaction pass spilled it into the store
- *   to reclaim prompt budget. Set by the reducer's envelope branch
- *   (plan §1.5, B-1; see `context-reducer.ts` `shrinkEnvelopeForPrompt`).
+ *   to reclaim prompt budget. Set by the compressor's envelope branch
+ *   (plan §1.5, B-1; see `context-compression.ts` `shrinkEnvelopeForPrompt`).
  *
  * Sub-agents do not write this directly — only the orchestrator and the
- * reducer do. Kept on the wire so the main LLM can distinguish
+ * compressor do. Kept on the wire so the main LLM can distinguish
  * "always-was-an-artifact" (don't bother re-trying smaller) from
  * "was-fine-but-got-shrunk" (the original delegation produced inline
  * data; you may simply recall it).
@@ -100,7 +100,7 @@ export interface ArtifactRef {
  * populate them, so the JSON stays compact for the common case.
  *
  * The two leading `__kind` / `__v` fields are runtime markers — they exist
- * so the context reducer can distinguish this envelope from any other
+ * so the context compressor can distinguish this envelope from any other
  * JSON-shaped tool_result before deciding whether to spill / preserve it
  * (see plan doc §1.1, §1.4). They are intentionally on the wire and the
  * main agent's prompt explicitly tells the LLM it can ignore them.
@@ -108,7 +108,7 @@ export interface ArtifactRef {
  * Exported for tests.
  */
 export interface DelegatePayload {
-    /** Discriminator — always {@link DELEGATE_ENVELOPE_KIND}. Used by the reducer to recognise envelopes. */
+    /** Discriminator — always {@link DELEGATE_ENVELOPE_KIND}. Used by the compressor to recognise envelopes. */
     __kind: typeof DELEGATE_ENVELOPE_KIND;
     /** Schema version — always {@link DELEGATE_ENVELOPE_VERSION} on emit; consumers must check before parsing. */
     __v: typeof DELEGATE_ENVELOPE_VERSION;

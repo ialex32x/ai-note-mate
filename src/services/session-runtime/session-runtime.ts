@@ -79,7 +79,7 @@ export class SessionRuntime {
     hasContextCompressed = false;
 
     /**
-     * True once the context reducer's emergency shrink has fired at
+     * True once the context compressor's emergency shrink has fired at
      * least once in this session. Drives single-Notice deduplication so
      * a long session that repeatedly trips the safety net only nags the
      * user once rather than spamming on every turn. Resets only on

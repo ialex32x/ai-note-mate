@@ -248,7 +248,7 @@ export class ArtifactStore {
         this.liveBytes += size;
 
         // Fire-and-forget: persist to disk if adapter is available.
-        // The caller (context-reducer) stays sync; write failures are
+        // The caller (context-compression) stays sync; write failures are
         // logged but do not block prompt assembly.
         if (this.adapter && this.artifactsDir) {
             void this.persistToFile(key, value, size);

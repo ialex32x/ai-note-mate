@@ -12,7 +12,7 @@
  */
 
 import type { MinimalModelConfig } from '../llm-provider';
-import { createChatCompletion } from '../context-reducer';
+import { createChatCompletion } from '../context-compression';
 import { stripStructuredBlock } from './extractor';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
 import type { SuggestedAction } from './types';

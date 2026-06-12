@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ContextReducer, estimateTokens, isValidBudgetHint, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-reducer';
+import { ContextCompressor, estimateTokens, isValidBudgetHint, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-compression';
 import { ArtifactStore } from '../src/services/artifact-store';
 import { DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, type DelegatePayload } from '../src/services/delegate-envelope-shape';
 
@@ -40,7 +40,7 @@ function shrink(
     messages: HistroyMessage[],
     store?: ArtifactStore,
 ): HistroyMessage[] {
-    return (ContextReducer as any).shrinkLargeToolResults(messages, store ?? null);
+    return (ContextCompressor as any).shrinkLargeToolResults(messages, store ?? null);
 }
 
 // Generate a tool_result payload that's well above
@@ -97,7 +97,7 @@ function bigPayload(label: string): { items: Array<{ id: number; body: string }>
 
 // ─── Tests ─────────────────────────────────────────────────
 
-describe('ContextReducer budget hints', () => {
+describe('ContextCompressor budget hints', () => {
     it('records contentBudgetHint on shrink without dropping the full body from the source buffer', () => {
         const full = bigText();
         const raw: HistroyMessage[] = [
@@ -113,7 +113,7 @@ describe('ContextReducer budget hints', () => {
         expect(sentResult.content).not.toBe(full);
         expect(estimateTokens(sentResult.contentBudgetHint!)).toBeLessThan(estimateTokens(full));
 
-        ContextReducer.backfillBudgetHints(sent, raw);
+        ContextCompressor.backfillBudgetHints(sent, raw);
         const rawResult = raw.find(m => m.role === 'tool_result')!;
         expect(rawResult.content).toBe(full);
         expect(rawResult.contentBudgetHint).toBe(sentResult.contentBudgetHint);
@@ -134,7 +134,7 @@ describe('ContextReducer budget hints', () => {
             assistant('done'),
         ];
         const sent = shrink(raw);
-        ContextReducer.backfillBudgetHints(sent, raw);
+        ContextCompressor.backfillBudgetHints(sent, raw);
         const rawResult = raw.find(m => m.role === 'tool_result')!;
         rawResult.content = full + '-edited';
         expect(isValidBudgetHint(rawResult)).toBe(false);
@@ -145,7 +145,7 @@ describe('ContextReducer budget hints', () => {
     });
 });
 
-describe('ContextReducer.shrinkLargeToolResults', () => {
+describe('ContextCompressor.shrinkLargeToolResults', () => {
     it('returns the input unchanged when there are no messages', () => {
         expect(shrink([])).toEqual([]);
     });
@@ -441,7 +441,7 @@ describe('ContextReducer.shrinkLargeToolResults', () => {
 //      with the standard `_too_large_for_store` flag, matching E-3's
 //      build-time bucket-3 markers.
 
-describe('ContextReducer.shrinkLargeToolResults — B-1 envelope spill', () => {
+describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () => {
     it('spills inline `result` into the artifact store and emits an ArtifactRef', () => {
         const store = new ArtifactStore();
         const result = bigPayload('A');
@@ -847,7 +847,7 @@ function emergencyShrink(
         modelContextWindow?: number;
     },
 ): { messages: HistroyMessage[]; shrunk: boolean } {
-    return (ContextReducer as any).emergencyShrink(
+    return (ContextCompressor as any).emergencyShrink(
         messages,
         options.accessoryTokens ?? 0,
         options.threshold,
@@ -856,7 +856,7 @@ function emergencyShrink(
     );
 }
 
-describe('ContextReducer.emergencyShrink', () => {
+describe('ContextCompressor.emergencyShrink', () => {
     it('returns the input unchanged when total is at or below the emergency line', () => {
         const msgs: HistroyMessage[] = [
             user('q'),
