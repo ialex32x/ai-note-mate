@@ -1019,7 +1019,9 @@ describe("regexHintForLiteral", () => {
 
     it("mentions detected constructs", () => {
         expect(regexHintForLiteral("file\\.txt")).toContain("escaped metacharacters");
-        expect(regexHintForLiteral("\\(group\\)")).toContain("escaped brackets");
+        // Escaped brackets/parens/braces are intentionally NOT detected —
+        // see looksLikeRegex() for rationale (unresolvable eslint conflict).
+        expect(regexHintForLiteral("\\(group\\)")).toBe("");
         expect(regexHintForLiteral("end:.*?\\n")).toContain("lazy quantifiers");
     });
 
