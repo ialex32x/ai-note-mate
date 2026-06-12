@@ -447,12 +447,10 @@ function replaceWithGroups(
 function looksLikeRegex(s: string): boolean {
     // Escaped regex sequences: \\d \\w \\s \\b \\n \\t \\S \\W \\D \\B
     if (/\\[dwstnSWDB]/i.test(s)) return true;
-    // NOTE: Escaped brackets/parens/braces (\( \) \[ \] \{ \}) intentionally
-    // not detected here. Adding them to the character class requires escaping
-    // \] while \[ is flagged by no-useless-escape, creating an unresolvable
-    // lint conflict. These patterns are less common than \d \w \s etc.; if the
-    // model uses them with use_regex=false, it will simply retry after the
-    // literal match fails.
+    // Escaped brackets/parens/braces: \( \) \[ \] \{ \}
+    // Use a separate regex to avoid a no-useless-escape conflict when
+    // putting both \[ and \] in the same character class.
+    if (/\\([()[\]{}])/.test(s)) return true;
     // Escaped metacharacters: \. \+ \* \? \| \^ \$
     if (/\\[.+*?|^$]/.test(s)) return true;
     // Common laziness quantifiers: .*? .+?
@@ -487,8 +485,7 @@ function regexHintForLiteral(pattern: string): string {
     const found: string[] = [];
     if (/\\[dwstnSWDB]/i.test(pattern)) found.push("\\d \\w \\s \\n (escaped backslash sequences)");
     if (/\\[.+*?|^$]/.test(pattern)) found.push("\\ . \\ + \\ * \\ ? \\ | (escaped metacharacters)");
-    // NOTE: escaped brackets/parens/braces hint intentionally omitted — see
-    // looksLikeRegex() for rationale.
+    if (/\\([()[\]{}])/.test(pattern)) found.push("\\( \\) \\[ \\] \\{ \\} (escaped brackets/parens/braces)");
     if (/\.[*+]\?/.test(pattern)) found.push(".*? .+? (lazy quantifiers)");
     if (/\[[^\]]+\]/.test(pattern) && !looksLikeHarmlessBrackets(pattern)) found.push("[...] (character class)");
     const summary = found.length > 0 ? ` Detected: ${found.join(", ")}.` : "";

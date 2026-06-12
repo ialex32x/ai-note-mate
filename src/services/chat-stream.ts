@@ -1,4 +1,4 @@
-import { ContextCompressor, ConversationSummary, estimateTokens, createChatCompletion } from "./context-compression";
+import { ContextCompressor, ConversationSummary, estimateTokens } from "./context-compression";
 import type { MinimalModelConfig } from "./llm-provider";
 import type {
     LLMProvider,
@@ -17,8 +17,6 @@ import { isAbortError } from "../utils/abortable-request";
 
 import {
     SUMMARIZER_SYSTEM_PROMPT,
-    QUICK_ASK_SYSTEM_PROMPT,
-    INTERRUPTED_ASSISTANT_API_NOTE,
     STREAM_EMIT_THROTTLE_MS,
 } from "./chat-stream-constants";
 
@@ -31,6 +29,23 @@ import {
     inferKindFromMime,
     mediaKindLabel,
 } from "./chat-stream-helpers";
+
+import {
+    quickAskPrompt,
+    getQuickAskTurns as _getQuickAskTurns,
+    restoreQuickAskTurns as _restoreQuickAskTurns,
+    removeQuickAskTurn as _removeQuickAskTurn,
+    type QuickAskState,
+} from "./chat-stream-quickask";
+
+import {
+    assistantHasPersistablePayload,
+    assistantContentForApi,
+    commitInFlightAssistantToHistory,
+    finalizeInFlightAssistantMessage,
+    finalizeAbortedToolCallMessage,
+    finalizeStuckToolCallMessages,
+} from "./chat-stream-assistant-lifecycle";
 
 import type {
     ChatMessage,
@@ -208,102 +223,26 @@ export class ChatStream implements IChatAgent {
     }
 
     // ── QuickAsk side-turns ─────────────────────────────────────────────────
+    // Implementation extracted to chat-stream-quickask.ts.
 
-    /**
-     * Execute a QuickAsk side-turn: a simple, non-streaming, tool-free
-     * LLM completion anchored to a specific assistant message.
-     *
-     * Constructs a minimal context from the parent message's turn, then
-     * calls {@link createChatCompletion} (the same single-turn path used
-     * by the summarizer, title generator, and insight extractor).
-     *
-     * @returns The assistant's reply as a ChatMessage.
-     */
     async promptQuickAsk(
         parentMessageId: string,
         userInput: string,
         modelConfig: MinimalModelConfig,
     ): Promise<ChatMessage> {
-        // Find the parent assistant message
-        const parentMsg = this._messages.find(m => m.id === parentMessageId);
-        if (!parentMsg || parentMsg.role !== 'assistant') {
-            throw new Error('QuickAsk: parent message not found or not an assistant message');
-        }
-
-        // Build the user-side ChatMessage
-        const userMsg: ChatMessage = {
-            id: generateId(),
-            role: 'user',
-            content: userInput,
-            streaming: false,
-            timestamp: Date.now(),
-            quickAsk: { parentMessageId },
-        };
-
-        // Create a loading placeholder SideTurn
-        const sideTurn: QuickAskTurn = {
-            parentMessageId,
-            userMessage: userMsg,
-            assistantMessage: {
-                id: generateId(),
-                role: 'assistant',
-                content: '',
-                streaming: false,
-                timestamp: Date.now(),
-                quickAsk: { parentMessageId },
-                modelName: modelConfig.model,
-            },
-            loading: true,
-        };
-        this._quickAskTurns.push(sideTurn);
-
-        // Build minimal context: the parent message's turn only
-        const parentTurn = parentMsg.turn ?? 0;
-        const turnMessages = this._messages.filter(
-            m => m.turn === parentTurn && (m.role === 'user' || m.role === 'assistant'),
-        );
-
-        const contextMessages = [
-            { role: 'system' as const, content: QUICK_ASK_SYSTEM_PROMPT },
-            ...turnMessages.map(m => ({ role: m.role, content: m.content })),
-            { role: 'user' as const, content: userInput },
-        ];
-
-        try {
-            const content = await createChatCompletion(modelConfig, contextMessages);
-            const trimmed = content.trim();
-
-            // Update the side-turn with the real reply
-            sideTurn.assistantMessage = {
-                ...sideTurn.assistantMessage,
-                content: trimmed,
-                timestamp: Date.now(),
-            };
-            sideTurn.loading = false;
-
-            return sideTurn.assistantMessage;
-        } catch {
-            // Remove the orphaned loading placeholder on failure
-            this._quickAskTurns = this._quickAskTurns.filter(t => t !== sideTurn);
-            throw new Error('QuickAsk: LLM call failed');
-        }
+        return quickAskPrompt(this as unknown as QuickAskState, parentMessageId, userInput, modelConfig);
     }
 
-    /** Get all QuickAsk side-turns (shallow-cloned for safety). */
     getQuickAskTurns(): QuickAskTurn[] {
-        return this._quickAskTurns.map(t => ({ ...t }));
+        return _getQuickAskTurns(this as unknown as QuickAskState);
     }
 
-    /** Restore QuickAsk side-turns from persisted session data. */
     restoreQuickAskTurns(turns: QuickAskTurn[]): void {
-        this._quickAskTurns = turns.map(t => ({ ...t }));
+        _restoreQuickAskTurns(this as unknown as QuickAskState, turns);
     }
 
-    /** Remove a QuickAsk turn by parent message ID. */
     removeQuickAskTurn(parentMessageId: string): void {
-        this._quickAskTurns = this._quickAskTurns.filter(
-            t => t.parentMessageId !== parentMessageId,
-        );
+        _removeQuickAskTurn(this as unknown as QuickAskState, parentMessageId);
     }
 
     // ── Public methods ──────────────────────────────────────────────────────
@@ -1300,24 +1239,20 @@ export class ChatStream implements IChatAgent {
         }
     }
 
+    // ── Assistant message lifecycle ──────────────────────────────────
+    // Implementations extracted to chat-stream-assistant-lifecycle.ts.
+
     /** Whether an assistant message carries text/thinking worth persisting. */
     private _assistantHasPersistablePayload(msg: ChatMessage): boolean {
-        return msg.content.length > 0 || (msg.thinkingContent?.length ?? 0) > 0;
+        return assistantHasPersistablePayload(msg);
     }
 
     /**
      * Map stored assistant text to the API payload. Interrupted replies keep
-     * the user-visible `content` intact and append a short meta note for the
-     * model only (see {@link ChatMessage.wasInterrupted}).
+     * the user-visible `content` intact and append a short meta note.
      */
     private _assistantContentForApi(msg: ChatMessage): string {
-        if (!msg.wasInterrupted) {
-            return msg.content;
-        }
-        if (msg.content.length === 0) {
-            return INTERRUPTED_ASSISTANT_API_NOTE;
-        }
-        return `${msg.content}\n\n${INTERRUPTED_ASSISTANT_API_NOTE}`;
+        return assistantContentForApi(msg);
     }
 
     /**
@@ -1325,14 +1260,7 @@ export class ChatStream implements IChatAgent {
      * Subsequent chunks mutate the same object in place.
      */
     private _commitInFlightAssistantToHistory(turn: number): void {
-        const msg = this._inFlightAssistantMessage;
-        if (!msg || !this._assistantHasPersistablePayload(msg)) {
-            return;
-        }
-        msg.turn = turn;
-        if (!this._messages.some(m => m.id === msg.id)) {
-            this._messages.push(msg);
-        }
+        commitInFlightAssistantToHistory(this._messages, this._inFlightAssistantMessage, turn);
     }
 
     /**
@@ -1347,168 +1275,26 @@ export class ChatStream implements IChatAgent {
     }): ChatMessage | null {
         const msg = this._inFlightAssistantMessage;
         this._inFlightAssistantMessage = null;
-        if (!msg || !this._assistantHasPersistablePayload(msg)) {
-            return null;
-        }
-
-        if (opts?.turn != null) {
-            msg.turn = opts.turn;
-        }
-        msg.streaming = false;
-        if (opts?.interrupted) {
-            msg.wasInterrupted = true;
-        }
-
-        const inHistory = this._messages.some(m => m.id === msg.id);
-        if (!inHistory) {
-            this._messages.push(msg);
-        }
-
-        if (opts?.removeFromHistory) {
-            // The thinking-only bubble may have been rendered while the
-            // model streamed reasoning before emitting tool calls. Pure
-            // tool-call turns drop the assistant from `_messages`, but
-            // the DOM bubble must be explicitly retired — otherwise the
-            // last throttled emit left it stuck at streaming=true
-            // ("Thinking in progress") even after the turn moved on.
-            if (msg.thinkingContent) {
-                msg.thinkingComplete = true;
-            }
-            this._config.onMessageUpdate?.({ ...msg, retireBubble: true });
-
-            const idx = this._messages.findIndex(m => m.id === msg.id);
-            if (idx >= 0) {
-                this._messages.splice(idx, 1);
-            }
-            return null;
-        }
-
-        this._config.onMessageUpdate?.({ ...msg });
-        return msg;
+        return finalizeInFlightAssistantMessage(this._messages, msg, this._config.onMessageUpdate, opts);
     }
 
     /**
-     * Select which of `tools` should be exposed to the model for the current
-     * request, based on cosine similarity between an embedding of `query` and
-     * each on-demand tool's description.
-     *
-     * Behaviour:
-     *   - Always-on tools (`ondemand: false`) are never filtered.
-     *   - When `config` is undefined → no filtering; full `tools` returned.
-     *   - When `query` is too short / signal-poor (see {@link isQueryTooShort})
-     *     → no filtering; full `tools` returned. Prevents short follow-ups
-     *     like "yes" / "继续" from collapsing the on-demand tool set.
-     *   - When the global embedder isn't initialized or the embedding call
-     *     throws → no filtering; full `tools` returned (the Embedder tracks
-     *     the failure on its own status).
-     *
-     * The `query` parameter is intentionally generic: callers may pass the
-     * raw user input on the first round, then enrich it with the most recent
-     * assistant text on subsequent rounds (so the filter tracks the model's
-     * current next-step intent, not just the original question).
-     */
-    /**
-     * Finalize a tool_call message that is being torn down by an abort, so
-     * its bubble doesn't stay stuck in `streaming: true` with no
-     * `toolCallResult`. Used by both abort branches around tool dispatch:
-     * one for `AbortError` thrown from inside `registered.exec`, the
-     * other for the post-exec check that catches an abort signalled
-     * while exec ran to completion. Without this finalization the UI
-     * renders the bubble with only the ARGUMENTS section and silently
-     * drops the RESULT section (see `renderToolCallContent`'s
-     * `if (msg.toolCallResult)` gate) — which reads as "the tool
-     * returned nothing", even though from the model's perspective the
-     * call was simply never observed.
-     *
-     * Marks the call as a warning rather than an error: nothing
-     * malfunctioned, the user just interrupted the flow.
+     * Finalize a tool_call message that is being torn down by an abort.
      */
     private _finalizeAbortedToolCallMessage(
         toolCallMessage: ChatMessage,
         elapsedMs: number,
         note: string,
     ): void {
-        toolCallMessage.streaming = false;
-        const baseName = toolCallMessage.toolCallMeta?.toolName ?? toolCallMessage.content;
-        toolCallMessage.content = `${baseName}  (${elapsedMs}ms, aborted)`;
-        toolCallMessage.toolCallResult = {
-            status: 'warning',
-            result: note,
-        };
-        this._config.onMessageUpdate?.({ ...toolCallMessage });
+        finalizeAbortedToolCallMessage(toolCallMessage, elapsedMs, note, this._config.onMessageUpdate);
     }
 
     /**
      * End-of-turn safety net: walk `_messages` and finalize any
      * `tool_call` message that's still flagged `streaming: true`.
-     *
-     * Background: under normal operation every tool_call reaches the
-     * `toolCallMessage.streaming = false; toolCallMessage.toolCallResult = ...;
-     * onMessageUpdate(...)` block in the dispatch loop before the
-     * next iteration starts, and the bubble visibly transitions from
-     * `name  …` to `name  (Xms)` with a ✓ / ✕ icon. But the chat
-     * pipeline (chat-stream → SubAgent forwarder → orchestrator
-     * bucket → runtime emit → session-view re-render) has many
-     * hand-offs and an unrelated bug along it could silently swallow
-     * the second emit — leaving a bubble visually stuck at `…` even
-     * though the LLM-facing tool_result was delivered correctly.
-     * That class of bug is exactly what the user reported for the
-     * (legacy) `exchange` tool — the same hazard now applies to the
-     * `write_handoff` / `read_handoff` / `list_handoff` tools.
-     *
-     * Re-emitting one final time at the end of the turn turns "stuck
-     * forever" into "stuck for at most the turn's duration", which
-     * is good enough to never confuse the user, and gives them a
-     * console.warn breadcrumb to forward back so the real upstream
-     * gap can be found and fixed.
-     *
-     * Idempotent: a no-op when the dispatch loop already finalized
-     * everything (the common case).
      */
     private _finalizeStuckToolCallMessages(): void {
-        for (const msg of this._messages) {
-            if (msg.role !== 'tool_call') continue;
-            if (!msg.streaming) continue;
-            // The tool_call message escaped the dispatch loop with
-            // its in-progress flag still set. Log loudly so the
-            // missing-update path can be diagnosed, then patch the
-            // UI state so the bubble shows *something* rather than
-            // spinning forever.
-            const stuckToolName = msg.toolCallMeta?.toolName ?? msg.content;
-            console.warn(
-                `[ChatStream] Tool_call message "${stuckToolName}" ` +
-                `(id=${msg.id}) left turn with streaming=true and no toolCallResult — ` +
-                `forcing finalization. This indicates an upstream bug in tool-call message lifecycle.`,
-            );
-            // Mirror the warn into the in-memory IssueTracer so mobile
-            // users (who can't open DevTools) still get a breadcrumb
-            // surfaced via the toolbar bug button.
-            recordIssue({
-                severity: 'warning',
-                source: 'chat-stream',
-                code: 'stuck-tool-call',
-                message:
-                    `Tool_call "${stuckToolName}" left the turn with streaming=true and no result; ` +
-                    `forced finalization. Likely an upstream gap in the tool-call message lifecycle.`,
-                context: {
-                    toolName: msg.toolCallMeta?.toolName ?? null,
-                    messageId: msg.id,
-                    confirmationState: msg.confirmationState ?? null,
-                },
-            });
-            msg.streaming = false;
-            if (!msg.toolCallResult) {
-                const baseName = msg.toolCallMeta?.toolName ?? msg.content;
-                msg.content = `${baseName}  (no result captured)`;
-                msg.toolCallResult = {
-                    status: 'warning',
-                    result: '[Tool finished but no result was captured by the chat pipeline. ' +
-                        'This is a UI-side artifact; the model itself may still have received the actual result. ' +
-                        'Please report this to the plugin author with the console log above.]',
-                };
-            }
-            this._config.onMessageUpdate?.({ ...msg });
-        }
+        finalizeStuckToolCallMessages(this._messages, this._config.onMessageUpdate);
     }
 
     private async _getBestMatchedTools(
