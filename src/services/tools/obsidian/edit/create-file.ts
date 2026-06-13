@@ -82,7 +82,8 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
-            await ensureParentFolder(plugin.app, path);
+            const parentErr = await ensureParentFolder(plugin.app, path);
+            if (parentErr) return parentErr;
             const lockErr = await runVaultMutation(plugin, chatStream, {
                 kind: "create",
                 path,

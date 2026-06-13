@@ -310,7 +310,8 @@ export function vaultInstantiateTemplate(plugin: NoteAssistantPlugin): Registere
             );
 
             // ── Write output file ──────────────────────────────────
-            await ensureParentFolder(plugin.app, targetPath);
+            const parentErr = await ensureParentFolder(plugin.app, targetPath);
+            if (parentErr) return parentErr;
             const lockErr = await runVaultMutation(plugin, chatStream, {
                 kind: "create",
                 path: targetPath,

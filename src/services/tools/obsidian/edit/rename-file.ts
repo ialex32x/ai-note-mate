@@ -70,7 +70,8 @@ export function vaultRenameFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
-            await ensureParentFolder(plugin.app, newPath);
+            const parentErr = await ensureParentFolder(plugin.app, newPath);
+            if (parentErr) return parentErr;
 
             const isFolder = file instanceof TFolder;
 

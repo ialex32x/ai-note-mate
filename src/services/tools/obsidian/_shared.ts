@@ -352,14 +352,87 @@ export function requireFileExtension(path: string): ToolCallResult | null {
 }
 
 /**
+ * Walk `parentPath` segment by segment, checking whether each segment already
+ * exists in the vault under a different casing.  Returns the first casing
+ * conflict found, or `null` when the path is conflict-free (either every
+ * segment already exists with exact casing, or no segment exists at all).
+ */
+function checkCasingConflict(app: App, parentPath: string): ToolCallResult | null {
+    const segments = parentPath.split("/");
+    let currentParent: TFolder = app.vault.getRoot();
+
+    for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        const children = currentParent.children;
+
+        // Exact casing match on this segment → descend and continue.
+        const exact = children.find(
+            (c): c is TFolder => c instanceof TFolder && c.name === segment,
+        );
+        if (exact) {
+            currentParent = exact;
+            continue;
+        }
+
+        // Case-insensitive but different-case match → report the conflict.
+        const lower = segment.toLowerCase();
+        const alternate = children.find(
+            (c): c is TFolder =>
+                c instanceof TFolder &&
+                c.name.toLowerCase() === lower &&
+                c.name !== segment,
+        );
+        if (!alternate) return null; // Segment genuinely doesn't exist → safe to create.
+
+        // Build the corrected parent path up to and including this segment.
+        const correctedSegments = segments.slice(0, i);
+        correctedSegments.push(alternate.name);
+        // Preserve the remaining segments as-is; they may or may not exist yet.
+        for (let j = i + 1; j < segments.length; j++) {
+            correctedSegments.push(segments[j]);
+        }
+        const correctedPath = correctedSegments.join("/");
+
+        return {
+            success: false,
+            type: "text",
+            content:
+                `Parent folder '${parentPath}' does not exist with this exact casing, ` +
+                `but a folder named '${alternate.name}' (different casing) was found at the same level. ` +
+                `Use corrected path '${correctedPath}' in your next call to match the existing casing, ` +
+                `or pass force=true to bypass this check.`,
+        };
+    }
+
+    return null; // All segments exist with exact casing.
+}
+
+/**
  * Ensure the parent folder for `path` exists; create it recursively if missing.
  * No-op when `path` resides at the vault root.
+ *
+ * When `force` is `false` (the default), each segment of the parent path is
+ * checked for an existing folder whose name differs only in casing.  If such a
+ * conflict is found a failure `ToolCallResult` is returned instead of creating
+ * the folder, so the caller can surface a helpful correction hint.
+ *
+ * Set `force` to `true` to skip this check and keep the previous behaviour
+ * (attempt `createFolder` regardless, which may fail on case-insensitive file
+ * systems with a misleading "Folder already exists" error).
  */
-export async function ensureParentFolder(app: App, path: string): Promise<void> {
+export async function ensureParentFolder(
+    app: App,
+    path: string,
+    opts?: { force?: boolean },
+): Promise<ToolCallResult | void> {
     const parentPath = path.includes("/") ? path.substring(0, path.lastIndexOf("/")) : "";
     if (!parentPath) return;
     const parentExists = app.vault.getAbstractFileByPath(parentPath);
     if (!parentExists) {
+        if (!opts?.force) {
+            const casingErr = checkCasingConflict(app, parentPath);
+            if (casingErr) return casingErr;
+        }
         await app.vault.createFolder(parentPath);
     }
 }

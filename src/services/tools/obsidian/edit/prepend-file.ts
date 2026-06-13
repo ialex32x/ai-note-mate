@@ -83,7 +83,8 @@ export function vaultPrependFile(plugin: NoteAssistantPlugin): RegisteredTool {
             // we never silently produce an extension-less file.
             const extErr = requireFileExtension(path);
             if (extErr) return extErr;
-            await ensureParentFolder(plugin.app, path);
+            const parentErr = await ensureParentFolder(plugin.app, path);
+            if (parentErr) return parentErr;
             const lockErr = await runVaultMutation(plugin, chatStream, {
                 kind: "create",
                 path,
