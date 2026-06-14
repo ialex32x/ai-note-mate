@@ -224,6 +224,7 @@
 .session-bubble__content {
     line-height: 1.5;
     width: 100%;
+    overflow-x: hidden; // Prevent Mermaid SVGs and other wide content from causing horizontal scroll
     
     // Reset margins for markdown-rendered elements.
     // All selectors inherit the parent .session-bubble__content scope (0,1,1+),
@@ -314,6 +315,18 @@
     
     tr:nth-child(even) {
         background: color-mix(in srgb, @bg-modifier-hover 50%, transparent);
+    }
+    
+    // Mermaid diagrams — SVGs have explicit width that can overflow.
+    // Make them responsive while preserving readability.
+    .mermaid {
+        max-width: 100%;
+        overflow-x: auto;
+        
+        svg {
+            max-width: 100%;
+            height: auto;
+        }
     }
     
     // Code block copy button.
