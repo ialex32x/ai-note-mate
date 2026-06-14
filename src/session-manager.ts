@@ -139,8 +139,22 @@ export class SessionManager {
     /** Set of session IDs whose messages have been loaded */
     private loadedMessages: Set<string> = new Set();
 
-    /** Promise lock for saveToCache to prevent concurrent file writes */
-    private savePromise: Promise<void> | null = null;
+    /**
+     * Sequential write chain to prevent concurrent file writes (list.json + session files).
+     *
+     * Every write operation is appended to this chain rather than racing via a
+     * bare boolean / null-check mutex. This eliminates the TOCTOU gap between
+     * "await previous save" and "assign new save" that existed in the old
+     * `savePromise` pattern. Each work item reads its snapshot right before
+     * performing I/O, so state changes that happen during an earlier write
+     * (e.g. `createSession()` adding a new session) are always visible to the
+     * next writer in the chain.
+     *
+     * The `.then(fn, fn)` dual-handler form ensures a single failing write
+     * (e.g. disk full) does not poison the chain — subsequent callers still
+     * execute their own work.
+     */
+    private writeChain: Promise<void> = Promise.resolve();
 
     private _activeSessionId: string;
     private _nextId = 1;
@@ -610,8 +624,9 @@ export class SessionManager {
     async switchTo(targetId: string): Promise<boolean> {
         if (this.metadataMap.has(targetId) && targetId !== this._activeSessionId) {
             this._activeSessionId = targetId;
-            // Persist activeSessionId change to list.json
-            await this.saveListFile();
+            // Persist activeSessionId change to list.json — must go through
+            // the write chain so concurrent background saves do not race.
+            await this.saveMetadata();
             return true;
         }
         return false;
@@ -658,8 +673,9 @@ export class SessionManager {
             this._activeSessionId = '';
         }
 
-        // Save list.json after successful memory deletion
-        await this.saveListFile();
+        // Save list.json after successful memory deletion — must go through
+        // the write chain so concurrent background saves do not race.
+        await this.saveMetadata();
 
         // Delete messages file (failure is non-critical)
         try {
@@ -722,28 +738,38 @@ export class SessionManager {
     }
 
     /**
+     * Append a unit of work to the serialised write chain.
+     *
+     * Every call to {@link saveMetadata}, {@link saveToCache},
+     * {@link switchTo}, and {@link deleteSession} flows through here so
+     * list.json is never written concurrently.  The `.then(fn, fn)`
+     * dual-handler ensures a single failing write (e.g. disk full) does
+     * not poison the chain — subsequent callers still execute their own
+     * work.
+     *
+     * The work function reads `_activeSessionId`, `_nextId`, and
+     * `metadataMap` at call time, which is *after* every preceding chain
+     * entry has completed.  This eliminates the TOCTOU gap that existed
+     * in the old `savePromise`-based mutex pattern.
+     */
+    private enqueueWrite(work: () => Promise<void>): Promise<void> {
+        const next = this.writeChain.then(work, work);
+        this.writeChain = next;
+        return next;
+    }
+
+    /**
      * Save only the list.json file (session metadata).
      *
-     * Must share the same savePromise mutex with {@link saveToCache} so
-     * that concurrent writes from different code paths (draft flush,
-     * new-session creation, background runtime turn-finish) do not race
-     * on list.json.  Without this, a background turn finishing on a
-     * platform with slower I/O (e.g. mobile Capacitor) could overwrite
-     * a newly-created session with stale metadata, making the session
-     * appear to vanish and hiding the session-switcher toolbar buttons.
+     * Appended to {@link writeChain} so concurrent callers (draft flush,
+     * new-session creation, background runtime turn-finish, title gen,
+     * insight extraction) never race on list.json.  The writer reads
+     * `_activeSessionId` and `metadataMap` right before performing I/O,
+     * after any preceding chain entry has completed, so state changes
+     * made by an earlier writer are always visible.
      */
     async saveMetadata(): Promise<void> {
-        // Serialise with saveToCache so list.json is never written
-        // concurrently by two independent callers.
-        if (this.savePromise) {
-            await this.savePromise;
-        }
-        this.savePromise = this.saveListFile();
-        try {
-            await this.savePromise;
-        } finally {
-            this.savePromise = null;
-        }
+        await this.enqueueWrite(() => this.saveListFile());
     }
 
     /** Save only the list.json file (session metadata) */
@@ -1011,7 +1037,7 @@ export class SessionManager {
             // If any sessions were purged, persist the updated list so
             // stale entries are cleaned from disk.
             if (purgedCount > 0) {
-                await this.saveListFile();
+                await this.saveMetadata();
             }
 
             // Restore active session ID if valid
@@ -1037,23 +1063,11 @@ export class SessionManager {
      * Save all session metadata to list file and save all loaded messages.
      * Called after each complete conversation round.
      * 
-     * This method is protected against concurrent calls - if a save is already
-     * in progress, subsequent calls will wait for it to complete before
-     * starting a new save operation.
+     * Appended to {@link writeChain} so this call is serialised with all
+     * other writers (saveMetadata, switchTo, deleteSession).
      */
     async saveToCache(): Promise<void> {
-        // If already saving, wait for it to complete
-        if (this.savePromise) {
-            await this.savePromise;
-        }
-
-        // Start a new save operation
-        this.savePromise = this._doSaveToCache();
-        try {
-            await this.savePromise;
-        } finally {
-            this.savePromise = null;
-        }
+        await this.enqueueWrite(() => this._doSaveToCache());
     }
 
     /**
