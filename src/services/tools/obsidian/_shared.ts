@@ -363,6 +363,7 @@ function checkCasingConflict(app: App, parentPath: string): ToolCallResult | nul
 
     for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
+        if (segment === undefined) continue;
         const children = currentParent.children;
 
         // Exact casing match on this segment → descend and continue.
@@ -389,7 +390,8 @@ function checkCasingConflict(app: App, parentPath: string): ToolCallResult | nul
         correctedSegments.push(alternate.name);
         // Preserve the remaining segments as-is; they may or may not exist yet.
         for (let j = i + 1; j < segments.length; j++) {
-            correctedSegments.push(segments[j]);
+            const seg = segments[j];
+            if (seg !== undefined) correctedSegments.push(seg);
         }
         const correctedPath = correctedSegments.join("/");
 
