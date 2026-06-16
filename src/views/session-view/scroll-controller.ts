@@ -18,13 +18,16 @@ import { setIcon } from 'obsidian';
  * State transitions are driven by explicit user gestures:
  *
  *   - `wheel` deltaY < 0                              → autoFollow = false
+ *                                                       + autoFollowParked = true
  *   - `wheel` deltaY > 0 landing at absolute bottom
  *     (< 4 px from the tail)                          → autoFollow = true
  *   - `touchmove` first upward frame                 → autoFollow = false
+ *                                                       + autoFollowParked = true
  *     (accumulated > THRESHOLD shows the button)
  *   - `touchmove` accumulating > THRESHOLD downward
  *     AND user landed near bottom                     → autoFollow = true
  *   - `keydown` PageUp / Home / ArrowUp               → autoFollow = false
+ *                                                       + autoFollowParked = true
  *   - `keydown` PageDown / End / ArrowDown
  *     landing near bottom                             → autoFollow = true
  *   - click on the floating button                    → autoFollow = true
@@ -96,12 +99,14 @@ export class ScrollController {
      * past the end of the current turn (i.e. trailing async content like the
      * insight card or follow-up bar must not yank the view to the tail).
      *
-     * Set for two reasons:
-     *   1. the last streaming message grew taller than the viewport
+     * Set for three reasons:
+     *   1. the user manually scrolled up (wheel / touch / key / scrollbar)
+     *      — they want to browse history without the view snapping back;
+     *   2. the last streaming message grew taller than the viewport
      *      (see {@link onAsyncContentChanged}); once set, the oversized check
      *      is suppressed for the remainder of the turn so manually scrolling
      *      back to the tail resumes follow without being kicked out again; and
-     *   2. the user explicitly jumped to a specific message
+     *   3. the user explicitly jumped to a specific message
      *      (see {@link suppressAutoFollow}) — they want to stay at the jump
      *      target until they act again.
      *
@@ -650,6 +655,7 @@ export class ScrollController {
         // relying on guard timing alone.
         if (movedUp && !this.isNearBottom()) {
             this.autoFollow = false;
+            this.autoFollowParked = true;
         }
 
         if (
@@ -665,6 +671,7 @@ export class ScrollController {
     private onUserWheel(e: WheelEvent): void {
         if (e.deltaY < 0) {
             this.autoFollow = false;
+            this.autoFollowParked = true;
             this.updateButtonVisibility();
         } else if (e.deltaY > 0) {
             // Only re-enable autoFollow when the user scrolls all the
@@ -702,6 +709,7 @@ export class ScrollController {
         // "scroll to bottom" button.
         if (deltaY > 0) {
             this.autoFollow = false;
+            this.autoFollowParked = true;
         }
 
         if (this.touchAccumulatedDeltaY > ScrollController.TOUCH_GESTURE_THRESHOLD) {
@@ -720,6 +728,7 @@ export class ScrollController {
     private onUserKey(e: KeyboardEvent): void {
         if (ScrollController.KEY_UP.has(e.key)) {
             this.autoFollow = false;
+            this.autoFollowParked = true;
             this.updateButtonVisibility();
         } else if (ScrollController.KEY_DOWN.has(e.key)) {
             window.requestAnimationFrame(() => {
