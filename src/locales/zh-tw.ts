@@ -13,7 +13,6 @@ export const zhTW: Record<string, string> = {
 	'view.moreActions': '更多操作',
 	'view.switchSession': '切換對話',
 	'view.moreSessionActions': '更多對話操作',
-	'view.newSessionCreated': '已建立新對話。',
 	'view.sessionSwitchInProgress': '對話切換中，請稍候。',
 	'view.historyLoading': '正在恢復對話…',
 	'view.historyLoadingProgress': '已恢復 {done} / {total} 則訊息',

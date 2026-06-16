@@ -86,7 +86,6 @@ export class SessionSwitchController {
             await this.deps.sessionManager.saveMetadata();
             this.deps.runtimeBinder.clearViewDOM();
             await this.deps.runtimeBinder.bindActiveSessionRuntime();
-            new Notice(t('view.newSessionCreated'));
             return true;
         } finally {
             this.isSwitchingSession = false;

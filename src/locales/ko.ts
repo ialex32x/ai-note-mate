@@ -13,7 +13,6 @@ export const ko: Record<string, string> = {
 	'view.moreActions': '더 많은 작업',
 	'view.switchSession': '세션 전환',
 	'view.moreSessionActions': '세션 작업',
-	'view.newSessionCreated': '새 세션이 생성되었습니다.',
 	'view.sessionSwitchInProgress': '세션 전환 중입니다. 잠시만 기다려 주세요.',
 	'view.historyLoading': '대화를 복원하는 중…',
 	'view.historyLoadingProgress': '{done} / {total}개 메시지',

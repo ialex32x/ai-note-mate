@@ -13,7 +13,6 @@ export const ja: Record<string, string> = {
 	'view.moreActions': 'その他の操作',
 	'view.switchSession': 'セッション切替',
 	'view.moreSessionActions': 'セッション操作',
-	'view.newSessionCreated': '新しいセッションを作成しました。',
 	'view.sessionSwitchInProgress': 'セッション切り替え中です。お待ちください。',
 	'view.historyLoading': '会話を復元しています…',
 	'view.historyLoadingProgress': '{done} / {total} 件のメッセージ',

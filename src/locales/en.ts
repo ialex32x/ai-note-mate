@@ -13,7 +13,6 @@ export const en: Record<string, string> = {
 	'view.moreActions': 'More actions',
 	'view.switchSession': 'Switch session',
 	'view.moreSessionActions': 'More session actions',
-	'view.newSessionCreated': 'New session created.',
 	'view.sessionSwitchInProgress': 'Session switch in progress, please wait.',
 	'view.historyLoading': 'Restoring conversation…',
 	'view.historyLoadingProgress': '{done} / {total} messages',

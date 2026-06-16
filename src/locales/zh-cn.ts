@@ -13,7 +13,6 @@ export const zhCN: Record<string, string> = {
 	'view.moreActions': '更多操作',
 	'view.switchSession': '切换会话',
 	'view.moreSessionActions': '更多会话操作',
-	'view.newSessionCreated': '已创建新会话。',
 	'view.sessionSwitchInProgress': '会话切换中，请稍候。',
 	'view.historyLoading': '正在恢复会话…',
 	'view.historyLoadingProgress': '已恢复 {done} / {total} 条消息',
