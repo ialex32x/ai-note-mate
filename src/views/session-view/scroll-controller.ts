@@ -320,10 +320,8 @@ export class ScrollController {
         const result = fn();
         if (shouldFollow) {
             this.programmaticScrollToBottom();
-            this.scrollToBottomBtn.hide();
-        } else if (this.isStreamingProvider()) {
-            this.scrollToBottomBtn.show();
         }
+        this.updateButtonVisibility();
         return result;
     }
 
@@ -346,7 +344,7 @@ export class ScrollController {
         this.autoFollow = true;
         this.autoFollowParked = false;
         this.programmaticScrollToBottom();
-        this.scrollToBottomBtn.hide();
+        this.updateButtonVisibility();
     }
 
     /** Whether auto-follow is "parked" — intentionally off and meant to
@@ -372,7 +370,7 @@ export class ScrollController {
      */
     restoreAutoFollow(): void {
         this.autoFollow = true;
-        if (this.isNearBottom()) this.scrollToBottomBtn.hide();
+        this.updateButtonVisibility();
     }
 
     /** Reset to default (autoFollow on, button hidden, oversized guard
@@ -380,7 +378,7 @@ export class ScrollController {
     resetScrollIntent(): void {
         this.autoFollow = true;
         this.autoFollowParked = false;
-        this.scrollToBottomBtn.hide();
+        this.updateButtonVisibility();
     }
 
     /**
@@ -404,7 +402,7 @@ export class ScrollController {
         // sessions (resetScrollIntent).
         this.autoFollowParked = true;
         this.cancelPendingFollowFrame();
-        if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+        this.updateButtonVisibility();
     }
 
     /**
@@ -429,12 +427,11 @@ export class ScrollController {
         if (this.isNearBottom()) {
             this.autoFollow = true;
             this.autoFollowParked = false;
-            this.scrollToBottomBtn.hide();
         } else {
             this.autoFollow = false;
             this.autoFollowParked = true;
-            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
         }
+        this.updateButtonVisibility();
 
         // Two RAFs cover iOS WebView's habit of coalescing the scroll event
         // for a programmatic write into the next frame.
@@ -520,18 +517,14 @@ export class ScrollController {
             if (!this.autoFollowParked && this.isLastMessageOversized()) {
                 this.autoFollowParked = true;
                 this.autoFollow = false;
-                if (this.isStreamingProvider()) {
-                    this.scrollToBottomBtn.show();
-                }
+                this.updateButtonVisibility();
                 return;
             }
             this.programmaticScrollToBottom();
-            this.scrollToBottomBtn.hide();
+            this.updateButtonVisibility();
             return;
         }
-        if (this.isStreamingProvider() && !this.isNearBottom()) {
-            this.scrollToBottomBtn.show();
-        }
+        this.updateButtonVisibility();
     }
 
     /**
@@ -568,9 +561,34 @@ export class ScrollController {
         this.pendingFollowFrame = 0;
     }
 
+    /**
+     * Single source of truth for scroll-to-bottom button visibility and
+     * the unread-content indicator class.
+     *
+     * Shows the button whenever the view is not auto-following AND the
+     * scroll position is not near the bottom. Adds the `--unread` class
+     * (blinking border) when new streaming content is arriving at the
+     * tail so the user knows fresh output is being generated.
+     */
+    private updateButtonVisibility(): void {
+        const shouldShow = !this.autoFollow && !this.isNearBottom();
+        const hasUnread = shouldShow && this.isStreamingProvider();
+
+        if (shouldShow) {
+            this.scrollToBottomBtn.show();
+            this.scrollToBottomBtn.classList.toggle(
+                'session-scroll-to-bottom-btn--unread',
+                hasUnread,
+            );
+        } else {
+            this.scrollToBottomBtn.hide();
+            this.scrollToBottomBtn.classList.remove('session-scroll-to-bottom-btn--unread');
+        }
+    }
+
     private handleButtonClick(): void {
         this.autoFollow = true;
-        this.scrollToBottomBtn.hide();
+        this.updateButtonVisibility();
         this.programmaticScrollGuard++;
         this.messagesEl.scrollTo({
             top: this.messagesEl.scrollHeight,
@@ -641,17 +659,13 @@ export class ScrollController {
             this.nearTopCallback();
         }
 
-        if (this.autoFollow || this.isNearBottom()) {
-            this.scrollToBottomBtn.hide();
-        } else if (this.isStreamingProvider()) {
-            this.scrollToBottomBtn.show();
-        }
+        this.updateButtonVisibility();
     }
 
     private onUserWheel(e: WheelEvent): void {
         if (e.deltaY < 0) {
             this.autoFollow = false;
-            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+            this.updateButtonVisibility();
         } else if (e.deltaY > 0) {
             // Only re-enable autoFollow when the user scrolls all the
             // way to the absolute bottom — not just "near" it.  Using
@@ -663,8 +677,8 @@ export class ScrollController {
                 const { scrollTop, scrollHeight, clientHeight } = this.messagesEl;
                 if (scrollHeight - scrollTop - clientHeight < 4) {
                     this.autoFollow = true;
-                    this.scrollToBottomBtn.hide();
                 }
+                this.updateButtonVisibility();
             });
         }
     }
@@ -692,13 +706,13 @@ export class ScrollController {
 
         if (this.touchAccumulatedDeltaY > ScrollController.TOUCH_GESTURE_THRESHOLD) {
             // autoFollow already disabled above; just show the button.
-            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+            this.updateButtonVisibility();
         } else if (this.touchAccumulatedDeltaY < -ScrollController.TOUCH_GESTURE_THRESHOLD) {
             window.requestAnimationFrame(() => {
                 if (this.isNearBottom()) {
                     this.autoFollow = true;
-                    this.scrollToBottomBtn.hide();
                 }
+                this.updateButtonVisibility();
             });
         }
     }
@@ -706,13 +720,13 @@ export class ScrollController {
     private onUserKey(e: KeyboardEvent): void {
         if (ScrollController.KEY_UP.has(e.key)) {
             this.autoFollow = false;
-            if (this.isStreamingProvider()) this.scrollToBottomBtn.show();
+            this.updateButtonVisibility();
         } else if (ScrollController.KEY_DOWN.has(e.key)) {
             window.requestAnimationFrame(() => {
                 if (this.isNearBottom()) {
                     this.autoFollow = true;
-                    this.scrollToBottomBtn.hide();
                 }
+                this.updateButtonVisibility();
             });
         }
     }

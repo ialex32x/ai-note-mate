@@ -450,11 +450,24 @@
     svg {
         .icon-size(18px);
     }
+
+    // Unread-content indicator: accent border that blinks when new
+    // streaming output is arriving at the tail.
+    &--unread {
+        border-color: @text-accent;
+        animation: scroll-btn-bounce 1.5s ease-in-out infinite,
+                   scroll-btn-unread-blink 1.2s step-end infinite;
+    }
 }
 
 @keyframes scroll-btn-bounce {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-3px); }
+}
+
+@keyframes scroll-btn-unread-blink {
+    0%, 100% { border-color: @text-accent; }
+    50% { border-color: transparent; }
 }
 
 // Mobile responsive adjustments
