@@ -13,7 +13,7 @@ import {
 // Tool: grep_file
 //
 // Single-file content locator. The cheap middle-ground between:
-//   - search_content   (vault-wide; too broad when you already know the file)
+//   - search_content   (multi-file; supports directory scoping via `path`,
 //   - read_file        (returns the entire file body when you only needed
 //                             a few line numbers)
 //
@@ -88,7 +88,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "a follow-up `edit_lines` call). Multiple queries are OR-combined; each match " +
                     "reports its `matched_query`. Optional `heading_path` restricts the search to a " +
                     "single heading-anchored region (use `get_metadata` first to discover the outline). " +
-                    "For vault-wide search across many files, use `search_content` instead.",
+                    "For multi-file search, use `search_content` instead (supports optional `path` for directory scoping).",
                 parameters: {
                     type: "object",
                     properties: {

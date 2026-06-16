@@ -1,15 +1,16 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { checkRegexSafety } from "../_shared";
+import { checkRegexSafety, isFailure, requireFolder } from "../_shared";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: search_content
 //
-// Vault-wide full-text search across all markdown files. Intentionally has
-// NO single-file mode — when the file is already known, callers must use
-// `grep_file` instead, which is far cheaper and supports section
-// anchoring + multi-query OR.
+// Full-text search across markdown files. By default searches the entire vault
+// — narrow to a directory subtree via the optional `path` parameter.
+// Intentionally has NO single-file mode — when the file is already known,
+// callers must use `grep_file` instead, which is far cheaper and supports
+// section anchoring + multi-query OR.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -21,8 +22,9 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
             function: {
                 name: "search_content",
                 description:
-                    "Vault-wide full-text search across ALL markdown files; returns matching files with " +
+                    "Full-text search across markdown files; returns matching files with " +
                     "1-based physical line numbers and surrounding context lines. Leading blank lines are not skipped — an empty first line counts as line 1. " +
+                    "Searches the ENTIRE vault by default. Provide `path` to limit the search to a single directory subtree. " +
                     "Use when the target file is UNKNOWN. " +
                     "If you already know the file, use `grep_file` instead — much cheaper, supports " +
                     "multiple queries at once, and can be scoped to a heading section. Paginated via " +
@@ -35,6 +37,15 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                             description:
                                 "Text or regular expression pattern to search for inside file contents. " +
                                 "When use_regex is true, this is treated as a JavaScript regular expression pattern.",
+                        },
+                        path: {
+                            type: "string",
+                            description:
+                                "Optional vault-relative directory path to scope the search to. " +
+                                "When provided, only files under this directory (recursively) are searched. " +
+                                "Omit or pass '' to search the entire vault. " +
+                                "Use this when you know the general folder (e.g. 'Projects/MyApp') " +
+                                "but not the exact file — much cheaper than a vault-wide scan.",
                         },
                         use_regex: {
                             type: "boolean",
@@ -70,6 +81,7 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
         capabilities: ["read_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal) => {
             const query = args["query"] as string;
+            const rawPath = args["path"] as string | undefined;
             const caseSensitive = (args["case_sensitive"] as boolean) ?? false;
             const skip = Math.max(0, (args["skip"] as number) ?? 0);
             const limit = Math.max(1, (args["limit"] as number) ?? 10);
@@ -109,7 +121,17 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                 };
             }
 
-            const filesToSearch = plugin.app.vault.getMarkdownFiles();
+            // ── Resolve search scope ────────────────────────────────────────
+            let searchPath: string | null = null;
+            let filesToSearch = plugin.app.vault.getMarkdownFiles();
+
+            if (rawPath && rawPath.length > 0 && rawPath !== "/") {
+                const folderOrErr = requireFolder(plugin.app, rawPath);
+                if (isFailure(folderOrErr)) return folderOrErr;
+                searchPath = rawPath;
+                const prefix = searchPath.endsWith("/") ? searchPath : searchPath + "/";
+                filesToSearch = filesToSearch.filter((f) => f.path.startsWith(prefix));
+            }
 
             type FileMatch = {
                 path: string;
@@ -148,6 +170,7 @@ export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool 
                 type: "object",
                 content: {
                     query,
+                    ...(searchPath ? { path: searchPath } : {}),
                     total,
                     count: matches.length,
                     skip,
