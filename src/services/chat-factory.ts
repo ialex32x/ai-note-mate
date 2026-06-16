@@ -301,30 +301,57 @@ export function createChatAgent(
             if (!skillPrefix) return memoryPrefix;
             return `${memoryPrefix}\n${skillPrefix}`;
         },
-        // Per-turn TODO reminder: when there are pending / in-progress
-        // items the model hasn't been reminded about since the last
-        // context compression or session reload, append a lightweight
-        // hint so the model remembers to call `manage_todos({ action: "list" })`.
-        // This closes the gap between out-of-band persisted TODO state and
-        // the model's in-band conversation history that can lose TODO
-        // awareness after summarisation. The hint intentionally does NOT
-        // list item details — the model should call `list` to retrieve
-        // the authoritative snapshot.
+        // Per-turn TODO reminder: inject the active (pending / in_progress)
+        // items directly into the system prompt so the model sees them
+        // without needing an explicit `manage_todos({ action: "list" })`
+        // call. Only `id`, `brief`, and `status` are injected — `content`
+        // is deliberately omitted to keep token usage bounded; the model
+        // can still call `list` when it needs the full scratchpad.
+        //
+        // Strategy mirrors the "hybrid injection" pattern used by Cursor:
+        // - ≤ MAX_INLINE items → all active items injected inline.
+        // - > MAX_INLINE items → show first MAX_INLINE (in_progress
+        //   first), then a summary hint + `list` fallback.
+        // Completed / cancelled items are never injected (pure noise).
         systemPromptSuffix: () => {
             if (!callbacks.getTodoStateSource) return '';
             const source = callbacks.getTodoStateSource();
             if (!source) return '';
             const state = source.get();
-            const pendingCount = state.items.filter(
-                i => i.status !== 'completed' && i.status !== 'cancelled',
-            ).length;
-            if (pendingCount === 0) return '';
-            const taskWord = pendingCount === 1 ? 'task' : 'tasks';
-            return (
-                '## Pending tasks\n\n' +
-                `You have ${pendingCount} ${taskWord} (pending or in_progress) from a previous plan. ` +
-                'Call `manage_todos({ action: "list" })` to review them before deciding your next steps.'
+
+            const active = state.items.filter(
+                i => i.status === 'pending' || i.status === 'in_progress',
             );
+            if (active.length === 0) return '';
+
+            // in_progress first (current focus), then pending
+            const sorted = [...active].sort((a, b) => {
+                if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+                if (a.status !== 'in_progress' && b.status === 'in_progress') return 1;
+                return 0;
+            });
+
+            const MAX_INLINE = 5;
+            const shown = sorted.slice(0, MAX_INLINE);
+            const remaining = sorted.length - MAX_INLINE;
+
+            const lines = shown.map(
+                item => `- [${item.status}] ${item.brief} (\`${item.id}\`)`,
+            );
+
+            let block: string;
+            if (remaining <= 0) {
+                block = `## Active TODO items\n\n${lines.join('\n')}`;
+            } else {
+                block =
+                    `## Active TODO items (${sorted.length} remaining, showing first ${MAX_INLINE})\n\n` +
+                    `${lines.join('\n')}\n` +
+                    `... and ${remaining} more. Call \`manage_todos({ action: "list" })\` for full details.`;
+            }
+
+            block +=
+                '\n\nMark items done via `manage_todos({ action: "update", id: "...", status: "completed" })`.';
+            return block;
         },
         compressionOptions,
         dynamicTools: () => callbacks.getDynamicTools(),
