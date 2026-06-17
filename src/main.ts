@@ -139,8 +139,11 @@ export default class NoteAssistantPlugin extends Plugin {
 			// Obsidian metadata like tags/aliases don't pollute the prompt.
 			const content = parseFrontmatterFromContent(rawContent).body;
 			this.agentMdCache = { content, mtime, path: af.path };
-		} catch {
-			// Swallow — a broken AGENT.md should never block anything.
+		} catch (err) {
+			// A broken AGENT.md should never block anything, but we log
+			// the error so filesystem issues (permissions, corruption)
+			// don't stay invisible forever.
+			console.warn('[NoteMate] Failed to read AGENT.md, cache cleared:', err);
 			this.agentMdCache = null;
 		}
 	}

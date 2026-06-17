@@ -60,9 +60,16 @@ function isRetryableError(err: unknown, httpStatus?: number): boolean {
     }
 
     // Network-level failures (TypeError from fetch for connection issues,
-    // DNS failures, etc.). Also retry generic Error from fetch polyfills
-    // on mobile.
+    // DNS failures, etc.).
     if (err instanceof TypeError) return true;
+    // Mobile fetch polyfills (e.g. React Native, Capacitor) may throw a
+    // plain Error rather than TypeError on network failure. Treat any
+    // remaining Error without an explicit HTTP status as a network-level
+    // failure worth retrying.
+    // NOTE: this catch-all is correct for fetchWithRetry /
+    // requestUrlWithRetry whose `fn` is always a network call.  The
+    // generic withRetry() shares this classifier — do NOT use withRetry
+    // for non-network operations or it will retry on every Error.
     if (err instanceof Error && !httpStatus) return true;
 
     return false;

@@ -666,16 +666,21 @@ export class SessionManager {
         // Clean up generated-asset cache
         this.toolCallAssetsCache.delete(id);
 
-        // If deleted session was active, clear the slot so the caller can
-        // decide the successor. The caller MUST re-establish a valid active
+        // Save list.json after successful memory deletion — must go through
+        // the write chain so concurrent background saves do not race.
+        //
+        // IMPORTANT: saveMetadata() runs BEFORE clearing _activeSessionId
+        // so the on-disk list.json never contains activeSessionId: "".
+        // When wasActive is true the stored id points to a now-absent
+        // session; loadFromCache() handles this gracefully via its
+        // metadataMap.has() guard and falls back to the constructor-
+        // created default. The caller MUST re-establish a valid active
         // session (via switchTo() or createSession()) after this call.
+        await this.saveMetadata();
+
         if (wasActive) {
             this._activeSessionId = '';
         }
-
-        // Save list.json after successful memory deletion — must go through
-        // the write chain so concurrent background saves do not race.
-        await this.saveMetadata();
 
         // Delete messages file (failure is non-critical)
         try {

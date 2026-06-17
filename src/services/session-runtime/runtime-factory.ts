@@ -261,6 +261,10 @@ export function createSessionRuntime(
                     runtime.pendingConfirmations.delete(messageId);
                     reject(new DOMException('Aborted', 'AbortError'));
                 };
+                // { once: true } guarantees the listener is auto-removed
+                // after firing once, so dispose() does not need to
+                // manually call removeEventListener here — resolving the
+                // pending confirmation and clearing the map is sufficient.
                 signal?.addEventListener('abort', onAbort, { once: true });
                 runtime.enqueueConfirmation(messageId, (approved) => {
                     // Normal resolution path — detach the abort listener
