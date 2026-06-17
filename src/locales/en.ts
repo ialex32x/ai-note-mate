@@ -238,6 +238,7 @@ export const en: Record<string, string> = {
 	'settings.agentMdOpenNote': 'Open AGENT.md',
 	'settings.agentMdNoteMissing': 'AGENT.md does not exist yet.',
 	'settings.agentMdCreated': 'Created AGENT.md at {path}.',
+	'settings.agentMdTemplate': '## Rules\n- Use clear, concise language. Prefer Markdown for formatting.\n- Cite specific notes with wiki links when relevant.\n- Ask clarifying questions when the request is ambiguous.\n\n## Mermaid charts\nWhen the user\'s request involves data that benefits from visualization (comparisons, proportions, trends, workflows), output a Mermaid code block. Use:\n- `pie` for proportions / percentages\n- `xychart-beta` for bar charts / comparisons\n- `flowchart` or `graph` for processes / relationships\n- `sequenceDiagram` for interactions / timelines\nAlways prefer concrete data over invented numbers.',
 	'settings.enterToSend': 'Enter to send',
 	'settings.enterToSendDesc': 'When enabled, Enter sends the message and Shift+Enter inserts a newline. When disabled, the behavior is reversed.',
 	'settings.resetTips': 'Reset usage tips',

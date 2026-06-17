@@ -278,14 +278,9 @@ export class GlobalSettingsSection implements SettingsSection {
 	}
 
 	/** Default template for newly-created AGENT.md. */
-	private static readonly AGENT_MD_TEMPLATE = [
-		'You are a knowledgeable AI assistant.',
-		'',
-		'## Rules',
-		'- Use clear, concise language. Prefer Markdown for formatting.',
-		'- Cite specific notes with wiki links when relevant.',
-		'- Ask clarifying questions when the request is ambiguous.',
-	].join('\n');
+	private static get AGENT_MD_TEMPLATE(): string {
+		return t('settings.agentMdTemplate');
+	}
 
 	private renderAgentMdPathField(container: HTMLElement): void {
 		const { app, plugin, refreshSection } = this.ctx;

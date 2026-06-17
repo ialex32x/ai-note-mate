@@ -238,6 +238,7 @@ export const ko: Record<string, string> = {
 	'settings.agentMdOpenNote': 'AGENT.md 열기',
 	'settings.agentMdNoteMissing': 'AGENT.md가 아직 존재하지 않습니다.',
 	'settings.agentMdCreated': '{path}에 AGENT.md를 생성했습니다.',
+	'settings.agentMdTemplate': '## 규칙\n- 명확하고 간결한 언어를 사용하세요. Markdown 서식을 권장합니다.\n- 관련 노트를 언급할 때는 위키 링크(wiki-link)를 사용하세요.\n- 요청이 모호할 때는 명확히 하기 위한 질문을 하세요.\n\n## Mermaid 차트\n사용자의 요청에 시각화가 도움이 되는 데이터(비교, 비율, 추세, 워크플로우)가 포함된 경우 Mermaid 코드 블록을 출력하세요. 사용법:\n- `pie`: 비율 / 백분율\n- `xychart-beta`: 막대 차트 / 비교\n- `flowchart` 또는 `graph`: 프로세스 / 관계\n- `sequenceDiagram`: 상호작용 / 타임라인\n항상 구체적인 데이터를 우선 사용하고, 숫자를 지어내지 마세요.',
 	'settings.enterToSend': 'Enter로 전송',
 	'settings.enterToSendDesc': '활성화하면 Enter로 메시지를 전송하고 Shift+Enter로 줄바꿈합니다. 비활성화하면 동작이 반대로 됩니다.',
 	'settings.resetTips': '사용 팁 초기화',

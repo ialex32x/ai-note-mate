@@ -238,6 +238,7 @@ export const zhCN: Record<string, string> = {
 	'settings.agentMdOpenNote': '打开 AGENT.md',
 	'settings.agentMdNoteMissing': 'AGENT.md 尚未存在。',
 	'settings.agentMdCreated': '已在 {path} 创建 AGENT.md。',
+	'settings.agentMdTemplate': '## 规则\n- 使用清晰、简洁的语言。推荐使用 Markdown 格式化。\n- 提及相关笔记时，使用维基链接（wiki-link）。\n- 当请求不明确时，主动追问澄清。\n\n## Mermaid 图表\n当用户的问题涉及需要通过可视化来呈现的数据（比较、占比、趋势、流程）时，请输出 Mermaid 代码块。使用：\n- `pie` 表示占比 / 百分比\n- `xychart-beta` 表示柱状图 / 比较\n- `flowchart` 或 `graph` 表示流程 / 关系\n- `sequenceDiagram` 表示交互 / 时间线\n始终优先使用真实数据，不要凭空捏造数字。',
 	'settings.enterToSend': 'Enter 发送',
 	'settings.enterToSendDesc': '开启后，Enter 发送消息，Shift+Enter 换行。关闭后行为相反。',
 	'settings.resetTips': '重置使用提示',
