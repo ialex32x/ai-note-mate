@@ -2,7 +2,6 @@ import type { App } from "obsidian";
 import { createDefaultProfile } from "./defaults";
 import { ARTIFACT_STORE_DEFAULTS, type ArtifactStoreOptions } from "../services/artifact-store";
 import { resolveSecret } from "../utils/secret-helper";
-import type { DashScopeRegion } from "./types";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
@@ -112,7 +111,7 @@ export function getActiveSpeechToTextConfig(settings: NoteAssistantPluginSetting
  *   - ap-southeast-1 → https://{workspaceId}.ap-southeast-1.maas.aliyuncs.com
  *   - eu-central-1   → https://{workspaceId}.eu-central-1.maas.aliyuncs.com
  */
-export function getSttBaseUrl(region: DashScopeRegion, workspaceId: string): string {
+export function getSttBaseUrl(region: string, workspaceId: string): string {
 	switch (region) {
 		case 'cn-beijing':
 			return 'https://dashscope.aliyuncs.com';
@@ -122,6 +121,8 @@ export function getSttBaseUrl(region: DashScopeRegion, workspaceId: string): str
 			return `https://${workspaceId}.ap-southeast-1.maas.aliyuncs.com`;
 		case 'eu-central-1':
 			return `https://${workspaceId}.eu-central-1.maas.aliyuncs.com`;
+		default:
+			return 'https://dashscope.aliyuncs.com';
 	}
 }
 
@@ -135,14 +136,31 @@ export function isActiveSpeechToTextConfigured(
 ): boolean {
 	const config = getActiveSpeechToTextConfig(settings);
 	if (!config) return false;
-	if ((config.shortModel || '').trim().length === 0) return false;
-	if ((config.longModel || '').trim().length === 0) return false;
-	// workspaceId is required for Singapore and Frankfurt
-	if ((config.region === 'ap-southeast-1' || config.region === 'eu-central-1')
-		&& (config.workspaceId || '').trim().length === 0) {
-		return false;
+
+	switch (config.apiScheme) {
+		case 'TencentCloud': {
+			if (resolveSecret(app, config.secretId).trim().length === 0) return false;
+			if (resolveSecret(app, config.secretKey).trim().length === 0) return false;
+			if ((config.engineModelType || '').trim().length === 0) return false;
+			// COS is optional, but if bucket is configured it must be paired
+			// with a region and have valid name-appid format.
+			const bucket = (config.cosBucket || '').trim();
+			const cosRegion = (config.cosRegion || '').trim();
+			if (bucket && (!cosRegion || !isValidCosBucketName(bucket))) return false;
+			return true;
+		}
+		case 'DashScope':
+		default: {
+			if ((config.shortModel || '').trim().length === 0) return false;
+			if ((config.longModel || '').trim().length === 0) return false;
+			// workspaceId is required for Singapore and Frankfurt
+			if ((config.region === 'ap-southeast-1' || config.region === 'eu-central-1')
+				&& (config.workspaceId || '').trim().length === 0) {
+				return false;
+			}
+			return resolveSecret(app, config.apiKey).trim().length > 0;
+		}
 	}
-	return resolveSecret(app, config.apiKey).trim().length > 0;
 }
 
 /**
@@ -180,4 +198,25 @@ export function deriveArtifactStoreOptions(settings: NoteAssistantPluginSettings
 		: ARTIFACT_STORE_DEFAULTS.ttlMs;
 
 	return { totalBytesCap, singleArtifactCap, ttlMs };
+}
+
+/**
+ * Validate a COS bucket name.
+ *
+ * COS bucket names use the format `{BucketName}-{APPID}` where:
+ *   - BucketName: 1-50 characters, lowercase letters, digits, and hyphens.
+ *   - APPID: numeric string (e.g. "1250000000").
+ */
+export function isValidCosBucketName(bucket: string): boolean {
+	return /^[a-z0-9][a-z0-9-]{0,48}[a-z0-9]-[0-9]+$/.test(bucket);
+}
+
+/**
+ * True when COS is fully configured for large-file transcription.
+ * Requires a valid bucket name and non-empty region.
+ */
+export function isCosConfigured(config: SpeechToTextConfig): boolean {
+	const bucket = (config.cosBucket || '').trim();
+	const region = (config.cosRegion || '').trim();
+	return bucket.length > 0 && region.length > 0 && isValidCosBucketName(bucket);
 }

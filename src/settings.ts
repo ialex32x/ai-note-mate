@@ -21,6 +21,8 @@ export {
 	isActiveTextGenConfigured as isActiveProfileConfigured,
 	isActiveImageGenConfigured,
 	isActiveSpeechToTextConfigured,
+	isValidCosBucketName,
+	isCosConfigured,
 	hasMcpServersConfigured,
 } from "./settings/helpers";
 export { NoteAssistantSettingTab } from "./settings/settings-tab";

@@ -6,6 +6,7 @@ export const DefaultGeminiImageModel = "gemini-3-pro-image-preview";
 
 export const DefaultDashScopeShortModel = "qwen3-asr-flash";
 export const DefaultDashScopeLongModel = "qwen3-asr-flash-filetrans";
+export const DefaultTencentCloudEngineModelType = "16k_zh";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Provider Profile
@@ -124,7 +125,7 @@ export interface EmbeddingConfig {
 // Speech-to-Text
 // ─────────────────────────────────────────────────────────────────────────────
 
-export type SpeechToTextApiScheme = 'DashScope';
+export type SpeechToTextApiScheme = 'DashScope' | 'TencentCloud';
 
 /** DashScope region identifiers for speech-to-text. */
 export type DashScopeRegion = 'cn-beijing' | 'us-east-1' | 'ap-southeast-1' | 'eu-central-1';
@@ -137,20 +138,40 @@ export interface SpeechToTextConfig {
 	/** API scheme to distinguish which API to use */
 	apiScheme: SpeechToTextApiScheme;
 
-	// ── DashScope-specific fields ───────────────────────────────────────────
-	/** DashScope region to use */
-	region: DashScopeRegion;
+	// ── Shared fields ───────────────────────────────────────────────────
+	/** Service region (DashScope regions like 'cn-beijing', or Tencent Cloud regions like 'ap-guangzhou') */
+	region: string;
 	/**
 	 * Workspace ID. Required for Singapore and Frankfurt regions;
 	 * optional for cn-beijing and us-east-1.
+	 * (ignored when apiScheme is not 'DashScope')
 	 */
 	workspaceId: string;
-	/** API key for DashScope */
+	/** API key for DashScope (ignored when apiScheme is not 'DashScope') */
 	apiKey: string;
-	/** Model for short audio transcription (inline API) */
+	/** Model for short audio transcription (inline API, ignored when apiScheme is not 'DashScope') */
 	shortModel: string;
-	/** Model for long audio transcription (async file API) */
+	/** Model for long audio transcription (async file API, ignored when apiScheme is not 'DashScope') */
 	longModel: string;
+
+	// ── TencentCloud-specific fields ────────────────────────────────────────
+	/** Tencent Cloud SecretId (ignored when apiScheme is not 'TencentCloud') */
+	secretId: string;
+	/** Tencent Cloud SecretKey (ignored when apiScheme is not 'TencentCloud') */
+	secretKey: string;
+	/** ASR engine model type, e.g. "16k_zh" (ignored when apiScheme is not 'TencentCloud') */
+	engineModelType: string;
+	/**
+	 * COS bucket name in format "name-appid" (e.g. "mybucket-1250000000").
+	 * Required for files > 5 MB. Optional for smaller files.
+	 * (ignored when apiScheme is not 'TencentCloud')
+	 */
+	cosBucket: string;
+	/**
+	 * COS region (e.g. "ap-guangzhou"). Required when cosBucket is configured.
+	 * (ignored when apiScheme is not 'TencentCloud')
+	 */
+	cosRegion: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -3,9 +3,10 @@ import type { RegisteredTool, ToolCallResult } from "../chat-stream";
 import type { ToolCapability } from "../llm-provider";
 import type { SpeechToTextConfig } from "../../settings";
 import type { ArtifactStore } from "../artifact-store";
-import { getActiveSpeechToTextConfig, getSttBaseUrl } from "../../settings";
+import { getActiveSpeechToTextConfig, getSttBaseUrl, isCosConfigured } from "../../settings";
 import { normalizePath, TFile, arrayBufferToBase64, type App } from "obsidian";
 import { transcribeWithQwenASR, transcribeLargeFileWithAsyncASR } from "../speech-to-text/qwen";
+import { transcribeWithTencentASR } from "../speech-to-text/tencent";
 import { getMimeType } from "../../utils/mime-helper";
 import { resolveSecret } from "../../utils/secret-helper";
 import { recordIssue } from "../diagnostics/issue-tracer";
@@ -30,6 +31,8 @@ export function createSpeechToTextTool(
     }
 
     switch (sttConfig.apiScheme) {
+        case 'TencentCloud':
+            return createTencentCloudASRTool(plugin, sttConfig, getArtifactStore);
         case 'DashScope':
         default:
             return createQwenASRTool(plugin, sttConfig, getArtifactStore);
@@ -177,9 +180,147 @@ function createQwenASRTool(
                 };
             } catch (err) {
                 return handleSTTError(err);
+}
+    },
+    };
+}
+
+/**
+ * Create Tencent Cloud ASR speech-to-text tool.
+ */
+function createTencentCloudASRTool(
+    plugin: NoteAssistantPlugin,
+    sttConfig: SpeechToTextConfig,
+    getArtifactStore?: () => ArtifactStore | null,
+): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "transcribe_audio",
+                description:
+                    "Transcribe audio from a file in the vault to text using Tencent Cloud speech-to-text. " +
+                    "Use this when the user asks to transcribe, convert speech to text, or get the text content " +
+                    "from an audio file (mp3, wav, m4a, ogg, flac, webm). " +
+                    "Returns the transcribed text content. " +
+                    "For large files, the transcription runs asynchronously and the result is saved " +
+                    "in the artifact store — use recall_artifact to retrieve it if the tool reports " +
+                    "the task is still running.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        audio_file_path: {
+                            type: "string",
+                            description:
+                                "The vault file path of the audio file to transcribe. " +
+                                "Supported formats: mp3, wav, m4a, ogg, flac, webm. " +
+                                "The file must exist in the vault.",
+                        },
+                        language: {
+                            type: "string",
+                            description:
+                                "Optional language hint for transcription (e.g. 'zh' for Chinese, 'en' for English). " +
+                                "Omit for automatic language detection.",
+                        },
+                    },
+                    required: ["audio_file_path"],
+                },
+            },
+        },
+        capabilities: ["network", "read_file"] as ToolCapability[],
+        requiresConfirmation: true,
+        exec: async (_chatStream, args, signal): Promise<ToolCallResult> => {
+            const audioFilePath = args["audio_file_path"] as string;
+            const language = args["language"] as string | undefined;
+
+            try {
+                // Read the audio file from the vault
+                const readResult = await readAudioFileForTranscription(plugin.app, audioFilePath);
+
+                // Tencent Cloud ASR always uses the async path (CreateRecTask + polling).
+                // Files ≤ 5 MB: base64 inline via SourceType=1.
+                // Files > 5 MB: COS upload → SourceType=0.
+                const artifactStore = getArtifactStore?.();
+                if (!artifactStore) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `Transcription requires an artifact store, which is not available in this session mode.`,
+                    };
+                }
+
+                if (readResult.type === "binary" && !isCosConfigured(sttConfig)) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: `Audio file is too large (${(readResult.fileData.byteLength / 1024 / 1024).toFixed(1)} MB). ` +
+                            `Tencent Cloud requires COS bucket (format: name-appid) and region for files > 5 MB. ` +
+                            `Please configure both in Settings → Speech-to-Text.`,
+                    };
+                }
+
+                const resolvedSecretId = resolveSecret(plugin.app, sttConfig.secretId).trim();
+                const resolvedSecretKey = resolveSecret(plugin.app, sttConfig.secretKey).trim();
+
+                if (!resolvedSecretId || !resolvedSecretKey) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: "Tencent Cloud SecretId or SecretKey is not configured.",
+                    };
+                }
+
+                // Debug: log key lengths (not values) to diagnose signing issues
+                console.debug("[TencentCloudSTT] resolved SecretId length:", resolvedSecretId.length,
+                    "SecretKey length:", resolvedSecretKey.length);
+
+                const asyncResult = await transcribeWithTencentASR({
+                    secretId: resolvedSecretId,
+                    secretKey: resolvedSecretKey,
+                    engineModelType: sttConfig.engineModelType || '16k_zh',
+                    region: sttConfig.region,
+                    fileName: readResult.type === "binary" ? readResult.fileName : audioFilePath.split("/").pop() || "audio.wav",
+                    fileData: readResult.type === "binary" ? readResult.fileData : dataUriToArrayBuffer(readResult.dataUri),
+                    cosBucket: sttConfig.cosBucket || undefined,
+                    cosRegion: sttConfig.cosRegion || undefined,
+                    language,
+                    signal,
+                    artifactStore,
+                    vaultPath: audioFilePath,
+                });
+
+                if (!asyncResult.success) {
+                    return {
+                        success: false,
+                        type: "text",
+                        content: asyncResult.error || "Speech-to-text transcription failed.",
+                    };
+                }
+
+                return {
+                    success: true,
+                    type: "text",
+                    content: asyncResult.text || "",
+                };
+            } catch (err) {
+                return handleSTTError(err);
             }
         },
     };
+}
+
+/** Convert data URI to ArrayBuffer (for extracting binary from data URIs). */
+function dataUriToArrayBuffer(dataUri: string): ArrayBuffer {
+    const base64 = dataUri.split(",")[1];
+    if (!base64) throw new Error("Invalid data URI: missing base64 data");
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes.buffer;
 }
 
 /**

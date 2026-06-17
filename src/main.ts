@@ -594,6 +594,21 @@ export default class NoteAssistantPlugin extends Plugin {
 				if (typeof stt.longModel !== 'string' || stt.longModel.length === 0) {
 					stt.longModel = 'qwen3-asr-flash-filetrans';
 				}
+				if (typeof stt.secretId !== 'string') {
+					stt.secretId = '';
+				}
+				if (typeof stt.secretKey !== 'string') {
+					stt.secretKey = '';
+				}
+				if (typeof stt.engineModelType !== 'string') {
+					stt.engineModelType = '16k_zh';
+				}
+				if (typeof stt.cosBucket !== 'string') {
+					stt.cosBucket = '';
+				}
+				if (typeof stt.cosRegion !== 'string') {
+					stt.cosRegion = '';
+				}
 				if ('model' in s) delete s.model;
 				if ('baseUrl' in s) delete s.baseUrl;
 			}

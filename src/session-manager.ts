@@ -99,6 +99,14 @@ interface SessionListFile {
     sessions: SessionMetadata[];
 }
 
+/** Global cumulative token statistics (stored in sessions/statistics.json) */
+interface GlobalTokenStatisticsFile {
+    version: 1;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+}
+
 /** Snapshot of a session (full data for backward compatibility with public API) */
 export interface SessionSnapshot {
     id: string;
@@ -139,6 +147,9 @@ export class SessionManager {
     /** Set of session IDs whose messages have been loaded */
     private loadedMessages: Set<string> = new Set();
 
+    /** Global cumulative token usage across all sessions, persisted in statistics.json */
+    private _globalTokenStats: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+
     /**
      * Sequential write chain to prevent concurrent file writes (list.json + session files).
      *
@@ -161,6 +172,7 @@ export class SessionManager {
     private readonly app: App;
     private sessionsDir: string;
     private listFilePath: string;
+    private statisticsFilePath: string;
     private cacheLoaded = false;
 
     /**
@@ -173,6 +185,7 @@ export class SessionManager {
         this.app = app;
         this.sessionsDir = sessionsDir;
         this.listFilePath = `${this.sessionsDir}/list.json`;
+        this.statisticsFilePath = `${this.sessionsDir}/statistics.json`;
         this._activeSessionId = this.createSession();
     }
 
@@ -182,6 +195,11 @@ export class SessionManager {
 
     get sessionCount(): number {
         return this.metadataMap.size;
+    }
+
+    /** Get the global cumulative token usage across all sessions */
+    getGlobalTokenUsage(): TokenUsage {
+        return { ...this._globalTokenStats };
     }
 
     /** Get all sessions sorted by updatedAt (most recent first) - metadata only, no messages */
@@ -525,6 +543,15 @@ export class SessionManager {
             }
         }
 
+        // Compute delta vs previous metadata and accumulate into global stats.
+        // Only positive deltas are applied — token usage is monotonic within a
+        // session, so a negative delta would indicate a bug; clamping prevents
+        // the global stats from going out of sync.
+        const prev = meta.tokenUsage;
+        this._globalTokenStats.promptTokens += Math.max(0, currentTokenUsage.promptTokens - prev.promptTokens);
+        this._globalTokenStats.completionTokens += Math.max(0, currentTokenUsage.completionTokens - prev.completionTokens);
+        this._globalTokenStats.totalTokens += Math.max(0, currentTokenUsage.totalTokens - prev.totalTokens);
+
         meta.tokenUsage = { ...currentTokenUsage };
         meta.updatedAt = Date.now();
     }
@@ -647,6 +674,15 @@ export class SessionManager {
         if (!this.metadataMap.has(id)) return false;
 
         const wasActive = id === this._activeSessionId;
+
+        // Deduct the session's token usage from global stats before removing metadata
+        const meta = this.metadataMap.get(id)!;
+        this._globalTokenStats.promptTokens = Math.max(0,
+            this._globalTokenStats.promptTokens - meta.tokenUsage.promptTokens);
+        this._globalTokenStats.completionTokens = Math.max(0,
+            this._globalTokenStats.completionTokens - meta.tokenUsage.completionTokens);
+        this._globalTokenStats.totalTokens = Math.max(0,
+            this._globalTokenStats.totalTokens - meta.tokenUsage.totalTokens);
 
         this.metadataMap.delete(id);
 
@@ -1057,11 +1093,53 @@ export class SessionManager {
                 this._nextId = data.nextId;
             }
 
+            // Load global token statistics after sessions are restored (so
+            // the fallback can recompute from metadata if the file is absent
+            // or corrupt — first-run migration for existing users).
+            await this._loadGlobalStatistics();
+
             this.cacheLoaded = true;
         } catch (error) {
             console.warn('[SessionManager] Failed to load cache:', error);
             this.cacheLoaded = true;
         }
+    }
+
+    /**
+     * Load global cumulative token statistics from statistics.json.
+     * Falls back to recomputing from all session metadata when the file
+     * is absent, has an unknown version, or is corrupt.
+     */
+    private async _loadGlobalStatistics(): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        try {
+            if (await adapter.exists(this.statisticsFilePath)) {
+                const content = await adapter.read(this.statisticsFilePath);
+                const stats = JSON.parse(content) as GlobalTokenStatisticsFile;
+                if (stats.version === 1
+                    && typeof stats.promptTokens === 'number'
+                    && typeof stats.completionTokens === 'number'
+                    && typeof stats.totalTokens === 'number') {
+                    this._globalTokenStats = {
+                        promptTokens: stats.promptTokens,
+                        completionTokens: stats.completionTokens,
+                        totalTokens: stats.totalTokens,
+                    };
+                    return;
+                }
+            }
+        } catch {
+            // File absent or corrupt — fall through to recompute.
+        }
+
+        // Fallback: recompute from all session metadata (first-run migration).
+        let p = 0, c = 0, t = 0;
+        for (const meta of this.metadataMap.values()) {
+            p += meta.tokenUsage.promptTokens;
+            c += meta.tokenUsage.completionTokens;
+            t += meta.tokenUsage.totalTokens;
+        }
+        this._globalTokenStats = { promptTokens: p, completionTokens: c, totalTokens: t };
     }
 
     /**
@@ -1097,6 +1175,15 @@ export class SessionManager {
             };
 
             await adapter.write(this.listFilePath, JSON.stringify(listData, null, 2));
+
+            // Save global token statistics
+            const statsData: GlobalTokenStatisticsFile = {
+                version: 1,
+                promptTokens: this._globalTokenStats.promptTokens,
+                completionTokens: this._globalTokenStats.completionTokens,
+                totalTokens: this._globalTokenStats.totalTokens,
+            };
+            await adapter.write(this.statisticsFilePath, JSON.stringify(statsData, null, 2));
 
             // Save all loaded messages to individual files
             for (const id of this.loadedMessages) {

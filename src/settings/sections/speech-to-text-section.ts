@@ -1,7 +1,7 @@
 import { t } from "../../i18n";
 import { createDefaultSpeechToTextConfig } from "../defaults";
-import { DefaultDashScopeShortModel, DefaultDashScopeLongModel } from "../types";
-import type { DashScopeRegion, SpeechToTextApiScheme, SpeechToTextConfig } from "../types";
+import { DefaultDashScopeShortModel, DefaultDashScopeLongModel, DefaultTencentCloudEngineModelType } from "../types";
+import type { SpeechToTextApiScheme, SpeechToTextConfig } from "../types";
 import {
 	createApiKeyField,
 	createDropdownField,
@@ -10,6 +10,8 @@ import {
 } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { SPEECH_TO_TEXT_SECTION_ID } from "../section-ids";
+
+const DASHSCOPE_REGIONS = new Set(['cn-beijing', 'us-east-1', 'ap-southeast-1', 'eu-central-1']);
 
 export class SpeechToTextSettingsSection implements SettingsSection {
 	readonly titleKey = SPEECH_TO_TEXT_SECTION_ID;
@@ -118,10 +120,16 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 			desc: t('settings.apiSchemeDesc'),
 			options: {
 				'DashScope': 'DashScope',
+				'TencentCloud': 'Tencent Cloud ASR',
 			},
 			value: config.apiScheme,
 			onChange: async (value) => {
 				config.apiScheme = value as SpeechToTextApiScheme;
+				// DashScope regions are not valid Tencent Cloud regions; clear when
+				// switching schemes to avoid InvalidParameterValue on X-TC-Region.
+				if (value === 'TencentCloud' && DASHSCOPE_REGIONS.has(config.region)) {
+					config.region = '';
+				}
 				await plugin.saveSettings();
 				refreshSection(this);
 			},
@@ -129,6 +137,9 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 
 		// Scheme-specific fields
 		switch (config.apiScheme) {
+			case 'TencentCloud':
+				this.renderTencentCloudFields(container, config, app, plugin, refreshSection);
+				break;
 			case 'DashScope':
 				this.renderDashScopeFields(container, config, app, plugin, refreshSection);
 				break;
@@ -155,7 +166,7 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 			},
 			value: config.region,
 			onChange: async (value) => {
-				config.region = value as DashScopeRegion;
+				config.region = value;
 				// Clear workspaceId when switching to regions that don't need it
 				if (value === 'cn-beijing' || value === 'us-east-1') {
 					config.workspaceId = '';
@@ -218,5 +229,102 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
+	}
+
+	private renderTencentCloudFields(
+		container: HTMLElement,
+		config: SpeechToTextConfig,
+		app: SectionContext['app'],
+		plugin: SectionContext['plugin'],
+		refreshSection: SectionContext['refreshSection'],
+	): void {
+		// SecretId
+		createApiKeyField({
+			container,
+			app,
+			name: t('settings.tcSecretId'),
+			desc: t('settings.tcSecretIdDesc'),
+			value: config.secretId,
+			onChange: async (value) => {
+				config.secretId = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// SecretKey
+		createApiKeyField({
+			container,
+			app,
+			name: t('settings.tcSecretKey'),
+			desc: t('settings.tcSecretKeyDesc'),
+			value: config.secretKey,
+			onChange: async (value) => {
+				config.secretKey = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// ASR Region
+		createTextField({
+			container,
+			name: t('settings.tcAsrRegion'),
+			desc: t('settings.tcAsrRegionDesc'),
+			placeholder: 'ap-guangzhou',
+			value: config.region,
+			onChange: async (value) => {
+				config.region = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// Engine model type
+		createDropdownField({
+			container,
+			name: t('settings.tcEngineModelType'),
+			desc: t('settings.tcEngineModelTypeDesc'),
+			options: {
+				'16k_zh': '16k_zh（中文通用）',
+				'8k_zh': '8k_zh（中文电话）',
+				'16k_en': '16k_en（English）',
+				'16k_ca': '16k_ca（粤语）',
+				'16k_ja': '16k_ja（日本語）',
+				'16k_ko': '16k_ko（한국어）',
+				'16k_zh_video': '16k_zh_video（中文视频）',
+			},
+			value: config.engineModelType || DefaultTencentCloudEngineModelType,
+			onChange: async (value) => {
+				config.engineModelType = value;
+				await plugin.saveSettings();
+				refreshSection(this);
+			},
+		});
+
+		// COS Bucket (optional)
+		createTextField({
+			container,
+			name: t('settings.tcCosBucket'),
+			desc: t('settings.tcCosBucketDesc'),
+			placeholder: 'mybucket-1250000000',
+			value: config.cosBucket || '',
+			onChange: async (value) => {
+				config.cosBucket = value;
+				await plugin.saveSettings();
+			},
+		});
+
+		// COS Region (only when bucket is configured)
+		if ((config.cosBucket || '').trim().length > 0) {
+			createTextField({
+				container,
+				name: t('settings.tcCosRegion'),
+				desc: t('settings.tcCosRegionDesc'),
+				placeholder: 'ap-guangzhou',
+				value: config.cosRegion || '',
+				onChange: async (value) => {
+					config.cosRegion = value;
+					await plugin.saveSettings();
+				},
+			});
+		}
 	}
 }

@@ -1,4 +1,4 @@
-import { DefaultGeminiImageModel, DefaultDashScopeShortModel, DefaultDashScopeLongModel } from "./types";
+import { DefaultGeminiImageModel, DefaultDashScopeShortModel, DefaultDashScopeLongModel, DefaultTencentCloudEngineModelType } from "./types";
 import type {
 	EmbeddingConfig,
 	ImageGenConfig,
@@ -152,6 +152,11 @@ export function createDefaultSpeechToTextConfig(): SpeechToTextConfig {
 		apiKey: '',
 		shortModel: DefaultDashScopeShortModel,
 		longModel: DefaultDashScopeLongModel,
+		secretId: '',
+		secretKey: '',
+		engineModelType: DefaultTencentCloudEngineModelType,
+		cosBucket: '',
+		cosRegion: '',
 	};
 }
 

@@ -329,7 +329,7 @@ export function createProfileSelector(
             activeId: current.activeSpeechToTextId,
             getId: c => c.id,
             getName: c => c.name,
-            getModel: c => c.shortModel,
+            getModel: c => c.apiScheme === 'DashScope' ? c.shortModel : '',
             setActive: id => { plugin.settings.activeSpeechToTextId = id; },
         });
 
