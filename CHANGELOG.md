@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.1
+
+### What's new
+
+- **Tencent Cloud ASR** — Speech-to-text now supports Tencent Cloud as a provider alongside DashScope, with COS-based upload for large audio files.
+- **Disable skills** — Skills can now be disabled via `disable: true` in frontmatter; disabled skills are excluded from the count badge and dimmed in the details modal.
+- **Model name on assistant bubbles** — Assistant messages now display the model name that generated the response, giving better visibility into which provider handled each turn.
+- **Unread indicator** — The scroll-to-bottom button now shows a visual indicator when new messages are waiting, making it easier to catch up after scrolling away.
+- **Search directory scoping** — The `search_content` tool now supports directory-level filtering, letting agents narrow searches to specific vault folders.
+
+### Refinements
+
+- **Localized AGENT.md template** — The default AGENT.md template is now fully localized across all supported languages.
+- **Active TODO injection** — Active TODO items from the session are now automatically injected into the system prompt, keeping the agent aware of outstanding tasks.
+- **Copy button in model selector** — Model selector items now include a copy button for quickly capturing model identifiers.
+- **Leaner chat-stream** — Assistant lifecycle and QuickAsk logic have been extracted out of `chat-stream` into dedicated modules, reducing the core stream module's footprint.
+- **Context compression module** — The context reducer has been renamed and reorganized into a clean `context-compression` module with better separation of concerns.
+- **Orchestrator decomposition** — Delegate payload construction and handoff seed generation have been extracted from the orchestrator into focused, testable units.
+
+### Fixes
+
+- **Session deletion race** — A race condition when deleting sessions has been resolved, with improved logging for better diagnostics.
+- **Concurrent write safety** — Sequential write chaining now prevents concurrent write races that could corrupt session data on disk.
+- **Scroll parking** — Manually scrolling up now reliably parks auto-follow, preventing the view from snapping back during streaming.
+- **Mermaid overflow** — Long Mermaid diagrams in chat bubbles no longer overflow their containers.
+- **Casing conflict detection** — Vault casing conflict checks now handle undefined path segments and correctly scan parent folders.
+
+---
+
 ## 1.5.0
 
 ### What's new
