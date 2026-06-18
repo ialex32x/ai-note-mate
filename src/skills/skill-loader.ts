@@ -160,12 +160,24 @@ export async function loadSkillFromFile(
       body: body.trim(),
       whenToUse: parseWhenToUse(frontmatter['when_to_use']),
       triggers: parseTriggers(frontmatter['triggers']),
+      disabled: parseDisable(frontmatter['disable']),
       mtime: mtime ?? undefined,
     };
   } catch (error) {
     console.warn(`Error parsing skill file ${filePath}:`, error);
     return null;
   }
+}
+
+/**
+ * Coerce a frontmatter `disable` value to a boolean.
+ * Accepts boolean and string representations ("true"/"false").
+ * Defaults to `false` (enabled) when absent or unrecognised.
+ */
+function parseDisable(raw: unknown): boolean {
+  if (typeof raw === 'boolean') return raw;
+  if (typeof raw === 'string') return raw.trim().toLowerCase() === 'true';
+  return false;
 }
 
 /**

@@ -395,6 +395,8 @@ export const ja: Record<string, string> = {
 	'settings.skillLintNoTriggersTooltip': 'frontmatter に `triggers:` 配列を追加し、短いトリガー語/同義語をいくつか列挙してください (例:["タグ整理", "fix tags"])。埋め込みテキストに統合され、ユーザーの言い回しが説明文と異なる場合の再現率を高めます。',
 	'settings.skillLintShortDescLabel': '説明が短すぎる',
 	'settings.skillLintShortDescTooltip': '説明が 30 文字未満です。より長く、行動志向の説明 (例:「プロジェクトノートをチームスタイルに再フォーマットする」) は埋め込み器とモデルにより多くの手掛かりを与えます。',
+	'settings.skillDisabledBadge': '無効',
+	'settings.skillDisabledBadgeTooltip': 'このスキルの SKILL.md フロントマターに `disable: true` が設定されています。AI はこのスキルを利用できません。',
 
 	// ── Memory ─────────────────────────────────────────────
 	'settings.memory': 'Memory',

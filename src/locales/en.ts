@@ -395,6 +395,8 @@ export const en: Record<string, string> = {
 	'settings.skillLintNoTriggersTooltip': 'Add a `triggers:` frontmatter array with a handful of short phrases / synonyms (e.g. ["fix tags", "整理标签"]) — folded into the embedding text to improve match recall when the user\'s wording differs from the description.',
 	'settings.skillLintShortDescLabel': 'Short description',
 	'settings.skillLintShortDescTooltip': 'The description is shorter than 30 characters. A longer, action-oriented description ("Reformats project notes to the team style") gives both the embedder and the model more to latch onto.',
+	'settings.skillDisabledBadge': 'Disabled',
+	'settings.skillDisabledBadgeTooltip': 'This skill has `disable: true` in its SKILL.md frontmatter. It will not be available to the AI.',
 
 	// ── Memory ─────────────────────────────────────────────
 	'settings.memory': 'Memory',

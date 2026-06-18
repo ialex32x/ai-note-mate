@@ -395,6 +395,8 @@ export const zhCN: Record<string, string> = {
 	'settings.skillLintNoTriggersTooltip': '在 frontmatter 中添加 `triggers:` 数组,列几个短触发词/同义词 (如 ["整理标签", "fix tags"]) — 会合并到嵌入文本中,提高用户用词与描述不一致时的召回率。',
 	'settings.skillLintShortDescLabel': '描述过短',
 	'settings.skillLintShortDescTooltip': '描述短于 30 字符。更长、更具行动性的描述 (例如"按团队风格重新格式化项目笔记") 能给嵌入器和模型更多识别依据。',
+	'settings.skillDisabledBadge': '已禁用',
+	'settings.skillDisabledBadgeTooltip': '此技能的 SKILL.md 前置元数据中设置了 `disable: true`，AI 将无法使用该技能。',
 
 	// ── Memory ─────────────────────────────────────────────
 	'settings.memory': 'Memory',

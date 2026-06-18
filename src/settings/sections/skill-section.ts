@@ -23,20 +23,21 @@ export class SkillSettingsSection implements SettingsSection {
 		const { plugin, refreshSection } = this.ctx;
 
 		// Show details button (only when skills are loaded)
-		const loadedSkills = plugin.skillManager.getSkills();
-		if (loadedSkills.length > 0) {
+		const allSkills = plugin.skillManager.getAllSkills();
+		if (allSkills.length > 0) {
 			const detailsBtn = container.createEl('button', {
 				cls: 'clickable-icon oap-settings-header-action-btn oap-settings-header-action-btn--has-badge',
 			});
 			setIcon(detailsBtn, 'list');
 			setTooltip(detailsBtn, t('settings.skillShowDetails'));
-			// Count badge
+			// Count badge — show enabled count
+			const enabledCount = allSkills.filter(s => !s.disabled).length;
 			detailsBtn.createEl('span', {
 				cls: 'oap-settings-header-action-badge',
-				text: loadedSkills.length > 99 ? '99+' : String(loadedSkills.length),
+				text: enabledCount > 99 ? '99+' : String(enabledCount),
 			});
 			detailsBtn.addEventListener('click', () => {
-				new SkillDetailsModal(plugin.app, loadedSkills).open();
+				new SkillDetailsModal(plugin.app, allSkills).open();
 			});
 		}
 

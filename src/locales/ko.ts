@@ -395,6 +395,8 @@ export const ko: Record<string, string> = {
 	'settings.skillLintNoTriggersTooltip': 'frontmatter 에 `triggers:` 배열을 추가하여 짧은 트리거 구문/동의어를 몇 개 나열하세요 (예: ["태그 정리", "fix tags"]). 임베딩 텍스트에 통합되어 사용자 표현이 설명과 다를 때의 재현율을 높입니다.',
 	'settings.skillLintShortDescLabel': '설명이 너무 짧음',
 	'settings.skillLintShortDescTooltip': '설명이 30 자 미만입니다. 더 길고 행동 지향적인 설명 (예: "프로젝트 노트를 팀 스타일로 재포맷")은 임베딩과 모델에 더 많은 단서를 제공합니다.',
+	'settings.skillDisabledBadge': '비활성화됨',
+	'settings.skillDisabledBadgeTooltip': '이 스킬의 SKILL.md 프론트매터에 `disable: true` 가 설정되어 있습니다. AI 가 이 스킬을 사용할 수 없습니다.',
 
 	// ── Memory ─────────────────────────────────────────────
 	'settings.memory': 'Memory',

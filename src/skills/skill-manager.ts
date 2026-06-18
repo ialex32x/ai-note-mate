@@ -246,7 +246,7 @@ export class SkillManager {
     }
 
     // Preserve flags that are NOT derived from the file itself.
-    refreshed.disabled = skill.disabled;
+    // `disabled` is now derived from frontmatter — use the refreshed value.
     refreshed.isBuiltin = skill.isBuiltin;
     refreshed.tag = skill.tag;
 

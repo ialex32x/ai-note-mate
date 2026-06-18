@@ -395,6 +395,8 @@ export const zhTW: Record<string, string> = {
 	'settings.skillLintNoTriggersTooltip': '在 frontmatter 中加入 `triggers:` 陣列,列幾個短觸發詞/同義詞 (如 ["整理標籤", "fix tags"]) — 會合併到嵌入文字中,提高使用者用詞與描述不一致時的召回率。',
 	'settings.skillLintShortDescLabel': '描述過短',
 	'settings.skillLintShortDescTooltip': '描述短於 30 字元。更長、更具行動性的描述 (例如「按團隊風格重新格式化專案筆記」) 能給嵌入器和模型更多識別依據。',
+	'settings.skillDisabledBadge': '已停用',
+	'settings.skillDisabledBadgeTooltip': '此技能的 SKILL.md 前置元資料中設定了 `disable: true`，AI 將無法使用該技能。',
 
 	// ── Memory ─────────────────────────────────────────────
 	'settings.memory': 'Memory',

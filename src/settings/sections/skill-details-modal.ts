@@ -26,7 +26,8 @@ const SHORT_DESCRIPTION_THRESHOLD = 30;
 
 /**
  * Modal that displays the full list of loaded skills with their name,
- * location, lint badges, description, and whenToUse.
+ * location, lint badges, description, and whenToUse. Disabled skills
+ * are dimmed and marked with a badge.
  */
 export class SkillDetailsModal extends Modal {
 	constructor(
@@ -50,6 +51,9 @@ export class SkillDetailsModal extends Modal {
 			const itemEl = listEl.createEl('div', {
 				cls: 'oap-settings-skill-item',
 			});
+			if (skill.disabled) {
+				itemEl.addClass('oap-settings-skill-item--disabled');
+			}
 			const nameRow = itemEl.createEl('div', {
 				cls: 'oap-settings-skill-name-row',
 			});
@@ -63,16 +67,33 @@ export class SkillDetailsModal extends Modal {
 			});
 
 			const lints = computeSkillLints(skill);
-			if (lints.length > 0) {
+			// Collect all badges: lints first, then disabled status
+			type Badge = { cls: string; label: string; tooltip: string };
+			const badges: Badge[] = [];
+			for (const lint of lints) {
+				badges.push({
+					cls: `oap-settings-skill-badge oap-settings-skill-badge--${lint.level}`,
+					label: t(lint.labelKey),
+					tooltip: t(lint.tooltipKey),
+				});
+			}
+			if (skill.disabled) {
+				badges.push({
+					cls: 'oap-settings-skill-badge oap-settings-skill-badge--disabled',
+					label: t('settings.skillDisabledBadge'),
+					tooltip: t('settings.skillDisabledBadgeTooltip'),
+				});
+			}
+			if (badges.length > 0) {
 				const badgeRow = itemEl.createEl('div', {
 					cls: 'oap-settings-skill-badges',
 				});
-				for (const lint of lints) {
+				for (const b of badges) {
 					const badge = badgeRow.createEl('span', {
-						cls: `oap-settings-skill-badge oap-settings-skill-badge--${lint.level}`,
-						text: t(lint.labelKey),
+						cls: b.cls,
+						text: b.label,
 					});
-					setTooltip(badge, t(lint.tooltipKey));
+					setTooltip(badge, b.tooltip);
 				}
 			}
 
