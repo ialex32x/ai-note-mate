@@ -139,7 +139,7 @@ export function isActiveSpeechToTextConfigured(
 
 	switch (config.apiScheme) {
 		case 'TencentCloud': {
-			if (resolveSecret(app, config.secretId).trim().length === 0) return false;
+			if ((config.secretId || '').trim().length === 0) return false;
 			if (resolveSecret(app, config.secretKey).trim().length === 0) return false;
 			if ((config.engineModelType || '').trim().length === 0) return false;
 			// COS is optional, but if bucket is configured it must be paired

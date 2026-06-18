@@ -261,10 +261,10 @@ function createTencentCloudASRTool(
                     };
                 }
 
-                const resolvedSecretId = resolveSecret(plugin.app, sttConfig.secretId).trim();
+                const secretId = (sttConfig.secretId || '').trim();
                 const resolvedSecretKey = resolveSecret(plugin.app, sttConfig.secretKey).trim();
 
-                if (!resolvedSecretId || !resolvedSecretKey) {
+                if (!secretId || !resolvedSecretKey) {
                     return {
                         success: false,
                         type: "text",
@@ -272,12 +272,8 @@ function createTencentCloudASRTool(
                     };
                 }
 
-                // Debug: log key lengths (not values) to diagnose signing issues
-                console.debug("[TencentCloudSTT] resolved SecretId length:", resolvedSecretId.length,
-                    "SecretKey length:", resolvedSecretKey.length);
-
                 const asyncResult = await transcribeWithTencentASR({
-                    secretId: resolvedSecretId,
+                    secretId,
                     secretKey: resolvedSecretKey,
                     engineModelType: sttConfig.engineModelType || '16k_zh',
                     region: sttConfig.region,

@@ -238,12 +238,12 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 		plugin: SectionContext['plugin'],
 		refreshSection: SectionContext['refreshSection'],
 	): void {
-		// SecretId
-		createApiKeyField({
+		// SecretId (plain text — not secret, safe to store in settings)
+		createTextField({
 			container,
-			app,
 			name: t('settings.tcSecretId'),
 			desc: t('settings.tcSecretIdDesc'),
+			placeholder: 'AKID...',
 			value: config.secretId,
 			onChange: async (value) => {
 				config.secretId = value;
