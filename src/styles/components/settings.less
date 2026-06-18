@@ -864,11 +864,13 @@
 }
 
 .oap-model-suggester__item {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
     padding: 6px @spacing-lg;
     cursor: pointer;
     font-size: var(--font-ui-small);
     color: @text-primary;
-    .text-truncate();
 
     &:hover,
     &.is-active {
@@ -879,6 +881,33 @@
         color: @text-accent;
         font-weight: var(--font-semibold);
     }
+}
+
+.oap-model-suggester__item-name {
+    .text-truncate();
+    flex: 1;
+    min-width: 0;
+}
+
+.oap-model-suggester__copy-btn {
+    .button-small();
+    flex-shrink: 0;
+    opacity: 0;
+    background: transparent;
+    color: @text-secondary;
+
+    &:hover {
+        background: @bg-modifier-hover;
+        color: @text-primary;
+    }
+}
+
+.oap-model-suggester__item:hover .oap-model-suggester__copy-btn {
+    opacity: 1;
+}
+
+.is-mobile .oap-model-suggester__item .oap-model-suggester__copy-btn {
+    opacity: 1;
 }
 
 .oap-model-suggester__empty {

@@ -1,6 +1,7 @@
 import { App } from 'obsidian';
 import { t } from '../i18n';
 import { PromiseModal } from './_promise-modal';
+import { createCopyButton } from '../utils/copy-button';
 
 /**
  * Modal that displays a searchable list of available models.
@@ -48,8 +49,17 @@ export class ModelSelectorModal extends PromiseModal<string | null> {
 			for (const model of filtered) {
 				const item = listContainer.createDiv({
 					cls: `oap-model-suggester__item${model === this.currentModel ? ' is-active' : ''}`,
-					text: model,
 				});
+
+				item.createSpan({ cls: 'oap-model-suggester__item-name', text: model });
+
+				const copyBtn = createCopyButton(
+					t('common.copy'),
+					() => model,
+					'oap-model-suggester__copy-btn',
+				);
+				item.appendChild(copyBtn);
+
 				item.addEventListener('click', () => {
 					this.resolve(model);
 					this.close();
