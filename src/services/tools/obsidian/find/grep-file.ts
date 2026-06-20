@@ -85,7 +85,7 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     "line numbers and matched content. Leading blank lines are not skipped — an empty first line counts as line 1. " +
                     "Prefer this over `read_file` when you already know " +
                     "the file and just need line numbers for specific strings/patterns (e.g. preparing " +
-                    "a follow-up `edit_lines` call). Multiple queries are OR-combined; each match " +
+                    "a follow-up `replace_text` or `insert_text` call). Multiple queries are OR-combined; each match " +
                     "reports its `matched_query`. Optional `heading_path` restricts the search to a " +
                     "single heading-anchored region (use `get_metadata` first to discover the outline). " +
                     "For multi-file search, use `search_content` instead (supports optional `path` for directory scoping).",

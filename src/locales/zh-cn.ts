@@ -690,7 +690,7 @@ export const zhCN: Record<string, string> = {
 	'tool.triggers.read_file':      '读取, 读文件, 打开文件, 查看文件, 文件内容, 阅读, 加载文件, 显示文件',
 	'tool.triggers.read_section':   '读取小节, 读取章节, 读取段落, 读取标题, 章节内容, 标题下内容, 部分读取',
 	'tool.triggers.write_file':     '写入, 写文件, 创建文件, 保存, 覆盖, 新建笔记, 新建文件, 新笔记, 保存文件',
-	'tool.triggers.edit_lines':     '编辑, 修改, 替换行, 删除行, 插入行, 改写, 修改文件, 更新文件, 编辑文件',
+	'tool.triggers.insert_text':  '插入文本, 插入内容, 添加文本, 添加内容, 插入段落, 前面插入, 后面插入, 在...前插入, 在...后插入',
 	'tool.triggers.replace_text':   '替换, 替换文本, 查找替换, 替换文字, 文本替换, 批量替换',
 	'tool.triggers.web_search':     '联网搜索, 网络搜索, 上网搜, 搜索网页, 谷歌, 百度, 必应, 互联网, 在线搜索',
 	'tool.triggers.web_fetch_url':  '抓取网页, 获取链接, 打开链接, 获取链接内容, 访问网页, 读取链接, 网页内容, 下载网页',

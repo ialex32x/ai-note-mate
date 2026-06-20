@@ -23,7 +23,7 @@ import { formatFileHeading, isCriticalHeading, stripCriticalSuffix } from './hea
  * One memory section, as it lives in the source file.
  *
  * `startLine` / `endLine` are 1-based inclusive line numbers (matching
- * the convention used by `read_section` / `edit_lines` in the rest of
+ * the convention used by `read_section` / `replace_text` in the rest of
  * the codebase) so writers can splice directly without translating.
  */
 export interface MemoryEntry {

@@ -67,7 +67,7 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     type: "text",
                     content:
                         `File already exists: ${path}. \`create_file\` does not overwrite. ` +
-                        `For surgical edits use \`replace_text\` or \`edit_lines\`; ` +
+                        `For surgical edits use \`replace_text\` or \`insert_text\`; ` +
                         `to add content use \`append_file\` or \`prepend_file\`; ` +
                         `for a full-body rewrite delegate to the \`vault_editor\` sub-agent.`,
                 };

@@ -10,7 +10,7 @@ export { vaultDeleteFiles } from "./delete-files";
 export { vaultDeleteFolder } from "./delete-folder";
 export { vaultRenameFile } from "./rename-file";
 export { vaultReplaceText } from "./replace-text";
-export { vaultEditLines } from "./edit-lines";
+export { vaultInsertText } from "./insert-text";
 export { vaultEditFilesFrontmatter } from "./edit-frontmatter";
 export { vaultWriteFile } from "./write-file";
 export { vaultInstantiateTemplate } from "./instantiate-template";

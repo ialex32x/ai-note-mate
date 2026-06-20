@@ -690,7 +690,7 @@ export const ja: Record<string, string> = {
 	'tool.triggers.read_file':      '読み取り, ファイルを開く, ファイル内容, 読み込む, 中身を見る, ファイルを表示',
 	'tool.triggers.read_section':   'セクション読み取り, 見出し読み取り, 章を読む, 節を読む, 部分読み取り, 見出し内容',
 	'tool.triggers.write_file':     '書き込み, ファイル作成, 保存, 上書き, 新規ノート, 新規ファイル, ファイル保存',
-	'tool.triggers.edit_lines':     '編集, 修正, 行を編集, 行を置換, 行を削除, 行を挿入, ファイル修正, ファイル更新',
+	'tool.triggers.insert_text':  'テキスト挿入, 内容を挿入, 追加, 段落挿入, 前に挿入, 後ろに挿入',
 	'tool.triggers.replace_text':   '置換, 文字置換, 検索置換, テキスト置換, 一括置換',
 	'tool.triggers.web_search':     'ウェブ検索, ネット検索, インターネット検索, グーグル, オンライン検索, 検索エンジン',
 	'tool.triggers.web_fetch_url':  'ウェブ取得, URL取得, ページ取得, リンクを開く, ウェブページ, ページを読み込む, ウェブをダウンロード',

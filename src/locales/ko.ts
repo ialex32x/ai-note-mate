@@ -690,7 +690,7 @@ export const ko: Record<string, string> = {
 	'tool.triggers.read_file':      '읽기, 파일 열기, 파일 내용, 읽어오기, 파일 보기, 파일 표시',
 	'tool.triggers.read_section':   '섹션 읽기, 제목 읽기, 챕터 읽기, 부분 읽기, 섹션 내용, 제목 내용',
 	'tool.triggers.write_file':     '쓰기, 파일 생성, 저장, 덮어쓰기, 새 노트, 새 파일, 파일 저장',
-	'tool.triggers.edit_lines':     '편집, 수정, 줄 편집, 줄 교체, 줄 삭제, 줄 삽입, 파일 수정, 파일 업데이트',
+	'tool.triggers.insert_text':  '텍스트 삽입, 내용 삽입, 추가, 문단 삽입, 앞에 삽입, 뒤에 삽입',
 	'tool.triggers.replace_text':   '바꾸기, 텍스트 바꾸기, 찾아 바꾸기, 텍스트 교체, 일괄 바꾸기',
 	'tool.triggers.web_search':     '웹 검색, 인터넷 검색, 구글, 온라인 검색, 검색 엔진, 빙',
 	'tool.triggers.web_fetch_url':  '웹 가져오기, URL 가져오기, 페이지 가져오기, 링크 열기, 웹페이지, 페이지 로드, 웹 다운로드',

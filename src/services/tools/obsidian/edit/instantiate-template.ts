@@ -265,7 +265,7 @@ export function vaultInstantiateTemplate(plugin: NoteAssistantPlugin): Registere
                     content:
                         `File already exists: ${targetPath}. ` +
                         `\`instantiate_template\` creates NEW files only — it does not overwrite. ` +
-                        `To modify an existing file, use \`replace_text\`, \`edit_lines\`, or ` +
+                        `To modify an existing file, use \`replace_text\`, \`insert_text\`, or ` +
                         `delegate to the \`vault_editor\` sub-agent.`,
                 };
             }

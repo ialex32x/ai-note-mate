@@ -8,7 +8,7 @@
  *   - **Hybrid (BM25 + embedding + RRF)**: when `embeddingConfig` is
  *     supplied AND the global embedder is initialised AND the
  *     embedding call succeeds. The fused ranking benefits from
- *     BM25's exact-name strengths (`obsidian_search`, `edit_lines`,
+ *     BM25's exact-name strengths (obsidian_search, replace_text,
  *     proper nouns) and embedding's semantic generalisation.
  *   - **BM25 only**: when `embeddingConfig` is null / missing, or the
  *     embedder isn't ready, or the embedding call throws (network,

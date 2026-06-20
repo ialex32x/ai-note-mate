@@ -11,7 +11,7 @@ import { runVaultMutation } from "../../../vault";
 // Generic YAML frontmatter property editor for one or more notes. Operates
 // through `app.fileManager.processFrontMatter`, so YAML structure, quoting,
 // and key order survive intact — unlike a text-level edit through
-// `replace_text` / `edit_lines` which can corrupt nested values, multi-line
+// `replace_text` / `insert_text` which can corrupt nested values, multi-line
 // strings, or quoted scalars.
 //
 // SCOPE BOUNDARY: deliberately refuses edits to `tags` / `tag` keys.

@@ -47,10 +47,10 @@ describe('createObsidianEditorTools — tool surface', () => {
         expect(names.has('browse_folder')).toBe(true);
     });
 
-    it('includes the content-write tools (replace_text, edit_lines, append, prepend, write_file)', () => {
+    it('includes the content-write tools (replace_text, insert_text, append, prepend, write_file)', () => {
         const names = new Set(getToolNames());
         expect(names.has('replace_text')).toBe(true);
-        expect(names.has('edit_lines')).toBe(true);
+        expect(names.has('insert_text')).toBe(true);
         expect(names.has('append_file')).toBe(true);
         expect(names.has('prepend_file')).toBe(true);
         expect(names.has('write_file')).toBe(true);
