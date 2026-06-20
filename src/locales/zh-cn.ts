@@ -20,7 +20,6 @@ export const zhCN: Record<string, string> = {
 	'view.loadingOlderMessages': '正在加载更早的消息…',
 	'view.branchFromHere': '从此处分支',
 	'view.sessionBranched': '已分支到新会话。',
-	'view.branchWhileStreamingBlocked': '回复生成中，无法分支。',
 	'view.editMessage': '编辑消息',
 	'view.editMessageConfirmAbortStreaming': 'AI 仍在生成回复。继续操作将中止该未完成的回复。',
 	'view.editMessageConfirmTitle': '编辑此消息？',

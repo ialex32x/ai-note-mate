@@ -14,8 +14,6 @@ export interface SessionSwitchControllerDeps {
     runtimeBinder: SessionRuntimeBinder;
     draftController: DraftInputController;
     cmInput: CMInput;
-    /** Whether a turn is streaming — handleBranchFromMessage refuses while busy. */
-    getStreaming: () => boolean;
     /** Scroll to a message by id (from P6 HistoryLoader; late-bound). */
     scrollToMessage: (id: string) => Promise<void>;
 }
@@ -125,17 +123,13 @@ export class SessionSwitchController {
      * leave all other session state (token usage, summaries, sub-agent
      * messages, title) at the defaults of a freshly-created session.
      *
-     * Busy guard: if a turn is streaming we refuse, because branching while
-     * the assistant is still writing would surface a confusing "new session
-     * but token counter still climbing" state in the UI — the source
-     * session's runtime keeps counting even after we switch away.
+     * If a turn is currently streaming in the source session, the branch
+     * still proceeds — the source runtime stays in the pool (busy → retained)
+     * to finish its background turn, while the new branched session gets a
+     * fresh runtime, mirroring the {@link startNewSession} contract.
      */
     async handleBranchFromMessage(msg: ChatMessage): Promise<void> {
         if (msg.role !== 'user') return;
-        if (this.deps.getStreaming()) {
-            new Notice(t('view.branchWhileStreamingBlocked'));
-            return;
-        }
         if (!this.guardSwitchSession()) return;
 
         const sourceId = this.deps.sessionManager.activeSessionId;

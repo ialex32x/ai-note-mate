@@ -20,7 +20,6 @@ export const ko: Record<string, string> = {
 	'view.loadingOlderMessages': '이전 메시지 불러오는 중…',
 	'view.branchFromHere': '여기에서 분기',
 	'view.sessionBranched': '새 세션으로 분기했습니다.',
-	'view.branchWhileStreamingBlocked': '응답이 스트리밍 중이라 분기할 수 없습니다.',
 	'view.editMessage': '메시지 편집',
 	'view.editMessageConfirmAbortStreaming': 'AI가 아직 응답을 생성 중입니다. 계속하면 완료되지 않은 응답이 중단됩니다.',
 	'view.editMessageConfirmTitle': '이 메시지를 편집할까요?',

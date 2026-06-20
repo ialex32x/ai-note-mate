@@ -20,7 +20,6 @@ export const ja: Record<string, string> = {
 	'view.loadingOlderMessages': '以前のメッセージを読み込み中…',
 	'view.branchFromHere': 'ここから分岐',
 	'view.sessionBranched': '新しいセッションに分岐しました。',
-	'view.branchWhileStreamingBlocked': '返信のストリーミング中は分岐できません。',
 	'view.editMessage': 'メッセージを編集',
 	'view.editMessageConfirmAbortStreaming': 'AI はまだ返信を生成しています。続行すると、未完了の返信は停止されます。',
 	'view.editMessageConfirmTitle': 'このメッセージを編集しますか？',

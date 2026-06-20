@@ -749,7 +749,6 @@ export class SessionView extends ItemView {
             runtimeBinder: this.runtimeBinder,
             draftController: this.draftController,
             cmInput: this.cmInput,
-            getStreaming: () => this.isStreaming,
             scrollToMessage: (id) => this.historyLoader.scrollToMessage(id),
         });
 

@@ -20,7 +20,6 @@ export const zhTW: Record<string, string> = {
 	'view.loadingOlderMessages': '正在載入更早的訊息…',
 	'view.branchFromHere': '從此處分支',
 	'view.sessionBranched': '已分支到新對話。',
-	'view.branchWhileStreamingBlocked': '回覆生成中，無法分支。',
 	'view.editMessage': '編輯訊息',
 	'view.editMessageConfirmAbortStreaming': 'AI 仍在產生回覆。繼續將中止該未完成的回覆。',
 	'view.editMessageConfirmTitle': '編輯此訊息？',

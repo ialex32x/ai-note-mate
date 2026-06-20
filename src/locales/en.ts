@@ -20,7 +20,6 @@ export const en: Record<string, string> = {
 	'view.loadingOlderMessages': 'Loading older messages…',
 	'view.branchFromHere': 'Branch from here',
 	'view.sessionBranched': 'Branched into a new session.',
-	'view.branchWhileStreamingBlocked': 'Cannot branch while a reply is streaming.',
 	'view.editMessage': 'Edit message',
 	'view.editMessageConfirmAbortStreaming': 'The AI is still generating a reply. Continuing will stop that incomplete response.',
 	'view.editMessageConfirmTitle': 'Edit this message?',
