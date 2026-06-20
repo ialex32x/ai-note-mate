@@ -106,6 +106,64 @@ function insertContent(
 	};
 }
 
+/**
+ * Resolve the insertion direction from LLM arguments.
+ *
+ * LLMs sometimes use `before: true` / `after: false` instead of the canonical
+ * `where: "before"` / `where: "after"`. This helper normalises those patterns:
+ *
+ *   - Canonical `where: "before" | "after"` wins when present and valid.
+ *   - Otherwise, boolean `before` / `after` are translated:
+ *       `before: true`  → "before"
+ *       `before: false` → "after"
+ *       `after: true`   → "after"
+ *       `after: false`  → "before"
+ *   - Contradictory combinations (`before: true && after: true`, or
+ *     `before: false && after: false`) produce a descriptive error.
+ *   - When no direction is specified at all, a missing-argument error is returned.
+ *
+ * @returns `{ ok: true, where }` or `{ ok: false, error }`.
+ */
+function resolveWhere(args: Record<string, unknown>): { ok: true; where: "before" | "after" } | { ok: false; error: string } {
+	const canonical = args["where"];
+	if (canonical === "before" || canonical === "after") {
+		return { ok: true, where: canonical as "before" | "after" };
+	}
+
+	const before = args["before"];
+	const after = args["after"];
+	const hasBefore = typeof before === "boolean";
+	const hasAfter = typeof after === "boolean";
+
+	if (hasBefore && hasAfter) {
+		if (before === after) {
+			const val = before ? "true" : "false";
+			return {
+				ok: false,
+				error:
+					`Conflicting direction flags: both \`before\` and \`after\` are ${val}. ` +
+					`Use \`where: "before"\` or \`where: "after"\` to disambiguate.`,
+			};
+		}
+		// before=true, after=false → "before"; before=false, after=true → "after"
+		return { ok: true, where: before ? "before" : "after" };
+	}
+
+	if (hasBefore) {
+		return { ok: true, where: before ? "before" : "after" };
+	}
+	if (hasAfter) {
+		return { ok: true, where: after ? "after" : "before" };
+	}
+
+	return {
+		ok: false,
+		error:
+			`Missing insertion direction. Use \`where: "before"\` or \`where: "after"\` ` +
+			`to specify where to insert relative to the anchor.`,
+	};
+}
+
 export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 	return {
 		ondemand: true,
@@ -174,9 +232,14 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 		exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
 			const path = args["path"] as string;
 			const anchor = args["anchor"] as string;
-			const where = args["where"] as "before" | "after";
 			const content = args["content"] as string;
 			const occurrence = typeof args["occurrence"] === "number" ? args["occurrence"] : undefined;
+
+			const whereRes = resolveWhere(args);
+			if (!whereRes.ok) {
+				return { success: false, type: "text", content: whereRes.error };
+			}
+			const where = whereRes.where;
 
 			const fileErr = requireFile(plugin.app, path);
 			if (isFailure(fileErr)) return fileErr;
