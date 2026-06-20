@@ -43,10 +43,84 @@ function isInsideFencedCodeBlock(content: string): boolean {
     return insideCodeBlock;
 }
 
+// ── Mermaid block detection ────────────────────────────────────────────────
+
+/**
+ * Check whether the content ends inside an unclosed mermaid fenced code block.
+ * Only counts ```mermaid openers; other language fences are ignored.
+ */
+function isInsideMermaidBlock(content: string): boolean {
+    const lines = content.split('\n');
+    let insideMermaid = false;
+    for (const line of lines) {
+        const trimmed = line.trimStart();
+        // Match ```mermaid and ``` mermaid (CommonMark allows space after fence)
+        if (/^```\s*mermaid/.test(trimmed)) {
+            insideMermaid = true;
+        } else if (insideMermaid && /^```\s*$/.test(trimmed)) {
+            insideMermaid = false;
+        }
+    }
+    return insideMermaid;
+}
+
+// ── P1: Trailing mermaid block deferral ────────────────────────────────────
+
+/**
+ * Defer trailing mermaid code blocks to prevent syntax-error flicker
+ * during streaming.
+ *
+ * While a mermaid block is still receiving content (the closing ``` has not
+ * arrived yet), Obsidian's Mermaid renderer sees incomplete syntax and
+ * displays a transient error.  We defer the **entire** mermaid block —
+ * from the ```mermaid opener to the end of content — until the closing
+ * ``` is received.  At that point the block is no longer unclosed and
+ * will be rendered in one piece with valid syntax.
+ *
+ * Unlike the general {@link closeFencedCodeBlock} sanitizer (which appends
+ * a closing fence to any open code block), this function *strips* the
+ * pending mermaid block entirely.  Appending a closing fence would trigger
+ * the Mermaid renderer on partial syntax, causing the exact flash of
+ * error messages we want to avoid.
+ *
+ * Must run BEFORE {@link closeFencedCodeBlock} in the pipeline — once the
+ * mermaid block is stripped, {@link closeFencedCodeBlock} no longer sees
+ * an open fence and will not append its own closing ```.
+ */
+function deferTrailingMermaidBlock(content: string): string {
+    if (!isInsideMermaidBlock(content)) return content;
+
+    // Find the last unclosed ```mermaid opener and strip from there
+    const lines = content.split('\n');
+    let insideMermaid = false;
+    let mermaidStartIdx = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i]!.trimStart();
+        if (/^```\s*mermaid/.test(trimmed)) {
+            insideMermaid = true;
+            mermaidStartIdx = i;
+        } else if (insideMermaid && /^```\s*$/.test(trimmed)) {
+            insideMermaid = false;
+            mermaidStartIdx = -1;
+        }
+    }
+
+    if (insideMermaid && mermaidStartIdx >= 0) {
+        // Strip everything from the opening ```mermaid to end
+        return lines.slice(0, mermaidStartIdx).join('\n');
+    }
+
+    return content;
+}
+
 // ── P0: Fenced code block ────────────────────────────────────────────────────
 
 /**
  * If the content has an unclosed fenced code block, append a closing fence.
+ *
+ * Note: mermaid fenced code blocks are handled separately by
+ * {@link deferTrailingMermaidBlock} which runs earlier in the pipeline.
  */
 function closeFencedCodeBlock(content: string): string {
     if (isInsideFencedCodeBlock(content)) {
@@ -347,6 +421,10 @@ export function sanitizeStreamingMarkdown(content: string): string {
     if (!content) return content;
 
     let result = content;
+
+    // P1: Mermaid block (must be before closeFencedCodeBlock — a trailing
+    // unclosed mermaid block should be stripped, not closed with ```)
+    result = deferTrailingMermaidBlock(result);
 
     // P0: Fenced code block (must be first — affects all subsequent checks)
     result = closeFencedCodeBlock(result);
