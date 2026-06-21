@@ -19,6 +19,7 @@ import { buildSkillSystemPromptForQuery } from '../skills/skill-catalogue';
 import { buildMemorySystemPromptPrefix } from './memory';
 import type { ArtifactStore } from './artifact-store';
 import { createObsidianTools, createObsidianMutationTools } from './tools/obsidian';
+import { vaultReadSection } from './tools/obsidian/read';
 import { createWebSearchTools, createImageDownloadTools } from './tools/web-search-toolcall';
 import { createWebFetchTools } from './tools/web-fetch-toolcall';
 import { createRSSFetchTools } from './tools/rss-fetch-toolcall';
@@ -482,17 +483,19 @@ export function createChatAgent(
         // The main agent owns:
         //   - generic builtins (memory, conversation, builtin, skill)
         //   - ALL vault MUTATION tools (writes, deletes, renames, tag edits)
+        //   - `read_section` (read-modify-write partner of `set_section`;
+        //     needed for the body_hash contract)
         //
-        // The vault sub-agent only holds read-only inspection tools. This
-        // strict read/write split (see `createObsidianMutationTools`)
-        // gives the routing LLM a trivial rule — "looking → delegate;
-        // doing → call directly" — and removes the prompt-injection seam
-        // for content-bearing writes by letting the tool's native (path,
-        // content) JSON schema carry the body instead of `delegate_task`
-        // prose.
+        // The vault sub-agent holds the remaining read-only inspection
+        // tools. This read/write split gives the routing LLM a trivial
+        // rule — "looking → delegate; doing → call directly" — and removes
+        // the prompt-injection seam for content-bearing writes by letting
+        // the tool's native (path, content) JSON schema carry the body
+        // instead of `delegate_task` prose.
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
         createObsidianMutationTools(plugin).forEach(tool => chat.registerTool(tool));
+        chat.registerTool(vaultReadSection(plugin));
         // `download_image_urls` is a vault-write tool (creates files under
         // the configured attachments folder), so it lives on the main
         // agent for the same reason as the other mutation tools — see the

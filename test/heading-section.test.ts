@@ -116,9 +116,13 @@ describe("findHeadingByPath", () => {
         }
     });
 
-    it("matching is case-sensitive (no silent widening)", () => {
+    it("case-insensitive fallback succeeds with flag when exact match fails", () => {
         const r = findHeadingByPath(SAMPLE_HEADINGS, ["chapter 1"]); // lowercase
-        expect(r.ok).toBe(false);
+        expect(r.ok).toBe(true);
+        if (r.ok) {
+            expect(r.caseInsensitiveMatch).toBe(true);
+            expect(r.index).toBe(0);
+        }
     });
 
     it("trims whitespace around heading titles in the path argument", () => {

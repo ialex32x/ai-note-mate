@@ -15,6 +15,7 @@ import {
     resolveHeadingPathToRange,
     type HeadingNode,
 } from "../heading-section";
+import { parseHeadingsFromLines } from "../../../../utils/parse-headings";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: read_section
@@ -24,11 +25,12 @@ import {
 // `get_metadata`: once the model knows a file's outline, it can pull just
 // the section it needs without dragging the rest of the file into context.
 //
-// Intentionally *not* exposed to the main agent in multi-agent mode — it
-// is registered alongside other read-only tools so that the vault
-// inspector sub-agent uses it during digest workflows. Letting the main
-// agent call it directly would re-encourage "read full file in main
-// thread" patterns, defeating the digest-via-delegation design.
+// Registered on BOTH the main agent and the vault-inspector sub-agent.
+// The main agent needs it as the read-modify-write partner of
+// `set_section` (body_hash contract); the vault-inspector uses it during
+// digest workflows. Unlike `read_file`, `read_section` is a targeted
+// drill-down — it fetches one section, not the whole file, so it does
+// not re-encourage "read full file in main thread" patterns.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
@@ -128,6 +130,12 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
+            // Read file content first — we may need to parse headings ourselves
+            // if the metadata cache hasn't indexed this file yet.
+            const content = await plugin.app.vault.read(file);
+            const lines = content.split("\n");
+            const totalLines = lines.length;
+
             const cache = plugin.app.metadataCache.getFileCache(file);
             const cachedHeadings: HeadingNode[] = (cache?.headings ?? []).map((h) => ({
                 level: h.level,
@@ -135,12 +143,16 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 line: h.position.start.line,
             }));
 
-            const content = await plugin.app.vault.read(file);
-            const lines = content.split("\n");
-            const totalLines = lines.length;
+            // Fallback: when the metadata cache is stale / not yet populated,
+            // parse ATX headings directly from the file content we already have.
+            // Without this, any file not yet indexed by Obsidian would always
+            // fail with "no headings indexed for this file".
+            const headings: HeadingNode[] = cachedHeadings.length > 0
+                ? cachedHeadings
+                : parseHeadingsFromLines(lines);
 
             const resolved = resolveHeadingPathToRange(
-                cachedHeadings,
+                headings,
                 headingPath,
                 totalLines,
                 includeSubsections,
@@ -154,7 +166,7 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
-            const { start_line, end_line, level, heading, ambiguous, ambiguous_match_count } = resolved.section;
+            const { start_line, end_line, level, heading, ambiguous, ambiguous_match_count, case_insensitive_match } = resolved.section;
             // full section = heading line + body
             const sliced = lines.slice(start_line - 1, end_line).join("\n");
             // body-only = everything after the heading line (for the hash contract with set_section)
@@ -176,6 +188,10 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 mtime: file.stat.mtime,
             };
 
+            if (case_insensitive_match) {
+                resultContent.case_insensitive_match = true;
+            }
+
             if (ambiguous) {
                 resultContent.ambiguity_note =
                     `heading_path ${headingPath.map((s) => JSON.stringify(s)).join(" > ")} ` +
@@ -192,3 +208,5 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
         },
     };
 }
+
+

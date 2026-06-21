@@ -49,11 +49,13 @@ export interface ResolvedSection {
     ambiguous?: boolean;
     /** Number of ambiguous matches (populated when ambiguous=true). */
     ambiguous_match_count?: number;
+    /** When exact match failed but case-insensitive fallback succeeded. */
+    case_insensitive_match?: boolean;
 }
 
 export type FindSectionError =
     | { kind: "no_headings" }
-    | { kind: "not_found"; available: string[] }
+    | { kind: "not_found"; available: string[]; didYouMean?: string }
     | { kind: "ambiguous"; matches: Array<{ index: number; line: number; level: number; ancestors: string[] }> }
     | { kind: "empty_path" };
 
@@ -198,7 +200,7 @@ export function normalizeHeadingPathArg(
 export function findHeadingByPath(
     headings: readonly HeadingNode[],
     headingPath: readonly string[],
-): { ok: true; index: number; ancestorsAtMatch: string[] }
+): { ok: true; index: number; ancestorsAtMatch: string[]; caseInsensitiveMatch?: boolean }
     | { ok: false; error: FindSectionError } {
     if (headingPath.length === 0) {
         return { ok: false, error: { kind: "empty_path" } };
@@ -209,27 +211,19 @@ export function findHeadingByPath(
 
     const wantedTrimmed = headingPath.map((s) => s.trim());
 
-    // Stack of currently-open ancestor headings (in document order, by level).
-    // We push every heading we visit and pop those whose level is >= the new
-    // heading's level, mirroring how Markdown headings nest.
+    // Build ancestor chains and collect matches.
     type StackEntry = { level: number; heading: string };
     const stack: StackEntry[] = [];
-
     const matches: Array<{ index: number; ancestors: string[] }> = [];
 
     for (let i = 0; i < headings.length; i++) {
         const h = headings[i]!;
-        // Close any open ancestors that are not actually ancestors of `h`.
         while (stack.length > 0 && stack[stack.length - 1]!.level >= h.level) {
             stack.pop();
         }
 
-        // The full chain root → … → h itself.
         const fullChain = [...stack.map((e) => e.heading.trim()), h.heading.trim()];
 
-        // Tail-subsequence test: the wanted path must equal the LAST
-        // `wantedTrimmed.length` entries of `fullChain` (and obviously the
-        // wanted path cannot be longer than the chain itself).
         if (
             wantedTrimmed.length <= fullChain.length
             && pathsEqual(fullChain.slice(fullChain.length - wantedTrimmed.length), wantedTrimmed)
@@ -237,7 +231,6 @@ export function findHeadingByPath(
             matches.push({ index: i, ancestors: stack.map((e) => e.heading) });
         }
 
-        // Now push self as a potential ancestor for following headings.
         stack.push({ level: h.level, heading: h.heading });
     }
 
@@ -247,9 +240,23 @@ export function findHeadingByPath(
     }
 
     if (matches.length === 0) {
-        // Build a (bounded) list of available ancestor chains for diagnostics.
+        // Layer 1: case-insensitive retry — LLMs occasionally flip casing.
+        const ciResult = tryCaseInsensitiveMatch(headings, headingPath);
+        if (ciResult?.match) {
+            return {
+                ok: true,
+                index: ciResult.match.index,
+                ancestorsAtMatch: ciResult.match.ancestors,
+                caseInsensitiveMatch: true,
+            };
+        }
+
         const available = collectAvailableChains(headings);
-        return { ok: false, error: { kind: "not_found", available } };
+        // Layer 2: "did you mean?" via edit-distance on chain strings.
+        const didYouMean = ciResult?.fuzzy
+            ?? findClosestHeadingChain(available, headingPath.join(" > "));
+
+        return { ok: false, error: { kind: "not_found", available, didYouMean } };
     }
 
     return {
@@ -258,7 +265,7 @@ export function findHeadingByPath(
             kind: "ambiguous",
             matches: matches.map((m) => ({
                 index: m.index,
-                line: headings[m.index]!.line + 1, // 1-based for user-facing errors
+                line: headings[m.index]!.line + 1,
                 level: headings[m.index]!.level,
                 ancestors: m.ancestors,
             })),
@@ -354,6 +361,7 @@ export function resolveHeadingPathToRange(
             end_line: inclusiveEnd,
             level: target.level,
             heading: target.heading,
+            case_insensitive_match: lookup.caseInsensitiveMatch,
         },
     };
 }
@@ -383,9 +391,12 @@ export function formatFindSectionError(
             const more = error.available.length > sample.length
                 ? ` (and ${error.available.length - sample.length} more)`
                 : "";
+            const hint = error.didYouMean
+                ? ` Did you mean ${JSON.stringify(error.didYouMean)}?`
+                : "";
             return (
-                `heading_path ${pathStr} not found. ` +
-                `heading_path matches a heading whose ancestor chain ENDS WITH the given titles ` +
+                `heading_path ${pathStr} not found.` + hint +
+                ` heading_path matches a heading whose ancestor chain ENDS WITH the given titles ` +
                 `(intermediates may NOT be skipped). ` +
                 `Available ancestor chains (sample): ${sample.join(" | ") || "(none)"}${more}.`
             );
@@ -412,6 +423,112 @@ function pathsEqual(a: readonly string[], b: readonly string[]): boolean {
         if (a[i] !== b[i]) return false;
     }
     return true;
+}
+
+function pathsEqualInsensitive(a: readonly string[], b: readonly string[]): boolean {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+        if (a[i]!.toLowerCase() !== b[i]!.toLowerCase()) return false;
+    }
+    return true;
+}
+
+/**
+ * Attempt a case-insensitive match of `headingPath` against `headings`.
+ * This is the first layer of fuzzy fallback — safe because case-only
+ * collisions among heading paths are vanishingly rare.
+ *
+ * Returns `{ match }` on a unique case-insensitive match, or
+ * `{ fuzzy }` with the single best candidate when there are 2+ matches
+ * (so the caller can surface it as a "did you mean?" hint).
+ */
+function tryCaseInsensitiveMatch(
+    headings: readonly HeadingNode[],
+    headingPath: readonly string[],
+): { match?: { index: number; ancestors: string[] }; fuzzy?: string } | null {
+    type StackEntry = { level: number; heading: string };
+    const stack: StackEntry[] = [];
+    const wantedTrimmed = headingPath.map((s) => s.trim().toLowerCase());
+    const matches: Array<{ index: number; ancestors: string[] }> = [];
+
+    for (let i = 0; i < headings.length; i++) {
+        const h = headings[i]!;
+        while (stack.length > 0 && stack[stack.length - 1]!.level >= h.level) {
+            stack.pop();
+        }
+
+        const fullChainLower = [...stack.map((e) => e.heading.trim().toLowerCase()), h.heading.trim().toLowerCase()];
+
+        if (
+            wantedTrimmed.length <= fullChainLower.length
+            && pathsEqualInsensitive(fullChainLower.slice(fullChainLower.length - wantedTrimmed.length), wantedTrimmed)
+        ) {
+            matches.push({ index: i, ancestors: stack.map((e) => e.heading) });
+        }
+
+        stack.push({ level: h.level, heading: h.heading });
+    }
+
+    if (matches.length === 1) {
+        return { match: matches[0] };
+    }
+    if (matches.length > 1) {
+        // Ambiguous even case-insensitively — surface the first as a hint.
+        const m = matches[0]!;
+        const chainStr = [...m.ancestors, headings[m.index]!.heading].join(" > ");
+        return { fuzzy: chainStr };
+    }
+    return null;
+}
+
+/**
+ * Levenshtein (edit) distance between two strings.
+ */
+function levenshtein(a: string, b: string): number {
+    const alen = a.length;
+    const blen = b.length;
+    if (alen === 0) return blen;
+    if (blen === 0) return alen;
+
+    let prev = new Uint16Array(blen + 1);
+    let curr = new Uint16Array(blen + 1);
+    for (let j = 0; j <= blen; j++) prev[j] = j;
+
+    for (let i = 1; i <= alen; i++) {
+        curr[0] = i;
+        for (let j = 1; j <= blen; j++) {
+            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+            curr[j] = Math.min(
+                prev[j]! + 1,        // deletion
+                curr[j - 1]! + 1,    // insertion
+                prev[j - 1]! + cost, // substitution
+            );
+        }
+        const tmp = prev;
+        prev = curr;
+        curr = tmp;
+    }
+    return prev[blen]!;
+}
+
+/**
+ * Find the closest heading chain to `query` from `available` chains.
+ * Returns `undefined` when no candidate is within a reasonable threshold.
+ */
+function findClosestHeadingChain(available: string[], query: string): string | undefined {
+    const q = query.toLowerCase();
+    let bestDist = Infinity;
+    let best = "";
+    for (const chain of available) {
+        const dist = levenshtein(chain.toLowerCase(), q);
+        // Only suggest if it's reasonably close: edit distance < half the query length
+        // (e.g. "Backgroud" vs "Background" → dist=1, qlen=10 → accepted).
+        if (dist < bestDist && dist < Math.ceil(q.length / 2)) {
+            bestDist = dist;
+            best = chain;
+        }
+    }
+    return bestDist < Infinity ? best : undefined;
 }
 
 const MAX_AVAILABLE_CHAINS = 50;
