@@ -1,5 +1,5 @@
 import type NoteAssistantPlugin from "../../../../main";
-import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
+import type { ChatStream, RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { checkRegexSafety, isFailure, requireFile } from "../_shared";
 import {
@@ -10,22 +10,25 @@ import {
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: replace_text
+// Tools: replace_text (single entry) + batch_replace_text (multi entry)
 //
-// Single-file, multi-replacement editor. Each item in `replacements`
-// targets a span of the SAME pre-edit snapshot of the file via one of two
-// modes — `search` (literal text) or `anchor` (heading-path) — overlap is
-// detected up-front, and all spans are rewritten back-to-front in one
-// atomic write. The two modes coexist so the LLM can pick the cheapest
-// locator for each edit:
+// Two tools sharing one core engine. The core handles any number of
+// replacement entries atomically against a single file snapshot. The two
+// tool wrappers differ only in schema shape:
 //
-//  - `search`: the legacy mode. Cheap when the model already knows the
-//    exact pre-edit text (e.g. typo fix, term rename).
-//  - `anchor`: positions the edit by heading path + a `where` mode (replace
-//    section, append to body, insert before/after, …). Removes the need
-//    to first read the whole file just to construct a long literal
-//    `search` string. Pairs with `vault_inspector`'s digest output, where
-//    each anchor lands as `digests[i].anchors[j].heading_path`.
+//   replace_text — flat, single-entry schema. For the common case where
+//     the LLM edits one location. Flattening the schema eliminates the
+//     nested-array JSON complexity that causes the most validation
+//     failures (see session-257 analysis).
+//
+//   batch_replace_text — `replacements[]` array schema. For atomic
+//     multi-edit batches where all patterns MUST match the same pre-edit
+//     snapshot. LLMs should use this sparingly and keep batches small
+//     (≤4 entries recommended).
+//
+// Both modes support the same locator strategies per entry:
+//  - `search` (literal text / regex)
+//  - `anchor` (heading-path + where)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** One concrete span scheduled for rewrite, regardless of how it was located. */
@@ -711,6 +714,297 @@ function padForInsertion(host: string, offset: number, text: string): string {
     return padForGap(host, offset, offset, text);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared core: executed by both replace_text and batch_replace_text.
+// All replacement entries are validated and applied atomically against
+// a single pre-edit file snapshot.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function executeReplaceTextCore(
+    plugin: NoteAssistantPlugin,
+    chatStream: ChatStream,
+    path: string,
+    replacements: unknown[],
+    dryRun: boolean,
+    expectedPreEditMtime: number | undefined,
+    _signal: AbortSignal | undefined,
+    toolName: string, // "replace_text" or "batch_replace_text" for mutation lock
+): Promise<ToolCallResult> {
+    const fileOrErr = requireFile(plugin.app, path);
+    if (isFailure(fileOrErr)) return fileOrErr;
+    const file = fileOrErr;
+
+    const previousMtime = file.stat.mtime;
+    if (
+        expectedPreEditMtime !== undefined
+        && expectedPreEditMtime !== previousMtime
+    ) {
+        return {
+            success: false,
+            type: "text",
+            content:
+                `\`expected_pre_edit_mtime\` mismatch: caller believes file mtime is ${expectedPreEditMtime}, ` +
+                `but actual mtime is ${previousMtime}. This usually means the file was modified ` +
+                `between your read and this write. Re-read the file (its envelope reports the new mtime) ` +
+                `and retry with the updated content.`,
+        };
+    }
+
+    // Validate every entry up-front so we never partially apply.
+    // Collect ALL validation errors instead of failing on the first.
+    const normalised: NormalisedEntry[] = [];
+    const validationErrors: string[] = [];
+    for (let i = 0; i < replacements.length; i++) {
+        const result = normaliseReplacement(replacements[i], i);
+        if (typeof result === "string") {
+            validationErrors.push(result);
+        } else {
+            normalised.push(result);
+        }
+    }
+    if (validationErrors.length > 0) {
+        return {
+            success: false,
+            type: "text",
+            content: validationErrors.join("\n"),
+        };
+    }
+
+    // Tag-shape soft guard.
+    const tagRefusals: string[] = [];
+    for (let i = 0; i < normalised.length; i++) {
+        const n = normalised[i]!;
+        if (n.kind === "search" && !n.force && isTagShaped(n.pattern)) {
+            tagRefusals.push(
+                `replacements[${i}].pattern='${n.pattern.trim()}' looks like a tag token`,
+            );
+        }
+    }
+    if (tagRefusals.length > 0) {
+        return {
+            success: false,
+            type: "text",
+            content:
+                `Refusing to use ${toolName} on tag-shaped text: ${tagRefusals.join("; ")}. ` +
+                `Tags may appear in YAML frontmatter or as inline #tag, and text replacement ` +
+                `can partial-match (e.g. '#foo' inside '#foobar') or corrupt frontmatter. ` +
+                `Prefer add_files_tags / remove_files_tags / set_files_tags (accepts one or more paths) or rename_tag (vault-wide). ` +
+                `If you really intend a raw text replace, retry the offending entries with force=true ` +
+                `(running with dry_run=true first is recommended).`,
+        };
+    }
+
+    const original = await plugin.app.vault.read(file);
+
+    let lineStarts: number[] | null = null;
+    let headings: HeadingNode[] | null = null;
+    let totalLines = 0;
+    const ensureAnchorContext = (): void => {
+        if (lineStarts !== null) return;
+        lineStarts = buildLineStarts(original);
+        totalLines = lineStarts.length - 1;
+        const cache = plugin.app.metadataCache.getFileCache(file);
+        headings = (cache?.headings ?? []).map((h) => ({
+            level: h.level,
+            heading: h.heading,
+            line: h.position.start.line,
+        }));
+    };
+
+    const spans: Span[] = [];
+    const summaries: ReplacementSummary[] = [];
+    const summaryUniqueSpanIdx: Array<number | null> = [];
+
+    for (let i = 0; i < normalised.length; i++) {
+        const n = normalised[i]!;
+
+        if (n.kind === "search") {
+            const regexMatches = n.useRegex ? findAllRegexMatches(original, n.pattern) : null;
+            const positions: Array<{ start: number; end: number; match?: RegexMatch }> =
+                regexMatches
+                    ? regexMatches.map((m) => ({ start: m.start, end: m.end, match: m }))
+                    : findAllOccurrences(original, n.pattern).map((pos) => ({ start: pos, end: pos + n.pattern.length }));
+
+            if (n.expectedCount !== null && positions.length !== n.expectedCount) {
+                const msg =
+                    `replacements[${i}]: expected ${n.expectedCount} occurrence(s) of ` +
+                    `${JSON.stringify(n.pattern)} but found ${positions.length}. `;
+                let context = "";
+                if (positions.length > 0) {
+                    const pos = positions[0]!;
+                    const ctxStart = Math.max(0, pos.start - 40);
+                    const ctxEnd = Math.min(original.length, pos.end + 40);
+                    context =
+                        ` Context around first match: ` +
+                        `${JSON.stringify(original.slice(ctxStart, ctxEnd))}. `;
+                } else {
+                    context =
+                        ` ⚠️ The pattern text did not appear in the file at all. ` +
+                        `If you reconstructed this pattern from memory (e.g. after a previous batch failure), ` +
+                        `the exact byte sequence likely differs — check whitespace, table pipes, or adjacent columns. ` +
+                        `Re-read the file (or use read_section) to get the verbatim text. `;
+                }
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        msg + context +
+                        `No changes were written. Re-read the file or relax expected_count and retry.`,
+                };
+            }
+
+            if (positions.length === 0) {
+                const hint = n.useRegex ? "" : regexHintForLiteral(n.pattern);
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `replacements[${i}]: ${n.useRegex ? "regex" : "pattern text"} not found in file. ` +
+                        `${n.useRegex ? "" : hint}` +
+                        (n.useRegex ? "" :
+                            ` ⚠️ If you reconstructed this pattern from memory, ` +
+                            `the exact byte sequence (whitespace, punctuation, table-cell boundaries) likely differs ` +
+                            `from what's in the file. Re-read the file or use read_section to get the verbatim text. `) +
+                        `No changes were written. Verify the exact text ` +
+                        `(whitespace, newlines, casing) with read_file or grep, then retry.`,
+                };
+            }
+
+            const targetPositions = n.replaceAll ? positions : [positions[0]!];
+            const firstSpanIdx = spans.length;
+            for (const hit of targetPositions) {
+                const effectiveReplacement =
+                    hit.match
+                        ? replaceWithGroups(n.replacement, original, hit.match)
+                        : n.replacement;
+                spans.push({
+                    repIndex: i,
+                    from: hit.start,
+                    to: hit.end,
+                    replacement: effectiveReplacement,
+                });
+            }
+
+            summaries.push({
+                index: i,
+                mode: "search",
+                pattern: n.pattern,
+                replacement: n.replacement,
+                occurrences_found: positions.length,
+                occurrences_replaced: targetPositions.length,
+                replace_all: n.replaceAll,
+            });
+            summaryUniqueSpanIdx.push(targetPositions.length === 1 ? firstSpanIdx : null);
+        } else {
+            // anchor mode
+            ensureAnchorContext();
+            const resolved = resolveAnchorEntry(n, original, headings!, lineStarts!, totalLines);
+            if (typeof resolved === "string") {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `replacements[${i}] (anchor): ${resolved}`,
+                };
+            }
+            const spanIdx = spans.length;
+            spans.push({
+                repIndex: i,
+                from: resolved.from,
+                to: resolved.to,
+                replacement: resolved.replacement,
+            });
+            summaries.push({
+                index: i,
+                mode: "anchor",
+                anchor: { heading_path: n.headingPath, where: n.where },
+                replacement: n.replacement,
+                occurrences_found: 1,
+                occurrences_replaced: 1,
+                replace_all: false,
+            });
+            summaryUniqueSpanIdx.push(spanIdx);
+        }
+    }
+
+    const overlapErr = detectSpanOverlap(spans);
+    if (overlapErr) {
+        return { success: false, type: "text", content: overlapErr };
+    }
+
+    // Apply spans back-to-front.
+    const sortedDesc = [...spans].sort((a, b) => b.from - a.from || b.to - a.to);
+    let working = original;
+    for (const span of sortedDesc) {
+        working = working.substring(0, span.from) + span.replacement + working.substring(span.to);
+    }
+
+    // Compute post-edit offsets for excerpt generation.
+    const spanPostEdit: Array<{ newFrom: number; newTo: number }> = [];
+    for (let k = 0; k < spans.length; k++) {
+        spanPostEdit.push({ newFrom: 0, newTo: 0 });
+    }
+    const sortedAsc = spans
+        .map((s, idx) => ({ s, idx }))
+        .sort((a, b) => a.s.from - b.s.from || a.s.to - b.s.to);
+    let cumulativeDelta = 0;
+    for (const { s, idx } of sortedAsc) {
+        const newFrom = s.from + cumulativeDelta;
+        const newTo = newFrom + s.replacement.length;
+        spanPostEdit[idx] = { newFrom, newTo };
+        cumulativeDelta += s.replacement.length - (s.to - s.from);
+    }
+
+    // Fill before/after excerpts.
+    for (let i = 0; i < summaries.length; i++) {
+        const uniq = summaryUniqueSpanIdx[i];
+        if (uniq === null || uniq === undefined) continue;
+        const span = spans[uniq]!;
+        const post = spanPostEdit[uniq]!;
+        const ex = buildSpanExcerpts(original, working, span.from, span.to, post.newFrom, post.newTo);
+        summaries[i]!.before_excerpt = ex.before;
+        summaries[i]!.after_excerpt = ex.after;
+        if (ex.truncated) {
+            summaries[i]!.excerpt_truncated = true;
+        }
+    }
+
+    if (!dryRun) {
+        const lockErr = await runVaultMutation(plugin, chatStream, {
+            kind: "modify",
+            path,
+            toolName,
+            perform: async () => { await plugin.app.vault.modify(file, working); },
+        });
+        if (lockErr) return lockErr;
+    }
+
+    const totalReplaced = summaries.reduce((s, r) => s + r.occurrences_replaced, 0);
+    const newMtime = dryRun ? previousMtime : file.stat.mtime;
+
+    return {
+        success: true,
+        type: "object",
+        content: {
+            action: dryRun ? "dry_run_text_replace" : "text_replaced",
+            path,
+            replacements: summaries,
+            total_replacements: totalReplaced,
+            dry_run: dryRun,
+            previous_mtime: previousMtime,
+            new_mtime: newMtime,
+            ...(dryRun ? { preview: working } : {}),
+        },
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: replace_text (single entry, flat schema)
+//
+// Single find-and-replace edit on one file. The schema is intentionally
+// flat (no nested `replacements[]` array) because LLMs are far less
+// likely to make JSON errors on flat objects versus nested arrays.
+// ─────────────────────────────────────────────────────────────────────────────
+
 export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
@@ -720,26 +1014,195 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "replace_text",
                 description:
-                    "Apply one or more atomic edits to a single file via `replacements[]`. Each entry uses " +
-                    "exactly one locator mode: `pattern` (literal find-and-replace) OR `anchor` (heading_path " +
-                    "+ `where`: replace_section / replace_body / append_to_section / prepend_to_body / " +
+                    "Apply a single find-and-replace edit to a file. Use exactly one locator mode: " +
+                    "`pattern` (literal text / regex) OR `anchor` (heading_path + `where`: " +
+                    "replace_section / replace_body / append_to_section / prepend_to_body / " +
                     "insert_before_section). " +
-                    "All entries match the SAME pre-edit snapshot; matched ranges across entries must be " +
-                    "disjoint. Overlapping matches are rejected and nothing is written. Set `dry_run` to preview. " +
                     "\n\n" +
                     "Mode picking: use `anchor` when the edit aligns with a section boundary or you already " +
                     "have a heading_path from a digest — cheapest because it doesn't require knowing the " +
                     "section's exact text. Use `pattern` for unstructured edits inside a section (typos, term " +
                     "renames, deleting a phrase). " +
                     "\n\n" +
+                    "⚠️ IMPORTANT: For multiple atomic edits to the SAME file that must all match the " +
+                    "pre-edit snapshot, use `batch_replace_text` instead — it accepts a `replacements[]` " +
+                    "array and applies all entries atomically. Using multiple `replace_text` calls in sequence " +
+                    "will cause later calls to operate on already-modified content, likely missing their target. " +
+                    "\n\n" +
                     "Tag-shape guard: a `pattern` value that looks like a single tag token (e.g. `#foo`) is " +
                     "refused by default — raw text replacement cannot tell `#foo` from `#foobar` and risks " +
-                    "frontmatter corruption. Set that entry's `force=true` only if a literal text replace is " +
-                    "genuinely intended (run with `dry_run=true` first). " +
+                    "frontmatter corruption. Set `force=true` only if a literal text replace is genuinely " +
+                    "intended (run with `dry_run=true` first). " +
                     "\n\n" +
-                    "Pass `expected_pre_edit_mtime` (Unix ms; chain from a prior read tool's `mtime` or another " +
-                    "write tool's `new_mtime`) to fail fast on concurrent external edits. The response echoes " +
-                    "`previous_mtime` / `new_mtime` for chaining.",
+                    "Pass `expected_pre_edit_mtime` to fail fast on concurrent external edits.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        path: {
+                            type: "string",
+                            description: "Vault-relative path to the file, e.g. 'Notes/MyNote.md'.",
+                        },
+                        pattern: {
+                            type: "string",
+                            description:
+                                "[pattern mode] Text to find. Must match the file's exact text byte-for-byte " +
+                                "(whitespace, punctuation, table pipes). If you are reconstructing the pattern " +
+                                "from memory after a prior failure, prefer re-reading the file first — memory-" +
+                                "reconstructed patterns often differ on whitespace or adjacent table columns. " +
+                                "Set `use_regex: true` to use JavaScript regex syntax (no // delimiters, " +
+                                "e.g. `\"foo\\\\s+bar\"`). Must not be empty. Mutually exclusive with `anchor`.",
+                        },
+                        anchor: {
+                            type: "object",
+                            description:
+                                "[anchor mode] Position the edit by heading path. Mutually exclusive " +
+                                "with `pattern`. The heading path resolves uniquely against the file's " +
+                                "outline; ambiguous or missing paths cause the call to fail with a " +
+                                "diagnostic listing the available paths.",
+                            properties: {
+                                heading_path: {
+                                    type: "array",
+                                    items: { type: "string" },
+                                    minItems: 1,
+                                    description:
+                                        "Heading titles, outermost → innermost, that the target heading's " +
+                                        "ancestor chain must END WITH. A short tail (even a single leaf " +
+                                        "title) is accepted IF it is unique in the file; otherwise the " +
+                                        "call fails as ambiguous and you must prepend more ancestors. " +
+                                        "Intermediate ancestors must NOT be skipped.",
+                                },
+                                where: {
+                                    type: "string",
+                                    enum: [...ANCHOR_WHERE_VALUES],
+                                    description:
+                                        "Where, relative to the resolved section, to apply `replacement`: " +
+                                        "replace_section (replace the WHOLE section including its heading line); " +
+                                        "replace_body (replace the section body, keeping the heading line); " +
+                                        "prepend_to_body (insert immediately after the heading line); " +
+                                        "append_to_section (insert at the section's end); " +
+                                        "insert_before_section (insert just before the heading line).",
+                                },
+                            },
+                            required: ["heading_path", "where"],
+                        },
+                        replacement: {
+                            type: "string",
+                            description:
+                                "REQUIRED. Text to substitute in. Always include this field — use \"\" " +
+                                "(empty string) to delete the matched text. For anchor mode insert/append/" +
+                                "prepend variants, '' is allowed but unusual.",
+                        },
+                        replace_all: {
+                            type: "boolean",
+                            description:
+                                "[pattern mode only] If true, replace every occurrence of `pattern`. " +
+                                "Defaults to false. Not allowed in anchor mode.",
+                        },
+                        expected_count: {
+                            type: "integer",
+                            minimum: 0,
+                            description:
+                                "[pattern mode only] Optional assertion: number of occurrences you expect. " +
+                                "If actual count differs, the call fails before any write. Not allowed in anchor mode.",
+                        },
+                        force: {
+                            type: "boolean",
+                            description:
+                                "If true, bypass the tag-shape safety guard (pattern mode). Defaults to false.",
+                        },
+                        use_regex: {
+                            type: "boolean",
+                            description:
+                                "[pattern mode only] If true, `pattern` is interpreted as a JavaScript regex " +
+                                "(literal syntax, no // delimiters). The regex runs with `g`, `m`, and `u` flags. " +
+                                "In regex mode, `replacement` supports `$1`–`$99`, `$&`, `` $` ``, `$'`, `$$`.",
+                        },
+                        dry_run: {
+                            type: "boolean",
+                            description:
+                                "If true, validate and preview without modifying the file. Defaults to false.",
+                        },
+                        expected_pre_edit_mtime: {
+                            type: "integer",
+                            minimum: 0,
+                            description:
+                                "Optional Unix ms; the file's expected current `mtime`. Chain from a prior " +
+                                "read tool's `mtime` or another write tool's `new_mtime`.",
+                        },
+                    },
+                    required: ["path", "replacement"],
+                },
+            },
+        },
+        capabilities: ["write_file"] as ToolCapability[],
+        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
+            const path = args["path"] as string;
+            const dryRun = (args["dry_run"] as boolean) ?? false;
+            const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
+
+            // Build a single entry from the flat args.
+            // Only include fields that are present so normaliseReplacement
+            // sees the same shape as the batch entries.
+            const entry: Record<string, unknown> = {};
+            if (args["pattern"] !== undefined) entry["pattern"] = args["pattern"];
+            if (args["anchor"] !== undefined) entry["anchor"] = args["anchor"];
+            entry["replacement"] = args["replacement"];
+            if (args["replace_all"] !== undefined) entry["replace_all"] = args["replace_all"];
+            if (args["expected_count"] !== undefined) entry["expected_count"] = args["expected_count"];
+            if (args["force"] !== undefined) entry["force"] = args["force"];
+            if (args["use_regex"] !== undefined) entry["use_regex"] = args["use_regex"];
+
+            return executeReplaceTextCore(
+                plugin,
+                chatStream,
+                path,
+                [entry],
+                dryRun,
+                expectedPreEditMtime,
+                _signal,
+                "replace_text",
+            );
+        },
+        requiresConfirmation: true,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tool: batch_replace_text (multi entry, `replacements[]` array)
+//
+// Atomic batch of edits against a single file snapshot. Use when multiple
+// edits to the same file must all see the same pre-edit content AND you
+// don't want intermediate states visible. Keep batches small (≤4 entries
+// recommended) — LLMs are less accurate with large nested JSON arrays.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
+
+        schema: {
+            type: "function",
+            function: {
+                name: "batch_replace_text",
+                description:
+                    "Apply multiple atomic edits to a single file via `replacements[]`. Each entry uses " +
+                    "exactly one locator mode: `pattern` (literal find-and-replace) OR `anchor` (heading_path " +
+                    "+ `where`: replace_section / replace_body / append_to_section / prepend_to_body / " +
+                    "insert_before_section). " +
+                    "All entries match the SAME pre-edit snapshot; matched ranges across entries must be " +
+                    "disjoint. Overlapping matches are rejected and nothing is written. " +
+                    "\n\n" +
+                    "⚠️ Use this tool ONLY when you need multiple atomic edits to the same file. For single " +
+                    "edits, prefer `replace_text` — its flat schema is less error-prone. Keep batches small " +
+                    "(≤4 entries recommended) to reduce JSON generation errors. " +
+                    "\n\n" +
+                    "Mode picking: use `anchor` when the edit aligns with a section boundary or you already " +
+                    "have a heading_path from a digest. Use `pattern` for unstructured edits inside a section. " +
+                    "\n\n" +
+                    "Tag-shape guard: a `pattern` that looks like a tag token (e.g. `#foo`) is refused by " +
+                    "default. Set `force=true` on that entry if literal text replace is intended. " +
+                    "\n\n" +
+                    "Pass `expected_pre_edit_mtime` to fail fast on concurrent external edits.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -753,14 +1216,18 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                             description:
                                 "List of edits to apply atomically. Each entry must provide exactly one of " +
                                 "`pattern` (literal text mode) or `anchor` (heading-path mode). All entries match " +
-                                "the file's pre-edit content; matched ranges across entries must be disjoint.",
+                                "the file's pre-edit content; matched ranges across entries must be disjoint. " +
+                                "Recommended max: 4 entries per batch.",
                             items: {
                                 type: "object",
                                 properties: {
                                     pattern: {
                                         type: "string",
                                         description:
-                                            "[pattern mode] Text to find. By default literal substring match. " +
+                                            "[pattern mode] Text to find. Must match the file's exact text byte-for-byte " +
+                                            "(whitespace, punctuation, table pipes). If you are reconstructing the pattern " +
+                                            "from memory after a prior failure, prefer re-reading the file first — memory-" +
+                                            "reconstructed patterns often differ on whitespace or adjacent table columns. " +
                                             "Set `use_regex: true` to use JavaScript regex syntax (no // delimiters, " +
                                             "e.g. `\"foo\\\\s+bar\"`). Must not be empty. Mutually exclusive with `anchor`.",
                                     },
@@ -768,9 +1235,7 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                         type: "object",
                                         description:
                                             "[anchor mode] Position the edit by heading path. Mutually exclusive " +
-                                            "with `pattern`. The heading path resolves uniquely against the file's " +
-                                            "outline; ambiguous or missing paths cause the whole call to fail with a " +
-                                            "diagnostic listing the available paths.",
+                                            "with `pattern`.",
                                         properties: {
                                             heading_path: {
                                                 type: "array",
@@ -778,21 +1243,14 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                                 minItems: 1,
                                                 description:
                                                     "Heading titles, outermost → innermost, that the target heading's " +
-                                                    "ancestor chain must END WITH. A short tail (even a single leaf " +
-                                                    "title) is accepted IF it is unique in the file; otherwise the " +
-                                                    "call fails as ambiguous and you must prepend more ancestors. " +
-                                                    "Intermediate ancestors must NOT be skipped.",
+                                                    "ancestor chain must END WITH.",
                                             },
                                             where: {
                                                 type: "string",
                                                 enum: [...ANCHOR_WHERE_VALUES],
                                                 description:
-                                                    "Where, relative to the resolved section, to apply `replace`: " +
-                                                    "replace_section (replace the WHOLE section including its heading line); " +
-                                                    "replace_body (replace the section body, keeping the heading line); " +
-                                                    "prepend_to_body (insert immediately after the heading line); " +
-                                                    "append_to_section (insert at the section's end, before any sibling/parent heading); " +
-                                                    "insert_before_section (insert just before the heading line).",
+                                                    "Where to apply: replace_section / replace_body / prepend_to_body / " +
+                                                    "append_to_section / insert_before_section.",
                                             },
                                         },
                                         required: ["heading_path", "where"],
@@ -800,45 +1258,27 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                     replacement: {
                                         type: "string",
                                         description:
-                                            "Text to substitute in. For pattern mode, '' deletes the match. For anchor " +
-                                            "mode insert/append/prepend variants, '' is allowed but unusual.",
+                                            "REQUIRED. Text to substitute in. Use \"\" to delete.",
                                     },
                                     replace_all: {
                                         type: "boolean",
                                         description:
-                                            "[pattern mode only] If true, replace every occurrence of `pattern`. " +
-                                            "Defaults to false. Not allowed in anchor mode (an anchor resolves to a " +
-                                            "unique location).",
+                                            "[pattern mode only] Replace every occurrence. Defaults to false.",
                                     },
                                     expected_count: {
                                         type: "integer",
                                         minimum: 0,
                                         description:
-                                            "[pattern mode only] Optional assertion: number of occurrences of " +
-                                            "`pattern` you expect in the pre-edit file. If actual count differs, the " +
-                                            "whole call fails before any write. Not allowed in anchor mode.",
+                                            "[pattern mode only] Assert occurrence count. Fails before write if mismatched.",
                                     },
                                     force: {
                                         type: "boolean",
-                                        description:
-                                            "If true, bypass the tag-shape safety guard for this entry only " +
-                                            "(pattern mode). Defaults to false. In anchor mode the guard does not " +
-                                            "apply; force is accepted for symmetry but has no effect.",
+                                        description: "Bypass tag-shape guard. Defaults to false.",
                                     },
                                     use_regex: {
                                         type: "boolean",
                                         description:
-                                            "[pattern mode only] If true, `pattern` is interpreted as a JavaScript " +
-                                            "regex (literal syntax, no // delimiters — e.g. `\"foo\\\\s+bar\"`, not " +
-                                            "`\"/foo\\\\s+bar/\"`). The regex always runs with `g` (global), " +
-                                            "`m` (multiline — ^/$ match per-line), and `u` (Unicode) flags. " +
-                                            "Use `replace_all` to control whether one or all matches are replaced. " +
-                                            "Defaults to false (literal substring match). In regex mode, " +
-                                            "`expected_count` counts regex matches. Invalid regex syntax is caught " +
-                                            "eagerly before any edit. " +
-                                            "In regex mode, `replacement` supports `$1`–`$99` capture-group " +
-                                            "references, `$&` (full match), `` $` `` (before match), `$'` (after match), " +
-                                            "and `$$` (literal $).",
+                                            "[pattern mode only] Interpret `pattern` as a JavaScript regex.",
                                     },
                                 },
                                 required: ["replacement"],
@@ -846,17 +1286,12 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                         },
                         dry_run: {
                             type: "boolean",
-                            description:
-                                "If true, validate and preview the result without modifying the file. " +
-                                "Defaults to false.",
+                            description: "If true, preview without modifying. Defaults to false.",
                         },
                         expected_pre_edit_mtime: {
                             type: "integer",
                             minimum: 0,
-                            description:
-                                "Optional Unix ms; the file's expected current `mtime`. If actual on-disk " +
-                                "`mtime` differs, the call fails (concurrent-edit guard). Chain from a prior " +
-                                "read tool's `mtime` or another write tool's `new_mtime`.",
+                            description: "Optional Unix ms; fail fast on concurrent external edits.",
                         },
                     },
                     required: ["path", "replacements"],
@@ -866,18 +1301,11 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
         capabilities: ["write_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
             const path = args["path"] as string;
-            // Accept both `replacements` (array, canonical) and `replacement` (single object, common LLM slip).
             let rawReplacements = args["replacements"];
-            if (!rawReplacements && args["replacement"] && typeof args["replacement"] === "object" && !Array.isArray(args["replacement"])) {
-                rawReplacements = [args["replacement"]];
-            }
             const dryRun = (args["dry_run"] as boolean) ?? false;
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
-            // LLMs sometimes incorrectly double-serialise complex nested arrays
-            // (e.g. `replacements: "[{...}, ...]"` instead of a native JSON
-            // array).  If we receive a string, try to JSON.parse it so the
-            // call can still succeed.
+            // Handle double-serialised JSON string.
             let replacements: unknown[];
             if (typeof rawReplacements === "string") {
                 try {
@@ -912,271 +1340,16 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
-            const fileOrErr = requireFile(plugin.app, path);
-            if (isFailure(fileOrErr)) return fileOrErr;
-            const file = fileOrErr;
-
-            // Snapshot mtime BEFORE reading the body so race detection sees the
-            // pre-mutation value even if Obsidian were to refresh stat mid-call
-            // (it does not today; defensive against future internal changes).
-            const previousMtime = file.stat.mtime;
-            if (
-                expectedPreEditMtime !== undefined
-                && expectedPreEditMtime !== previousMtime
-            ) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        `\`expected_pre_edit_mtime\` mismatch: caller believes file mtime is ${expectedPreEditMtime}, ` +
-                        `but actual mtime is ${previousMtime}. This usually means the file was modified ` +
-                        `between your read and this write. Re-read the file (its envelope reports the new mtime) ` +
-                        `and retry with the updated content.`,
-                };
-            }
-
-            // Validate every entry up-front so we never partially apply.
-            const normalised: NormalisedEntry[] = [];
-            for (let i = 0; i < replacements.length; i++) {
-                const result = normaliseReplacement(replacements[i], i);
-                if (typeof result === "string") {
-                    return { success: false, type: "text", content: result };
-                }
-                normalised.push(result);
-            }
-
-            // Tag-shape soft guard, applied per entry. Search-mode only —
-            // anchor mode resolves to a heading region, not to a tag-shaped
-            // literal, so the guard cannot meaningfully fire there.
-            const tagRefusals: string[] = [];
-            for (let i = 0; i < normalised.length; i++) {
-                const n = normalised[i]!;
-                if (n.kind === "search" && !n.force && isTagShaped(n.pattern)) {
-                    tagRefusals.push(
-                        `replacements[${i}].pattern='${n.pattern.trim()}' looks like a tag token`,
-                    );
-                }
-            }
-            if (tagRefusals.length > 0) {
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        `Refusing to use replace_text on tag-shaped text: ${tagRefusals.join("; ")}. ` +
-                        `Tags may appear in YAML frontmatter or as inline #tag, and text replacement ` +
-                        `can partial-match (e.g. '#foo' inside '#foobar') or corrupt frontmatter. ` +
-                        `Prefer add_files_tags / remove_files_tags / set_files_tags (accepts one or more paths) or rename_tag (vault-wide). ` +
-                        `If you really intend a raw text replace, retry the offending entries with force=true ` +
-                        `(running with dry_run=true first is recommended).`,
-                };
-            }
-
-            const original = await plugin.app.vault.read(file);
-
-            // Anchor-mode geometry shared across entries: heading outline +
-            // line-start offsets are computed once per call. Heading data
-            // from MetadataCache reflects the on-disk content — same as
-            // what `original` was just read against (Obsidian keeps the
-            // cache eagerly synced for in-vault files).
-            let lineStarts: number[] | null = null;
-            let headings: HeadingNode[] | null = null;
-            let totalLines = 0;
-            const ensureAnchorContext = (): void => {
-                if (lineStarts !== null) return;
-                lineStarts = buildLineStarts(original);
-                // total lines = number of newline-terminated lines + 1 if the
-                // file does not end with a newline. lineStarts has one entry
-                // per line plus a sentinel; line count = entries - 1.
-                totalLines = lineStarts.length - 1;
-                const cache = plugin.app.metadataCache.getFileCache(file);
-                headings = (cache?.headings ?? []).map((h) => ({
-                    level: h.level,
-                    heading: h.heading,
-                    line: h.position.start.line,
-                }));
-            };
-
-            const spans: Span[] = [];
-            const summaries: ReplacementSummary[] = [];
-            // Parallel to `summaries`: records the single span index in
-            // `spans` that this summary is 1:1 with, or null when the
-            // summary produced 0 or >1 spans. Only 1:1 summaries get
-            // before/after excerpts — see `ReplacementSummary.before_excerpt`
-            // doc comment for why.
-            const summaryUniqueSpanIdx: Array<number | null> = [];
-
-            for (let i = 0; i < normalised.length; i++) {
-                const n = normalised[i]!;
-
-                if (n.kind === "search") {
-                    // regex mode: capture groups so $1/$2 replacement works
-                    const regexMatches = n.useRegex ? findAllRegexMatches(original, n.pattern) : null;
-                    const positions: Array<{ start: number; end: number; match?: RegexMatch }> =
-                        regexMatches
-                            ? regexMatches.map((m) => ({ start: m.start, end: m.end, match: m }))
-                            : findAllOccurrences(original, n.pattern).map((pos) => ({ start: pos, end: pos + n.pattern.length }));
-
-                    if (n.expectedCount !== null && positions.length !== n.expectedCount) {
-                        return {
-                            success: false,
-                            type: "text",
-                            content:
-                                `replacements[${i}]: expected ${n.expectedCount} occurrence(s) of ` +
-                                `${JSON.stringify(n.pattern)} but found ${positions.length}. ` +
-                                `No changes were written. Re-read the file or relax expected_count and retry.`,
-                        };
-                    }
-
-                    if (positions.length === 0) {
-                        const hint = n.useRegex ? "" : regexHintForLiteral(n.pattern);
-                        return {
-                            success: false,
-                            type: "text",
-                            content:
-                                `replacements[${i}]: ${n.useRegex ? "regex" : "pattern text"} not found in file. ` +
-                                `${n.useRegex ? "" : hint}` +
-                                `No changes were written. Verify the exact text ` +
-                                `(whitespace, newlines, casing) with read_file or grep, then retry.`,
-                        };
-                    }
-
-                    const targetPositions = n.replaceAll ? positions : [positions[0]!];
-                    const firstSpanIdx = spans.length;
-                    for (const hit of targetPositions) {
-                        const effectiveReplacement =
-                            hit.match
-                                ? replaceWithGroups(n.replacement, original, hit.match)
-                                : n.replacement;
-                        spans.push({
-                            repIndex: i,
-                            from: hit.start,
-                            to: hit.end,
-                            replacement: effectiveReplacement,
-                        });
-                    }
-
-                    summaries.push({
-                        index: i,
-                        mode: "search",
-                        pattern: n.pattern,
-                        replacement: n.replacement,
-                        occurrences_found: positions.length,
-                        occurrences_replaced: targetPositions.length,
-                        replace_all: n.replaceAll,
-                    });
-                    summaryUniqueSpanIdx.push(targetPositions.length === 1 ? firstSpanIdx : null);
-                } else {
-                    // anchor mode
-                    ensureAnchorContext();
-                    const resolved = resolveAnchorEntry(n, original, headings!, lineStarts!, totalLines);
-                    if (typeof resolved === "string") {
-                        return {
-                            success: false,
-                            type: "text",
-                            content: `replacements[${i}] (anchor): ${resolved}`,
-                        };
-                    }
-                    const spanIdx = spans.length;
-                    spans.push({
-                        repIndex: i,
-                        from: resolved.from,
-                        to: resolved.to,
-                        replacement: resolved.replacement,
-                    });
-                    summaries.push({
-                        index: i,
-                        mode: "anchor",
-                        anchor: { heading_path: n.headingPath, where: n.where },
-                        replacement: n.replacement,
-                        // For anchor mode we always operate on a single, uniquely-resolved location.
-                        occurrences_found: 1,
-                        occurrences_replaced: 1,
-                        replace_all: false,
-                    });
-                    // anchor mode is always 1:1 — excerpt is always computable.
-                    summaryUniqueSpanIdx.push(spanIdx);
-                }
-            }
-
-            const overlapErr = detectSpanOverlap(spans);
-            if (overlapErr) {
-                return { success: false, type: "text", content: overlapErr };
-            }
-
-            // Apply spans back-to-front so earlier offsets stay valid as we
-            // splice. Sorting descending by `from` is sufficient because
-            // detectSpanOverlap has already guaranteed disjointness.
-            const sortedDesc = [...spans].sort((a, b) => b.from - a.from || b.to - a.to);
-            let working = original;
-            for (const span of sortedDesc) {
-                working = working.substring(0, span.from) + span.replacement + working.substring(span.to);
-            }
-
-            // Compute each span's (newFrom, newTo) in the post-edit buffer.
-            // For a span S, newFrom[S] = original from[S] + Σ(delta_i) over
-            // all prior spans (those with from[i] < from[S]), where
-            // delta_i = replace.length[i] - (to[i] - from[i]). Equivalently,
-            // walk spans in ascending `from` order and carry a running total.
-            const spanPostEdit: Array<{ newFrom: number; newTo: number }> = [];
-            for (let k = 0; k < spans.length; k++) {
-                spanPostEdit.push({ newFrom: 0, newTo: 0 });
-            }
-            const sortedAsc = spans
-                .map((s, idx) => ({ s, idx }))
-                .sort((a, b) => a.s.from - b.s.from || a.s.to - b.s.to);
-            let cumulativeDelta = 0;
-            for (const { s, idx } of sortedAsc) {
-                const newFrom = s.from + cumulativeDelta;
-                const newTo = newFrom + s.replacement.length;
-                spanPostEdit[idx] = { newFrom, newTo };
-                cumulativeDelta += s.replacement.length - (s.to - s.from);
-            }
-
-            // Fill before/after excerpts for summaries with a unique span.
-            for (let i = 0; i < summaries.length; i++) {
-                const uniq = summaryUniqueSpanIdx[i];
-                if (uniq === null || uniq === undefined) continue;
-                const span = spans[uniq]!;
-                const post = spanPostEdit[uniq]!;
-                const ex = buildSpanExcerpts(original, working, span.from, span.to, post.newFrom, post.newTo);
-                summaries[i]!.before_excerpt = ex.before;
-                summaries[i]!.after_excerpt = ex.after;
-                if (ex.truncated) {
-                    summaries[i]!.excerpt_truncated = true;
-                }
-            }
-
-            if (!dryRun) {
-                const lockErr = await runVaultMutation(plugin, chatStream, {
-                    kind: "modify",
-                    path,
-                    toolName: "replace_text",
-                    perform: async () => { await plugin.app.vault.modify(file, working); },
-                });
-                if (lockErr) return lockErr;
-            }
-
-            const totalReplaced = summaries.reduce((s, r) => s + r.occurrences_replaced, 0);
-
-            // After modify(), Obsidian updates `file.stat` in place. Dry-run keeps
-            // the same value as `previous_mtime` so the caller can still pass the
-            // returned `new_mtime` into a follow-up call without a mismatch.
-            const newMtime = dryRun ? previousMtime : file.stat.mtime;
-
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? "dry_run_text_replace" : "text_replaced",
-                    path,
-                    replacements: summaries,
-                    total_replacements: totalReplaced,
-                    dry_run: dryRun,
-                    previous_mtime: previousMtime,
-                    new_mtime: newMtime,
-                    ...(dryRun ? { preview: working } : {}),
-                },
-            };
+            return executeReplaceTextCore(
+                plugin,
+                chatStream,
+                path,
+                replacements,
+                dryRun,
+                expectedPreEditMtime,
+                _signal,
+                "batch_replace_text",
+            );
         },
         requiresConfirmation: true,
     };

@@ -9,7 +9,7 @@ export { vaultPrependFile } from "./prepend-file";
 export { vaultDeleteFiles } from "./delete-files";
 export { vaultDeleteFolder } from "./delete-folder";
 export { vaultRenameFile } from "./rename-file";
-export { vaultReplaceText } from "./replace-text";
+export { vaultReplaceText, vaultBatchReplaceText } from "./replace-text";
 export { vaultInsertText } from "./insert-text";
 export { vaultEditFilesFrontmatter } from "./edit-frontmatter";
 export { vaultWriteFile } from "./write-file";

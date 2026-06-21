@@ -127,7 +127,7 @@ function insertContent(
 function resolveWhere(args: Record<string, unknown>): { ok: true; where: "before" | "after" } | { ok: false; error: string } {
 	const canonical = args["where"];
 	if (canonical === "before" || canonical === "after") {
-		return { ok: true, where: canonical as "before" | "after" };
+		return { ok: true, where: canonical };
 	}
 
 	const before = args["before"];

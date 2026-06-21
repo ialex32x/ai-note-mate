@@ -21,6 +21,7 @@ import {
     vaultRenameFile,
     vaultInsertText,
     vaultReplaceText,
+    vaultBatchReplaceText,
     vaultWriteFile,
 } from "./edit";
 import {
@@ -121,6 +122,7 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultAppendFile(plugin),
         vaultPrependFile(plugin),
         vaultReplaceText(plugin),
+        vaultBatchReplaceText(plugin),
         vaultInsertText(plugin),
         // Template instantiation (read template → replace vars → create file)
         vaultInstantiateTemplate(plugin),
@@ -256,6 +258,7 @@ export function createObsidianEditorTools(plugin: NoteAssistantPlugin): Register
         ...createObsidianReadOnlyTools(plugin),
         // Content writes ONLY — no structural mutations.
         vaultReplaceText(plugin),
+        vaultBatchReplaceText(plugin),
         vaultInsertText(plugin),
         vaultAppendFile(plugin),
         vaultPrependFile(plugin),
