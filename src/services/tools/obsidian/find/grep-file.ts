@@ -21,9 +21,9 @@ import {
 // strings/patterns I want to anchor on; give me the line numbers (and just
 // enough context to confirm the match) so I can edit later".
 //
-// Section scoping uses `heading_path` — the same shape `read_section` and
-// `replace_text` (anchor mode) accept — so heading addressing stays
-// consistent across the read / locate / edit toolchain.
+// Section scoping uses `heading_path` — the same shape `read_section`,
+// `insert_text` (heading mode), and `set_section` accept — so heading
+// addressing stays consistent across the read / locate / insert / edit toolchain.
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Lowered from 200 → 50 to keep typical grep results comfortably under

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { __TEST_ONLY__ } from "../src/services/tools/obsidian/edit/replace-text";
-import type { Span, SearchEntry, AnchorEntry } from "../src/services/tools/obsidian/edit/replace-text";
+import type { Span, SearchEntry } from "../src/services/tools/obsidian/edit/replace-text";
 
 const {
     normaliseReplacement,
@@ -50,19 +50,19 @@ describe("normaliseReplacement", () => {
 
     // ── Mutual exclusion: pattern vs anchor ──
 
-    it("rejects both pattern and anchor present", () => {
+    it("rejects both pattern and anchor present (redirect to insert_text)", () => {
         const r = normaliseReplacement(
-            { pattern: "foo", anchor: { heading_path: ["H"], where: "replace_section" }, replacement: "bar" },
+            { pattern: "foo", anchor: { heading_path: ["H"], where: "append_to_section" }, replacement: "bar" },
             0,
         );
         expect(typeof r).toBe("string");
-        expect(r as string).toContain("not both");
+        expect(r as string).toContain("insert_text");
     });
 
-    it("rejects neither pattern nor anchor present", () => {
+    it("rejects missing pattern (redirect to insert_text)", () => {
         const r = normaliseReplacement({ replacement: "bar" }, 0);
         expect(typeof r).toBe("string");
-        expect(r as string).toContain("either");
+        expect(r as string).toContain("insert_text");
     });
 
     // ── force field validation ──
@@ -200,153 +200,16 @@ describe("normaliseReplacement", () => {
         expect((r as SearchEntry).useRegex).toBe(true);
     });
 
-    // ── Anchor mode: anchor field validation ──
+    // ── Anchor: redirect to insert_text ──
 
-    it("rejects anchor that is not an object", () => {
+    it("rejects anchor and redirects to insert_text", () => {
         const r = normaliseReplacement(
-            { anchor: "not-an-object", replacement: "bar" },
+            { anchor: { heading_path: ["H"], where: "append_to_section" }, replacement: "text" },
             0,
         );
         expect(typeof r).toBe("string");
-        expect(r as string).toContain("anchor");
+        expect(r as string).toContain("insert_text");
     });
-
-    it("rejects anchor that is an array", () => {
-        const r = normaliseReplacement(
-            { anchor: [], replacement: "bar" },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("anchor");
-    });
-
-    it("rejects anchor with missing heading_path", () => {
-        const r = normaliseReplacement(
-            { anchor: { where: "replace_section" }, replacement: "bar" },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("heading_path");
-    });
-
-    it("rejects anchor with empty heading_path", () => {
-        const r = normaliseReplacement(
-            { anchor: { heading_path: [], where: "replace_section" }, replacement: "bar" },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("heading_path");
-    });
-
-    it("rejects anchor with non-string heading_path items", () => {
-        const r = normaliseReplacement(
-            {
-                anchor: { heading_path: ["H1", 42, "H3"], where: "replace_section" },
-                replacement: "bar",
-            },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("heading_path[1]");
-    });
-
-    it("rejects anchor with invalid where value", () => {
-        const r = normaliseReplacement(
-            {
-                anchor: { heading_path: ["H1"], where: "invalid_mode" },
-                replacement: "bar",
-            },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("where");
-    });
-
-    it("rejects anchor with replace_all present", () => {
-        const r = normaliseReplacement(
-            {
-                anchor: { heading_path: ["H1"], where: "replace_section" },
-                replacement: "bar",
-                replace_all: true,
-            },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("replace_all");
-    });
-
-    it("rejects anchor with expected_count present", () => {
-        const r = normaliseReplacement(
-            {
-                anchor: { heading_path: ["H1"], where: "replace_section" },
-                replacement: "bar",
-                expected_count: 1,
-            },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("expected_count");
-    });
-
-    it("accepts a valid minimal anchor entry", () => {
-        const r = normaliseReplacement(
-            { anchor: { heading_path: ["Chapter 1"], where: "append_to_section" }, replacement: "new content" },
-            3,
-        );
-        expect(typeof r).not.toBe("string");
-        const a = r as AnchorEntry;
-        expect(a.kind).toBe("anchor");
-        expect(a.headingPath).toEqual(["Chapter 1"]);
-        expect(a.where).toBe("append_to_section");
-        expect(a.replacement).toBe("new content");
-        expect(a.force).toBe(false);
-    });
-
-    it("accepts anchor with multi-level heading path", () => {
-        const r = normaliseReplacement(
-            {
-                anchor: { heading_path: ["Part 1", "Section A", "Subsection"], where: "prepend_to_body" },
-                replacement: "body text",
-            },
-            0,
-        );
-        expect(typeof r).not.toBe("string");
-        const a = r as AnchorEntry;
-        expect(a.headingPath).toEqual(["Part 1", "Section A", "Subsection"]);
-        expect(a.where).toBe("prepend_to_body");
-    });
-
-    it("rejects anchor with where=replace_section, redirects to set_section", () => {
-        const r = normaliseReplacement(
-            { anchor: { heading_path: ["H"], where: "replace_section" }, replacement: "text" },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("set_section");
-    });
-
-    it("rejects anchor with where=replace_body, redirects to set_section", () => {
-        const r = normaliseReplacement(
-            { anchor: { heading_path: ["H"], where: "replace_body" }, replacement: "text" },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("set_section");
-    });
-
-    // ── Anchor: all currently valid where values ──
-
-    const insertWhereModes = ["append_to_section", "prepend_to_body", "insert_before_section"] as const;
-    for (const mode of insertWhereModes) {
-        it(`accepts anchor with where=${mode}`, () => {
-            const r = normaliseReplacement(
-                { anchor: { heading_path: ["H"], where: mode }, replacement: "text" },
-                0,
-            );
-            expect(typeof r).not.toBe("string");
-            expect((r as AnchorEntry).where).toBe(mode);
-        });
-    }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1306,7 +1169,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         const spans: Span[] = [];
         for (let i = 0; i < normalised.length; i++) {
             const n = normalised[i]!;
-            if (n.kind === "anchor") return "SKIP_ANCHOR"; // anchor not covered here
+            if (n.kind !== "search") return "SKIP_UNSUPPORTED_KIND"; // only search is covered
 
             // regex mode: capture groups for $1/$2 substitution
             const regexMatches = n.useRegex ? findAllRegexMatches(original, n.pattern) : null;

@@ -4,7 +4,8 @@
  * Shared between:
  *   - `read_section`     (read.ts)            — resolve a section to read its body
  *   - `grep_file`        (grep.ts)            — optional section scoping
- *   - `replace_text`     (edit/replace-text)  — anchor mode (P2)
+ *   - `insert_text`      (edit/insert-text)   — heading-anchored insertion
+ *   - `set_section`      (edit/set-section)   — hash-gated section replacement
  *
  * Why a dedicated module instead of inlining into each tool:
  *   1. The tools live on different agents (read-only vs mutation) but must
@@ -369,7 +370,7 @@ export function resolveHeadingPathToRange(
 /**
  * Render a `FindSectionError` as a single-line, model-friendly message.
  * Kept here (rather than at each tool call site) so the wording stays
- * consistent across `read_section` and `replace_text` anchor mode.
+ * consistent across `read_section`, `insert_text`, and `set_section`.
  */
 export function formatFindSectionError(
     error: FindSectionError,

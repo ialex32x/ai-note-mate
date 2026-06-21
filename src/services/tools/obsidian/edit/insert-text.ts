@@ -3,22 +3,61 @@ import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
+import {
+	formatFindSectionError,
+	resolveHeadingPathToRange,
+	type HeadingNode,
+} from "../heading-section";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tool: insert_text
 //
-// Insert content at a text-anchored position: find the first occurrence of
-// `anchor` in the file body, then insert `content` either before or after
-// that anchor.  This replaces the "insert-by-replacing" pattern that
-// `replace_text` forced on the LLM (pattern: "X", replacement: "X\n\nnew")
-// with a clean insert-first API.
+// The single insertion tool. Supports two mutually-exclusive anchoring modes:
 //
-// Designed to complement `replace_text`:
-//   - `replace_text` → modify / delete existing content (search + anchor modes)
-//   - `insert_text`  → add new content at a text-anchored position
-//   - `append_file`  → add to end of file
-//   - `prepend_file` → add to beginning (frontmatter-aware)
+//   Text-anchored:  `anchor` (string) + `where` ("before" | "after")
+//                   Finds literal text in the file and inserts content
+//                   before or after the match.
+//
+//   Heading-anchored: `heading_path` (string[]) + `where`
+//                      ("prepend_to_body" | "append_to_section" |
+//                       "insert_before_section")
+//                      Resolves a heading by path and inserts content
+//                      at the specified structural position.
+//
+// Previously heading-anchored insertion lived inside `replace_text`'s
+// anchor mode.  That created confusion — `replace_text`'s `anchor`
+// parameter was an object {heading_path, where} while `insert_text`'s
+// `anchor` was a plain string.  LLMs routinely crossed the two
+// conventions (session-265).  Now there is one insertion tool with
+// clearly distinct parameters for the two anchoring strategies.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────
+
+type TextWhere = "before" | "after";
+type HeadingWhere = "prepend_to_body" | "append_to_section" | "insert_before_section";
+type Where = TextWhere | HeadingWhere;
+
+const ALL_WHERE_VALUES: Where[] = [
+	"before",
+	"after",
+	"prepend_to_body",
+	"append_to_section",
+	"insert_before_section",
+];
+
+const TEXT_WHERE_VALUES: TextWhere[] = ["before", "after"];
+const HEADING_WHERE_VALUES: HeadingWhere[] = [
+	"prepend_to_body",
+	"append_to_section",
+	"insert_before_section",
+];
+
+// ─────────────────────────────────────────────────────────────────────
+// Text-anchored insertion helpers
+// ─────────────────────────────────────────────────────────────────────
 
 function countOccurrences(text: string, anchor: string): number {
 	let count = 0;
@@ -42,7 +81,7 @@ function findNthOccurrence(text: string, anchor: string, n: number): number {
 function insertContent(
 	original: string,
 	anchor: string,
-	where: "before" | "after",
+	where: TextWhere,
 	content: string,
 	occurrence: number | undefined,
 ): { ok: true; result: string; totalOccurrences: number } | { ok: false; error: string; totalOccurrences: number; excerpts?: string[] } {
@@ -55,7 +94,6 @@ function insertContent(
 		};
 	}
 
-	// Ambiguous: multiple matches, no occurrence specified → refuse and return excerpts.
 	if (totalOccurrences > 1 && occurrence === undefined) {
 		const excerpts: string[] = [];
 		let pos = -1;
@@ -93,11 +131,6 @@ function insertContent(
 	}
 
 	const insertOffset = where === "before" ? idx : idx + anchor.length;
-
-	// Auto-pad multi-line content with newlines so block-level inserts
-	// (tables, paragraphs, sections) don't fuse with adjacent content.
-	// Single-line content (no \n) is left untouched — inline insertions
-	// like appending a word in a sentence must remain precise.
 	const padded = padBlockContent(original, insertOffset, content);
 
 	const result = where === "before"
@@ -107,29 +140,73 @@ function insertContent(
 	return { ok: true, result, totalOccurrences };
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Heading-anchored insertion
+// ─────────────────────────────────────────────────────────────────────
+
+function insertAtHeading(
+	original: string,
+	headings: HeadingNode[],
+	headingPath: string[],
+	where: HeadingWhere,
+	content: string,
+): { ok: true; result: string } | { ok: false; error: string } {
+	const lines = original.split("\n");
+	const totalLines = lines.length;
+
+	const resolved = resolveHeadingPathToRange(headings, headingPath, totalLines, true);
+	if (!resolved.ok) {
+		return { ok: false, error: formatFindSectionError(resolved.error, headingPath) };
+	}
+
+	const { start_line, end_line } = resolved.section;
+	// start_line is 1-based inclusive, end_line is 1-based exclusive past-section
+
+	switch (where) {
+		case "insert_before_section": {
+			// Insert just before the heading line.
+			const headingIdx = start_line - 1; // 0-based
+			const before = headingIdx > 0 ? lines.slice(0, headingIdx).join("\n") + "\n" : "";
+			const after = lines.slice(headingIdx).join("\n");
+			return { ok: true, result: before + content + "\n" + after };
+		}
+
+		case "prepend_to_body": {
+			// Insert immediately after the heading line.
+			const afterHeading = start_line; // 0-based, first line of body
+			const before = lines.slice(0, afterHeading).join("\n") + "\n";
+			const after = afterHeading < totalLines ? lines.slice(afterHeading).join("\n") : "";
+			return { ok: true, result: before + content + (after ? "\n" + after : "") };
+		}
+
+		case "append_to_section": {
+			// Insert at the end of the section body, before the next heading.
+			const before = lines.slice(0, end_line).join("\n");
+			const after = end_line < totalLines ? "\n" + lines.slice(end_line).join("\n") : "";
+			return { ok: true, result: before + "\n" + content + after };
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Padding helper (shared)
+// ─────────────────────────────────────────────────────────────────────
+
 /**
  * When `text` is block-level content (contains newlines), add leading /
  * trailing `\n` so it docks cleanly between `host[offset-1]` (the char
  * immediately before the insertion point) and `host[offset]` (the char
  * immediately after).  Single-line text is returned unchanged.
- *
- * Mirrors `padForGap` / `padForInsertion` in replace-text.ts's anchor
- * mode — the same philosophy applied to text-anchored insertion.
  */
 function padBlockContent(host: string, offset: number, text: string): string {
-	// Inline insertion: no newlines → never pad.
 	if (!text.includes("\n")) return text;
 
 	let out = text;
-	// Leading: need a separator when there IS a preceding char and it
-	// isn't already a newline, and our text doesn't start with one.
 	if (offset > 0 && host.charCodeAt(offset - 1) !== 10) {
 		if (out.charCodeAt(0) !== 10) {
 			out = "\n" + out;
 		}
 	}
-	// Trailing: need a separator when there IS a following char and it
-	// isn't already a newline, and our text doesn't end with one.
 	if (offset < host.length && host.charCodeAt(offset) !== 10) {
 		if (out.charCodeAt(out.length - 1) !== 10) {
 			out = out + "\n";
@@ -138,30 +215,17 @@ function padBlockContent(host: string, offset: number, text: string): string {
 	return out;
 }
 
-/**
- * Resolve the insertion direction from LLM arguments.
- *
- * LLMs sometimes use `before: true` / `after: false` instead of the canonical
- * `where: "before"` / `where: "after"`. This helper normalises those patterns:
- *
- *   - Canonical `where: "before" | "after"` wins when present and valid.
- *   - Otherwise, boolean `before` / `after` are translated:
- *       `before: true`  → "before"
- *       `before: false` → "after"
- *       `after: true`   → "after"
- *       `after: false`  → "before"
- *   - Contradictory combinations (`before: true && after: true`, or
- *     `before: false && after: false`) produce a descriptive error.
- *   - When no direction is specified at all, a missing-argument error is returned.
- *
- * @returns `{ ok: true, where }` or `{ ok: false, error }`.
- */
-function resolveWhere(args: Record<string, unknown>): { ok: true; where: "before" | "after" } | { ok: false; error: string } {
+// ─────────────────────────────────────────────────────────────────────
+// Where resolution
+// ─────────────────────────────────────────────────────────────────────
+
+function resolveWhere(args: Record<string, unknown>): { ok: true; where: Where } | { ok: false; error: string } {
 	const canonical = args["where"];
-	if (canonical === "before" || canonical === "after") {
-		return { ok: true, where: canonical };
+	if (typeof canonical === "string" && (ALL_WHERE_VALUES as string[]).includes(canonical)) {
+		return { ok: true, where: canonical as Where };
 	}
 
+	// Boolean aliases (before / after) — only map to text mode values.
 	const before = args["before"];
 	const after = args["after"];
 	const hasBefore = typeof before === "boolean";
@@ -177,7 +241,6 @@ function resolveWhere(args: Record<string, unknown>): { ok: true; where: "before
 					`Use \`where: "before"\` or \`where: "after"\` to disambiguate.`,
 			};
 		}
-		// before=true, after=false → "before"; before=false, after=true → "after"
 		return { ok: true, where: before ? "before" : "after" };
 	}
 
@@ -191,10 +254,38 @@ function resolveWhere(args: Record<string, unknown>): { ok: true; where: "before
 	return {
 		ok: false,
 		error:
-			`Missing insertion direction. Use \`where: "before"\` or \`where: "after"\` ` +
-			`to specify where to insert relative to the anchor.`,
+			`Missing or unrecognised insertion direction. ` +
+			`Use \`where\` with one of: ${ALL_WHERE_VALUES.map((v) => JSON.stringify(v)).join(", ")}. ` +
+			`For text-anchored insertion, also accepts \`before\` / \`after\` boolean aliases.`,
 	};
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// Excerpt helper
+// ─────────────────────────────────────────────────────────────────────
+
+function buildHeadingExcerpt(
+	original: string,
+	headingPath: string[],
+	where: HeadingWhere,
+	startLine: number,
+	endLine: number,
+): { before: string; after: string } {
+	const lines = original.split("\n");
+	const ctx = 3; // lines of surrounding context
+
+	const beforeStart = Math.max(0, startLine - 1 - ctx);
+	const beforeEnd = Math.min(lines.length, endLine + ctx);
+	const before = lines.slice(beforeStart, beforeEnd).join("\n");
+
+	// For after, the content is inserted, so we can't easily compute
+	// the post-edit excerpt without the result. Return meaningful context.
+	return { before, after: `[content inserted ${where} heading "${headingPath.join(" > ")}"]` };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Tool definition
+// ─────────────────────────────────────────────────────────────────────
 
 export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 	return {
@@ -205,22 +296,22 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 			function: {
 				name: "insert_text",
 				description:
-					"Insert content at a position anchored by existing text in the file. " +
-					"Finds the first occurrence of `anchor` (literal substring match) " +
-					"and inserts `content` before or after it. " +
-					"The anchor text is NOT modified or removed — only new content is added. " +
-					"\n\n" +
-					"Use this when you want to ADD new paragraphs, list items, sections, or any " +
-					"other content relative to existing text — without reconstructing the anchor " +
-					"as part of a replacement. " +
-					"For heading-anchored insertion (`prepend_to_body`, `append_to_section`, " +
-					"`insert_before_section`), use `replace_text` with its anchor mode instead. " +
-					"\n\n" +
-					"If `anchor` matches exactly ONE location, insertion proceeds immediately. " +
-					"If it matches MULTIPLE times AND you did not pass `occurrence`, the call is REFUSED " +
-					"with `total_occurrences` + per-match `excerpts` so you can identify the correct spot. " +
-					"Then retry with `occurrence: N` (1-based) to target a specific match, or tighten " +
-					"the anchor text to make it unique in the file.",
+					"Insert content into a file at a position defined by an anchor. " +
+					"Supports TWO mutually-exclusive anchoring modes — pick ONE:\n\n" +
+					"**Text-anchored** (`anchor` + `where: \"before\"|\"after\"`): " +
+					"finds literal text in the file and inserts `content` before or after it. " +
+					"The anchor text is NOT modified — only new content is added.\n\n" +
+					"**Heading-anchored** (`heading_path` + `where: \"prepend_to_body\"|\"append_to_section\"|\"insert_before_section\"`): " +
+					"resolves a heading by its path (outermost → innermost titles) and inserts " +
+					"`content` at that structural position. `prepend_to_body` inserts right after " +
+					"the heading line; `append_to_section` inserts at the section's end; " +
+					"`insert_before_section` inserts just before the heading line.\n\n" +
+					"⚠️ For REPLACING a whole section, use `set_section` (requires a `body_hash` " +
+					"from a prior `read_section`). For find-and-replace edits, use `replace_text`. " +
+					"For adding to the very start/end of a file, use `prepend_file` / `append_file`.\n\n" +
+					"If `anchor` matches MULTIPLE times and you did not pass `occurrence`, the call " +
+					"is REFUSED with `total_occurrences` + per-match `excerpts` so you can identify " +
+					"the correct spot. Retry with `occurrence: N` (1-based) to target a specific match.",
 				parameters: {
 					type: "object",
 					properties: {
@@ -231,60 +322,186 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 						anchor: {
 							type: "string",
 							description:
-								"Literal text to find in the file. Matches the file content exactly — " +
-								"include surrounding whitespace and punctuation as it appears in the file. " +
-								"The first occurrence is used by default.",
+								"[text-anchored mode] Literal text to find in the file. " +
+								"Must match the file content exactly (whitespace, punctuation). " +
+								"Mutually exclusive with `heading_path`.",
+						},
+						heading_path: {
+							type: "array",
+							items: { type: "string" },
+							minItems: 1,
+							description:
+								"[heading-anchored mode] Heading titles, outermost → innermost, " +
+								"that the target heading's ancestor chain must END WITH. " +
+								"A short tail (even a single leaf title) is accepted IF it is unique. " +
+								"Mutually exclusive with `anchor`.",
 						},
 						where: {
 							type: "string",
-							enum: ["before", "after"],
+							enum: [...ALL_WHERE_VALUES],
 							description:
-								'Where to insert relative to the anchor: "before" inserts content immediately ' +
-								'before the anchor text; "after" inserts immediately after it.',
+								"Where to insert relative to the anchor. " +
+								"With `anchor` (text mode): \"before\" | \"after\". " +
+								"With `heading_path` (heading mode): \"prepend_to_body\" | " +
+								"\"append_to_section\" | \"insert_before_section\".",
 						},
-					content: {
-						type: "string",
-						description:
-							"The text to insert. For multi-line block content (paragraphs, " +
-							"tables, lists), the tool automatically adds `\\n` padding so the " +
-							"insertion cleanly separates from adjacent text — you do NOT need " +
-							"to wrap content in extra newlines. Single-line content is inserted " +
-							"exactly as-is for inline use.",
-					},
+						content: {
+							type: "string",
+							description:
+								"The text to insert. For multi-line block content " +
+								"(paragraphs, tables, lists), the tool automatically adds " +
+								"`\\n` padding — you do NOT need to wrap content in extra newlines. " +
+								"Single-line content is inserted exactly as-is for inline use.",
+						},
 						occurrence: {
 							type: "number",
 							description:
-								"Which occurrence of `anchor` to target (1-based). Default 1 (first match). " +
-								"Use this when a previous call reported `total_occurrences > 1` and the " +
-								"insertion landed at the wrong spot. Must be ≤ total_occurrences.",
+								"[text-anchored mode only] Which occurrence of `anchor` to target " +
+								"(1-based). Default 1 (first match). Ignored in heading mode.",
 						},
 					},
-					required: ["path", "anchor", "where", "content"],
+					required: ["path", "where", "content"],
 				},
 			},
 		},
 		capabilities: ["write_file"] as ToolCapability[],
 		exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
 			const path = args["path"] as string;
-			const anchor = args["anchor"] as string;
 			const content = args["content"] as string;
+			const rawAnchor = args["anchor"];
+			const rawHeadingPath = args["heading_path"];
 			const occurrence = typeof args["occurrence"] === "number" ? args["occurrence"] : undefined;
 
+			// ── Validate mutual exclusivity ──
+			const hasAnchor = rawAnchor !== undefined;
+			const hasHeadingPath = rawHeadingPath !== undefined;
+
+			if (!hasAnchor && !hasHeadingPath) {
+				return {
+					success: false,
+					type: "text",
+					content:
+						"Must provide exactly one of `anchor` (text-anchored mode) or " +
+						"`heading_path` (heading-anchored mode).",
+				};
+			}
+			if (hasAnchor && hasHeadingPath) {
+				return {
+					success: false,
+					type: "text",
+					content:
+						"`anchor` and `heading_path` are mutually exclusive. " +
+						"Use `anchor` for text-anchored insertion, or `heading_path` for heading-anchored insertion.",
+				};
+			}
+
+			// ── Resolve where ──
 			const whereRes = resolveWhere(args);
 			if (!whereRes.ok) {
 				return { success: false, type: "text", content: whereRes.error };
 			}
 			const where = whereRes.where;
 
+			// ── Validate where vs mode ──
+			if (hasAnchor && (HEADING_WHERE_VALUES as string[]).includes(where)) {
+				return {
+					success: false,
+					type: "text",
+					content:
+						`\`where: "${where}"\` is a heading-anchored mode but you provided \`anchor\` (text-anchored). ` +
+						`Use \`heading_path\` instead of \`anchor\`, or switch \`where\` to "before" or "after".`,
+				};
+			}
+			if (hasHeadingPath && (TEXT_WHERE_VALUES as string[]).includes(where)) {
+				return {
+					success: false,
+					type: "text",
+					content:
+						`\`where: "${where}"\` is a text-anchored mode but you provided \`heading_path\` (heading-anchored). ` +
+						`Use \`anchor\` (a literal string) instead of \`heading_path\`, or switch \`where\` ` +
+						`to "prepend_to_body", "append_to_section", or "insert_before_section".`,
+				};
+			}
+
+			// ── Validate heading_path shape ──
+			if (hasHeadingPath) {
+				if (!Array.isArray(rawHeadingPath) || rawHeadingPath.length === 0) {
+					return {
+						success: false,
+						type: "text",
+						content:
+							"`heading_path` must be a non-empty array of heading title strings " +
+							`(e.g. ["Chapter 2", "Background"]).`,
+					};
+				}
+				for (let i = 0; i < rawHeadingPath.length; i++) {
+					if (typeof rawHeadingPath[i] !== "string") {
+						return {
+							success: false,
+							type: "text",
+							content: `heading_path[${i}] must be a string.`,
+						};
+					}
+				}
+			}
+
+			// ── Read file ──
 			const fileErr = requireFile(plugin.app, path);
 			if (isFailure(fileErr)) return fileErr;
 
 			const file = plugin.app.vault.getAbstractFileByPath(path)!;
 			const rawOriginal = await plugin.app.vault.read(file as import("obsidian").TFile);
-			// Normalise line endings to avoid \r\n vs \n encoding confusion.
 			const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-			const res = insertContent(original, anchor, where, content, occurrence);
+			// ── Execute ──
+			if (hasHeadingPath) {
+				// Heading-anchored insertion
+				const headingPath = rawHeadingPath as string[];
+				const cache = plugin.app.metadataCache.getFileCache(file as import("obsidian").TFile);
+				const headings: HeadingNode[] = (cache?.headings ?? []).map((h) => ({
+					level: h.level,
+					heading: h.heading,
+					line: h.position.start.line,
+				}));
+
+				const res = insertAtHeading(original, headings, headingPath, where as HeadingWhere, content);
+				if (!res.ok) {
+					return { success: false, type: "text", content: res.error };
+				}
+
+				const lockErr = await runVaultMutation(plugin, chatStream, {
+					kind: "modify",
+					path,
+					toolName: "insert_text",
+					perform: async () => {
+						await plugin.app.vault.modify(file as import("obsidian").TFile, res.result);
+					},
+				});
+				if (lockErr) return lockErr;
+
+				// Resolve for excerpt
+				const resolved = resolveHeadingPathToRange(headings, headingPath, original.split("\n").length, true);
+				const { start_line, end_line } = resolved.ok ? resolved.section : { start_line: 1, end_line: 1 };
+				const { before } = buildHeadingExcerpt(original, headingPath, where as HeadingWhere, start_line, end_line);
+
+				return {
+					success: true,
+					type: "object",
+					content: {
+						action: "text_inserted",
+						path,
+						mode: "heading",
+						heading_path: headingPath,
+						where,
+						before_excerpt: before,
+						after_excerpt: `[content inserted via heading-anchored ${where}]`,
+					},
+				};
+			}
+
+			// Text-anchored insertion (existing path)
+			const anchor = rawAnchor as string;
+			const res = insertContent(original, anchor, where as TextWhere, content, occurrence);
 			if (!res.ok) {
 				return {
 					success: false,
@@ -307,7 +524,6 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 			});
 			if (lockErr) return lockErr;
 
-			// Build before/after excerpts around the targeted occurrence for verification.
 			const targetOccurrence = occurrence ?? 1;
 			const anchorIdx = findNthOccurrence(original, anchor, targetOccurrence);
 			const excerptStart = Math.max(0, anchorIdx - 60);
@@ -325,6 +541,7 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 				content: {
 					action: "text_inserted",
 					path,
+					mode: "text",
 					where,
 					anchor,
 					occurrence: targetOccurrence,

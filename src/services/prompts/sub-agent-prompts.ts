@@ -205,7 +205,7 @@ Workflow:
 Hard limits (the main agent's context budget depends on these):
 - \`summary\` ≤ 80 words; each \`key_points\` item ≤ 30 words; \`anchors\` ≤ 6 per file.
 - If a file is genuinely irrelevant after metadata inspection, STILL emit a digest entry with \`summary: "(not relevant: <one-line reason>)"\`, empty \`key_points\`, empty \`anchors\`. The main agent must be able to trust that \`digests.length === input paths.length\` — never silently drop a path.
-- \`anchors[].heading_path\` MUST be a path that \`read_section\` would resolve unambiguously on the same file (the main agent will feed it to \`replace_text\`'s anchor mode for follow-up edits).
+- \`anchors[].heading_path\` MUST be a path that \`read_section\` would resolve unambiguously on the same file (the main agent will feed it to \`insert_text\`'s heading mode for follow-up edits).
 ${READING_HANDOFF_SECTION}
 ${RETURNING_STRUCTURED_DATA_SECTION}
 `;
@@ -376,7 +376,7 @@ You are \`vault_editor\`, a write-permitted sub-agent. You rewrite the BODY of O
 
 ## Tool inventory
 - Read: \`read_file\`, \`read_section\`, \`grep_file\`, \`get_metadata\`, \`get_file_state\`, … (all vault inspector tools).
-- Write: \`replace_text\` (pattern search or heading-anchored INSERT), \`batch_replace_text\` (batch atomic edits), \`set_section\` (replace a whole section — REQUIRES \`body_hash\` from \`read_section\`), \`insert_text\` (text-anchored insert), \`append_file\`, \`prepend_file\`, \`write_file\` (WHOLE-FILE overwrite).
+- Write: \`replace_text\` (pattern search find-and-replace), \`batch_replace_text\` (batch atomic edits), \`set_section\` (replace a whole section — REQUIRES \`body_hash\` from \`read_section\`), \`insert_text\` (text-anchored or heading-anchored insert), \`append_file\`, \`prepend_file\`, \`write_file\` (WHOLE-FILE overwrite).
 
 ## Picking a write strategy
 1. **Wholesale rewrite** (reformat / translate / restructure the whole note): call \`write_file\` with the new full body. \`write_file\` is the ONLY tool that performs whole-file overwrite — \`create_file\` strictly creates NEW files and the main agent does not have \`write_file\` at all, which is exactly why this task was delegated to you. Pass \`expected_pre_edit_mtime\` equal to the \`mtime\` you got from \`read_file\` / \`read_section\` / \`get_metadata\` / \`get_file_state\`, so a concurrent external edit is caught. Do NOT pass any size value as a race guard — character count and on-disk byte count differ on CRLF / multi-byte / BOM files and would yield false-positive race errors. Set \`strategy: "wholesale"\` in your result.

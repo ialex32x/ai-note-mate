@@ -54,7 +54,7 @@ export function vaultSetSection(plugin: NoteAssistantPlugin): RegisteredTool {
                     "replaces everything below it. Both modes replace the ENTIRE region — any " +
                     "subsections, dividers (---), or trailing content will be lost unless you " +
                     "include them in `content`. For additions, prefer `append_to_section` or " +
-                    "`prepend_to_body` via `replace_text` anchor mode.",
+                    "`prepend_to_body` via `insert_text` heading mode.",
                 parameters: {
                     type: "object",
                     properties: {

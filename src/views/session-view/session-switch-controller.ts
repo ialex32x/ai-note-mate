@@ -138,6 +138,13 @@ export class SessionSwitchController {
         try {
             await this.deps.draftController.flush();
 
+            // Sync live messages from the active runtime into the
+            // messagesCache before branching. During streaming, the
+            // current-turn user message only exists in chat._messages
+            // (not yet in messagesCache), so branchSession would fail
+            // to find the anchor and silently return null.
+            await this.deps.runtimeBinder.runtime?.persist();
+
             const result = await this.deps.sessionManager.branchSession(sourceId, msg.id);
             if (!result) return;
 
