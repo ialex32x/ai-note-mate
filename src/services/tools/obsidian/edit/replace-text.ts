@@ -84,13 +84,18 @@ interface ReplacementSummary {
 //     still costs < 2.5 KB.
 //   - EXCERPT_HARD_CAP: upper bound per excerpt, including flanking
 //     context and the replaced span itself. Anchor-mode
-//     `replace_section` can produce a span spanning thousands of chars;
-//     without a cap the excerpt would swallow the whole section and
-//     defeat its purpose. 240 chars matches
-//     `multi-note-digest-workflow-plan.md` §2.4's per-item budget.
+//     `replace_section` / `replace_body` replace the entire body and
+//     can produce spans of thousands of chars. For those, we use a much
+//     larger cap so the LLM can verify "did my replacement preserve
+//     subsections / dividers / trailing content?" — session-260 showed
+//     that a truncated excerpt hides this class of errors.
 // ─────────────────────────────────────────────────────────────────────────────
 const EXCERPT_CONTEXT_CHARS = 30;
 const EXCERPT_HARD_CAP = 240;
+/** Anchor-mode body replacements can span thousands of chars —
+ *  this generous cap lets the LLM see the full before/after to verify
+ *  nothing was accidentally dropped. */
+const EXCERPT_ANCHOR_HARD_CAP = 3000;
 
 /**
  * Build the before/after excerpt pair for a single span. `original` is
@@ -104,6 +109,9 @@ const EXCERPT_HARD_CAP = 240;
  * That biases the visible portion toward the "what you asked to find"
  * side, which is usually the most informative part for an LLM reading
  * the summary.
+ *
+ * @param maxCap - Override the hard cap. Anchor-mode entries use
+ *   `EXCERPT_ANCHOR_HARD_CAP` so the full section body is visible.
  */
 function buildSpanExcerpts(
     original: string,
@@ -112,6 +120,7 @@ function buildSpanExcerpts(
     to: number,
     newFrom: number,
     newTo: number,
+    maxCap: number = EXCERPT_HARD_CAP,
 ): { before: string; after: string; truncated: boolean } {
     const beforeStart = Math.max(0, from - EXCERPT_CONTEXT_CHARS);
     const beforeEnd = Math.min(original.length, to + EXCERPT_CONTEXT_CHARS);
@@ -121,12 +130,12 @@ function buildSpanExcerpts(
     let before = original.substring(beforeStart, beforeEnd);
     let after = modified.substring(afterStart, afterEnd);
     let truncated = false;
-    if (before.length > EXCERPT_HARD_CAP) {
-        before = before.substring(0, EXCERPT_HARD_CAP);
+    if (before.length > maxCap) {
+        before = before.substring(0, maxCap);
         truncated = true;
     }
-    if (after.length > EXCERPT_HARD_CAP) {
-        after = after.substring(0, EXCERPT_HARD_CAP);
+    if (after.length > maxCap) {
+        after = after.substring(0, maxCap);
         truncated = true;
     }
     return { before, after, truncated };
@@ -143,6 +152,7 @@ function isTagShaped(s: string): boolean {
 // Replacement entry — discriminated union over locator mode
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** All anchor where values supported by resolveAnchorEntry (internal + tests). */
 const ANCHOR_WHERE_VALUES = [
     "replace_section",
     "replace_body",
@@ -151,6 +161,16 @@ const ANCHOR_WHERE_VALUES = [
     "insert_before_section",
 ] as const;
 type AnchorWhere = typeof ANCHOR_WHERE_VALUES[number];
+
+/** Anchor where values exposed in replace_text / batch_replace_text schemas.
+ *  replace_body / replace_section are deliberately excluded — they live in
+ *  set_section (hash-gated).  If the LLM sends them here anyway,
+ *  normaliseReplacement rejects with a redirect. */
+const REPLACE_TEXT_WHERE_VALUES: AnchorWhere[] = [
+    "append_to_section",
+    "prepend_to_body",
+    "insert_before_section",
+];
 
 interface SearchEntry {
     kind: "search";
@@ -306,13 +326,12 @@ function normaliseReplacement(
     if (typeof where !== "string" || !ANCHOR_WHERE_VALUES.includes(where as AnchorWhere)) {
         return (
             `replacements[${index}].anchor.where must be one of: ` +
-            `${ANCHOR_WHERE_VALUES.map((v) => JSON.stringify(v)).join(", ")}.`
+            `${REPLACE_TEXT_WHERE_VALUES.map((v) => JSON.stringify(v)).join(", ")}.`
         );
     }
-
-    // `replace_all` / `expected_count` make no sense in anchor mode (the
-    // anchor resolves to a unique location). Reject them rather than
-    // silently ignore so the model learns the right shape.
+    // `replace_all` / `expected_count` make no sense in anchor mode.
+    // Check these BEFORE the replace_body/replace_section redirect so
+    // more specific validation errors fire first.
     if (r["replace_all"] !== undefined) {
         return (
             `replacements[${index}].replace_all is not allowed in anchor mode ` +
@@ -323,6 +342,17 @@ function normaliseReplacement(
         return (
             `replacements[${index}].expected_count is not allowed in anchor mode ` +
             `(an anchor resolves to a unique location).`
+        );
+    }
+
+    // replace_body / replace_section are deliberately not available via
+    // replace_text / batch_replace_text — redirect to the hash-gated set_section.
+    if (where === "replace_body" || where === "replace_section") {
+        return (
+            `replacements[${index}].anchor.where=${JSON.stringify(where)} is not available via ` +
+            `replace_text / batch_replace_text. To replace a whole section, call ` +
+            `\`read_section\` first to get a \`body_hash\`, then use \`set_section\` ` +
+            `with that hash — this prevents accidental data loss.`
         );
     }
 
@@ -955,16 +985,22 @@ async function executeReplaceTextCore(
     }
 
     // Fill before/after excerpts.
+    // Anchor-mode `replace_body` / `replace_section` spans can be
+    // thousands of chars. Use a much larger excerpt cap so the LLM
+    // can verify its replacement didn't accidentally drop subsections,
+    // dividers, or trailing content (session-260 root cause).
     for (let i = 0; i < summaries.length; i++) {
         const uniq = summaryUniqueSpanIdx[i];
         if (uniq === null || uniq === undefined) continue;
+        const summary = summaries[i]!;
         const span = spans[uniq]!;
         const post = spanPostEdit[uniq]!;
-        const ex = buildSpanExcerpts(original, working, span.from, span.to, post.newFrom, post.newTo);
-        summaries[i]!.before_excerpt = ex.before;
-        summaries[i]!.after_excerpt = ex.after;
+        const cap = summary.mode === "anchor" ? EXCERPT_ANCHOR_HARD_CAP : EXCERPT_HARD_CAP;
+        const ex = buildSpanExcerpts(original, working, span.from, span.to, post.newFrom, post.newTo, cap);
+        summary.before_excerpt = ex.before;
+        summary.after_excerpt = ex.after;
         if (ex.truncated) {
-            summaries[i]!.excerpt_truncated = true;
+            summary.excerpt_truncated = true;
         }
     }
 
@@ -1016,13 +1052,16 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Apply a single find-and-replace edit to a file. Use exactly one locator mode: " +
                     "`pattern` (literal text / regex) OR `anchor` (heading_path + `where`: " +
-                    "replace_section / replace_body / append_to_section / prepend_to_body / " +
-                    "insert_before_section). " +
+                    "prepend_to_body / append_to_section / insert_before_section). " +
                     "\n\n" +
-                    "Mode picking: use `anchor` when the edit aligns with a section boundary or you already " +
-                    "have a heading_path from a digest — cheapest because it doesn't require knowing the " +
-                    "section's exact text. Use `pattern` for unstructured edits inside a section (typos, term " +
-                    "renames, deleting a phrase). " +
+                    "This tool does NOT replace whole sections — for that, use `set_section` " +
+                    "(requires a `body_hash` from a prior `read_section` to prevent accidental data loss). " +
+                    "Anchor mode here is for INSERTIONS only: prepend after a heading, append at " +
+                    "the end of a section, or insert before a heading. " +
+                    "\n\n" +
+                    "Mode picking: use `pattern` for unstructured edits inside a section (typos, term " +
+                    "renames, deleting a phrase). Use `anchor` when you need to insert content at a " +
+                    "known section boundary. " +
                     "\n\n" +
                     "⚠️ IMPORTANT: For multiple atomic edits to the SAME file that must all match the " +
                     "pre-edit snapshot, use `batch_replace_text` instead — it accepts a `replacements[]` " +
@@ -1073,14 +1112,13 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                 },
                                 where: {
                                     type: "string",
-                                    enum: [...ANCHOR_WHERE_VALUES],
+                                    enum: [...REPLACE_TEXT_WHERE_VALUES],
                                     description:
-                                        "Where, relative to the resolved section, to apply `replacement`: " +
-                                        "replace_section (replace the WHOLE section including its heading line); " +
-                                        "replace_body (replace the section body, keeping the heading line); " +
+                                        "Where, relative to the resolved section, to insert `replacement`: " +
                                         "prepend_to_body (insert immediately after the heading line); " +
                                         "append_to_section (insert at the section's end); " +
-                                        "insert_before_section (insert just before the heading line).",
+                                        "insert_before_section (insert just before the heading line). " +
+                                        "To REPLACE a whole section, use `set_section` instead.",
                                 },
                             },
                             required: ["heading_path", "where"],
@@ -1192,17 +1230,17 @@ export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTo
                 description:
                     "Apply multiple atomic edits to a single file via `replacements[]`. Each entry uses " +
                     "exactly one locator mode: `pattern` (literal find-and-replace) OR `anchor` (heading_path " +
-                    "+ `where`: replace_section / replace_body / append_to_section / prepend_to_body / " +
-                    "insert_before_section). " +
+                    "+ `where`: prepend_to_body / append_to_section / insert_before_section). " +
                     "All entries match the SAME pre-edit snapshot; matched ranges across entries must be " +
                     "disjoint. Overlapping matches are rejected and nothing is written. " +
+                    "Anchor mode here is for INSERTIONS only — to replace a whole section, use `set_section`. " +
                     "\n\n" +
                     "⚠️ Use this tool ONLY when you need multiple atomic edits to the same file. For single " +
                     "edits, prefer `replace_text` — its flat schema is less error-prone. Keep batches small " +
                     "(≤4 entries recommended) to reduce JSON generation errors. " +
                     "\n\n" +
-                    "Mode picking: use `anchor` when the edit aligns with a section boundary or you already " +
-                    "have a heading_path from a digest. Use `pattern` for unstructured edits inside a section. " +
+                    "Mode picking: use `pattern` for unstructured edits inside a section (typos, term " +
+                    "renames). Use `anchor` for inserting content at a known section boundary. " +
                     "\n\n" +
                     "Tag-shape guard: a `pattern` that looks like a tag token (e.g. `#foo`) is refused by " +
                     "default. Set `force=true` on that entry if literal text replace is intended. " +
@@ -1252,10 +1290,10 @@ export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTo
                                             },
                                             where: {
                                                 type: "string",
-                                                enum: [...ANCHOR_WHERE_VALUES],
+                                                enum: [...REPLACE_TEXT_WHERE_VALUES],
                                                 description:
-                                                    "Where to apply: replace_section / replace_body / prepend_to_body / " +
-                                                    "append_to_section / insert_before_section.",
+                                                    "Where to insert: prepend_to_body / append_to_section / " +
+                                                    "insert_before_section. To replace a whole section, use `set_section`.",
                                             },
                                         },
                                         required: ["heading_path", "where"],
@@ -1376,6 +1414,7 @@ export const __TEST_ONLY__ = {
     padForGap,
     buildSpanExcerpts,
     EXCERPT_HARD_CAP,
+    EXCERPT_ANCHOR_HARD_CAP,
     EXCERPT_CONTEXT_CHARS,
     normaliseReplacement,
     findAllOccurrences,

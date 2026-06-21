@@ -478,3 +478,46 @@ export function checkRegexSafety(pattern: string): string | null {
     }
     return null;
 }
+
+// ─────────────────────────────────────────────
+// Content-addressing helpers
+//
+// Used by read_section (producer) and set_section (consumer) to form
+// a verifiable "I read this before writing" contract.  SHA-256 is chosen
+// not for cryptographic hardness but because it's universally available
+// in browser/Electron via crypto.subtle and has no collision-based
+// ambiguity in this domain.
+// ─────────────────────────────────────────────
+
+/**
+ * SHA-256 hash of a UTF-8 string, returned as a lowercase hex string.
+ * Async because Web Crypto's digest API is async.
+ */
+export async function sha256Hex(text: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/** Prefix so the LLM never feeds a raw hash back as prose. */
+export const BODY_HASH_PREFIX = "sha256:" as const;
+
+/** Pack a hex digest into the LLM-visible form. */
+export function formatBodyHash(hex: string): string {
+    return `${BODY_HASH_PREFIX}${hex}`;
+}
+
+/**
+ * Parse a `sha256:...` hash string back to the hex digest.
+ * Returns null if the input doesn't match the expected format.
+ */
+export function parseBodyHash(raw: string | undefined): string | null {
+    if (typeof raw !== "string") return null;
+    if (!raw.startsWith(BODY_HASH_PREFIX)) return null;
+    const hex = raw.slice(BODY_HASH_PREFIX.length);
+    // Must be exactly 64 lowercase hex chars (SHA-256 → 32 bytes → 64 hex).
+    if (!/^[a-f0-9]{64}$/.test(hex)) return null;
+    return hex;
+}

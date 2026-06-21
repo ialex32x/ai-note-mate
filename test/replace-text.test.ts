@@ -290,14 +290,14 @@ describe("normaliseReplacement", () => {
 
     it("accepts a valid minimal anchor entry", () => {
         const r = normaliseReplacement(
-            { anchor: { heading_path: ["Chapter 1"], where: "replace_section" }, replacement: "new content" },
+            { anchor: { heading_path: ["Chapter 1"], where: "append_to_section" }, replacement: "new content" },
             3,
         );
         expect(typeof r).not.toBe("string");
         const a = r as AnchorEntry;
         expect(a.kind).toBe("anchor");
         expect(a.headingPath).toEqual(["Chapter 1"]);
-        expect(a.where).toBe("replace_section");
+        expect(a.where).toBe("append_to_section");
         expect(a.replacement).toBe("new content");
         expect(a.force).toBe(false);
     });
@@ -305,7 +305,7 @@ describe("normaliseReplacement", () => {
     it("accepts anchor with multi-level heading path", () => {
         const r = normaliseReplacement(
             {
-                anchor: { heading_path: ["Part 1", "Section A", "Subsection"], where: "replace_body" },
+                anchor: { heading_path: ["Part 1", "Section A", "Subsection"], where: "prepend_to_body" },
                 replacement: "body text",
             },
             0,
@@ -313,13 +313,31 @@ describe("normaliseReplacement", () => {
         expect(typeof r).not.toBe("string");
         const a = r as AnchorEntry;
         expect(a.headingPath).toEqual(["Part 1", "Section A", "Subsection"]);
-        expect(a.where).toBe("replace_body");
+        expect(a.where).toBe("prepend_to_body");
     });
 
-    // ── Anchor: all valid where values ──
+    it("rejects anchor with where=replace_section, redirects to set_section", () => {
+        const r = normaliseReplacement(
+            { anchor: { heading_path: ["H"], where: "replace_section" }, replacement: "text" },
+            0,
+        );
+        expect(typeof r).toBe("string");
+        expect(r as string).toContain("set_section");
+    });
 
-    const allWhereModes = ["replace_section", "replace_body", "append_to_section", "prepend_to_body", "insert_before_section"] as const;
-    for (const mode of allWhereModes) {
+    it("rejects anchor with where=replace_body, redirects to set_section", () => {
+        const r = normaliseReplacement(
+            { anchor: { heading_path: ["H"], where: "replace_body" }, replacement: "text" },
+            0,
+        );
+        expect(typeof r).toBe("string");
+        expect(r as string).toContain("set_section");
+    });
+
+    // ── Anchor: all currently valid where values ──
+
+    const insertWhereModes = ["append_to_section", "prepend_to_body", "insert_before_section"] as const;
+    for (const mode of insertWhereModes) {
         it(`accepts anchor with where=${mode}`, () => {
             const r = normaliseReplacement(
                 { anchor: { heading_path: ["H"], where: mode }, replacement: "text" },

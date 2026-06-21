@@ -2,10 +2,12 @@ import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import {
+    formatBodyHash,
     isFailure,
     isMediaFile,
     isNonMediaBinaryFile,
     requireFile,
+    sha256Hex,
 } from "../_shared";
 import {
     formatFindSectionError,
@@ -41,6 +43,9 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                     "Read a single section of a markdown file by heading_path. " +
                     "Use this AFTER get_metadata has revealed the heading outline " +
                     "to drill into a specific heading instead of pulling the whole file. " +
+                    "Returns a `body_hash` you should chain into `set_section` if you intend " +
+                    "to rewrite this section — `set_section` refuses to write if the body has " +
+                    "changed since you read it. " +
                     "The section spans from the matched heading line up to (but not including) " +
                     "the next heading at the same OR shallower level — i.e. nested subsections " +
                     "are included by default. Set include_subsections=false to stop at the very " +
@@ -150,7 +155,12 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             const { start_line, end_line, level, heading, ambiguous, ambiguous_match_count } = resolved.section;
+            // full section = heading line + body
             const sliced = lines.slice(start_line - 1, end_line).join("\n");
+            // body-only = everything after the heading line (for the hash contract with set_section)
+            const bodyText = lines.slice(start_line, end_line).join("\n");
+
+            const bodyHash = await sha256Hex(bodyText);
 
             const resultContent: Record<string, unknown> = {
                 path,
@@ -162,6 +172,7 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 total_lines: totalLines,
                 include_subsections: includeSubsections,
                 content: sliced,
+                body_hash: formatBodyHash(bodyHash),
                 mtime: file.stat.mtime,
             };
 
