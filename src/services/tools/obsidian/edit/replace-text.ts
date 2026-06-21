@@ -1143,9 +1143,14 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             // Build a single entry from the flat args.
             // Only include fields that are present so normaliseReplacement
             // sees the same shape as the batch entries.
+            // Include `old`/`new` aliases so the normaliseReplacement
+            // fallback (many coding agents use old/new by convention) still
+            // works in single-entry mode.
             const entry: Record<string, unknown> = {};
             if (args["pattern"] !== undefined) entry["pattern"] = args["pattern"];
             if (args["anchor"] !== undefined) entry["anchor"] = args["anchor"];
+            if (args["old"] !== undefined) entry["old"] = args["old"];
+            if (args["new"] !== undefined) entry["new"] = args["new"];
             entry["replacement"] = args["replacement"];
             if (args["replace_all"] !== undefined) entry["replace_all"] = args["replace_all"];
             if (args["expected_count"] !== undefined) entry["expected_count"] = args["expected_count"];

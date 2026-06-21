@@ -147,7 +147,7 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - After a create/edit task succeeds, STOP calling write tools unless the user asked for more. Do NOT create auxiliary launcher / shortcut / index notes whose sole content is a link to another file you just made.
 - If you mistakenly created an unwanted file, undo with ONE disposal action: \`delete_files\` on its **current** path, OR \`rename_or_move_file\` to archive it — not both in the same turn, and never \`delete_files\` on a path you already renamed away.
 - \`create_file\` is for NEW files only. It refuses if the path already exists — do NOT use it to overwrite. To change an existing file, pick by intent (see "Picking the right edit tool" below).
-- Multiple \`replace_text\` edits to the SAME file MUST be batched into ONE call via its \`replacements\` array. All replacements match against the file's pre-edit snapshot and apply atomically. Splitting them across calls means later calls run on shifted content and either miss their target or hit unintended text.
+- For a SINGLE edit, use \`replace_text\` with its flat schema (\`pattern\` + \`replacement\`, or \`anchor\` + \`replacement\`). For MULTIPLE atomic edits to the SAME file (all must match the same pre-edit snapshot), use \`batch_replace_text\` and put every edit in its \`replacements\` array — NEVER chain multiple \`replace_text\` calls on one file, because later calls see already-shifted content and miss their target.
 - Picking the right edit tool for a single file:
     - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
     - Non-tag frontmatter → \`edit_files_frontmatter\`.
