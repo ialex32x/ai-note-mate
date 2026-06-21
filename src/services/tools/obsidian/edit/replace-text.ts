@@ -837,7 +837,14 @@ async function executeReplaceTextCore(
         };
     }
 
-    const original = await plugin.app.vault.read(file);
+    const rawOriginal = await plugin.app.vault.read(file);
+    // Normalise all line endings to \n so that pattern matching is
+    // immune to \r\n vs \n vs \r encoding confusion.  Without this,
+    // the LLM spirals: it sends \n → fails → tries \\n → fails →
+    // tries \r\n — ten calls to fix one missing blank line (see
+    // session-261 "数据漏斗总览" saga).  Actual line-ending choice
+    // is meaningless for Markdown and Obsidian normalises on save.
+    const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
     let lineStarts: number[] | null = null;
     let headings: HeadingNode[] | null = null;
@@ -863,10 +870,13 @@ async function executeReplaceTextCore(
 
         if (n.kind === "search") {
             const regexMatches = n.useRegex ? findAllRegexMatches(original, n.pattern) : null;
+            // Normalise pattern line endings for literal search so that
+            // \r\n, \r, and \n all match the normalised \n in the file.
+            const literalPattern = n.useRegex ? n.pattern : n.pattern.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
             const positions: Array<{ start: number; end: number; match?: RegexMatch }> =
                 regexMatches
                     ? regexMatches.map((m) => ({ start: m.start, end: m.end, match: m }))
-                    : findAllOccurrences(original, n.pattern).map((pos) => ({ start: pos, end: pos + n.pattern.length }));
+                    : findAllOccurrences(original, literalPattern).map((pos) => ({ start: pos, end: pos + literalPattern.length }));
 
             // Check "not found" FIRST — the hint for regex-looking
             // patterns is more actionable than just the count mismatch.

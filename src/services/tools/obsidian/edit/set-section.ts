@@ -152,7 +152,9 @@ export function vaultSetSection(plugin: NoteAssistantPlugin): RegisteredTool {
                 line: h.position.start.line,
             }));
 
-            const original = await plugin.app.vault.read(file);
+            const rawOriginal = await plugin.app.vault.read(file);
+            // Normalise line endings.
+            const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
             const lines = original.split("\n");
             const totalLines = lines.length;
 

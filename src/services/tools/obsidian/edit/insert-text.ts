@@ -92,18 +92,50 @@ function insertContent(
 		return { ok: false, totalOccurrences, error: `Internal error: could not locate occurrence ${target}.` };
 	}
 
-	if (where === "before") {
-		return {
-			ok: true,
-			result: original.substring(0, idx) + content + original.substring(idx),
-			totalOccurrences,
-		};
+	const insertOffset = where === "before" ? idx : idx + anchor.length;
+
+	// Auto-pad multi-line content with newlines so block-level inserts
+	// (tables, paragraphs, sections) don't fuse with adjacent content.
+	// Single-line content (no \n) is left untouched — inline insertions
+	// like appending a word in a sentence must remain precise.
+	const padded = padBlockContent(original, insertOffset, content);
+
+	const result = where === "before"
+		? original.substring(0, idx) + padded + original.substring(idx)
+		: original.substring(0, idx + anchor.length) + padded + original.substring(idx + anchor.length);
+
+	return { ok: true, result, totalOccurrences };
+}
+
+/**
+ * When `text` is block-level content (contains newlines), add leading /
+ * trailing `\n` so it docks cleanly between `host[offset-1]` (the char
+ * immediately before the insertion point) and `host[offset]` (the char
+ * immediately after).  Single-line text is returned unchanged.
+ *
+ * Mirrors `padForGap` / `padForInsertion` in replace-text.ts's anchor
+ * mode — the same philosophy applied to text-anchored insertion.
+ */
+function padBlockContent(host: string, offset: number, text: string): string {
+	// Inline insertion: no newlines → never pad.
+	if (!text.includes("\n")) return text;
+
+	let out = text;
+	// Leading: need a separator when there IS a preceding char and it
+	// isn't already a newline, and our text doesn't start with one.
+	if (offset > 0 && host.charCodeAt(offset - 1) !== 10) {
+		if (out.charCodeAt(0) !== 10) {
+			out = "\n" + out;
+		}
 	}
-	return {
-		ok: true,
-		result: original.substring(0, idx + anchor.length) + content + original.substring(idx + anchor.length),
-		totalOccurrences,
-	};
+	// Trailing: need a separator when there IS a following char and it
+	// isn't already a newline, and our text doesn't end with one.
+	if (offset < host.length && host.charCodeAt(offset) !== 10) {
+		if (out.charCodeAt(out.length - 1) !== 10) {
+			out = out + "\n";
+		}
+	}
+	return out;
 }
 
 /**
@@ -210,12 +242,15 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 								'Where to insert relative to the anchor: "before" inserts content immediately ' +
 								'before the anchor text; "after" inserts immediately after it.',
 						},
-						content: {
-							type: "string",
-							description:
-								"The text to insert. Include leading/trailing newlines as needed for paragraph " +
-								"separation — the tool does NOT auto-add newlines.",
-						},
+					content: {
+						type: "string",
+						description:
+							"The text to insert. For multi-line block content (paragraphs, " +
+							"tables, lists), the tool automatically adds `\\n` padding so the " +
+							"insertion cleanly separates from adjacent text — you do NOT need " +
+							"to wrap content in extra newlines. Single-line content is inserted " +
+							"exactly as-is for inline use.",
+					},
 						occurrence: {
 							type: "number",
 							description:
@@ -245,7 +280,9 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 			if (isFailure(fileErr)) return fileErr;
 
 			const file = plugin.app.vault.getAbstractFileByPath(path)!;
-			const original = await plugin.app.vault.read(file as import("obsidian").TFile);
+			const rawOriginal = await plugin.app.vault.read(file as import("obsidian").TFile);
+			// Normalise line endings to avoid \r\n vs \n encoding confusion.
+			const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
 			const res = insertContent(original, anchor, where, content, occurrence);
 			if (!res.ok) {
