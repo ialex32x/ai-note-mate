@@ -266,13 +266,26 @@ function normaliseReplacement(
         }
         const replaceAll = replaceAllRaw ?? false;
 
+        // Default expected_count to 1 when replace_all is false (single
+        // occurrence). This prevents silent first-match-against-unexpected-
+        // content bugs — if the pattern appears 0 or >1 times the call
+        // fails before any write. LLM can override by setting explicitly,
+        // or pass `expected_count: null` to opt out.
         const expectedRaw = r["expected_count"];
-        let expectedCount: number | null = null;
-        if (expectedRaw !== undefined && expectedRaw !== null) {
-            if (!Number.isInteger(expectedRaw) || (expectedRaw as number) < 0) {
-                return `replacements[${index}].expected_count must be a non-negative integer if provided.`;
+        const hasExplicitExpected = "expected_count" in r;
+        let expectedCount: number | null;
+        if (hasExplicitExpected) {
+            if (expectedRaw !== undefined && expectedRaw !== null) {
+                if (!Number.isInteger(expectedRaw) || (expectedRaw as number) < 0) {
+                    return `replacements[${index}].expected_count must be a non-negative integer if provided.`;
+                }
+                expectedCount = expectedRaw as number;
+            } else {
+                // Explicit null/undefined → no assertion
+                expectedCount = null;
             }
-            expectedCount = expectedRaw as number;
+        } else {
+            expectedCount = replaceAll ? null : 1;
         }
 
         const useRegexRaw = r["use_regex"];
@@ -855,34 +868,8 @@ async function executeReplaceTextCore(
                     ? regexMatches.map((m) => ({ start: m.start, end: m.end, match: m }))
                     : findAllOccurrences(original, n.pattern).map((pos) => ({ start: pos, end: pos + n.pattern.length }));
 
-            if (n.expectedCount !== null && positions.length !== n.expectedCount) {
-                const msg =
-                    `replacements[${i}]: expected ${n.expectedCount} occurrence(s) of ` +
-                    `${JSON.stringify(n.pattern)} but found ${positions.length}. `;
-                let context = "";
-                if (positions.length > 0) {
-                    const pos = positions[0]!;
-                    const ctxStart = Math.max(0, pos.start - 40);
-                    const ctxEnd = Math.min(original.length, pos.end + 40);
-                    context =
-                        ` Context around first match: ` +
-                        `${JSON.stringify(original.slice(ctxStart, ctxEnd))}. `;
-                } else {
-                    context =
-                        ` ⚠️ The pattern text did not appear in the file at all. ` +
-                        `If you reconstructed this pattern from memory (e.g. after a previous batch failure), ` +
-                        `the exact byte sequence likely differs — check whitespace, table pipes, or adjacent columns. ` +
-                        `Re-read the file (or use read_section) to get the verbatim text. `;
-                }
-                return {
-                    success: false,
-                    type: "text",
-                    content:
-                        msg + context +
-                        `No changes were written. Re-read the file or relax expected_count and retry.`,
-                };
-            }
-
+            // Check "not found" FIRST — the hint for regex-looking
+            // patterns is more actionable than just the count mismatch.
             if (positions.length === 0) {
                 const hint = n.useRegex ? "" : regexHintForLiteral(n.pattern);
                 return {
@@ -897,6 +884,26 @@ async function executeReplaceTextCore(
                             `from what's in the file. Re-read the file or use read_section to get the verbatim text. `) +
                         `No changes were written. Verify the exact text ` +
                         `(whitespace, newlines, casing) with read_file or grep, then retry.`,
+                };
+            }
+
+            if (n.expectedCount !== null && positions.length !== n.expectedCount) {
+                const msg =
+                    `replacements[${i}]: expected ${n.expectedCount} occurrence(s) of ` +
+                    `${JSON.stringify(n.pattern)} but found ${positions.length}. `;
+                // Pattern was found but count is wrong
+                const pos = positions[0]!;
+                const ctxStart = Math.max(0, pos.start - 40);
+                const ctxEnd = Math.min(original.length, pos.end + 40);
+                const context =
+                    ` Context around first match: ` +
+                    `${JSON.stringify(original.slice(ctxStart, ctxEnd))}. `;
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        msg + context +
+                        `No changes were written. Re-read the file or relax expected_count and retry.`,
                 };
             }
 
@@ -1140,8 +1147,9 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                             type: "integer",
                             minimum: 0,
                             description:
-                                "[pattern mode only] Optional assertion: number of occurrences you expect. " +
-                                "If actual count differs, the call fails before any write. Not allowed in anchor mode.",
+                                "[pattern mode only] Defaults to 1 when replace_all is false. " +
+                                "If actual occurrences differ, the call fails before any write. " +
+                                "Set explicitly to override. Use `replace_all: true` to skip this check.",
                         },
                         force: {
                             type: "boolean",
@@ -1312,7 +1320,8 @@ export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTo
                                         type: "integer",
                                         minimum: 0,
                                         description:
-                                            "[pattern mode only] Assert occurrence count. Fails before write if mismatched.",
+                                            "[pattern mode only] Defaults to 1 when replace_all is false. " +
+                                            "Fails before write if mismatched. Set `replace_all: true` to skip.",
                                     },
                                     force: {
                                         type: "boolean",

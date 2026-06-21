@@ -137,7 +137,7 @@ describe("normaliseReplacement", () => {
         expect(s.pattern).toBe("foo");
         expect(s.replacement).toBe("bar");
         expect(s.replaceAll).toBe(false);
-        expect(s.expectedCount).toBeNull();
+        expect(s.expectedCount).toBe(1);
         expect(s.force).toBe(false);
     });
 
@@ -1315,13 +1315,14 @@ describe("search-mode integration: single replacement in markdown", () => {
                     ? regexMatches.map((m) => ({ start: m.start, end: m.end, match: m }))
                     : findAllOccurrences(original, n.pattern).map((pos) => ({ start: pos, end: pos + n.pattern.length }));
 
-            // expected_count
-            if (n.expectedCount !== null && positions.length !== n.expectedCount) {
-                return `EXPECTED_COUNT: replacement[${i}] expected ${n.expectedCount}, found ${positions.length}`;
-            }
+            // Check "not found" first so the regex hint is available.
             if (positions.length === 0) {
                 const hint = n.useRegex ? "" : regexHintForLiteral(n.pattern);
                 return `NOT_FOUND: replacement[${i}] pattern not found${hint}`;
+            }
+            // expected_count (now defaults to 1 when replace_all is false)
+            if (n.expectedCount !== null && positions.length !== n.expectedCount) {
+                return `EXPECTED_COUNT: replacement[${i}] expected ${n.expectedCount}, found ${positions.length}`;
             }
 
             const targets = n.replaceAll ? positions : [positions[0]!];
