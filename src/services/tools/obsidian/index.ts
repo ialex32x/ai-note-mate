@@ -15,7 +15,8 @@ import {
     vaultCreateFile,
     vaultDeleteFiles,
     vaultDeleteFolder,
-    vaultEditFilesFrontmatter,
+    vaultBatchSetFrontmatter,
+    vaultBatchUnsetFrontmatter,
     vaultInstantiateTemplate,
     vaultPrependFile,
     vaultRenameFile,
@@ -112,8 +113,9 @@ import {
  *    single file via its `replacements` array; insert_text adds content
  *    at a text-anchored position)
  *  - Structural: delete_files / delete_folder / rename_or_move_file
- *  - Frontmatter: edit_files_frontmatter (set/unset arbitrary YAML keys; tag
- *    keys are refused and routed to the tag-specific tools below)
+ *  - Frontmatter: batch_set_frontmatter / batch_unset_frontmatter
+ *    (set/unset arbitrary YAML keys; tag keys are refused and routed
+ *    to the tag-specific tools below)
  *  - Tag edits:   add_files_tags / remove_files_tags / set_files_tags / rename_tag (vault-wide)
  */
 export function createObsidianMutationTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
@@ -148,7 +150,8 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultDeleteFolder(plugin),
         vaultRenameFile(plugin),
         // Frontmatter property edits (non-tag YAML keys)
-        vaultEditFilesFrontmatter(plugin),
+        vaultBatchSetFrontmatter(plugin),
+        vaultBatchUnsetFrontmatter(plugin),
         // Tag edits
         vaultAddFilesTags(plugin),
         vaultRemoveFilesTags(plugin),
@@ -239,7 +242,7 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
  *    state changes from the main agent (violating the
  *    `§0.3 principle 1` of `docs/vault-editor-subagent-plan.md`).
  *  - `add_files_tags` / `remove_files_tags` / `set_files_tags` / `rename_tag` /
- *    `edit_files_frontmatter`: tag and frontmatter property edits are
+ *    `batch_set_frontmatter` / `batch_unset_frontmatter`: tag and frontmatter property edits are
  *    structural (vs content) when per-file, or vault-wide. Either way,
  *    they should stay explicit in the main agent's plan. The editor can
  *    still rewrite

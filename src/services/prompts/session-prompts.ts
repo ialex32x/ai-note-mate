@@ -60,7 +60,7 @@ export const COMMON_RULES = `\
  * guarantees, and individual tool descriptions (which previously
  * repeated each routing fact 2–3 times) can rely on a single source of
  * truth here. Tool-specific safety guards (e.g. \`replace_text\`'s
- * tag-shape \`force\` flag, \`edit_files_frontmatter\`'s tag-key refusal)
+ * tag-shape \`force\` flag, \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`'s tag-key refusal)
  * stay in their respective tool descriptions because they describe
  * runtime behaviour of one tool, not cross-tool routing.
  */
@@ -141,7 +141,7 @@ You have access to long-term Memory via the \`memory_store\` and \`memory_delete
 export const VAULT_HARD_RULES = `## Vault hard rules
 - Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use the \`*_files_tags\` family: \`add_files_tags\` (add tags), \`remove_files_tags\` (remove tags), \`set_files_tags\` (replace frontmatter tags with an exact list). Never simulate tag edits via \`replace_text\` / \`insert_text\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that these tools preserve.
 - Vault-wide tag rename or removal → \`rename_tag\`. Omit \`new_tag\` (or pass an empty string) to delete the tag from the entire vault.
-- Non-tag YAML frontmatter edits (status, due_date, aliases, custom keys, …) MUST use \`edit_files_frontmatter\`. Never simulate via \`replace_text\` / \`insert_text\` against the YAML region — text-level rewrites corrupt structure, quoting, and multi-line values.
+- Non-tag YAML frontmatter edits: use \`batch_set_frontmatter\` to assign keys, \`batch_unset_frontmatter\` to delete keys. Never simulate via \`replace_text\` / \`insert_text\` against the YAML region — text-level rewrites corrupt structure, quoting, and multi-line values.
 - Move / rename / relocate / archive a file or folder → \`rename_or_move_file\` is the ONLY correct tool. Never simulate via \`create_file\` at a new path + \`delete_files\` on the old path; that route silently breaks every incoming wikilink.
 - You CANNOT open, reveal, or focus a file in the Obsidian UI via tools — there is no such capability. When the user should view something (note, canvas, attachment), say so in your reply with a wiki-link \`[[path/to/file]]\` (omit \`.md\` / \`.canvas\` extensions). Do NOT call \`create_file\` or any other write tool just to "help them open" or "link to" something you already created.
 - After a create/edit task succeeds, STOP calling write tools unless the user asked for more. Do NOT create auxiliary launcher / shortcut / index notes whose sole content is a link to another file you just made.
@@ -150,7 +150,7 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - For a SINGLE edit, use \`replace_text\` with its flat schema (\`pattern\` + \`replacement\`). For MULTIPLE atomic edits to the SAME file (all must match the same pre-edit snapshot), use \`batch_replace_text\` and put every edit in its \`replacements\` array — NEVER chain multiple \`replace_text\` calls on one file, because later calls see already-shifted content and miss their target.
 - Picking the right edit tool for a single file:
     - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
-    - Non-tag frontmatter → \`edit_files_frontmatter\`.
+    - Non-tag frontmatter → \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`.
     - \`create_file\` is STRICTLY for files that do NOT yet exist. For ANY modification to an existing file (adding, rewriting, removing, restructuring, etc.), pick the right edit tool below — never use \`create_file\`.
     - Modify / delete existing text via pattern → \`replace_text\` (find exact \`pattern\` and replace with \`replacement\` — use \`replacement: ""\` to delete). Use \`expected_count\` when a pattern appears a known number of times — the call fails fast if reality disagrees.
     - Replace a whole section or section body → \`set_section\` (MUST first call \`read_section\` to get the \`body_hash\` — \`set_section\` refuses to write if the body changed since your read). This is the ONLY way to replace a full section.

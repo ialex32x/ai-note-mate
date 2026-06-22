@@ -6,13 +6,18 @@ import { isFailure, normalizeVaultPathsArg, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: edit_files_frontmatter
+// Tools: batch_set_frontmatter / batch_unset_frontmatter
 //
 // Generic YAML frontmatter property editor for one or more notes. Operates
 // through `app.fileManager.processFrontMatter`, so YAML structure, quoting,
 // and key order survive intact — unlike a text-level edit through
 // `replace_text` / `insert_text` which can corrupt nested values, multi-line
 // strings, or quoted scalars.
+//
+// Split into two tools instead of one with an `op` enum, because LLMs
+// frequently drop or hallucinate the `op` parameter and either invent
+// non-existent params (e.g. `edits`) or omit it entirely. Encoding the
+// operation in the tool name gives the LLM a stronger signal.
 //
 // SCOPE BOUNDARY: deliberately refuses edits to `tags` / `tag` keys.
 // Tag operations belong on `add_files_tags` / `remove_files_tags` /
@@ -25,18 +30,18 @@ import { runVaultMutation } from "../../../vault";
 // Better to fail loudly and point the model at the right tool.
 //
 // SEMANTICS:
-//   - op="set":   replace each listed key with the supplied value. Other
-//                 keys remain untouched. To clear a single key, use
-//                 `op="unset"`. Values may be string / number / boolean /
-//                 array / object / null.
-//   - op="unset": remove each listed key from frontmatter. No-op for keys
-//                 that were already absent.
+//   - batch_set_frontmatter:   replace each listed key with the supplied
+//                              value. Other keys remain untouched. Values
+//                              may be string / number / boolean / array /
+//                              object / null.
+//   - batch_unset_frontmatter:  remove each listed key from frontmatter.
+//                                No-op for keys that were already absent.
 //
-// There is no `merge` op by design: deep merge is ambiguous on arrays
+// There is no "merge" by design: deep merge is ambiguous on arrays
 // (append? union? replace?) and easy to get wrong silently. If a caller
 // needs to add an item to an array (e.g. aliases), they should read the
-// current value first and `op="set"` with the merged array — explicit
-// rather than guessed.
+// current value first and set with the merged array — explicit rather
+// than guessed.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REFUSED_TAG_KEYS = new Set(["tags", "tag"]);
@@ -114,30 +119,286 @@ function deepEqual(a: unknown, b: unknown): boolean {
     return true;
 }
 
-export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): RegisteredTool {
+/**
+ * Shared execution core. Both `batch_set_frontmatter` and
+ * `batch_unset_frontmatter` use the same file resolution, locking,
+ * and mutation path — only the operand validation and frontmatter
+ * application differ.
+ */
+async function execFrontmatterEdit(
+    plugin: NoteAssistantPlugin,
+    chatStream: Parameters<RegisteredTool["exec"]>[0],
+    args: Record<string, unknown>,
+    toolName: string,
+    mode: "set" | "unset",
+): Promise<ToolCallResult> {
+    const normalized = normalizeVaultPathsArg(args);
+    if (!Array.isArray(normalized)) return normalized;
+    const paths = normalized;
+    const dryRun = (args["dry_run"] as boolean) ?? false;
+
+    // ─── Validate payload ──────────────────────────────────────────────
+    const setEntries: Array<[string, unknown]> = [];
+    const unsetKeys: string[] = [];
+
+    if (mode === "set") {
+        const props = args["properties"];
+        if (!props || typeof props !== "object" || Array.isArray(props)) {
+            return {
+                success: false,
+                type: "text",
+                content: "`properties` must be a non-null object mapping frontmatter key → value.",
+            };
+        }
+        const keys = Object.keys(props as Record<string, unknown>);
+        if (keys.length === 0) {
+            return {
+                success: false,
+                type: "text",
+                content: "`properties` must contain at least one key.",
+            };
+        }
+        for (const key of keys) {
+            if (REFUSED_TAG_KEYS.has(key)) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `${toolName} cannot edit the '${key}' key. ` +
+                        `For tag operations use \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` ` +
+                        `(each accepts one or more paths, with inline-tag awareness) or \`rename_tag\` ` +
+                        `(vault-wide rename). These tools handle YAML + inline tags safely and support ` +
+                        `add/remove/descendant semantics that this generic tool intentionally does not.`,
+                };
+            }
+            const value = (props as Record<string, unknown>)[key];
+            if (!isPlainJsonValue(value)) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `properties['${key}'] is not JSON-serialisable (functions, NaN/Infinity, ` +
+                        `undefined, symbols, and circular references are not allowed).`,
+                };
+            }
+            setEntries.push([key, value]);
+        }
+        if (args["keys"] !== undefined) {
+            return {
+                success: false,
+                type: "text",
+                content: `${toolName} does not accept the \`keys\` parameter. To remove keys use \`batch_unset_frontmatter\`.`,
+            };
+        }
+    } else {
+        // unset
+        const rawKeys = args["keys"];
+        if (!Array.isArray(rawKeys) || rawKeys.length === 0) {
+            return {
+                success: false,
+                type: "text",
+                content: "`keys` must be a non-empty array of frontmatter key names to remove.",
+            };
+        }
+        for (let i = 0; i < rawKeys.length; i++) {
+            const k: unknown = rawKeys[i];
+            if (typeof k !== "string" || k.length === 0) {
+                return {
+                    success: false,
+                    type: "text",
+                    content: `keys[${i}] must be a non-empty string.`,
+                };
+            }
+            if (REFUSED_TAG_KEYS.has(k)) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `${toolName} cannot unset the '${k}' key. ` +
+                        `Use \`set_files_tags\` with an empty tags array to clear frontmatter tags safely — ` +
+                        `that path also coalesces the alternate 'tag'/'tags' keys. Use \`remove_files_tags\` ` +
+                        `for inline tag removal.`,
+                };
+            }
+            unsetKeys.push(k);
+        }
+        // Dedupe while preserving order.
+        const seen = new Set<string>();
+        const dedupedUnsetKeys: string[] = [];
+        for (const k of unsetKeys) {
+            if (seen.has(k)) continue;
+            seen.add(k);
+            dedupedUnsetKeys.push(k);
+        }
+        unsetKeys.length = 0;
+        unsetKeys.push(...dedupedUnsetKeys);
+        if (args["properties"] !== undefined) {
+            return {
+                success: false,
+                type: "text",
+                content: `${toolName} does not accept the \`properties\` parameter. To set keys use \`batch_set_frontmatter\`.`,
+            };
+        }
+    }
+
+    // ─── Resolve all files up front ───────────────────────────────────
+    const files: TFile[] = [];
+    for (const p of paths) {
+        const f = requireFile(plugin.app, p);
+        if (isFailure(f)) return f;
+        if (!(f instanceof TFile) || f.extension !== "md") {
+            return {
+                success: false,
+                type: "text",
+                content: `Not a markdown file: ${p}`,
+            };
+        }
+        files.push(f);
+    }
+
+    // ─── Apply per file ───────────────────────────────────────────────
+    const fileResults: EditFrontmatterFileResult[] = [];
+    const skipped: { path: string; reason: string }[] = [];
+    let totalKeysChanged = 0;
+
+    const applyToFm = (fm: Record<string, unknown>): {
+        changed: string[];
+        noOp: string[];
+    } => {
+        const changed: string[] = [];
+        const noOp: string[] = [];
+        if (mode === "set") {
+            for (const [key, value] of setEntries) {
+                if (key in fm && deepEqual(fm[key], value)) {
+                    noOp.push(key);
+                    continue;
+                }
+                // Clone arrays/objects so the caller's values can't be
+                // accidentally mutated through the live frontmatter.
+                fm[key] = clonePlainValue(value);
+                changed.push(key);
+            }
+        } else {
+            for (const key of unsetKeys) {
+                if (!(key in fm)) {
+                    noOp.push(key);
+                    continue;
+                }
+                delete fm[key];
+                changed.push(key);
+            }
+        }
+        return { changed, noOp };
+    };
+
+    for (const file of files) {
+        let result: { changed: string[]; noOp: string[] };
+
+        if (dryRun) {
+            // Simulate against a shallow snapshot of the cached
+            // frontmatter so we can report the expected impact
+            // without mutating anything.
+            const cache = plugin.app.metadataCache.getFileCache(file);
+            const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+            const fmClone: Record<string, unknown> = fm ? structuredCloneSafe(fm) : {};
+            result = applyToFm(fmClone);
+        } else {
+            // Real write: route through runVaultMutation so lock +
+            // checkpoint + audit fire BEFORE the YAML rewrite lands.
+            // The actual edit happens inside processFrontMatter to
+            // preserve YAML structure / quoting / key order — we
+            // capture the changed/noOp keys via closure for the
+            // structured response.
+            let captured: { changed: string[]; noOp: string[] } | null = null;
+            let processFailure: string | null = null;
+            const lockErr = await runVaultMutation(plugin, chatStream, {
+                kind: "modify",
+                path: file.path,
+                toolName,
+                perform: async () => {
+                    try {
+                        await plugin.app.fileManager.processFrontMatter(
+                            file,
+                            (fm: Record<string, unknown>) => {
+                                captured = applyToFm(fm);
+                            },
+                        );
+                    } catch (err) {
+                        processFailure =
+                            `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`;
+                        throw err;
+                    }
+                },
+            });
+            if (processFailure !== null) {
+                skipped.push({ path: file.path, reason: processFailure });
+                continue;
+            }
+            if (lockErr) {
+                skipped.push({
+                    path: file.path,
+                    reason: typeof lockErr.content === "string"
+                        ? lockErr.content
+                        : "lock conflict",
+                });
+                continue;
+            }
+            result = captured ?? { changed: [], noOp: [] };
+        }
+
+        if (result.changed.length === 0 && result.noOp.length === 0) {
+            continue;
+        }
+        const entry: EditFrontmatterFileResult = { path: file.path };
+        if (mode === "set" && result.changed.length > 0) {
+            entry.set_keys = result.changed;
+        }
+        if (mode === "unset" && result.changed.length > 0) {
+            entry.unset_keys = result.changed;
+        }
+        if (result.noOp.length > 0) {
+            entry.no_op_keys = result.noOp;
+        }
+        fileResults.push(entry);
+        totalKeysChanged += result.changed.length;
+    }
+
+    return {
+        success: true,
+        type: "object",
+        content: {
+            action: dryRun ? `dry_run_${toolName}` : toolName,
+            dry_run: dryRun,
+            files_processed: files.length,
+            files_changed: fileResults.length,
+            total_keys_changed: totalKeysChanged,
+            files: fileResults,
+            ...(skipped.length > 0 ? { skipped } : {}),
+        },
+    };
+}
+
+export function vaultBatchSetFrontmatter(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "edit_files_frontmatter",
+                name: "batch_set_frontmatter",
                 description:
-                    "Set or remove YAML frontmatter properties on one or more markdown notes via the " +
-                    "official `processFrontMatter` API (preserves YAML formatting and key order). " +
+                    "Set (assign) YAML frontmatter properties on one or more markdown notes. " +
+                    "Each key in `properties` is assigned the given value (string / number / " +
+                    "boolean / array / object / null); other keys remain untouched. Idempotent — " +
+                    "setting the same value is a no-op. " +
                     "\n\n" +
-                    "Ops: `set` assigns each key in `properties` to the given value (string / number / " +
-                    "boolean / array / object / null); other keys remain untouched. `unset` removes each " +
-                    "key in `keys` from frontmatter. Both are idempotent (setting the same value, or " +
-                    "unsetting an absent key, is a no-op). There is no `merge` op by design — to add to " +
-                    "an existing array (e.g. aliases), read the current value first and `set` the merged " +
-                    "array. " +
+                    "Example: {\"paths\": [\"Notes/Todo.md\"], \"properties\": {\"status\": \"done\"}} " +
                     "\n\n" +
-                    "Editing the `tags` / `tag` keys is REFUSED — use `add_files_tags` / `remove_files_tags` / " +
-                    "`set_files_tags` (accepts one or more paths) or `rename_tag` (vault-wide) instead. " +
+                    "Editing the `tags` / `tag` keys is REFUSED — use `add_files_tags` / " +
+                    "`remove_files_tags` / `set_files_tags` instead. " +
                     "\n\n" +
-                    "Use this for any non-tag frontmatter change (e.g. 'set status to done', 'clear " +
-                    "due_date on these notes', 'add author=John', 'set aliases to [...]').",
+                    "Use this for any non-tag frontmatter property change (e.g. 'set status to done', " +
+                    "'add author=John', 'set aliases to [...]').",
                 parameters: {
                     type: "object",
                     properties: {
@@ -149,27 +410,13 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                                 "Vault-relative paths of the markdown files to edit (1 or more). " +
                                 "All paths must point to existing markdown files.",
                         },
-                        op: {
-                            type: "string",
-                            enum: ["set", "unset"],
-                            description:
-                                "'set' = assign each key in `properties` to the given value. " +
-                                "'unset' = remove each key listed in `keys` from frontmatter.",
-                        },
                         properties: {
                             type: "object",
                             description:
-                                "[op=set only] Object mapping frontmatter key → new value. " +
+                                "Object mapping frontmatter key → new value. " +
                                 "Values may be string, number, boolean, array, object, or null. " +
-                                "Keys `tags` / `tag` are refused — use add_files_tags / remove_files_tags / set_files_tags / rename_tag.",
-                            additionalProperties: true,
-                        },
-                        keys: {
-                            type: "array",
-                            items: { type: "string" },
-                            description:
-                                "[op=unset only] Frontmatter keys to remove. " +
                                 "Keys `tags` / `tag` are refused — use add_files_tags / remove_files_tags / set_files_tags.",
+                            additionalProperties: true,
                         },
                         dry_run: {
                             type: "boolean",
@@ -178,271 +425,70 @@ export function vaultEditFilesFrontmatter(plugin: NoteAssistantPlugin): Register
                                 "Defaults to false.",
                         },
                     },
-                    required: ["paths", "op"],
+                    required: ["paths", "properties"],
                 },
             },
         },
         capabilities: ["write_file"] as ToolCapability[],
-        exec: async (chatStream, args, _signal): Promise<ToolCallResult> => {
-            const normalized = normalizeVaultPathsArg(args);
-            if (!Array.isArray(normalized)) return normalized;
-            const paths = normalized;
-            const opName = args["op"] as string;
-            const dryRun = (args["dry_run"] as boolean) ?? false;
+        exec: (chatStream, args, _signal) =>
+            execFrontmatterEdit(plugin, chatStream, args, "batch_set_frontmatter", "set"),
+        requiresConfirmation: true,
+    };
+}
 
-            // ─── Validate op ──────────────────────────────────────────────
-            if (opName !== "set" && opName !== "unset") {
-                return {
-                    success: false,
-                    type: "text",
-                    content: `Invalid op '${opName}'; must be one of 'set', 'unset'.`,
-                };
-            }
+export function vaultBatchUnsetFrontmatter(plugin: NoteAssistantPlugin): RegisteredTool {
+    return {
+        ondemand: true,
 
-            // ─── Validate per-op payload ──────────────────────────────────
-            // Set mode: `properties` is the operand. Refuse tag keys (and any
-            // non-JSON value) up front so we never half-apply the batch.
-            const setEntries: Array<[string, unknown]> = [];
-            // Unset mode: `keys` is the operand.
-            const unsetKeys: string[] = [];
-
-            if (opName === "set") {
-                const props = args["properties"];
-                if (!props || typeof props !== "object" || Array.isArray(props)) {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: "op='set' requires `properties` to be a non-null object mapping key → value.",
-                    };
-                }
-                const keys = Object.keys(props as Record<string, unknown>);
-                if (keys.length === 0) {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: "op='set' requires `properties` to contain at least one key.",
-                    };
-                }
-                for (const key of keys) {
-                    if (REFUSED_TAG_KEYS.has(key)) {
-                        return {
-                            success: false,
-                            type: "text",
-                            content:
-                                `edit_files_frontmatter cannot edit the '${key}' key. ` +
-                                `For tag operations use \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` ` +
-                                `(each accepts one or more paths, with inline-tag awareness) or \`rename_tag\` ` +
-                                `(vault-wide rename). These tools handle YAML + inline tags safely and support ` +
-                                `add/remove/descendant semantics that this generic tool intentionally does not.`,
-                        };
-                    }
-                    const value = (props as Record<string, unknown>)[key];
-                    if (!isPlainJsonValue(value)) {
-                        return {
-                            success: false,
-                            type: "text",
-                            content:
-                                `properties['${key}'] is not JSON-serialisable (functions, NaN/Infinity, ` +
-                                `undefined, symbols, and circular references are not allowed).`,
-                        };
-                    }
-                    setEntries.push([key, value]);
-                }
-                if (args["keys"] !== undefined) {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: "op='set' does not accept the `keys` parameter; use `properties`.",
-                    };
-                }
-            } else {
-                // unset
-                const rawKeys = args["keys"];
-                if (!Array.isArray(rawKeys) || rawKeys.length === 0) {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: "op='unset' requires `keys` to be a non-empty array of frontmatter key names.",
-                    };
-                }
-                for (let i = 0; i < rawKeys.length; i++) {
-                    const k: unknown = rawKeys[i];
-                    if (typeof k !== "string" || k.length === 0) {
-                        return {
-                            success: false,
-                            type: "text",
-                            content: `keys[${i}] must be a non-empty string.`,
-                        };
-                    }
-                    if (REFUSED_TAG_KEYS.has(k)) {
-                        return {
-                            success: false,
-                            type: "text",
-                            content:
-                                `edit_files_frontmatter cannot unset the '${k}' key. ` +
-                                `Use \`set_files_tags\` with an empty tags array to clear frontmatter tags safely — ` +
-                                `that path also coalesces the alternate 'tag'/'tags' keys. Use \`remove_files_tags\` ` +
-                                `for inline tag removal.`,
-                        };
-                    }
-                    unsetKeys.push(k);
-                }
-                // Dedupe while preserving order.
-                const seen = new Set<string>();
-                const dedupedUnsetKeys: string[] = [];
-                for (const k of unsetKeys) {
-                    if (seen.has(k)) continue;
-                    seen.add(k);
-                    dedupedUnsetKeys.push(k);
-                }
-                unsetKeys.length = 0;
-                unsetKeys.push(...dedupedUnsetKeys);
-                if (args["properties"] !== undefined) {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: "op='unset' does not accept the `properties` parameter; use `keys`.",
-                    };
-                }
-            }
-
-            // ─── Resolve all files up front ───────────────────────────────
-            const files: TFile[] = [];
-            for (const p of paths) {
-                const f = requireFile(plugin.app, p);
-                if (isFailure(f)) return f;
-                if (!(f instanceof TFile) || f.extension !== "md") {
-                    return {
-                        success: false,
-                        type: "text",
-                        content: `Not a markdown file: ${p}`,
-                    };
-                }
-                files.push(f);
-            }
-
-            // ─── Apply per file ───────────────────────────────────────────
-            const fileResults: EditFrontmatterFileResult[] = [];
-            const skipped: { path: string; reason: string }[] = [];
-            let totalKeysChanged = 0;
-
-            const applyToFm = (fm: Record<string, unknown>): {
-                changed: string[];
-                noOp: string[];
-            } => {
-                const changed: string[] = [];
-                const noOp: string[] = [];
-                if (opName === "set") {
-                    for (const [key, value] of setEntries) {
-                        if (key in fm && deepEqual(fm[key], value)) {
-                            noOp.push(key);
-                            continue;
-                        }
-                        // Clone arrays/objects so the caller's values can't be
-                        // accidentally mutated through the live frontmatter.
-                        fm[key] = clonePlainValue(value);
-                        changed.push(key);
-                    }
-                } else {
-                    for (const key of unsetKeys) {
-                        if (!(key in fm)) {
-                            noOp.push(key);
-                            continue;
-                        }
-                        delete fm[key];
-                        changed.push(key);
-                    }
-                }
-                return { changed, noOp };
-            };
-
-            for (const file of files) {
-                let result: { changed: string[]; noOp: string[] };
-
-                if (dryRun) {
-                    // Simulate against a shallow snapshot of the cached
-                    // frontmatter so we can report the expected impact
-                    // without mutating anything.
-                    const cache = plugin.app.metadataCache.getFileCache(file);
-                    const fm = cache?.frontmatter as Record<string, unknown> | undefined;
-                    const fmClone: Record<string, unknown> = fm ? structuredCloneSafe(fm) : {};
-                    result = applyToFm(fmClone);
-                } else {
-                    // Real write: route through runVaultMutation so lock +
-                    // checkpoint + audit fire BEFORE the YAML rewrite lands.
-                    // The actual edit happens inside processFrontMatter to
-                    // preserve YAML structure / quoting / key order — we
-                    // capture the changed/noOp keys via closure for the
-                    // structured response.
-                    let captured: { changed: string[]; noOp: string[] } | null = null;
-                    let processFailure: string | null = null;
-                    const lockErr = await runVaultMutation(plugin, chatStream, {
-                        kind: "modify",
-                        path: file.path,
-                        toolName: "edit_files_frontmatter",
-                        perform: async () => {
-                            try {
-                                await plugin.app.fileManager.processFrontMatter(
-                                    file,
-                                    (fm: Record<string, unknown>) => {
-                                        captured = applyToFm(fm);
-                                    },
-                                );
-                            } catch (err) {
-                                processFailure =
-                                    `processFrontMatter failed: ${(err as Error)?.message ?? String(err)}`;
-                                throw err;
-                            }
+        schema: {
+            type: "function",
+            function: {
+                name: "batch_unset_frontmatter",
+                description:
+                    "Remove YAML frontmatter keys from one or more markdown notes. " +
+                    "Each key listed in `keys` is deleted from frontmatter. Idempotent — " +
+                    "removing an absent key is a no-op. " +
+                    "\n\n" +
+                    "Example: {\"paths\": [\"Notes/Todo.md\"], \"keys\": [\"due_date\", \"status\"]} " +
+                    "\n\n" +
+                    "Editing the `tags` / `tag` keys is REFUSED — use `remove_files_tags` or " +
+                    "`set_files_tags` with an empty array instead. " +
+                    "\n\n" +
+                    "Use this to clear frontmatter keys (e.g. 'remove due_date from these notes', " +
+                    "'clear the status field').",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        paths: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
+                            description:
+                                "Vault-relative paths of the markdown files to edit (1 or more). " +
+                                "All paths must point to existing markdown files.",
                         },
-                    });
-                    if (processFailure !== null) {
-                        skipped.push({ path: file.path, reason: processFailure });
-                        continue;
-                    }
-                    if (lockErr) {
-                        skipped.push({
-                            path: file.path,
-                            reason: typeof lockErr.content === "string"
-                                ? lockErr.content
-                                : "lock conflict",
-                        });
-                        continue;
-                    }
-                    result = captured ?? { changed: [], noOp: [] };
-                }
-
-                if (result.changed.length === 0 && result.noOp.length === 0) {
-                    continue;
-                }
-                const entry: EditFrontmatterFileResult = { path: file.path };
-                if (opName === "set" && result.changed.length > 0) {
-                    entry.set_keys = result.changed;
-                }
-                if (opName === "unset" && result.changed.length > 0) {
-                    entry.unset_keys = result.changed;
-                }
-                if (result.noOp.length > 0) {
-                    entry.no_op_keys = result.noOp;
-                }
-                fileResults.push(entry);
-                totalKeysChanged += result.changed.length;
-            }
-
-            return {
-                success: true,
-                type: "object",
-                content: {
-                    action: dryRun ? `dry_run_edit_files_frontmatter_${opName}` : `edit_files_frontmatter_${opName}`,
-                    op: opName,
-                    dry_run: dryRun,
-                    files_processed: files.length,
-                    files_changed: fileResults.length,
-                    total_keys_changed: totalKeysChanged,
-                    files: fileResults,
-                    ...(skipped.length > 0 ? { skipped } : {}),
+                        keys: {
+                            type: "array",
+                            items: { type: "string" },
+                            minItems: 1,
+                            description:
+                                "Frontmatter keys to remove. " +
+                                "Keys `tags` / `tag` are refused — use remove_files_tags / set_files_tags.",
+                        },
+                        dry_run: {
+                            type: "boolean",
+                            description:
+                                "If true, return the per-file impact report without modifying any files. " +
+                                "Defaults to false.",
+                        },
+                    },
+                    required: ["paths", "keys"],
                 },
-            };
+            },
         },
+        capabilities: ["write_file"] as ToolCapability[],
+        exec: (chatStream, args, _signal) =>
+            execFrontmatterEdit(plugin, chatStream, args, "batch_unset_frontmatter", "unset"),
         requiresConfirmation: true,
     };
 }

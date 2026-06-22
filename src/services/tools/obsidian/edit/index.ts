@@ -12,6 +12,6 @@ export { vaultRenameFile } from "./rename-file";
 export { vaultReplaceText, vaultBatchReplaceText } from "./replace-text";
 export { vaultSetSection } from "./set-section";
 export { vaultInsertText } from "./insert-text";
-export { vaultEditFilesFrontmatter } from "./edit-frontmatter";
+export { vaultBatchSetFrontmatter, vaultBatchUnsetFrontmatter } from "./edit-frontmatter";
 export { vaultWriteFile } from "./write-file";
 export { vaultInstantiateTemplate } from "./instantiate-template";
