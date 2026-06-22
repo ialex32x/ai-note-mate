@@ -51,7 +51,7 @@ interface ReplacementSummary {
     /**
      * Up to ~240 chars of pre-edit context centred on this replacement's
      * span. Omitted when the replacement produced multiple disjoint spans
-     * (search mode with `replace_all: true` + N>1 hits) — a single excerpt
+     * (search mode with `occurrence_offset: 0` + N>1 hits) — a single excerpt
      * would be misleading in that case.
      */
     before_excerpt?: string;
@@ -106,8 +106,18 @@ interface SearchEntry {
     kind: "search";
     pattern: string;
     replacement: string;
-    replaceAll: boolean;
-    expectedCount: number | null;
+    /**
+     * Skip the first N matches before starting replacement.
+     * When unset together with `maxReplacements`, the tool enters SAFE MODE:
+     * exactly 1 match is expected; 0 or >1 matches fails with diagnostic info.
+     */
+    occurrenceOffset: number | undefined;
+    /**
+     * Maximum number of matches to replace (min 1 when set).
+     * When unset together with `occurrenceOffset`, the tool enters SAFE MODE.
+     * To replace ALL matches, set `occurrenceOffset: 0` without this.
+     */
+    maxReplacements: number | undefined;
     force: boolean;
     /** When true, `pattern` is a JavaScript regex (literal, not `new RegExp`). */
     useRegex: boolean;
@@ -170,32 +180,43 @@ function normaliseReplacement(
     }
     const force = forceRaw ?? false;
 
-    const replaceAllRaw = r["replace_all"];
-    if (replaceAllRaw !== undefined && typeof replaceAllRaw !== "boolean") {
-        return `replacements[${index}].replace_all must be a boolean if provided.`;
-    }
-    const replaceAll = replaceAllRaw ?? false;
-
-    // Default expected_count to 1 when replace_all is false (single
-    // occurrence). This prevents silent first-match-against-unexpected-
-    // content bugs — if the pattern appears 0 or >1 times the call
-    // fails before any write. LLM can override by setting explicitly,
-    // or pass `expected_count: null` to opt out.
-    const expectedRaw = r["expected_count"];
-    const hasExplicitExpected = "expected_count" in r;
-    let expectedCount: number | null;
-    if (hasExplicitExpected) {
-        if (expectedRaw !== undefined && expectedRaw !== null) {
-            if (!Number.isInteger(expectedRaw) || (expectedRaw as number) < 0) {
-                return `replacements[${index}].expected_count must be a non-negative integer if provided.`;
-            }
-            expectedCount = expectedRaw as number;
-        } else {
-            // Explicit null/undefined → no assertion
-            expectedCount = null;
+    // occurrence_offset: skip the first N matches before replacing.
+    // Must be a non-negative integer when provided.
+    const offsetRaw = r["occurrence_offset"];
+    const hasExplicitOffset = "occurrence_offset" in r;
+    let occurrenceOffset: number | undefined;
+    if (hasExplicitOffset && offsetRaw !== undefined) {
+        if (!Number.isInteger(offsetRaw) || (offsetRaw as number) < 0) {
+            return `replacements[${index}].occurrence_offset must be a non-negative integer if provided.`;
         }
-    } else {
-        expectedCount = replaceAll ? null : 1;
+        occurrenceOffset = offsetRaw as number;
+    }
+
+    // max_replacements: cap on how many matches to replace (min 1).
+    const maxReplacementsRaw = r["max_replacements"];
+    const hasExplicitMaxReplacements = "max_replacements" in r;
+    let maxReplacements: number | undefined;
+    if (hasExplicitMaxReplacements && maxReplacementsRaw !== undefined) {
+        if (!Number.isInteger(maxReplacementsRaw) || (maxReplacementsRaw as number) < 1) {
+            return `replacements[${index}].max_replacements must be a positive integer (≥1) if provided.`;
+        }
+        maxReplacements = maxReplacementsRaw as number;
+    }
+
+    // Reject legacy replace_all / expected_count so the LLM gets a clear migration error.
+    if ("replace_all" in r) {
+        return (
+            `replacements[${index}].replace_all is no longer supported. ` +
+            `Use 'occurrence_offset' and 'max_replacements' instead. ` +
+            `For the old replace_all: true behaviour, set 'occurrence_offset: 0' (no max) to replace all.`
+        );
+    }
+    if ("expected_count" in r) {
+        return (
+            `replacements[${index}].expected_count is no longer supported. ` +
+            `Use 'occurrence_offset' and 'max_replacements' instead. ` +
+            `For the old expected_count: N guard, set both parameters to pick the exact range.`
+        );
     }
 
     const useRegexRaw = r["use_regex"];
@@ -219,7 +240,7 @@ function normaliseReplacement(
         }
     }
 
-    return { kind: "search", pattern, replacement, replaceAll, expectedCount, force, useRegex };
+    return { kind: "search", pattern, replacement, occurrenceOffset, maxReplacements, force, useRegex };
 }
 
 /**
@@ -536,27 +557,50 @@ async function executeReplaceTextCore(
             };
         }
 
-        if (n.expectedCount !== null && positions.length !== n.expectedCount) {
-            const msg =
-                `replacements[${i}]: expected ${n.expectedCount} occurrence(s) of ` +
-                `${JSON.stringify(n.pattern)} but found ${positions.length}. `;
-            // Pattern was found but count is wrong
-            const pos = positions[0]!;
-            const ctxStart = Math.max(0, pos.start - 40);
-            const ctxEnd = Math.min(original.length, pos.end + 40);
-            const context =
-                ` Context around first match: ` +
-                `${JSON.stringify(original.slice(ctxStart, ctxEnd))}. `;
+        // Determine safe mode: both params unset → exactly 1 match expected.
+        const isSafeMode = n.occurrenceOffset === undefined && n.maxReplacements === undefined;
+
+        if (isSafeMode) {
+            if (positions.length > 1) {
+                // Safe mode violation: more than 1 match. Tell LLM exactly
+                // how many and give copy-paste retry examples.
+                const pos = positions[0]!;
+                const ctxStart = Math.max(0, pos.start - 40);
+                const ctxEnd = Math.min(original.length, pos.end + 40);
+                const ctx = JSON.stringify(original.slice(ctxStart, ctxEnd));
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `replacements[${i}]: pattern ${JSON.stringify(n.pattern)} matched ${positions.length} times (safe mode expects exactly 1). ` +
+                        `No changes were written.\n\n` +
+                        `Context around first match: ${ctx}.\n\n` +
+                        `To retry, choose one of:\n` +
+                        `- Replace only the first:       "max_replacements": 1\n` +
+                        `- Replace all ${positions.length}:        "occurrence_offset": 0\n` +
+                        `- Replace all except the first: "occurrence_offset": 1\n` +
+                        `- Replace a specific range:      "occurrence_offset": <skip>, "max_replacements": <count>`,
+                };
+            }
+        }
+
+        // Apply occurrence_offset and max_replacements to select target positions.
+        const offset = n.occurrenceOffset ?? 0;
+        if (offset >= positions.length) {
             return {
                 success: false,
                 type: "text",
                 content:
-                    msg + context +
-                    `No changes were written. Re-read the file or relax expected_count and retry.`,
+                    `replacements[${i}]: occurrence_offset=${offset} skips all ${positions.length} match(es). ` +
+                    `The largest valid offset is ${positions.length - 1}. ` +
+                    `No changes were written.`,
             };
         }
+        const available = positions.slice(offset);
+        const targetPositions = n.maxReplacements !== undefined
+            ? available.slice(0, n.maxReplacements)
+            : available;
 
-        const targetPositions = n.replaceAll ? positions : [positions[0]!];
         const firstSpanIdx = spans.length;
         for (const hit of targetPositions) {
             const effectiveReplacement =
@@ -578,7 +622,7 @@ async function executeReplaceTextCore(
             replacement: n.replacement,
             occurrences_found: positions.length,
             occurrences_replaced: targetPositions.length,
-            replace_all: n.replaceAll,
+            replace_all: n.occurrenceOffset === 0 && n.maxReplacements === undefined,
         });
         summaryUniqueSpanIdx.push(targetPositions.length === 1 ? firstSpanIdx : null);
     }
@@ -716,18 +760,25 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "REQUIRED. Text to substitute in. Always include this field — use \"\" " +
                                 "(empty string) to delete the matched text.",
                         },
-                        replace_all: {
-                            type: "boolean",
-                            description:
-                                "If true, replace every occurrence of `pattern`. Defaults to false.",
-                        },
-                        expected_count: {
+                        occurrence_offset: {
                             type: "integer",
                             minimum: 0,
                             description:
-                                "Defaults to 1 when replace_all is false. " +
-                                "If actual occurrences differ, the call fails before any write. " +
-                                "Set explicitly to override. Use `replace_all: true` to skip this check.",
+                                "Skip the first N matches before starting replacement. " +
+                                "Defaults to 0 when `max_replacements` is set. " +
+                                "When neither this nor `max_replacements` is set, the tool enters " +
+                                "SAFE MODE: exactly 1 match is expected; 0 or >1 matches causes " +
+                                "a failure with diagnostic information (match count + retry examples).",
+                        },
+                        max_replacements: {
+                            type: "integer",
+                            minimum: 1,
+                            description:
+                                "Maximum number of matches to replace (≥1). " +
+                                "When set, `occurrence_offset` defaults to 0. " +
+                                "When neither this nor `occurrence_offset` is set, the tool enters " +
+                                "SAFE MODE: exactly 1 match is expected. " +
+                                "To replace ALL matches, set `occurrence_offset: 0` without this.",
                         },
                         force: {
                             type: "boolean",
@@ -773,8 +824,8 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             if (args["old"] !== undefined) entry["old"] = args["old"];
             if (args["new"] !== undefined) entry["new"] = args["new"];
             entry["replacement"] = args["replacement"];
-            if (args["replace_all"] !== undefined) entry["replace_all"] = args["replace_all"];
-            if (args["expected_count"] !== undefined) entry["expected_count"] = args["expected_count"];
+            if (args["occurrence_offset"] !== undefined) entry["occurrence_offset"] = args["occurrence_offset"];
+            if (args["max_replacements"] !== undefined) entry["max_replacements"] = args["max_replacements"];
             if (args["force"] !== undefined) entry["force"] = args["force"];
             if (args["use_regex"] !== undefined) entry["use_regex"] = args["use_regex"];
 
@@ -860,17 +911,23 @@ export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTo
                                         description:
                                             "REQUIRED. Text to substitute in. Use \"\" to delete.",
                                     },
-                                    replace_all: {
-                                        type: "boolean",
-                                        description:
-                                            "Replace every occurrence. Defaults to false.",
-                                    },
-                                    expected_count: {
+                                    occurrence_offset: {
                                         type: "integer",
                                         minimum: 0,
                                         description:
-                                            "Defaults to 1 when replace_all is false. " +
-                                            "Fails before write if mismatched. Set `replace_all: true` to skip.",
+                                            "Skip the first N matches before starting replacement. " +
+                                            "Defaults to 0 when `max_replacements` is set. " +
+                                            "When neither this nor `max_replacements` is set, the tool enters " +
+                                            "SAFE MODE: exactly 1 match is expected; 0 or >1 matches fails.",
+                                    },
+                                    max_replacements: {
+                                        type: "integer",
+                                        minimum: 1,
+                                        description:
+                                            "Maximum number of matches to replace (≥1). " +
+                                            "When set, `occurrence_offset` defaults to 0. " +
+                                            "When neither this nor `occurrence_offset` is set, the tool enters " +
+                                            "SAFE MODE. To replace ALL matches, set `occurrence_offset: 0`.",
                                     },
                                     force: {
                                         type: "boolean",

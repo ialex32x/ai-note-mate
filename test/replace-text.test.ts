@@ -93,61 +93,81 @@ describe("normaliseReplacement", () => {
         expect(r as string).toContain("not be empty");
     });
 
-    it("rejects non-boolean replace_all", () => {
+    it("rejects negative occurrence_offset", () => {
         const r = normaliseReplacement(
-            { pattern: "foo", replacement: "bar", replace_all: "yes" },
+            { pattern: "foo", replacement: "bar", occurrence_offset: -1 },
+            0,
+        );
+        expect(typeof r).toBe("string");
+        expect(r as string).toContain("occurrence_offset");
+    });
+
+    it("rejects non-integer occurrence_offset", () => {
+        const r = normaliseReplacement(
+            { pattern: "foo", replacement: "bar", occurrence_offset: 3.5 },
+            0,
+        );
+        expect(typeof r).toBe("string");
+        expect(r as string).toContain("occurrence_offset");
+    });
+
+    it("rejects max_replacements less than 1", () => {
+        const r = normaliseReplacement(
+            { pattern: "foo", replacement: "bar", max_replacements: 0 },
+            0,
+        );
+        expect(typeof r).toBe("string");
+        expect(r as string).toContain("max_replacements");
+    });
+
+    it("rejects non-integer max_replacements", () => {
+        const r = normaliseReplacement(
+            { pattern: "foo", replacement: "bar", max_replacements: 2.5 },
+            0,
+        );
+        expect(typeof r).toBe("string");
+        expect(r as string).toContain("max_replacements");
+    });
+
+    it("rejects legacy replace_all with migration error", () => {
+        const r = normaliseReplacement(
+            { pattern: "foo", replacement: "bar", replace_all: true },
             0,
         );
         expect(typeof r).toBe("string");
         expect(r as string).toContain("replace_all");
+        expect(r as string).toContain("occurrence_offset");
     });
 
-    it("rejects negative expected_count", () => {
+    it("rejects legacy expected_count with migration error", () => {
         const r = normaliseReplacement(
-            { pattern: "foo", replacement: "bar", expected_count: -1 },
+            { pattern: "foo", replacement: "bar", expected_count: 3 },
             0,
         );
         expect(typeof r).toBe("string");
         expect(r as string).toContain("expected_count");
+        expect(r as string).toContain("occurrence_offset");
     });
 
-    it("rejects non-integer expected_count", () => {
-        const r = normaliseReplacement(
-            { pattern: "foo", replacement: "bar", expected_count: 3.5 },
-            0,
-        );
-        expect(typeof r).toBe("string");
-        expect(r as string).toContain("expected_count");
-    });
-
-    it("accepts expected_count null (means no assertion)", () => {
-        const r = normaliseReplacement(
-            { pattern: "foo", replacement: "bar", expected_count: null },
-            0,
-        );
-        expect(typeof r).not.toBe("string");
-        expect((r as SearchEntry).expectedCount).toBeNull();
-    });
-
-    it("accepts a valid minimal search entry (defaults applied)", () => {
+    it("accepts a valid minimal search entry (safe mode defaults)", () => {
         const r = normaliseReplacement({ pattern: "foo", replacement: "bar" }, 5);
         expect(typeof r).not.toBe("string");
         const s = r as SearchEntry;
         expect(s.kind).toBe("search");
         expect(s.pattern).toBe("foo");
         expect(s.replacement).toBe("bar");
-        expect(s.replaceAll).toBe(false);
-        expect(s.expectedCount).toBe(1);
+        expect(s.occurrenceOffset).toBeUndefined();
+        expect(s.maxReplacements).toBeUndefined();
         expect(s.force).toBe(false);
     });
 
-    it("accepts a full search entry", () => {
+    it("accepts a full search entry with offset/maxReplacements", () => {
         const r = normaliseReplacement(
             {
                 pattern: "needle",
                 replacement: "thread",
-                replace_all: true,
-                expected_count: 3,
+                occurrence_offset: 2,
+                max_replacements: 3,
                 force: true,
             },
             0,
@@ -157,9 +177,20 @@ describe("normaliseReplacement", () => {
         expect(s.kind).toBe("search");
         expect(s.pattern).toBe("needle");
         expect(s.replacement).toBe("thread");
-        expect(s.replaceAll).toBe(true);
-        expect(s.expectedCount).toBe(3);
+        expect(s.occurrenceOffset).toBe(2);
+        expect(s.maxReplacements).toBe(3);
         expect(s.force).toBe(true);
+    });
+
+    it("accepts occurrence_offset: 0 to replace all", () => {
+        const r = normaliseReplacement(
+            { pattern: "foo", replacement: "bar", occurrence_offset: 0 },
+            0,
+        );
+        expect(typeof r).not.toBe("string");
+        const s = r as SearchEntry;
+        expect(s.occurrenceOffset).toBe(0);
+        expect(s.maxReplacements).toBeUndefined();
     });
 
     it("allows empty string replacement in search mode (deletion)", () => {
@@ -1134,7 +1165,7 @@ describe("TAG_TOKEN_RE", () => {
 // that vaultReplaceText follows internally:
 //   1. normaliseReplacement → validate entries
 //   2. findAllOccurrences → locate matches
-//   3. expected_count assertion (if applicable)
+//   3. safe mode / offset / limit selection
 //   4. build spans → detectSpanOverlap
 //   5. apply spans back-to-front → produce final result
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1183,12 +1214,21 @@ describe("search-mode integration: single replacement in markdown", () => {
                 const hint = n.useRegex ? "" : regexHintForLiteral(n.pattern);
                 return `NOT_FOUND: replacement[${i}] pattern not found${hint}`;
             }
-            // expected_count (now defaults to 1 when replace_all is false)
-            if (n.expectedCount !== null && positions.length !== n.expectedCount) {
-                return `EXPECTED_COUNT: replacement[${i}] expected ${n.expectedCount}, found ${positions.length}`;
+
+            // Safe mode: both params unset → exactly 1 match expected.
+            const isSafeMode = n.occurrenceOffset === undefined && n.maxReplacements === undefined;
+            if (isSafeMode && positions.length > 1) {
+                return `SAFE_MODE: replacement[${i}] matched ${positions.length} (wanted 1)`;
             }
 
-            const targets = n.replaceAll ? positions : [positions[0]!];
+            const offset = n.occurrenceOffset ?? 0;
+            if (offset >= positions.length) {
+                return `OFFSET_OVERFLOW: offset=${offset}, total=${positions.length}`;
+            }
+            const available = positions.slice(offset);
+            const targets = n.maxReplacements !== undefined
+                ? available.slice(0, n.maxReplacements)
+                : available;
             for (const hit of targets) {
                 const effectiveReplacement =
                     hit.match
@@ -1353,12 +1393,12 @@ describe("search-mode integration: single replacement in markdown", () => {
         expect(result).toBe("Start\n\n- ~~Removed~~\n- ==Added==\n\nEnd\n");
     });
 
-    // ── replace_all on markdown content ──
+    // ── replace-all (occurrence_offset: 0) on markdown content ──
 
-    it("replaces all occurrences of a word in markdown (replace_all)", () => {
+    it("replaces all occurrences of a word in markdown", () => {
         const md = "# foo\n\nfoo is a foo word. foo.\n";
         const result = applyReplacements(md, [
-            { pattern: "foo", replacement: "bar", replace_all: true },
+            { pattern: "foo", replacement: "bar", occurrence_offset: 0 },
         ]);
         // "foo" appears 4 times; the heading "# foo" becomes "# bar"
         expect(result).toBe("# bar\n\nbar is a bar word. bar.\n");
@@ -1369,30 +1409,31 @@ describe("search-mode integration: single replacement in markdown", () => {
         const sep = "\n---\n";
         const md = "A" + sep + "B" + sep + "C\n";
         const result = applyReplacements(md, [
-            { pattern: sep, replacement: "\n***\n", replace_all: true },
+            { pattern: sep, replacement: "\n***\n", occurrence_offset: 0 },
         ]);
         expect(result).toBe("A\n***\nB\n***\nC\n");
     });
 
-    // ── expected_count on markdown content ──
+    // ── Safe mode (neither param → exactly 1 match) on markdown content ──
 
-    it("passes when expected_count matches on markdown content", () => {
-        const md = "## Section\n\nBody text here.\n\n## Section\n\nMore.\n";
+    it("passes safe mode when exactly 1 match", () => {
+        const md = "## Section\n\nBody text here.\n\nMore.\n";
         const result = applyReplacements(md, [
-            { pattern: "## Section", replacement: "## Chapter", replace_all: true, expected_count: 2 },
+            { pattern: "## Section", replacement: "## Chapter" },
         ]);
         expect(typeof result).toBe("string");
-        expect(result).not.toContain("EXPECTED_COUNT");
+        expect(result).not.toContain("SAFE_MODE");
+        expect(result).toContain("## Chapter");
     });
 
-    it("fails when expected_count mismatches on markdown content", () => {
+    it("fails safe mode when more than 1 match", () => {
         const md = "## Section\n\nBody text here.\n\n## Section\n\nMore.\n";
         const result = applyReplacements(md, [
-            { pattern: "## Section", replacement: "## Chapter", replace_all: true, expected_count: 5 },
+            { pattern: "## Section", replacement: "## Chapter" },
         ]);
-        expect(result).toContain("EXPECTED_COUNT");
-        expect(result).toContain("expected 5");
-        expect(result).toContain("found 2");
+        expect(result).toContain("SAFE_MODE");
+        expect(result).toContain("matched 2");
+        expect(result).toContain("wanted 1");
     });
 
     // ── Multi-entry: multiple independent replacements in one markdown doc ──
@@ -1425,7 +1466,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         const result = applyReplacements(md, [
             { pattern: "# Project Plan", replacement: "# Project Plan v2" },
             { pattern: "**draft**", replacement: "**final**" },
-            { pattern: "(pending)", replacement: "(complete)", replace_all: true },
+            { pattern: "(pending)", replacement: "(complete)", occurrence_offset: 0 },
         ]);
 
         expect(result).toContain("# Project Plan v2");
@@ -1513,7 +1554,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         const result = applyReplacements(md, [
             { pattern: "title: Old Doc", replacement: "title: New Doc" },
             { pattern: "# Old Title", replacement: "# New Title" },
-            { pattern: "old", replacement: "new", replace_all: true, expected_count: 6 },
+            { pattern: "old", replacement: "new", occurrence_offset: 0 },
             // ^ 6 lowercase matches: **old topic**, Point 1: old, Point 2: old,
             //   old_function(), | old (table), Footer: old footer
             { pattern: "> Old quote", replacement: "> New quote" },
@@ -1543,7 +1584,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         expect(result).toContain("Point 3: keep"); // was not matched by "old"
         expect(result).toContain("```python"); // untouched
         expect(result).toContain("```"); // code fence untouched
-        // Table row "old" was replaced by replace_all
+        // Table row "old" was replaced by occurrence_offset: 0
         expect(result).toContain("| new    | 100   |");
         expect(result).not.toContain("| old    | 100   |");
     });
@@ -1554,7 +1595,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         // [aeiou] = any vowel; but o is a vowel — just use explicit set
         const md = "cat cot cut\n";
         const result = applyReplacements(md, [
-            { pattern: "c[ao]t", replacement: "X", use_regex: true, replace_all: true },
+            { pattern: "c[ao]t", replacement: "X", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toBe("X X cut\n");
     });
@@ -1562,7 +1603,7 @@ describe("search-mode integration: single replacement in markdown", () => {
     it("replaces using regex alternation", () => {
         const md = "foo bar baz\n";
         const result = applyReplacements(md, [
-            { pattern: "foo|baz", replacement: "qux", use_regex: true, replace_all: true },
+            { pattern: "foo|baz", replacement: "qux", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toBe("qux bar qux\n");
     });
@@ -1571,7 +1612,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         // \\bOld\\b ensures we replace the standalone word, not substrings like "Olden".
         const md = "# Old\n\ncontent\n\n## Old\n\nmore\n";
         const result = applyReplacements(md, [
-            { pattern: "\\bOld\\b", replacement: "New", use_regex: true, replace_all: true },
+            { pattern: "\\bOld\\b", replacement: "New", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toBe("# New\n\ncontent\n\n## New\n\nmore\n");
         expect(result).not.toContain("Old");
@@ -1581,7 +1622,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         const md = "Use `old_func()` and `old_var`.\n";
         // [^`]+ matches one or more non-backtick chars (including parens, dots)
         const result = applyReplacements(md, [
-            { pattern: "`old_[^`]+`", replacement: "`new_ref`", use_regex: true, replace_all: true },
+            { pattern: "`old_[^`]+`", replacement: "`new_ref`", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toBe("Use `new_ref` and `new_ref`.\n");
     });
@@ -1589,7 +1630,7 @@ describe("search-mode integration: single replacement in markdown", () => {
     it("replaces wikilinks using regex", () => {
         const md = "Ref: [[Old Page]] and [[Another Old]].\n";
         const result = applyReplacements(md, [
-            { pattern: "\\[\\[Old[^\\]]*\\]\\]", replacement: "[[Updated]]", use_regex: true, replace_all: true },
+            { pattern: "\\[\\[Old[^\\]]*\\]\\]", replacement: "[[Updated]]", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toContain("[[Updated]]");
         expect(result).not.toContain("[[Old");
@@ -1617,7 +1658,7 @@ describe("search-mode integration: single replacement in markdown", () => {
         const md = "# Title\n\ncat cot cut\n\nFooter\n";
         const result = applyReplacements(md, [
             { pattern: "# Title", replacement: "# New Title" },
-            { pattern: "c[ao]t", replacement: "X", use_regex: true, replace_all: true },
+            { pattern: "c[ao]t", replacement: "X", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toContain("# New Title");
         expect(result).toContain("X X cut");
@@ -1626,7 +1667,7 @@ describe("search-mode integration: single replacement in markdown", () => {
     it("replaces markdown task list status with regex", () => {
         const md = "- [ ] Incomplete\n- [x] Complete\n- [ ] Another\n";
         const result = applyReplacements(md, [
-            { pattern: "- \\[ \\]", replacement: "- [x]", use_regex: true, replace_all: true },
+            { pattern: "- \\[ \\]", replacement: "- [x]", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toBe("- [x] Incomplete\n- [x] Complete\n- [x] Another\n");
     });
@@ -1661,7 +1702,7 @@ describe("search-mode integration: single replacement in markdown", () => {
                 pattern: "(\\d{4})年(\\d{1,2})月(\\d{1,2})日",
                 replacement: "$1/$2/$3",
                 use_regex: true,
-                replace_all: true,
+                occurrence_offset: 0,
             },
         ]);
         expect(result).toBe("发布于2024/1/15，截止2023/12/31。\n");
@@ -1706,7 +1747,7 @@ describe("search-mode integration: single replacement in markdown", () => {
     it("leaves replacement literal when no capture groups used", () => {
         const md = "cat cot cut\n";
         const result = applyReplacements(md, [
-            { pattern: "c[ao]t", replacement: "X", use_regex: true, replace_all: true },
+            { pattern: "c[ao]t", replacement: "X", use_regex: true, occurrence_offset: 0 },
         ]);
         expect(result).toBe("X X cut\n");
     });
