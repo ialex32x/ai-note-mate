@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.5.2
+
+### What's new
+
+- **Branching during streaming** — Conversations can now be branched while the assistant is still streaming, letting you fork a new path without waiting for the current reply to finish.
+
+### Refinements
+
+- **Improved LLM editing accuracy and efficiency** — Multiple tool improvements help the LLM edit notes more precisely and efficiently:
+  - `insert_text` replaces `edit_lines` with heading-anchored insertion, fuzzy heading matching, and normalized direction arguments for predictable edits.
+  - `batch_replace_text` enables multiple text replacements in a single operation; `replace_text` accepts `old`/`new` as parameter aliases.
+  - Hash-gated `set_section` prevents accidental overwrites by verifying section content before applying changes.
+  - `edit_files_frontmatter` is split into dedicated `batch_set` and `batch_unset` tools for clearer frontmatter manipulation.
+  - Section-targeting tools now accept fuzzy heading matches, tolerating minor formatting differences.
+  - `occurrence_offset` and `max_replacements` replace `replace_all` and `expected_count` for more intuitive control over text replacement scope.
+  - Line endings are normalized and block inserts are auto-padded for cleaner, more consistent edit output.
+- **Read section for main agent** — `read_section` is now available to the main agent, no longer restricted to sub-agents.
+- **Faster plugin loading** — Session store loading has been refactored to eliminate redundant serialization and reduce startup overhead, significantly improving plugin load speed.
+
+### Fixes
+
+- **Streaming Mermaid deferral** — Mermaid diagrams during streaming are now deferred until the stream completes, preventing rendering glitches from partial diagram syntax.
+- **Draft save responsiveness** — Draft save delay has been reduced to 2 seconds, making auto-save feel more responsive during active conversations.
+
+---
+
 ## 1.5.1
 
 ### What's new
