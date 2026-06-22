@@ -43,6 +43,9 @@ export class VaultEditLogStore {
 
     private _persistTimer: number | null = null;
     private _disposed = false;
+    private _loaded = false;
+    /** In-flight load promise so concurrent calls do not race. */
+    private _loadPromise: Promise<void> | null = null;
 
     constructor(
         private readonly app: App,
@@ -52,11 +55,22 @@ export class VaultEditLogStore {
     // ── Lifecycle ────────────────────────────────────────────────────────
 
     /**
-     * Load persisted entries from disk. Safe to call once at plugin onload.
-     * Errors during read / parse are swallowed — the store simply starts
-     * empty rather than blocking plugin startup.
+     * Load persisted entries from disk. Idempotent — subsequent calls are
+     * no-ops. Errors during read / parse are swallowed — the store simply
+     * starts empty rather than blocking plugin startup.
      */
     async load(): Promise<void> {
+        if (this._loaded) return;
+        if (this._loadPromise) return this._loadPromise;
+
+        this._loadPromise = this._doLoad().finally(() => {
+            this._loaded = true;
+            this._loadPromise = null;
+        });
+        return this._loadPromise;
+    }
+
+    private async _doLoad(): Promise<void> {
         try {
             const exists = await this.app.vault.adapter.exists(this.options.persistPath);
             if (!exists) return;

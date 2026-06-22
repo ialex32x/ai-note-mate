@@ -174,6 +174,9 @@ export class SessionManager {
     private listFilePath: string;
     private statisticsFilePath: string;
     private cacheLoaded = false;
+    /** In-flight load promise so concurrent calls (e.g. fire-and-forget in main.ts
+     *  + await in SessionView.onOpen) do not race. */
+    private _loadPromise: Promise<void> | null = null;
 
     /**
      * @param app        Obsidian app handle.
@@ -1010,15 +1013,23 @@ export class SessionManager {
      */
     async loadFromCache(): Promise<void> {
         if (this.cacheLoaded) return;
+        // Guard against concurrent calls: fire-and-forget in main.ts and
+        // await in SessionView.onOpen() may overlap.
+        if (this._loadPromise) return this._loadPromise;
 
+        this._loadPromise = this._doLoadFromCache().finally(() => {
+            this.cacheLoaded = true;
+            this._loadPromise = null;
+        });
+        return this._loadPromise;
+    }
+
+    private async _doLoadFromCache(): Promise<void> {
         try {
             const adapter = this.app.vault.adapter;
             const exists = await adapter.exists(this.listFilePath);
 
-            if (!exists) {
-                this.cacheLoaded = true;
-                return;
-            }
+            if (!exists) return;
 
             const content = await adapter.read(this.listFilePath);
             const data = JSON.parse(content) as SessionListFile;
@@ -1026,7 +1037,6 @@ export class SessionManager {
             // Validate cache version
             if (data.version !== 1) {
                 console.warn('[SessionManager] Unknown cache version, ignoring cache');
-                this.cacheLoaded = true;
                 return;
             }
 
@@ -1097,11 +1107,8 @@ export class SessionManager {
             // the fallback can recompute from metadata if the file is absent
             // or corrupt — first-run migration for existing users).
             await this._loadGlobalStatistics();
-
-            this.cacheLoaded = true;
         } catch (error) {
             console.warn('[SessionManager] Failed to load cache:', error);
-            this.cacheLoaded = true;
         }
     }
 

@@ -56,8 +56,11 @@ export class EditHistoryView extends ItemView {
             cls: "ai-edit-history-list ai-edit-history-list--file-changes",
         });
 
-        this.renderList();
+        // Subscribe before the initial render so we don't miss a 'change'
+        // event that fires between rendering and subscribing (e.g. if
+        // vaultEditLog.load() completes in another microtask).
         this.unsubscribers.push(this.logStore.on("change", () => this.renderList()));
+        this.renderList();
     }
 
     async onClose(): Promise<void> {

@@ -163,7 +163,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		// Plugin-wide session storage. Created here so it loads from disk
 		// once before any SessionView opens; views just attach to it.
 		this.sessionManager = new SessionManager(this.app, this.paths.sessions());
-		await this.sessionManager.loadFromCache();
+		void this.sessionManager.loadFromCache();
 		// Runtime pool needs the session manager for per-id persistence
 		// after background turns finish.
 		this.runtimePool = new SessionRuntimePool(this, { maxIdle: 3 });
@@ -190,7 +190,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		this.vaultEditLog = new VaultEditLogStore(this.app, {
 			persistPath: `${this.paths.cache()}/vault-edit-log.json`,
 		});
-		await this.vaultEditLog.load();
+		void this.vaultEditLog.load();
 		// Cross-session file lock table; consulted by VaultMutator before
 		// AI-driven vault writes. Pure in-memory state.
 		this.fileLockManager = new GlobalFileLockManager();
@@ -202,7 +202,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		this.snapshotManager = new SnapshotManager(this.app, {
 			rootDir: `${this.paths.cache()}/snapshots`,
 		});
-		await this.snapshotManager.clearAll();
+		void this.snapshotManager.clearAll();
 		// VaultMutator is the single gateway every AI edit tool calls into.
 		// Constructed AFTER `vaultEditLog` because it reads from
 		// `plugin.vaultEditLog` to record audit entries.
