@@ -1,19 +1,20 @@
 import { describe, it, expect } from "vitest";
-import { __TEST_ONLY__ } from "../src/services/tools/obsidian/edit/replace-text";
-import type { Span, SearchEntry } from "../src/services/tools/obsidian/edit/replace-text";
-
-const {
+import {
     normaliseReplacement,
+    detectSpanOverlap,
+    isTagShaped,
+    TAG_TOKEN_RE,
+    type Span,
+    type SearchEntry,
+} from "../src/services/tools/obsidian/edit/replace-normaliser";
+import {
     findAllOccurrences,
     findAllOccurrencesRegex,
     findAllRegexMatches,
     replaceWithGroups,
     looksLikeRegex,
     regexHintForLiteral,
-    detectSpanOverlap,
-    isTagShaped,
-    TAG_TOKEN_RE,
-} = __TEST_ONLY__;
+} from "../src/utils/regex-utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // normaliseReplacement — comprehensive validation
