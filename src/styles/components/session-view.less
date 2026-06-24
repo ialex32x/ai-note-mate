@@ -422,7 +422,72 @@
     gap: @spacing-md;
 }
 
-// Scroll-to-bottom button
+// ── Pinned user-prompt bar ──────────────────────────────────────
+.session-prompt-pin {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 15;
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    padding: @spacing-sm @spacing-md;
+    background: var(--background-primary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
+    font-size: 0.82em;
+    cursor: pointer;
+    user-select: none;
+
+    &:hover {
+        background: var(--background-primary-alt);
+    }
+
+    &--hidden {
+        display: none;
+    }
+
+    &--animate-in {
+        animation: prompt-pin-slide-in 180ms ease-out;
+    }
+}
+
+.session-prompt-pin__icon {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+    opacity: 0.7;
+
+    svg {
+        width: 14px;
+        height: 14px;
+    }
+}
+
+.session-prompt-pin__text {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+@keyframes prompt-pin-slide-in {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+// ── Scroll-to-bottom button ────────────────────────────────────
 .session-scroll-to-bottom-btn {
     position: absolute;
     bottom: @spacing-xl;

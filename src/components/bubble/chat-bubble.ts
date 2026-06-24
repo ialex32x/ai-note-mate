@@ -192,6 +192,10 @@ export class ChatBubble {
         msg: ChatMessage,
         opts: ChatBubbleOptions,
     ): void {
+        // Set data-message-id so controllers (e.g. PromptPinController)
+        // can map DOM elements back to message models.
+        bubble.setAttribute('data-message-id', msg.id);
+
         const {
             wasThinkingExpanded = false,
             wasToolDetailExpanded = false,

@@ -51,6 +51,7 @@ import {
     SessionNavigator,
 } from './index';
 import { MessageWindowController } from './message-window-controller';
+import { PromptPinController } from './prompt-pin-controller';
 import {
     SessionPromptOptimizer,
 } from './session-prompt-optimizer';
@@ -134,6 +135,14 @@ export class SessionView extends ItemView {
      *  and the low-level append/prepend/render/update/abort operations.
      *  Constructed in {@link buildMessageArea}. */
     private bubbleList!: BubbleListController;
+
+    /**
+     * Controller that manages the pinned user-prompt bar shown at the
+     * top of the message area when the user scrolls past their original
+     * question (Cursor-style prompt pinning). Constructed in
+     * {@link buildMessageArea}.
+     */
+    private promptPin!: PromptPinController;
 
     /**
      * Controller that owns the toolbar title display and the
@@ -514,6 +523,18 @@ export class SessionView extends ItemView {
                 void this.historyLoader.loadOlderMessages();
             }
         });
+
+        // Prompt-pin controller: shows a compact pinned bar at the top
+        // when the user scrolls past their original question (Cursor-style).
+        // The scrollToMessage callback is late-bound — the history loader
+        // doesn't exist yet in buildMessageArea. We resolve it lazily
+        // so the pin bar works as soon as history loading is available.
+        this.promptPin = new PromptPinController(
+            messagesWrapper,
+            this.messagesEl,
+            (messageId) => this.historyLoader?.scrollToMessage(messageId),
+        );
+        this.promptPin.attach();
 
         // Tail-error continue-button tracker. Wired here because it
         // needs both `messagesEl` (mount target) and `streamingLoader`
@@ -1001,6 +1022,7 @@ export class SessionView extends ItemView {
         // the (detached) messagesEl alive after the view closes.
         this.scroller?.detach();
         this.scroller?.setNearTopCallback(null);
+        this.promptPin?.detach();
         this.historyLoadingOverlay?.dispose();
     }
 
