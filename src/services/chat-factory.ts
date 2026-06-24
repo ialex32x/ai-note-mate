@@ -350,8 +350,27 @@ export function createChatAgent(
                     `... and ${remaining} more. Call \`manage_todos({ action: "list" })\` for full details.`;
             }
 
-            block +=
-                '\n\nMark items done via `manage_todos({ action: "update", id: "...", status: "completed" })`.';
+            // CRITICAL reminder: the model MUST update todo status BEFORE
+            // writing the final assistant reply, otherwise the user sees
+            // stale "in_progress" items on the pinned panel. Make the
+            // instruction specific and emphatic — a generic hint is too
+            // easy for the model to skim past after a long turn.
+            const inProgress = sorted.filter(i => i.status === 'in_progress');
+            if (inProgress.length > 0) {
+                const ids = inProgress.map(i => `"${i.id}"`).join(', ');
+                block +=
+                    `\n\n**IMPORTANT — BEFORE your final reply this turn:** ` +
+                    `You have ${inProgress.length} item(s) currently in_progress: ${ids}. ` +
+                    `If any of these are now finished, you MUST call ` +
+                    `\`manage_todos({ action: "update", id: "...", status: "completed" })\` ` +
+                    `to mark them done BEFORE writing your final answer. ` +
+                    `The user sees the TODO panel live — stale in_progress items after ` +
+                    `you've finished working is confusing and looks like a bug.`;
+            } else {
+                block +=
+                    '\n\nWhen you finish an item, mark it done via ' +
+                    '`manage_todos({ action: "update", id: "...", status: "completed" })`.';
+            }
             return block;
         },
         compressionOptions,

@@ -142,9 +142,12 @@ const TOOL_DESCRIPTION =
     '`status: "pending"`; ' +
     '(2) before starting each item, call action="update" to set it to ' +
     '"in_progress" (keep AT MOST ONE item in_progress at a time); ' +
-    '(3) when an item is done, call action="update" to set "completed"; ' +
-    '(4) after every item is completed or cancelled, deliver the final assistant ' +
-    `reply summarising what was done. ` +
+    '(3) IMMEDIATELY after FINISHING work on an item, call action="update" to set ' +
+    '"completed" — you MUST do this BEFORE writing any assistant reply about the ' +
+    'completed work, otherwise the user sees stale in_progress items on the TODO ' +
+    'panel and will think the plugin is broken; ' +
+    '(4) only after updating the last item\'s status to "completed" or "cancelled", ' +
+    'deliver the final assistant reply summarising what was done. ' +
     'Each item has TWO required strings with disjoint audiences: ' +
     '`brief` is a short user-facing summary (≤ 80 chars, the user\'s language) ' +
     'rendered verbatim in the TODO panel — make it a 1-line headline. ' +
