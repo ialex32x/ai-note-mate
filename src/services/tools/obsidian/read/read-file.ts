@@ -292,13 +292,37 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const lines = content.split("\n");
             const totalLines = lines.length;
 
+            // When start_line itself exceeds totalLines there is no valid
+            // range to return — fail early with a clear reason.
+            if (startLine > totalLines) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        `Invalid line range: start_line (${startLine}) exceeds total number of lines in the file (${totalLines}).`,
+                };
+            }
+
+            // Auto-clamp: when end_line exceeds totalLines but start_line
+            // is within bounds, silently clamp to totalLines instead of
+            // failing. Models often estimate a conservatively large upper
+            // bound (e.g. 200) without knowing the exact line count, and
+            // refusing the entire call wastes a round-trip for what is
+            // clearly a "read to EOF" intent.
+            let endLineClamped = false;
+            let effectiveEndLine = endLine;
+            if (endLine > totalLines) {
+                effectiveEndLine = totalLines;
+                endLineClamped = true;
+            }
+
             // `end_line` is inclusive: [startLine, endLine] maps directly to
             // JS `slice(startLine - 1, endLine)`. `slice()` auto-clamps `end`
             // to the array length, so `endLine = totalLines` reads to EOF.
-            const rangeErr = validateLineRange(startLine, endLine, totalLines);
+            const rangeErr = validateLineRange(startLine, effectiveEndLine, totalLines);
             if (rangeErr) return rangeErr;
 
-            const selectedContent = lines.slice(startLine - 1, endLine).join("\n");
+            const selectedContent = lines.slice(startLine - 1, effectiveEndLine).join("\n");
 
             // Behaviour nudge against "scan the file in 100-line slices".
             // We only attach a notice when the same file has been ranged-
@@ -307,17 +331,28 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
             // doc comment for why this fires now and not on earlier reads.
             // The notice is plain text inside the result object — the
             // serializer will fold it into the JSON the model sees.
+            const notices: string[] = [];
+            if (endLineClamped) {
+                notices.push(
+                    `Requested line range ${startLine}-${endLine} exceeds total file lines (${totalLines}). ` +
+                        `Range has been automatically clamped to ${startLine}-${effectiveEndLine}.`,
+                );
+            }
+
             const result: Record<string, unknown> = {
                 path,
                 content: selectedContent,
                 start_line: startLine,
-                end_line: endLine,
+                end_line: effectiveEndLine,
                 total_lines: totalLines,
                 mtime: file.stat.mtime,
             };
             const priorRanges = collectRangedReadFileCallsInCurrentTurn(_chatStream, path);
             if (priorRanges.length >= READ_FILE_REPEAT_NOTICE_THRESHOLD) {
-                result["notice"] = buildRepeatReadFileNotice(path, priorRanges);
+                notices.push(buildRepeatReadFileNotice(path, priorRanges));
+            }
+            if (notices.length > 0) {
+                result["notice"] = notices.join(" ");
             }
             return { success: true, type: "object", content: result };
         },
