@@ -159,7 +159,7 @@ export class PromptPinController {
         );
 
         let firstVisible: HTMLElement | null = null;
-        for (const bubble of allBubbles) {
+        for (const bubble of Array.from(allBubbles)) {
             const rect = bubble.getBoundingClientRect();
             // At least partially visible: bottom is below wrapper top AND
             // top is above wrapper bottom.

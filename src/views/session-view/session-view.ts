@@ -532,7 +532,7 @@ export class SessionView extends ItemView {
         this.promptPin = new PromptPinController(
             messagesWrapper,
             this.messagesEl,
-            (messageId) => this.historyLoader?.scrollToMessage(messageId),
+            (messageId) => { void this.historyLoader?.scrollToMessage(messageId); },
         );
         this.promptPin.attach();
 
