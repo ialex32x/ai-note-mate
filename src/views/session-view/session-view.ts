@@ -252,18 +252,44 @@ export class SessionView extends ItemView {
 
         this.installMobileKeyboardPadding(root);
 
-        // Load cached sessions from disk
-        await this.sessionManager.loadFromCache();
+        // Pre-warm speechSynthesis voice engine
+        if (!Platform.isMobile && 'speechSynthesis' in window) {
+            speechSynthesis.getVoices();
+        }
 
+        // Phase 1: build UI shell immediately — no I/O, no await.
+        let sessionTitleEl: HTMLElement;
         try {
-            // Pre-warm speechSynthesis voice engine
-            if (!Platform.isMobile && 'speechSynthesis' in window) {
-                speechSynthesis.getVoices();
-            }
-
-            const sessionTitleEl = this.buildToolbar(root);
+            sessionTitleEl = this.buildToolbar(root);
             this.buildMessageArea(root);
             this.buildInputArea(root, sessionTitleEl);
+
+            // Overlay goes up synchronously while onOpen is still on the
+            // stack, so the user never sees a flash of empty message area.
+            this.historyLoadingOverlay.showSimple();
+        } catch (error) {
+            showInitializationError(root, error, () => { void this.onOpen(); });
+            return;
+        }
+
+        // Phase 2: load session data asynchronously.  onOpen() returns
+        // right away so setViewState / createSessionView are not blocked;
+        // the overlay spinner stays visible until data arrives.
+        void this._loadAndPopulate(sessionTitleEl);
+    }
+
+    /**
+     * Wait for {@link SessionManager.loadFromCache}, then populate the
+     * session title, message list, and runtime state.  Called as a fire-
+     * and-forget tail from {@link onOpen} so the view appears instantly
+     * even when there are many session files to scan.
+     */
+    private async _loadAndPopulate(sessionTitleEl: HTMLElement): Promise<void> {
+        try {
+            await this.sessionManager.loadFromCache();
+
+            this.historyLoadingOverlay.hide();
+            renderSessionTitle(sessionTitleEl, this.sessionManager);
 
             // ── Restore session UI from cache ────────────────────────────────
             await this.runtimeBinder.bindActiveSessionRuntime();

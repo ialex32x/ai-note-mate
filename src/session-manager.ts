@@ -889,6 +889,13 @@ export class SessionManager {
 
             const msgPath = `${this.sessionsDir}/${id}.json`;
             await adapter.write(msgPath, JSON.stringify(data, null, 2));
+
+            // Mirror the message schema version into metadata so the
+            // startup purge loop can skip reading the full file.
+            const meta = this.metadataMap.get(id);
+            if (meta) {
+                meta.messageVersion = version;
+            }
         } catch (error) {
             console.warn('[SessionManager] Failed to save messages:', error);
         }
@@ -961,13 +968,42 @@ export class SessionManager {
             // Purge sessions with deprecated v1–v4 cache files, so they
             // never appear in the session list. Remove from metadataMap
             // and delete the backing file.
+            //
+            // For sessions whose metadata already carries the message
+            // schema version (written by saveMessages for every write),
+            // we skip the expensive file read entirely. Only sessions
+            // whose metadata predates this optimisation (missing
+            // messageVersion) fall back to reading the full file — and
+            // we backfill the version so the next startup is fast.
             let purgedCount = 0;
-            for (const [id] of this.metadataMap) {
+            let metadataDirty = false;
+            for (const [id, meta] of this.metadataMap) {
                 const msgPath = `${this.sessionsDir}/${id}.json`;
+
+                // Fast path: version already cached in metadata.
+                if (typeof meta.messageVersion === 'number') {
+                    if (meta.messageVersion >= 1 && meta.messageVersion <= 4) {
+                        console.warn(`[SessionManager] Purging deprecated v${meta.messageVersion} session: ${id}`);
+                        if (await adapter.exists(msgPath)) {
+                            await adapter.remove(msgPath);
+                        }
+                        this.metadataMap.delete(id);
+                        purgedCount++;
+                    }
+                    // v5+ — no action needed.
+                    continue;
+                }
+
+                // Slow path: metadata from an older plugin version lacks
+                // messageVersion. Read the file once to discover the real
+                // version, then backfill so subsequent startups skip this.
                 if (await adapter.exists(msgPath)) {
                     try {
                         const content = await adapter.read(msgPath);
                         const sessionData = JSON.parse(content) as { version: number };
+                        // Backfill for future fast startups.
+                        meta.messageVersion = sessionData.version;
+                        metadataDirty = true;
                         if (sessionData.version >= 1 && sessionData.version <= 4) {
                             console.warn(`[SessionManager] Purging deprecated v${sessionData.version} session: ${id}`);
                             await adapter.remove(msgPath);
@@ -986,16 +1022,28 @@ export class SessionManager {
 
             // If any sessions were purged, persist the updated list so
             // stale entries are cleaned from disk.
-            if (purgedCount > 0) {
+            if (purgedCount > 0 || metadataDirty) {
                 await this.saveMetadata();
             }
 
-            // Restore active session ID if valid
+            // Restore active session ID if valid; otherwise pick the
+            // most-recently-updated session as a fallback so the UI never
+            // lands on the constructor's dummy session (which was cleared
+            // from metadataMap by the clear() call above).
             if (data.activeSessionId && this.metadataMap.has(data.activeSessionId)) {
                 this._activeSessionId = data.activeSessionId;
-                // Pre-load active session messages
-                await this.loadMessages(this._activeSessionId);
+            } else if (this.metadataMap.size > 0) {
+                // Fallback: the saved active session is gone (purged,
+                // corrupted, or absent).  Pick the most recent surviving
+                // session — getAllSessions() is already sorted descending
+                // by updatedAt.
+                this._activeSessionId = this.getAllSessions()[0]!.id;
+            } else {
+                // No sessions at all — keep the constructor's dummy so the
+                // view has a valid (empty) session to land on.
             }
+            // Pre-load active session messages
+            await this.loadMessages(this._activeSessionId);
 
             // Restore next ID counter
             if (typeof data.nextId === 'number' && data.nextId > 1) {

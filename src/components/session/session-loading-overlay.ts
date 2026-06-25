@@ -46,12 +46,25 @@ export class SessionLoadingOverlay {
         this.total = Math.max(1, total);
         this.setProgress(0, this.total);
         this.el.removeClass('session-history-loading--hidden');
+        this.el.removeClass('session-history-loading--indeterminate');
+        this.el.setAttribute('aria-hidden', 'false');
+    }
+
+    /**
+     * Show a simple spinner overlay without progress bar — suitable for
+     * initial data loading where the total item count is unknown.
+     */
+    showSimple(): void {
+        if (!this.el) return;
+        this.el.removeClass('session-history-loading--hidden');
+        this.el.addClass('session-history-loading--indeterminate');
         this.el.setAttribute('aria-hidden', 'false');
     }
 
     hide(): void {
         if (!this.el) return;
         this.el.addClass('session-history-loading--hidden');
+        this.el.removeClass('session-history-loading--indeterminate');
         this.el.setAttribute('aria-hidden', 'true');
     }
 

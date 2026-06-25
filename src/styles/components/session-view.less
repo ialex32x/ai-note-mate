@@ -573,6 +573,14 @@
     &--hidden {
         display: none;
     }
+
+    // Indeterminate mode: hide progress bar / text, spinner only.
+    &--indeterminate {
+        .session-history-loading__track,
+        .session-history-loading__text {
+            display: none;
+        }
+    }
 }
 
 .session-history-loading__panel {

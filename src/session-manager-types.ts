@@ -23,6 +23,15 @@ export interface SessionMetadata {
     tokenUsage: TokenUsage;
     createdAt: number;
     updatedAt: number;
+    /**
+     * Schema version of the session messages file (sessions/{id}.json).
+     * Mirrors {@link SessionMessagesFile.version}. Stored in list.json so
+     * the startup purge check does NOT need to read every session file
+     * just to detect deprecated v1–v4 formats. Absent for metadata
+     * written by older plugin versions — in that case a one-time file
+     * read is still performed to discover the version.
+     */
+    messageVersion?: number;
     /** Draft input content (unsent text in input box), restored when loading session */
     draftInput?: string;
     /**
