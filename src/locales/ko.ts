@@ -14,6 +14,7 @@ export const ko: Record<string, string> = {
 	'view.switchSession': '세션 전환',
 	'view.moreSessionActions': '세션 작업',
 	'view.sessionSwitchInProgress': '세션 전환 중입니다. 잠시만 기다려 주세요.',
+	'view.sessionNotReady': '세션을 불러오는 중입니다. 잠시 후 다시 시도해 주세요.',
 	'view.historyLoading': '대화를 복원하는 중…',
 	'view.historyLoadingProgress': '{done} / {total}개 메시지',
 	'view.loadOlderMessages': '이전 메시지 불러오기 ({count}개)',

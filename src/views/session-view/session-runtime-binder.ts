@@ -537,6 +537,7 @@ export class SessionRuntimeBinder {
      */
     async bindActiveSessionRuntime(): Promise<void> {
         const id = this.deps.sessionManager.activeSessionId;
+        if (!id) return;
         const cached = this.deps.plugin.runtimePool.get(id);
         if (cached) {
             this.attachRuntime(cached);

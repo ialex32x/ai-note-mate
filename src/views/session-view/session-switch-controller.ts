@@ -64,6 +64,7 @@ export class SessionSwitchController {
 
         this.isSwitchingSession = true;
         try {
+            await this.deps.sessionManager.loadFromCache();
             await this.deps.draftController.flush();
             // Detach from the old runtime (pool decides retention) BEFORE
             // creating the new session, so the runtime's own onFinish can
@@ -103,6 +104,7 @@ export class SessionSwitchController {
 
         this.isSwitchingSession = true;
         try {
+            await this.deps.sessionManager.loadFromCache();
             await this.deps.draftController.flush();
             this.deps.runtimeBinder.detachFromCurrentRuntime();
             // Just update list.json's activeSessionId. The old runtime's
@@ -136,6 +138,7 @@ export class SessionSwitchController {
 
         this.isSwitchingSession = true;
         try {
+            await this.deps.sessionManager.loadFromCache();
             await this.deps.draftController.flush();
 
             // Sync live messages from the active runtime into the
@@ -178,6 +181,7 @@ export class SessionSwitchController {
 
         this.isSwitchingSession = true;
         try {
+            await this.deps.sessionManager.loadFromCache();
             await this.deps.draftController.flush();
             this.deps.runtimeBinder.detachFromCurrentRuntime();
             await this.deps.sessionManager.switchTo(result.sessionId);

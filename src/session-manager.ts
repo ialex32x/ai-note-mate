@@ -73,8 +73,7 @@ export class SessionManager {
     private listFilePath: string;
     private statisticsFilePath: string;
     private cacheLoaded = false;
-    /** In-flight load promise so concurrent calls (e.g. fire-and-forget in main.ts
-     *  + await in SessionView.onOpen) do not race. */
+    /** In-flight load promise so concurrent await calls do not race. */
     private _loadPromise: Promise<void> | null = null;
 
     /**
@@ -88,7 +87,12 @@ export class SessionManager {
         this.sessionsDir = sessionsDir;
         this.listFilePath = `${this.sessionsDir}/list.json`;
         this.statisticsFilePath = `${this.sessionsDir}/statistics.json`;
-        this._activeSessionId = this.createSession();
+        this._activeSessionId = '';
+    }
+
+    /** Whether {@link loadFromCache} has completed successfully at least once. */
+    get isCacheLoaded(): boolean {
+        return this.cacheLoaded;
     }
 
     get activeSessionId(): string {
@@ -712,11 +716,23 @@ export class SessionManager {
      * made by an earlier writer are always visible.
      */
     async saveMetadata(): Promise<void> {
+        await this.ensureCacheReady();
         await this.enqueueWrite(() => this.saveListFile());
+    }
+
+    /**
+     * Block persistence until {@link loadFromCache} has finished successfully.
+     * While the cache is not ready there is no active session to write.
+     */
+    private async ensureCacheReady(): Promise<void> {
+        if (this.cacheLoaded) return;
+        if (this._loadPromise) await this._loadPromise;
     }
 
     /** Save only the list.json file (session metadata) */
     private async saveListFile(): Promise<void> {
+        if (!this._activeSessionId) return;
+
         try {
             const adapter = this.app.vault.adapter;
 
@@ -740,6 +756,8 @@ export class SessionManager {
 
     /** Load messages for a specific session (lazy load) */
     private async loadMessages(id: string): Promise<void> {
+        if (!id) return;
+
         if (this.loadedMessages.has(id)) return;
 
         const meta = this.metadataMap.get(id);
@@ -919,144 +937,151 @@ export class SessionManager {
      */
     async loadFromCache(): Promise<void> {
         if (this.cacheLoaded) return;
-        // Guard against concurrent calls: fire-and-forget in main.ts and
-        // await in SessionView.onOpen() may overlap.
+        // Guard against concurrent calls: await in SessionView.onOpen() may overlap.
         if (this._loadPromise) return this._loadPromise;
 
-        this._loadPromise = this._doLoadFromCache().finally(() => {
-            this.cacheLoaded = true;
-            this._loadPromise = null;
-        });
+        this._loadPromise = this._doLoadFromCache()
+            .then(() => {
+                this.cacheLoaded = true;
+            })
+            .catch((error) => {
+                console.warn('[SessionManager] Failed to load cache:', error);
+                // cacheLoaded stays false so a later call can retry.
+            })
+            .finally(() => {
+                this._loadPromise = null;
+            });
         return this._loadPromise;
     }
 
     private async _doLoadFromCache(): Promise<void> {
-        try {
-            const adapter = this.app.vault.adapter;
-            const exists = await adapter.exists(this.listFilePath);
+        const adapter = this.app.vault.adapter;
+        const exists = await adapter.exists(this.listFilePath);
 
-            if (!exists) return;
+        if (!exists) {
+            this.createSession();
+            return;
+        }
 
-            const content = await adapter.read(this.listFilePath);
-            const data = JSON.parse(content) as SessionListFile;
+        const content = await adapter.read(this.listFilePath);
+        const data = JSON.parse(content) as SessionListFile;
 
-            // Validate cache version
-            if (data.version !== 1) {
-                console.warn('[SessionManager] Unknown cache version, ignoring cache');
-                return;
+        // Validate cache version
+        if (data.version !== 1) {
+            console.warn('[SessionManager] Unknown cache version, ignoring cache');
+            this.createSession();
+            return;
+        }
+
+        // Restore session metadata
+        this.metadataMap.clear();
+        this.messagesCache.clear();
+        this.summariesCache.clear();
+        this.subAgentMessagesCache.clear();
+        this.agentTokenBreakdownCache.clear();
+        this.todosCache.clear();
+        this.quickAskTurnsCache.clear();
+        this.toolCallAssetsCache.clear();
+        this.loadedMessages.clear();
+
+        for (const meta of data.sessions) {
+            // Migration: ensure firstUserMessage exists for old sessions
+            if (meta.firstUserMessage === undefined) {
+                meta.firstUserMessage = '';
             }
+            this.metadataMap.set(meta.id, meta);
+        }
 
-            // Restore session metadata
-            this.metadataMap.clear();
-            this.messagesCache.clear();
-            this.summariesCache.clear();
-            this.subAgentMessagesCache.clear();
-            this.agentTokenBreakdownCache.clear();
-            this.todosCache.clear();
-            this.quickAskTurnsCache.clear();
-            this.toolCallAssetsCache.clear();
-            this.loadedMessages.clear();
+        // Purge sessions with deprecated v1–v4 cache files, so they
+        // never appear in the session list. Remove from metadataMap
+        // and delete the backing file.
+        //
+        // For sessions whose metadata already carries the message
+        // schema version (written by saveMessages for every write),
+        // we skip the expensive file read entirely. Only sessions
+        // whose metadata predates this optimisation (missing
+        // messageVersion) fall back to reading the full file — and
+        // we backfill the version so the next startup is fast.
+        let purgedCount = 0;
+        let metadataDirty = false;
+        for (const [id, meta] of this.metadataMap) {
+            const msgPath = `${this.sessionsDir}/${id}.json`;
 
-            for (const meta of data.sessions) {
-                // Migration: ensure firstUserMessage exists for old sessions
-                if (meta.firstUserMessage === undefined) {
-                    meta.firstUserMessage = '';
-                }
-                this.metadataMap.set(meta.id, meta);
-            }
-
-            // Purge sessions with deprecated v1–v4 cache files, so they
-            // never appear in the session list. Remove from metadataMap
-            // and delete the backing file.
-            //
-            // For sessions whose metadata already carries the message
-            // schema version (written by saveMessages for every write),
-            // we skip the expensive file read entirely. Only sessions
-            // whose metadata predates this optimisation (missing
-            // messageVersion) fall back to reading the full file — and
-            // we backfill the version so the next startup is fast.
-            let purgedCount = 0;
-            let metadataDirty = false;
-            for (const [id, meta] of this.metadataMap) {
-                const msgPath = `${this.sessionsDir}/${id}.json`;
-
-                // Fast path: version already cached in metadata.
-                if (typeof meta.messageVersion === 'number') {
-                    if (meta.messageVersion >= 1 && meta.messageVersion <= 4) {
-                        console.warn(`[SessionManager] Purging deprecated v${meta.messageVersion} session: ${id}`);
-                        if (await adapter.exists(msgPath)) {
-                            await adapter.remove(msgPath);
-                        }
-                        this.metadataMap.delete(id);
-                        purgedCount++;
+            // Fast path: version already cached in metadata.
+            if (typeof meta.messageVersion === 'number') {
+                if (meta.messageVersion >= 1 && meta.messageVersion <= 4) {
+                    console.warn(`[SessionManager] Purging deprecated v${meta.messageVersion} session: ${id}`);
+                    if (await adapter.exists(msgPath)) {
+                        await adapter.remove(msgPath);
                     }
-                    // v5+ — no action needed.
-                    continue;
+                    this.metadataMap.delete(id);
+                    purgedCount++;
                 }
+                // v5+ — no action needed.
+                continue;
+            }
 
-                // Slow path: metadata from an older plugin version lacks
-                // messageVersion. Read the file once to discover the real
-                // version, then backfill so subsequent startups skip this.
-                if (await adapter.exists(msgPath)) {
-                    try {
-                        const content = await adapter.read(msgPath);
-                        const sessionData = JSON.parse(content) as { version: number };
-                        // Backfill for future fast startups.
-                        meta.messageVersion = sessionData.version;
-                        metadataDirty = true;
-                        if (sessionData.version >= 1 && sessionData.version <= 4) {
-                            console.warn(`[SessionManager] Purging deprecated v${sessionData.version} session: ${id}`);
-                            await adapter.remove(msgPath);
-                            this.metadataMap.delete(id);
-                            purgedCount++;
-                        }
-                    } catch {
-                        // Corrupt file — also purge
-                        console.warn(`[SessionManager] Purging corrupt session file: ${id}`);
+            // Slow path: metadata from an older plugin version lacks
+            // messageVersion. Read the file once to discover the real
+            // version, then backfill so subsequent startups skip this.
+            if (await adapter.exists(msgPath)) {
+                try {
+                    const msgContent = await adapter.read(msgPath);
+                    const sessionData = JSON.parse(msgContent) as { version: number };
+                    // Backfill for future fast startups.
+                    meta.messageVersion = sessionData.version;
+                    metadataDirty = true;
+                    if (sessionData.version >= 1 && sessionData.version <= 4) {
+                        console.warn(`[SessionManager] Purging deprecated v${sessionData.version} session: ${id}`);
                         await adapter.remove(msgPath);
                         this.metadataMap.delete(id);
                         purgedCount++;
                     }
+                } catch {
+                    // Corrupt file — also purge
+                    console.warn(`[SessionManager] Purging corrupt session file: ${id}`);
+                    await adapter.remove(msgPath);
+                    this.metadataMap.delete(id);
+                    purgedCount++;
                 }
             }
-
-            // If any sessions were purged, persist the updated list so
-            // stale entries are cleaned from disk.
-            if (purgedCount > 0 || metadataDirty) {
-                await this.saveMetadata();
-            }
-
-            // Restore active session ID if valid; otherwise pick the
-            // most-recently-updated session as a fallback so the UI never
-            // lands on the constructor's dummy session (which was cleared
-            // from metadataMap by the clear() call above).
-            if (data.activeSessionId && this.metadataMap.has(data.activeSessionId)) {
-                this._activeSessionId = data.activeSessionId;
-            } else if (this.metadataMap.size > 0) {
-                // Fallback: the saved active session is gone (purged,
-                // corrupted, or absent).  Pick the most recent surviving
-                // session — getAllSessions() is already sorted descending
-                // by updatedAt.
-                this._activeSessionId = this.getAllSessions()[0]!.id;
-            } else {
-                // No sessions at all — keep the constructor's dummy so the
-                // view has a valid (empty) session to land on.
-            }
-            // Pre-load active session messages
-            await this.loadMessages(this._activeSessionId);
-
-            // Restore next ID counter
-            if (typeof data.nextId === 'number' && data.nextId > 1) {
-                this._nextId = data.nextId;
-            }
-
-            // Load global token statistics after sessions are restored (so
-            // the fallback can recompute from metadata if the file is absent
-            // or corrupt — first-run migration for existing users).
-            await this._loadGlobalStatistics();
-        } catch (error) {
-            console.warn('[SessionManager] Failed to load cache:', error);
         }
+
+        // Restore next ID counter BEFORE any createSession() fallback so
+        // a freshly-created session never reuses a previously-issued id.
+        if (typeof data.nextId === 'number' && data.nextId > 1) {
+            this._nextId = data.nextId;
+        }
+
+        // Restore active session ID if valid; otherwise pick the
+        // most-recently-updated session as a fallback, or create a fresh
+        // empty session when the vault has no sessions yet.
+        if (data.activeSessionId && this.metadataMap.has(data.activeSessionId)) {
+            this._activeSessionId = data.activeSessionId;
+        } else if (this.metadataMap.size > 0) {
+            // Fallback: the saved active session is gone (purged,
+            // corrupted, or absent).  Pick the most recent surviving
+            // session — getAllSessions() is already sorted descending
+            // by updatedAt.
+            this._activeSessionId = this.getAllSessions()[0]!.id;
+        } else {
+            this.createSession();
+        }
+
+        // If any sessions were purged, persist the updated list so
+        // stale entries are cleaned from disk.  Must run AFTER
+        // activeSessionId is restored.
+        if (purgedCount > 0 || metadataDirty) {
+            await this.enqueueWrite(() => this.saveListFile());
+        }
+
+        // Pre-load active session messages
+        await this.loadMessages(this._activeSessionId);
+
+        // Load global token statistics after sessions are restored (so
+        // the fallback can recompute from metadata if the file is absent
+        // or corrupt — first-run migration for existing users).
+        await this._loadGlobalStatistics();
     }
 
     /**
@@ -1104,6 +1129,7 @@ export class SessionManager {
      * other writers (saveMetadata, switchTo, deleteSession).
      */
     async saveToCache(): Promise<void> {
+        await this.ensureCacheReady();
         await this.enqueueWrite(() => this._doSaveToCache());
     }
 
@@ -1112,6 +1138,8 @@ export class SessionManager {
      * Should only be called through saveToCache() to ensure proper locking.
      */
     private async _doSaveToCache(): Promise<void> {
+        if (!this._activeSessionId) return;
+
         try {
             const adapter = this.app.vault.adapter;
 

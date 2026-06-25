@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo, debounce, normalizePath } from 'obsidian';
+import { Plugin, WorkspaceLeaf, TAbstractFile, TFile, MarkdownView, Editor, MarkdownFileInfo, Notice, debounce, normalizePath } from 'obsidian';
 import { DEFAULT_SETTINGS, NoteAssistantPluginSettings, NoteAssistantSettingTab, createDefaultEmbeddingConfig, createDefaultImageGenConfig, createDefaultSpeechToTextConfig } from "./settings";
 import { SessionView } from 'views/session-view';
 import { resolveLocale, setLocale, t } from './i18n';
@@ -160,10 +160,9 @@ export default class NoteAssistantPlugin extends Plugin {
 		this.paths = new PluginPaths(this);
 		this.mcpManager = new MCPManager(this);
 		this.skillManager = new SkillManager(createVaultFsAdapter(this.app.vault));
-		// Plugin-wide session storage. Created here so it loads from disk
-		// once before any SessionView opens; views just attach to it.
+		// Plugin-wide session storage. Session list is loaded lazily when
+		// SessionView opens (or when another caller awaits loadFromCache).
 		this.sessionManager = new SessionManager(this.app, this.paths.sessions());
-		void this.sessionManager.loadFromCache();
 		// Runtime pool needs the session manager for per-id persistence
 		// after background turns finish.
 		this.runtimePool = new SessionRuntimePool(this, { maxIdle: 3 });
@@ -646,15 +645,15 @@ export default class NoteAssistantPlugin extends Plugin {
 		await this.createSessionView(true);
 
 		// Get the session view and insert file reference
-		const leaves = this.app.workspace.getLeavesOfType(SessionView.VIEW_TYPE);
-		if (leaves.length > 0) {
-			const leaf = leaves[0]!;
-			const view = leaf.view as SessionView;
-			if (view && view.cmInput) {
-				view.cmInput.insertFileRef(file);
-				view.cmInput.focus();
-			}
+		const view = this.getActiveSessionView();
+		if (!view || !view.cmInput) return;
+		if (!view.isReady()) {
+			new Notice(t('view.sessionNotReady'));
+			return;
 		}
+
+		view.cmInput.insertFileRef(file);
+		view.cmInput.focus();
 	}
 
 	/**
@@ -668,6 +667,10 @@ export default class NoteAssistantPlugin extends Plugin {
 		await this.createSessionView(true);
 		const view = this.getActiveSessionView();
 		if (!view || !view.cmInput) return;
+		if (!view.isReady()) {
+			new Notice(t('view.sessionNotReady'));
+			return;
+		}
 
 		// Bail out (the SessionView already showed a Notice) when busy —
 		// silently falling back to the existing session would contradict
@@ -727,6 +730,10 @@ export default class NoteAssistantPlugin extends Plugin {
 		await this.createSessionView(true);
 		const view = this.getActiveSessionView();
 		if (!view || !view.cmInput) return;
+		if (!view.isReady()) {
+			new Notice(t('view.sessionNotReady'));
+			return;
+		}
 
 		view.cmInput.insertText(`${ctx.snippet}${snippetTrailer(ctx.snippet)}`);
 		view.cmInput.focus();
@@ -754,6 +761,10 @@ export default class NoteAssistantPlugin extends Plugin {
 		await this.createSessionView(true);
 		const view = this.getActiveSessionView();
 		if (!view || !view.cmInput) return;
+		if (!view.isReady()) {
+			new Notice(t('view.sessionNotReady'));
+			return;
+		}
 
 		// Bail out — with the user-visible Notice already shown by the
 		// view — when the active session is busy. We deliberately do NOT
@@ -851,6 +862,10 @@ export default class NoteAssistantPlugin extends Plugin {
 		await this.createSessionView(true);
 		const view = this.getActiveSessionView();
 		if (!view) return;
+		if (!view.isReady()) {
+			new Notice(t('view.sessionNotReady'));
+			return;
+		}
 
 		view.fillPromptDraft(prompt);
 	}

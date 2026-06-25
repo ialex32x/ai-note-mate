@@ -14,6 +14,7 @@ export const ja: Record<string, string> = {
 	'view.switchSession': 'セッション切替',
 	'view.moreSessionActions': 'セッション操作',
 	'view.sessionSwitchInProgress': 'セッション切り替え中です。お待ちください。',
+	'view.sessionNotReady': 'セッションを読み込み中です。少し待ってからもう一度お試しください。',
 	'view.historyLoading': '会話を復元しています…',
 	'view.historyLoadingProgress': '{done} / {total} 件のメッセージ',
 	'view.loadOlderMessages': '以前のメッセージを読み込む（{count} 件）',

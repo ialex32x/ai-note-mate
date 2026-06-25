@@ -14,6 +14,7 @@ export const zhTW: Record<string, string> = {
 	'view.switchSession': '切換對話',
 	'view.moreSessionActions': '更多對話操作',
 	'view.sessionSwitchInProgress': '對話切換中，請稍候。',
+	'view.sessionNotReady': '對話正在載入中，請稍候再試。',
 	'view.historyLoading': '正在恢復對話…',
 	'view.historyLoadingProgress': '已恢復 {done} / {total} 則訊息',
 	'view.loadOlderMessages': '載入更早的訊息（{count} 則）',

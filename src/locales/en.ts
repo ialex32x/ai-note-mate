@@ -14,6 +14,7 @@ export const en: Record<string, string> = {
 	'view.switchSession': 'Switch session',
 	'view.moreSessionActions': 'More session actions',
 	'view.sessionSwitchInProgress': 'Session switch in progress, please wait.',
+	'view.sessionNotReady': 'Session is still loading, please try again in a moment.',
 	'view.historyLoading': 'Restoring conversation…',
 	'view.historyLoadingProgress': '{done} / {total} messages',
 	'view.loadOlderMessages': 'Load older messages ({count})',

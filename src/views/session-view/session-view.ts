@@ -122,6 +122,20 @@ export class SessionView extends ItemView {
         return this.runtimeBinder?.runtime;
     }
 
+    /**
+     * Whether the view has finished its initial async load + runtime bind
+     * (the tail of {@link _loadAndPopulate}). External callers (editor
+     * "Send to AI session" actions) use this to avoid operating on a
+     * half-initialized view right after startup. Requires the session
+     * cache to be loaded, the input editor to exist, and a runtime to be
+     * bound to the active session.
+     */
+    isReady(): boolean {
+        return this.sessionManager.isCacheLoaded
+            && !!this.cmInput
+            && !!this.runtime;
+    }
+
     private plugin!: NoteAssistantPlugin;
 
     // ── Session management ──────────────────────────────────────────────────
@@ -194,6 +208,13 @@ export class SessionView extends ItemView {
     private todoPanel!: TodoPanel;
     /** QuickAsk side-inquiry floating panel. */
     private quickAskPanel!: QuickAskPanel;
+
+    /**
+     * Monotonic counter bumped on every {@link onOpen} so a stale
+     * fire-and-forget {@link _loadAndPopulate} tail cannot bind a
+     * session after a newer open cycle has already rebuilt the view.
+     */
+    private populateGeneration = 0;
 
     constructor(leaf: WorkspaceLeaf, plugin: NoteAssistantPlugin) {
         super(leaf);
@@ -275,7 +296,8 @@ export class SessionView extends ItemView {
         // Phase 2: load session data asynchronously.  onOpen() returns
         // right away so setViewState / createSessionView are not blocked;
         // the overlay spinner stays visible until data arrives.
-        void this._loadAndPopulate(sessionTitleEl);
+        const generation = ++this.populateGeneration;
+        void this._loadAndPopulate(sessionTitleEl, generation);
     }
 
     /**
@@ -284,16 +306,24 @@ export class SessionView extends ItemView {
      * and-forget tail from {@link onOpen} so the view appears instantly
      * even when there are many session files to scan.
      */
-    private async _loadAndPopulate(sessionTitleEl: HTMLElement): Promise<void> {
+    private async _loadAndPopulate(sessionTitleEl: HTMLElement, generation: number): Promise<void> {
         try {
             await this.sessionManager.loadFromCache();
+            if (generation !== this.populateGeneration) return;
 
-            this.historyLoadingOverlay.hide();
+            if (!this.sessionManager.isCacheLoaded || !this.sessionManager.activeSessionId) {
+                throw new Error('Session cache failed to load');
+            }
+
             renderSessionTitle(sessionTitleEl, this.sessionManager);
 
             // ── Restore session UI from cache ────────────────────────────────
             await this.runtimeBinder.bindActiveSessionRuntime();
+            if (generation !== this.populateGeneration) return;
+
+            this.historyLoadingOverlay.hide();
         } catch (error) {
+            if (generation !== this.populateGeneration) return;
             showInitializationError(this.contentEl, error, () => { void this.onOpen(); });
         }
     }

@@ -14,6 +14,7 @@ export const zhCN: Record<string, string> = {
 	'view.switchSession': '切换会话',
 	'view.moreSessionActions': '更多会话操作',
 	'view.sessionSwitchInProgress': '会话切换中，请稍候。',
+	'view.sessionNotReady': '会话正在加载中，请稍候再试。',
 	'view.historyLoading': '正在恢复会话…',
 	'view.historyLoadingProgress': '已恢复 {done} / {total} 条消息',
 	'view.loadOlderMessages': '加载更早的消息（{count} 条）',
