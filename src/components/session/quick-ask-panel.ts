@@ -195,11 +195,14 @@ export class QuickAskPanel {
      * Mounted on body with `position: fixed`, so it never affects the
      * session view's scroll layout.
      *
-     * Rule: if the target bubble's midpoint is in the bottom half of the
-     * viewport, open the panel ABOVE the bubble; otherwise BELOW.
+     * Rule: if the target button's midpoint is in the bottom half of the
+     * viewport, open the panel ABOVE the button; otherwise BELOW.
+     *
+     * Uses `requestAnimationFrame` to ensure the browser has completed
+     * layout before we measure `offsetWidth`.
      */
     private positionPanel(): void {
-        window.setTimeout(() => this.doPosition(), 0);
+        window.requestAnimationFrame(() => this.doPosition());
     }
 
     private doPosition(): void {
@@ -207,7 +210,7 @@ export class QuickAskPanel {
 
         // Anchor to the QuickAsk button, not the entire bubble.
         const parentBubble = this.getMessageBubbleEl(this._activeMessageId);
-        const btnEl = parentBubble?.querySelector('[aria-label*="QuickAsk"]') as HTMLElement | null;
+        const btnEl = parentBubble?.querySelector('[data-action="quick-ask"]') as HTMLElement | null;
 
         if (!btnEl) {
             this.el.setCssStyles({ left: '50%', top: '120px', transform: 'translateX(-50%)' });
@@ -216,6 +219,7 @@ export class QuickAskPanel {
 
         const btnRect = btnEl.getBoundingClientRect();
         const panelWidth = this.el.offsetWidth || 420;
+        const panelHeight = this.el.offsetHeight;
         const edgePad = 12;
 
         // Centre the panel on the button horizontally
@@ -223,13 +227,29 @@ export class QuickAskPanel {
         const maxLeft = window.innerWidth - panelWidth - edgePad;
         const left = Math.max(edgePad, Math.min(rawLeft, maxLeft));
 
-        // Always below: panel top edge at button bottom edge
-        this.el.setCssStyles({
-            left: `${left}px`,
-            top: `${btnRect.bottom}px`,
-            bottom: 'auto',
-            maxHeight: `${window.innerHeight - btnRect.bottom - edgePad}px`,
-        });
+        // Decide vertical direction
+        const btnMidY = btnRect.top + btnRect.height / 2;
+        const spaceBelow = window.innerHeight - btnRect.bottom - edgePad;
+        const spaceAbove = btnRect.top - edgePad;
+        const openAbove = btnMidY > window.innerHeight * 0.5 && spaceAbove >= panelHeight * 0.4;
+
+        if (openAbove) {
+            // Panel bottom edge at button top edge, minus a gap
+            this.el.setCssStyles({
+                left: `${left}px`,
+                top: 'auto',
+                bottom: `${window.innerHeight - btnRect.top + edgePad}px`,
+                maxHeight: `${spaceAbove}px`,
+            });
+        } else {
+            // Panel top edge at button bottom edge, plus a gap
+            this.el.setCssStyles({
+                left: `${left}px`,
+                top: `${btnRect.bottom + edgePad}px`,
+                bottom: 'auto',
+                maxHeight: `${spaceBelow}px`,
+            });
+        }
     }
 
     // ── Outside-click handling ────────────────────────────────────────
@@ -246,7 +266,7 @@ export class QuickAskPanel {
                 const parentBubble = this._activeMessageId
                     ? this.getMessageBubbleEl(this._activeMessageId) : undefined;
                 if (parentBubble) {
-                    const btn = parentBubble.querySelector('[aria-label*="QuickAsk"]');
+                    const btn = parentBubble.querySelector('[data-action="quick-ask"]');
                     if (btn?.contains(target)) return;
                 }
                 this.hide();

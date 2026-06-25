@@ -50,6 +50,12 @@ export interface IconActionOptions {
      * to repeat the base class list.
      */
     extraCls?: string;
+    /**
+     * Optional `data-action` attribute value. Enables stable DOM selection
+     * of specific action buttons regardless of localised aria-label text.
+     * For example, `"quick-ask"` → `[data-action="quick-ask"]`.
+     */
+    dataAction?: string;
 }
 
 /**
@@ -67,12 +73,16 @@ export function addIconAction(
 ): HTMLButtonElement {
     const cls = opts.cls ?? ICON_ACTION_BTN_CLS;
     const finalCls = opts.extraCls ? `${cls} ${opts.extraCls}` : cls;
+    const attrs: Record<string, string> = {
+        'aria-label': opts.label,
+        type: 'button',
+    };
+    if (opts.dataAction) {
+        attrs['data-action'] = opts.dataAction;
+    }
     const btn = actions.createEl('button', {
         cls: finalCls,
-        attr: {
-            'aria-label': opts.label,
-            type: 'button',
-        },
+        attr: attrs,
     });
     setIcon(btn, opts.icon);
     setTooltip(btn, opts.label);

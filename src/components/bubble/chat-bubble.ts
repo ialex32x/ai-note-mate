@@ -363,6 +363,7 @@ export class ChatBubble {
                     defs.push({
                         icon: 'message-circle-question',
                         label: t('view.quickAsk'),
+                        dataAction: 'quick-ask',
                         onClick: () => onQuickAsk(msg),
                         extraCls: hasQuickAskData ? 'session-bubble__action-btn--active' : undefined,
                     });
