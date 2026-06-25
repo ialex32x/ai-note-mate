@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5.3
+
+### What's new
+
+- **Pinned prompt bar on scroll** — When you scroll up in a conversation, your active prompt is now pinned to the top of the session as a floating bar, so you can reference or adjust it without losing your place.
+- **Session loading overlay** — An indeterminate loading overlay now appears when the session cache is being initialised, with improved readiness checks and user notifications so you always know when a session is ready to use.
+
+### Refinements
+
+- **Leaner replace-text** — Text replacement logic has been extracted into a dedicated `replace-normaliser` module, making replacement behaviour more predictable and testable.
+- **Session loading deferred** — Session cache initialisation has been deferred and reworked to avoid blocking Obsidian's startup, significantly reducing the plugin's impact on launch time.
+- **Bubble iteration robustness** — The bubble list is now converted to a plain array for iteration, eliminating live-collection edge cases during rendering.
+
+### Fixes
+
+- **`end_line` auto-clamping** — When the model specifies an `end_line` exceeding the file's total line count, it is now automatically clamped to the last line instead of throwing an error.
+- **TODO task status enforcement** — The system prompt now emphasises updating TODO task status *before* the final reply, reducing stale tasks left behind after a conversation.
+- **Quick-ask positioning near bottom** — Quick-ask panels near the bottom of a long conversation now appear above the bubble instead of below, preventing them from being clipped off-screen.
+- **Session view alignment** — The session view is now properly center-justified, fixing a layout misalignment.
+
+---
+
 ## 1.5.2
 
 ### What's new
