@@ -604,6 +604,120 @@
     }
 }
 
+// Read-only tool-name chips used in the agents section's MCP tools preview.
+// Same pill shape as `.oap-settings-chip` but slimmer — no remove button,
+// muted background, code-style font so tool names like `mcp_search_grep`
+// are easy to distinguish from prose.
+.oap-agent-tool-chip {
+    .chip();
+    display: inline-flex;
+
+    // Compact read-only styling — slightly tighter gap / padding because
+    // there's no interactive decoration.
+    gap: 0;
+    padding: 1px 7px;
+    background: @bg-modifier-border;
+    border-color: transparent;
+    cursor: default;
+}
+
+.oap-agent-tool-chip-label {
+    font-size: 0.78em;
+    font-family: var(--font-monospace);
+    color: @text-secondary;
+    white-space: nowrap;
+}
+
+// Description textarea container — `position: relative` so the
+// generate button can be absolutely positioned in the top-right corner.
+// Horizontal margins align with standard setting-item padding so the
+// textarea sits flush under the label/description text.
+.oap-agent-desc-wrapper {
+    position: relative;
+    margin: @spacing-xs @spacing-lg @spacing-md;
+}
+
+// Full-width description textarea — matches the vanilla Obsidian
+// setting-item-control sizing so it aligns with other inputs.
+.oap-agent-desc-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: @spacing-md;
+    font-family: var(--font-monospace);
+    font-size: 0.82em;
+    color: @text-primary;
+    background: @bg-modifier-hover;
+    border: 1px solid @bg-modifier-border;
+    border-radius: @radius-md;
+    resize: vertical;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-sizing: border-box;
+
+    &:focus {
+        outline: none;
+        border-color: @text-accent;
+    }
+}
+
+// Sparkle generate button — absolute top-right corner of the wrapper.
+// Hidden by default, fades in on hover over the wrapper.
+.oap-agent-desc-gen-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: @radius-sm;
+    background: @bg-modifier-hover;
+    color: @text-secondary;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity @duration-fast, background @duration-fast, color @duration-fast;
+
+    &:hover {
+        background: @bg-modifier-active;
+        color: @text-accent;
+    }
+}
+
+// Show the button when the wrapper is hovered.
+.oap-agent-desc-wrapper:hover .oap-agent-desc-gen-btn {
+    opacity: 1;
+}
+
+// Generating indicator — a thin shimmer bar at the top of the textarea.
+// Pseudo-element on the wrapper so it overlays the textarea border.
+.oap-agent-desc-wrapper.is-generating::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        @text-accent 50%,
+        transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: oap-shimmer 1.2s ease-in-out infinite;
+    z-index: 1;
+    border-radius: @radius-md @radius-md 0 0;
+}
+
+@keyframes oap-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
 .oap-settings-chip-input-row {
     display: flex;
     align-items: center;

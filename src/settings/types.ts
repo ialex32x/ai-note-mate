@@ -175,6 +175,35 @@ export interface SpeechToTextConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Custom agent (sub-agent) configuration
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CustomAgentConfig {
+	/**
+	 * Display name shown in the settings tab bar and used to identify
+	 * this agent in the UI. Empty means "Untitled".
+	 */
+	name: string;
+	/**
+	 * Tool-name wildcard patterns the agent may use (e.g. `["mcp_*"]`).
+	 * Empty when no tools are assigned.
+	 */
+	tools: string[];
+	/**
+	 * ID of the provider profile this agent should use for its
+	 * requests. Empty string means "inherit the main agent's
+	 * profile at runtime".
+	 */
+	profile: string;
+	/**
+	 * Short, high-level description of what this agent does. Shown to
+	 * the main agent for sub-agent routing — describes capabilities at
+	 * a glance without listing individual tool names.
+	 */
+	description: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Plugin Settings
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -354,20 +383,14 @@ export interface NoteAssistantPluginSettings {
 	 */
 	skillAutoInjectThreshold: number;
 
-	// ── Custom agents (note-defined sub-agents) ─────────────────────────────
+	// ── Custom agents (sub-agents persisted directly) ──────────────────────
 	/**
-	 * Vault-relative paths of notes that each define a custom agent. A note
-	 * is parsed into a {@link import('../services/custom-agents').CustomAgentConfig}:
-	 * its frontmatter `tools` field lists tool-name patterns
-	 * (e.g. `"mcp_xxx_*"`) the agent may use, and its markdown body becomes
-	 * the agent's prompt.
-	 *
-	 * Users author and edit each agent directly in its note; the settings UI
-	 * only manages the path list and shows a read-only preview of the parsed
-	 * configuration. Empty / missing paths are tolerated (they simply render
-	 * as an unconfigured tab).
+	 * Persisted custom-agent (sub-agent) configurations. Each entry
+	 * defines the tools a sub-agent may use (via wildcard patterns),
+	 * an optional provider profile name, and a short description shown
+	 * to the main agent for sub-agent routing.
 	 */
-	agents: string[];
+	agents: CustomAgentConfig[];
 
 	// ── Custom menu (user-defined right-click prompts) ──────────────────────
 	/**

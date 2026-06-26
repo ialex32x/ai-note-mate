@@ -527,12 +527,20 @@ export default class NoteAssistantPlugin extends Plugin {
 			}
 		}
 
-		// Custom agents is a plain string[] of note paths. Older data.json
-		// files predate the field; Object.assign with DEFAULT_SETTINGS seeds
-		// an empty array, but guard against a corrupted non-array value so
-		// the settings UI never iterates over a non-iterable.
+		// Custom agents were previously string[] (note paths). Migrate to
+		// CustomAgentConfig[] (inline persisted config). If the old format
+		// is detected, reset to empty — individual note contents cannot be
+		// reliably ported without reading every note on every load.
 		if (!Array.isArray(this.settings.agents)) {
 			this.settings.agents = [];
+		} else if (this.settings.agents.length > 0 && typeof this.settings.agents[0] === 'string') {
+			this.settings.agents = [];
+		}
+		// Ensure every agent object has the `name` field (added later).
+		for (const agent of this.settings.agents) {
+			if (typeof agent.name !== 'string') {
+				agent.name = '';
+			}
 		}
 
 		// Ensure activeProfileId points to a valid profile

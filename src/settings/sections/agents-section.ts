@@ -1,41 +1,29 @@
-import { Notice, Setting, TFile, TFolder, normalizePath } from "obsidian";
+import { Notice, Setting, setIcon, type DropdownComponent } from "obsidian";
 import { t } from "../../i18n";
-import { createTabBar, createSettingsGroupHeading } from "../../components/settings-components";
+import { createTabBar } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
+import type { CustomAgentConfig } from "../types";
 import { AGENTS_SECTION_ID } from "../section-ids";
-import { loadCustomAgentConfig } from "../../services/custom-agents";
+import { getProfileLabel } from "./global-section";
+import {
+	buildMcpToolInfos,
+	buildMcpToolNames,
+	matchesWildcard,
+} from "../../services/custom-agents";
+import { createSummarizerConfig } from "../../services/chat-factory";
+import { createChatCompletion } from "../../services/context-compression";
+import { isAbortError } from "../../utils/abortable-request";
+
+/** Default config seeded when adding a new agent. */
+function defaultAgentConfig(): CustomAgentConfig {
+	return { name: "", tools: ["mcp_*"], profile: "", description: "" };
+}
 
 /**
- * Custom agents settings panel.
- *
- * Each agent is a note in the user's vault (see {@link loadCustomAgentConfig}).
- * The list of note paths lives in {@link import('../types').NoteAssistantPluginSettings.agents};
- * this section manages that list with a profile-style tab bar (add / delete,
- * one tab per agent) and, for the selected agent, exposes:
- *   1. an editable note-path field (+ open / create helpers), and
- *   2. a READ-ONLY preview of the parsed configuration (tool patterns and
- *      prompt body).
- *
- * Authoring is intentionally done in the note itself — the note is a plain
- * markdown file with full preview / search / link-graph support — so the
- * settings UI never offers in-place editing of tools or prompt.
+ * Custom agents (sub-agents) settings panel.
  */
 export class AgentsSettingsSection implements SettingsSection {
 	readonly titleKey = AGENTS_SECTION_ID;
-
-	/** Default content seeded when creating an agent note from the helper. */
-	private static readonly AGENT_TEMPLATE = [
-		"---",
-		"tools:",
-		'  - "mcp_*"',
-		"---",
-		"",
-		"You are a custom agent. Describe this agent's role, scope, and",
-		"instructions here. This whole note body becomes the agent's prompt.",
-		"",
-	].join("\n");
-
-	/** Index of the agent currently shown in the editor. */
 	private editingIndex = 0;
 
 	constructor(private readonly ctx: SectionContext) {}
@@ -44,7 +32,6 @@ export class AgentsSettingsSection implements SettingsSection {
 		const { plugin, refreshSection } = this.ctx;
 		const agents = plugin.settings.agents;
 
-		// Empty state: a single call-to-action to add the first agent.
 		if (agents.length === 0) {
 			new Setting(container)
 				.setName(t("settings.agentsEmpty"))
@@ -54,7 +41,7 @@ export class AgentsSettingsSection implements SettingsSection {
 					btn.setButtonText(t("settings.addAgent"));
 					btn.setCta();
 					btn.onClick(async () => {
-						agents.push("");
+						agents.push(defaultAgentConfig());
 						this.editingIndex = 0;
 						await plugin.saveSettings();
 						refreshSection(this);
@@ -63,20 +50,16 @@ export class AgentsSettingsSection implements SettingsSection {
 			return;
 		}
 
-		// Clamp the editing index — deletions or external edits to the list
-		// can leave it dangling past the end.
 		this.editingIndex = Math.min(Math.max(this.editingIndex, 0), agents.length - 1);
 		const idx = this.editingIndex;
 
 		const tabBar = createTabBar({
 			container,
-			items: agents.map((path, i) => ({
+			items: agents.map((agent, i) => ({
 				id: String(i),
-				name: this.tabLabel(path),
-				tooltip: path.trim() || undefined,
+				name: this.tabLabel(agent),
+				tooltip: agent.description || undefined,
 			})),
-			// No "active" concept for agents (they are not mutually exclusive),
-			// so the active id mirrors the editing id and no dot is shown.
 			activeId: String(idx),
 			editingId: String(idx),
 			onTabClick: (id) => {
@@ -84,7 +67,7 @@ export class AgentsSettingsSection implements SettingsSection {
 				refreshSection(this);
 			},
 			onAdd: async () => {
-				agents.push("");
+				agents.push(defaultAgentConfig());
 				this.editingIndex = agents.length - 1;
 				await plugin.saveSettings();
 				refreshSection(this);
@@ -102,12 +85,8 @@ export class AgentsSettingsSection implements SettingsSection {
 		this.renderAgentEditor(container, idx, tabBar.refreshTabLabel);
 	}
 
-	/** Tab label = note basename without extension, or a placeholder. */
-	private tabLabel(path: string): string {
-		const trimmed = path.trim();
-		if (!trimmed) return t("settings.agentUntitled");
-		const base = trimmed.split("/").pop() ?? trimmed;
-		return base.replace(/\.md$/i, "");
+	private tabLabel(agent: CustomAgentConfig): string {
+		return (agent.name ?? "").trim() || t("settings.agentUntitled");
 	}
 
 	private renderAgentEditor(
@@ -115,153 +94,274 @@ export class AgentsSettingsSection implements SettingsSection {
 		idx: number,
 		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
 	): void {
-		const { app, plugin } = this.ctx;
-		const agents = plugin.settings.agents;
+		const { plugin } = this.ctx;
+		const agent = plugin.settings.agents[idx]!;
 
-		// The read-only preview lives in its own child container so a path
-		// edit can re-render it without rebuilding (and stealing focus from)
-		// the path text input above.
-		let previewEl: HTMLElement;
-
-		const pathSetting = new Setting(container)
-			.setName(t("settings.agentNotePath"))
-			.setDesc(t("settings.agentNotePathDesc"))
+		// ── Name ───────────────────────────────────────────────
+		new Setting(container)
+			.setName(t("settings.agentName"))
+			.setDesc(t("settings.agentNameDesc"))
 			.addText(text => {
-				text.setPlaceholder(t("settings.agentNotePathPlaceholder"));
-				text.setValue(agents[idx] ?? "");
+				text.setPlaceholder(t("settings.agentNamePlaceholder"));
+				text.setValue(agent.name);
 				text.onChange(async (value) => {
-					const trimmed = value.trim();
-					agents[idx] = trimmed;
+					agent.name = value.trim();
 					await plugin.saveSettings();
-					refreshTabLabel(String(idx), this.tabLabel(trimmed), trimmed || undefined);
-					this.renderPreview(previewEl, trimmed);
+					refreshTabLabel(
+						String(idx),
+						this.tabLabel(agent),
+						agent.description || undefined,
+					);
 				});
 			});
 
-		pathSetting.addExtraButton(btn => {
-			btn.setIcon("file-plus-2");
-			btn.setTooltip(t("settings.agentCreateDefault"));
-			btn.onClick(async () => {
-				try {
-					const file = await this.ensureAgentFile(agents[idx] ?? "");
-					new Notice(t("settings.agentCreated", { path: file.path }));
-					this.renderPreview(previewEl, file.path);
-				} catch (err) {
-					new Notice(err instanceof Error ? err.message : String(err));
+		// ── Profile ────────────────────────────────────────────
+		new Setting(container)
+			.setName(t("settings.agentProfile"))
+			.setDesc(t("settings.agentProfileDesc"))
+			.addDropdown((dropdown: DropdownComponent) => {
+				dropdown.addOption("", t("settings.agentProfileInherited"));
+				for (const p of plugin.settings.profiles) {
+					dropdown.addOption(p.id, getProfileLabel(p));
 				}
+				// Ensure the stored ID is still valid; fall back to inherited.
+				const validId = agent.profile
+					&& plugin.settings.profiles.some(p => p.id === agent.profile)
+					? agent.profile
+					: "";
+				dropdown.setValue(validId);
+				dropdown.onChange(async (value: string) => {
+					agent.profile = value;
+					await plugin.saveSettings();
+				});
 			});
-		});
 
-		pathSetting.addExtraButton(btn => {
-			btn.setIcon("external-link");
-			btn.setTooltip(t("settings.agentOpenNote"));
-			btn.onClick(async () => {
-				const raw = (agents[idx] ?? "").trim();
-				const file = raw
-					? app.vault.getAbstractFileByPath(normalizePath(raw))
-					: null;
-				if (!(file instanceof TFile)) {
-					new Notice(t("settings.agentNoteMissing"));
-					return;
-				}
-				await app.workspace.openLinkText(file.path, "", true);
+		// ── Tools patterns ─────────────────────────────────────
+		const toolsLines = agent.tools.join("\n");
+		new Setting(container)
+			.setName(t("settings.agentTools"))
+			.setDesc(t("settings.agentToolsDesc"))
+			.addTextArea(text => {
+				text.setPlaceholder("One wildcard pattern per line");
+				text.setValue(toolsLines);
+				text.onChange(async (value) => {
+					agent.tools = value
+						.split(/[\n,]/)
+						.map(s => s.trim())
+						.filter(Boolean);
+					await plugin.saveSettings();
+				});
 			});
-		});
 
-		createSettingsGroupHeading(container, { name: t("settings.agentParsedConfig") });
+		// ── MCP tools preview ──────────────────────────────────
+		void this.renderToolsPreview(container, agent);
 
-		previewEl = container.createDiv();
-		this.renderPreview(previewEl, agents[idx] ?? "");
+		// ── Description (full-width textarea + hover generate button) ──
+		this.renderDescriptionField(container, agent, idx, refreshTabLabel);
 	}
 
 	/**
-	 * Render the read-only parsed-config preview (tool patterns + prompt) for
-	 * a single agent note into `el`. Best-effort: the async vault read must
-	 * never throw to the caller — any failure renders inline so the rest of
-	 * the section stays usable while the user fixes the path.
+	 * Render the description as a full-width textarea (not in a
+	 * two-column Setting). A sparkle button at the top-right corner
+	 * lets the user auto-generate the description from matched tools.
 	 */
-	private renderPreview(el: HTMLElement, path: string): void {
-		el.empty();
-		const { app } = this.ctx;
+	private renderDescriptionField(
+		container: HTMLElement,
+		agent: CustomAgentConfig,
+		idx: number,
+		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
+	): void {
+		const { plugin } = this.ctx;
 
-		const trimmed = path.trim();
-		if (!trimmed) {
-			this.renderStatus(el, t("settings.agentPathEmpty"));
-			return;
-		}
+		// Heading row (mimics Setting name + desc).
+		const heading = container.createEl("div", {
+			cls: "setting-item",
+		});
+		const info = heading.createEl("div", { cls: "setting-item-info" });
+		info.createEl("div", {
+			cls: "setting-item-name",
+			text: t("settings.agentDescription"),
+		});
+		info.createEl("div", {
+			cls: "setting-item-description",
+			text: t("settings.agentDescriptionDesc"),
+		});
 
-		this.renderStatus(el, t("settings.agentLoading"));
-		void (async () => {
-			try {
-				const config = await loadCustomAgentConfig(app, trimmed);
-				el.empty();
-				if (!config) {
-					this.renderStatus(el, t("settings.agentNoteMissing"));
-					return;
+		// Wrapper for textarea + hover button.
+		const wrapper = container.createEl("div", {
+			cls: "oap-agent-desc-wrapper",
+		});
+
+		const textarea = wrapper.createEl("textarea", {
+			cls: "oap-agent-desc-textarea",
+			attr: { rows: "5" },
+			text: agent.description,
+		});
+		textarea.setAttribute("placeholder", t("settings.agentDescriptionPlaceholder"));
+
+		// Hover button — sparkles icon, top-right corner.
+		const genBtn = wrapper.createEl("button", {
+			cls: "oap-agent-desc-gen-btn",
+			attr: { "aria-label": t("settings.agentGenerateDescriptionButton") },
+		});
+		setIcon(genBtn, "sparkles");
+
+		// Save on input.
+		textarea.addEventListener("input", () => {
+			agent.description = textarea.value;
+			void (async () => {
+				await plugin.saveSettings();
+				refreshTabLabel(
+					String(idx),
+					this.tabLabel(agent),
+					agent.description || undefined,
+				);
+			})();
+		});
+
+		// Generate button — replaces textarea content with AI output.
+		genBtn.addEventListener("click", () => {
+			void (async () => {
+				wrapper.classList.add("is-generating");
+				genBtn.disabled = true;
+				try {
+					const result = await this.generateDescription(agent.tools);
+					if (result !== null) {
+						textarea.value = result;
+						agent.description = result;
+						await plugin.saveSettings();
+						refreshTabLabel(
+							String(idx),
+							this.tabLabel(agent),
+							agent.description || undefined,
+						);
+					}
+				} finally {
+					wrapper.classList.remove("is-generating");
+					genBtn.disabled = false;
 				}
-				this.renderTools(el, config.tools);
-				this.renderPrompt(el, config.prompt);
-			} catch (err) {
-				el.empty();
-				this.renderStatus(el, t("settings.agentReadFailed", {
-					msg: err instanceof Error ? err.message : String(err),
-				}));
+			})();
+		});
+	}
+
+	/**
+	 * Call the summarizer model to produce a short description from
+	 * the given tool patterns. Returns the generated text, or null
+	 * when generation is not possible (no summarizer, no tools, etc.).
+	 */
+	private async generateDescription(patterns: readonly string[]): Promise<string | null> {
+		const { plugin } = this.ctx;
+
+		const modelConfig = createSummarizerConfig(plugin);
+		if (!modelConfig) {
+			new Notice(t("settings.agentGenerateDescriptionNoSummarizer"));
+			return null;
+		}
+
+		const toolInfos = buildMcpToolInfos(plugin.settings.mcpServers, patterns);
+		if (toolInfos.length === 0) {
+			new Notice(t("settings.agentGenerateDescriptionNoTools"));
+			return null;
+		}
+
+		const toolSummary = toolInfos.map(t => {
+			const desc = t.description?.trim();
+			return desc ? `- ${t.name}: ${desc}` : `- ${t.name}`;
+		}).join('\n');
+
+		try {
+			const generatePrompt = [
+				'Below is a list of tools available to an AI sub-agent. Each tool has a name and a description of what it does.',
+				'',
+				'Write a SHORT (2-4 sentence), high-level description of what this agent can do. This description will be shown to a main orchestrator agent so it knows when to delegate tasks to this sub-agent.',
+				'',
+				'Rules:',
+				'- Do NOT mention specific tool names (e.g. "mcp_xxx", "grep", "fetch").',
+				'- Describe the agent\'s capabilities at a conceptual level (e.g. "can search and analyse files in the vault" instead of "uses mcp_search_grep and mcp_search_find").',
+				'- Focus on the OUTCOMES the agent can deliver, not the mechanics.',
+				'- Keep it concise — 2 to 4 sentences maximum.',
+				'- Write in English.',
+				'',
+				'TOOLS:',
+				toolSummary,
+				'',
+				'Output ONLY the description text, with no additional commentary, no markdown code fences, and no preamble.',
+			].join('\n');
+
+			const generated = await createChatCompletion(
+				modelConfig,
+				[{ role: 'user', content: generatePrompt }],
+			);
+
+			const trimmed = generated.trim();
+			if (!trimmed) {
+				new Notice(t("settings.agentGenerateDescriptionEmpty"));
+				return null;
 			}
-		})();
+
+			return trimmed;
+		} catch (err) {
+			if (isAbortError(err)) return null;
+			console.error("[AgentsSection] Description generation failed:", err);
+			new Notice(err instanceof Error ? err.message : String(err));
+			return null;
+		}
 	}
 
-	/** One-line status row, aligned with the surrounding Setting rows. */
-	private renderStatus(el: HTMLElement, text: string): void {
-		const rowEl = el.createDiv({ cls: "setting-item oap-settings-agent-status-row" });
-		rowEl.createDiv({ cls: "oap-settings-status oap-settings-agent-status", text });
-	}
+	/**
+	 * Show which MCP tools match the agent's patterns.
+	 */
+	private async renderToolsPreview(
+		container: HTMLElement,
+		agent: CustomAgentConfig,
+	): Promise<void> {
+		const { plugin } = this.ctx;
+		const patterns = agent.tools;
 
-	/** Read-only tool-pattern list. */
-	private renderTools(el: HTMLElement, tools: string[]): void {
-		const setting = new Setting(el).setName(t("settings.agentTools"));
-		if (tools.length === 0) {
-			setting.setDesc(t("settings.agentToolsNone"));
+		if (patterns.length === 0) {
+			new Setting(container)
+				.setName(t("settings.agentToolsPreview"))
+				.setDesc(t("settings.agentToolsPreviewNone"));
 			return;
 		}
-		const row = setting.controlEl.createDiv({ cls: "oap-agent-tools-row" });
-		for (const tool of tools) {
-			row.createSpan({ cls: "oap-agent-tool-chip", text: tool });
-		}
-	}
 
-	/** Read-only prompt-body preview. */
-	private renderPrompt(el: HTMLElement, prompt: string): void {
-		new Setting(el).setName(t("settings.agentPrompt"));
-		if (!prompt) {
-			this.renderStatus(el, t("settings.agentPromptEmpty"));
+		const mcpTools = buildMcpToolNames(plugin.settings.mcpServers);
+		if (mcpTools.length === 0) {
+			new Setting(container)
+				.setName(t("settings.agentToolsPreview"))
+				.setDesc(t("settings.agentToolsPreviewNoMcp"));
 			return;
 		}
-		const pre = el.createEl("pre", { cls: "oap-agent-prompt-preview" });
-		pre.createEl("code", { text: prompt });
-	}
 
-	/** Ensure an agent note exists at `path`, creating it (and any missing parent folders) from the template. */
-	private async ensureAgentFile(path: string): Promise<TFile> {
-		const { app } = this.ctx;
-		const raw = path.trim();
-		if (!raw) throw new Error(t("settings.agentNotePathEmptyError"));
-
-		const normalized = normalizePath(raw);
-		const existing = app.vault.getAbstractFileByPath(normalized);
-		if (existing instanceof TFile) return existing;
-		if (existing) throw new Error(`"${normalized}" exists but is not a file.`);
-
-		const parts = normalized.split("/");
-		if (parts.length > 1) {
-			const parentPath = parts.slice(0, -1).join("/");
-			const parent = app.vault.getAbstractFileByPath(parentPath);
-			if (!parent) {
-				await app.vault.createFolder(parentPath);
-			} else if (!(parent instanceof TFolder)) {
-				throw new Error(`Parent "${parentPath}" exists but is not a folder.`);
+		const matched: string[] = [];
+		for (const toolName of mcpTools) {
+			if (patterns.some(p => matchesWildcard(p, toolName))) {
+				matched.push(toolName);
 			}
 		}
 
-		return app.vault.create(normalized, AgentsSettingsSection.AGENT_TEMPLATE);
+		if (matched.length === 0) {
+			new Setting(container)
+				.setName(t("settings.agentToolsPreview"))
+				.setDesc(t("settings.agentToolsPreviewNoMatch"));
+			return;
+		}
+
+		const previewSetting = new Setting(container)
+			.setName(t("settings.agentToolsPreview"))
+			.setDesc(t("settings.agentToolsPreviewCount", { count: matched.length }));
+
+		const chipList = previewSetting.descEl.createEl("div", {
+			cls: "oap-settings-chip-list",
+		});
+		for (const name of matched) {
+			const chip = chipList.createEl("div", {
+				cls: "oap-agent-tool-chip",
+			});
+			chip.createEl("span", {
+				cls: "oap-agent-tool-chip-label",
+				text: name,
+			});
+		}
 	}
 }

@@ -1,6 +1,8 @@
-export type { CustomAgentConfig } from "./custom-agent-parser";
+export type { CustomAgentConfig } from "../../settings/types";
+export type { McpToolInfo } from "./custom-agent-parser";
 export {
-	loadCustomAgentConfig,
+	buildMcpToolInfos,
+	buildMcpToolNames,
+	matchesWildcard,
 	normalizeAgentTools,
-	parseCustomAgentContent,
 } from "./custom-agent-parser";
