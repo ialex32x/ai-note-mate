@@ -438,6 +438,8 @@ export const zhTW: Record<string, string> = {
 	'settings.agentName': '名稱',
 	'settings.agentNameDesc': '此代理的顯示名稱，顯示在標籤欄中。請保持簡短。',
 	'settings.agentNamePlaceholder': '例如：網頁搜尋器',
+	'settings.agentDisabled': '啟用',
+	'settings.agentDisabledDesc': '停用後，會話建立時跳過此代理，其工具模式不佔用 MCP 工具。',
 	'settings.agentTools': '工具模式',
 	'settings.agentToolsDesc': '比對 MCP 工具的通配符模式，每行一個（例如 `mcp_*`）。',
 	'settings.agentProfile': '模型',

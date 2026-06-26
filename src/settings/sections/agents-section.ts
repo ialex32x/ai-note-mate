@@ -16,7 +16,7 @@ import { isAbortError } from "../../utils/abortable-request";
 
 /** Default config seeded when adding a new agent. */
 function defaultAgentConfig(): CustomAgentConfig {
-	return { name: "", tools: ["mcp_*"], profile: "", description: "", systemPrompt: "" };
+	return { name: "", tools: ["mcp_*"], profile: "", description: "", systemPrompt: "", disabled: false };
 }
 
 /**
@@ -112,6 +112,18 @@ export class AgentsSettingsSection implements SettingsSection {
 						this.tabLabel(agent),
 						agent.description || undefined,
 					);
+				});
+			});
+
+		// ── Enabled toggle ─────────────────────────────────────
+		new Setting(container)
+			.setName(t("settings.agentDisabled"))
+			.setDesc(t("settings.agentDisabledDesc"))
+			.addToggle(toggle => {
+				toggle.setValue(!agent.disabled);
+				toggle.onChange(async (value) => {
+					agent.disabled = !value;
+					await plugin.saveSettings();
 				});
 			});
 

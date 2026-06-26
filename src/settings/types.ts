@@ -180,6 +180,12 @@ export interface SpeechToTextConfig {
 
 export interface CustomAgentConfig {
 	/**
+	 * Whether this agent is disabled. Disabled agents are skipped
+	 * at session creation — no SubAgentConfig is built and their
+	 * tool patterns do not claim MCP tools.
+	 */
+	disabled: boolean;
+	/**
 	 * Display name shown in the settings tab bar and used to identify
 	 * this agent in the UI. Empty means "Untitled".
 	 */

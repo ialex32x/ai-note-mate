@@ -438,6 +438,8 @@ export const zhCN: Record<string, string> = {
 	'settings.agentName': '名称',
 	'settings.agentNameDesc': '此智能体的显示名称，显示在标签栏中。请保持简短。',
 	'settings.agentNamePlaceholder': '例如：网页搜索器',
+	'settings.agentDisabled': '启用',
+	'settings.agentDisabledDesc': '禁用后，会话创建时跳过此智能体，其工具模式不占用 MCP 工具。',
 	'settings.agentTools': '工具模式',
 	'settings.agentToolsDesc': '匹配 MCP 工具的通配符模式，每行一个（例如 `mcp_*`）。',
 	'settings.agentProfile': '模型',

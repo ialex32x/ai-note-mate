@@ -438,6 +438,8 @@ export const ja: Record<string, string> = {
 	'settings.agentName': '名前',
 	'settings.agentNameDesc': 'このエージェントの表示名。タブバーに表示されます。短くしてください。',
 	'settings.agentNamePlaceholder': '例: ウェブ検索',
+	'settings.agentDisabled': '有効',
+	'settings.agentDisabledDesc': '無効にすると、セッション作成時にこのエージェントがスキップされ、そのツールパターンはMCPツールを占有しません。',
 	'settings.agentTools': 'ツールパターン',
 	'settings.agentToolsDesc': 'MCP ツールに一致するワイルドカードパターン。1行に1つ（例: `mcp_*`）。',
 	'settings.agentProfile': 'モデル',

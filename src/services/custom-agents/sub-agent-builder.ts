@@ -29,7 +29,7 @@ export function computeClaimedMcpTools(
 		// Must match the same eligibility checks as buildCustomSubAgentConfigs
 		// so a pattern-only agent with an empty name doesn't claim tools
 		// while producing no sub-agent to serve them.
-		if (!agent.name.trim() || agent.tools.length === 0) continue;
+		if (agent.disabled || !agent.name.trim() || agent.tools.length === 0) continue;
 		for (const name of toolNames) {
 			if (agent.tools.some(p => matchesWildcard(p, name))) {
 				claimed.add(name);
@@ -62,8 +62,8 @@ export function buildCustomSubAgentConfigs(
 	const seenNames = new Set<string>();
 
 	for (const agent of agents) {
-		// Skip agents with no name or no tool patterns.
-		if (!agent.name.trim() || agent.tools.length === 0) continue;
+		// Skip disabled agents or those with no name / no tool patterns.
+		if (agent.disabled || !agent.name.trim() || agent.tools.length === 0) continue;
 
 		// Match tools against this agent's patterns.
 		const matchedTools: RegisteredTool[] = [];

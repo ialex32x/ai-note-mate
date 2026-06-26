@@ -544,6 +544,9 @@ export default class NoteAssistantPlugin extends Plugin {
 			if (typeof agent.systemPrompt !== 'string') {
 				agent.systemPrompt = '';
 			}
+			if (typeof agent.disabled !== 'boolean') {
+				agent.disabled = false;
+			}
 		}
 
 		// Ensure activeProfileId points to a valid profile
