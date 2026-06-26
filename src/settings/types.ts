@@ -201,6 +201,12 @@ export interface CustomAgentConfig {
 	 * a glance without listing individual tool names.
 	 */
 	description: string;
+	/**
+	 * System prompt for this agent when it executes as a sub-agent.
+	 * Injected as the ChatStream system prompt so the agent knows how
+	 * to use its assigned tools. When empty, a minimal default is used.
+	 */
+	systemPrompt: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

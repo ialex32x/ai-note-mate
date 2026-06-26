@@ -15,6 +15,7 @@ import type { LLMProvider, MinimalModelConfig } from './llm-provider';
 import { createProviderForActiveProfile } from '../utils/provider-factory';
 import { buildBuiltinSystemPrompt } from './prompts/session-prompts';
 import { buildSubAgentConfigs } from './sub-agent-registry';
+import { buildCustomSubAgentConfigs, computeClaimedMcpTools } from './custom-agents';
 import { buildSkillSystemPromptForQuery } from '../skills/skill-catalogue';
 import { buildMemorySystemPromptPrefix } from './memory';
 import type { ArtifactStore } from './artifact-store';
@@ -195,6 +196,16 @@ export function createChatAgent(
     // Build sub-agent configurations first (needed for system prompt)
     const subAgentConfigs = buildSubAgentConfigs(plugin);
 
+    // Add custom sub-agents from user settings.
+    const customSubAgentConfigs = buildCustomSubAgentConfigs(plugin, settings.agents);
+    const allSubAgentConfigs = [...subAgentConfigs, ...customSubAgentConfigs];
+
+    // Compute which MCP tools are claimed by custom agents so they
+    // can be excluded from the main agent's dynamic tool list.
+    const claimedMcpTools = plugin.mcpManager
+        ? computeClaimedMcpTools(settings.agents, plugin.mcpManager.getRegisteredTools())
+        : new Set<string>();
+
     // The DELEGATION block is no longer baked into the static system
     // prompt — `AgentOrchestrator` injects it per-turn via
     // `systemPromptSuffix`, scoped to whichever sub-agents the
@@ -203,7 +214,7 @@ export function createChatAgent(
     // intro/HINTS flavour (slimmer, delegation-aware) or the
     // single-agent one (richer, direct-tool-use framing).
     const builtinSystemPrompt = buildBuiltinSystemPrompt({
-        multiAgent: subAgentConfigs.length > 0,
+        multiAgent: allSubAgentConfigs.length > 0,
         structuredFollowUps: settings.followUpSuggestionsEnabled && settings.followUpSuggestionsStructured,
     });
 
@@ -374,7 +385,13 @@ export function createChatAgent(
             return block;
         },
         compressionOptions,
-        dynamicTools: () => callbacks.getDynamicTools(),
+        dynamicTools: () => {
+            const tools = callbacks.getDynamicTools();
+            if (claimedMcpTools.size > 0) {
+                return tools.filter(t => !claimedMcpTools.has(t.schema.function.name));
+            }
+            return tools;
+        },
         // Forward the runtime's per-session artifact store. Two consumers
         // share this single getter:
         //   1. `AgentOrchestrator.buildDelegatePayload` (multi-agent
@@ -476,14 +493,14 @@ export function createChatAgent(
         // closure-captured fields (e.g. tool callbacks) and a shallow
         // re-spread would force reasoning about which fields are safe to
         // copy.
-        for (const subConfig of subAgentConfigs) {
+        for (const subConfig of allSubAgentConfigs) {
             subConfig.compressionOptions = compressionOptions;
         }
 
         // Multi-agent mode: use AgentOrchestrator
         chat = new AgentOrchestrator({
             ...chatStreamConfig,
-            subAgents: subAgentConfigs,
+            subAgents: allSubAgentConfigs,
             // Per-turn sub-agent shortlist cap. The orchestrator
             // clamps and falls back internally; we just forward the
             // current setting verbatim. Honour 0 as "use built-in
@@ -577,6 +594,9 @@ export function createChatAgent(
 /**
  * Build the list of per-turn dynamic tools (image, memory, conversation
  * history retrieval, MCP). Extracted from SessionView.getDynamicTools().
+ *
+ * MCP tools claimed by custom sub-agents are filtered upstream by
+ * {@link createChatAgent} — this function always returns all MCP tools.
  */
 export function buildDynamicTools(
     plugin: NoteAssistantPlugin,
@@ -603,8 +623,6 @@ export function buildDynamicTools(
     }
 
     if (plugin.mcpManager) {
-        // MCP server/tool enablement is sourced entirely from plugin settings
-        // (server.enabled + per-tool toggle). No per-session selector exists.
         tools.push(...plugin.mcpManager.getRegisteredTools());
     }
     return tools;

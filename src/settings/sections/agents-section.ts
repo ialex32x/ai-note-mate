@@ -16,7 +16,7 @@ import { isAbortError } from "../../utils/abortable-request";
 
 /** Default config seeded when adding a new agent. */
 function defaultAgentConfig(): CustomAgentConfig {
-	return { name: "", tools: ["mcp_*"], profile: "", description: "" };
+	return { name: "", tools: ["mcp_*"], profile: "", description: "", systemPrompt: "" };
 }
 
 /**
@@ -158,6 +158,9 @@ export class AgentsSettingsSection implements SettingsSection {
 
 		// ── Description (full-width textarea + hover generate button) ──
 		this.renderDescriptionField(container, agent, idx, refreshTabLabel);
+
+		// ── System Prompt (full-width textarea + hover generate button) ──
+		this.renderSystemPromptField(container, agent, idx, refreshTabLabel);
 	}
 
 	/**
@@ -245,6 +248,74 @@ export class AgentsSettingsSection implements SettingsSection {
 	}
 
 	/**
+	 * Render the system prompt as a full-width textarea with a hover
+	 * generate button, same layout as the description field.
+	 */
+	private renderSystemPromptField(
+		container: HTMLElement,
+		agent: CustomAgentConfig,
+		idx: number,
+		refreshTabLabel: (id: string, name: string, tooltip?: string) => void,
+	): void {
+		const { plugin } = this.ctx;
+
+		// Heading row.
+		const heading = container.createEl("div", { cls: "setting-item" });
+		const info = heading.createEl("div", { cls: "setting-item-info" });
+		info.createEl("div", {
+			cls: "setting-item-name",
+			text: t("settings.agentSystemPrompt"),
+		});
+		info.createEl("div", {
+			cls: "setting-item-description",
+			text: t("settings.agentSystemPromptDesc"),
+		});
+
+		const wrapper = container.createEl("div", { cls: "oap-agent-desc-wrapper" });
+		const textarea = wrapper.createEl("textarea", {
+			cls: "oap-agent-desc-textarea",
+			attr: { rows: "8" },
+			text: agent.systemPrompt,
+		});
+		textarea.setAttribute("placeholder", t("settings.agentSystemPromptPlaceholder"));
+
+		// Hover button.
+		const genBtn = wrapper.createEl("button", {
+			cls: "oap-agent-desc-gen-btn",
+			attr: { "aria-label": t("settings.agentGenerateDescriptionButton") },
+		});
+		setIcon(genBtn, "sparkles");
+
+		textarea.addEventListener("input", () => {
+			agent.systemPrompt = textarea.value;
+			void plugin.saveSettings();
+		});
+
+		genBtn.addEventListener("click", () => {
+			void (async () => {
+				wrapper.classList.add("is-generating");
+				genBtn.disabled = true;
+				try {
+					const result = await this.generateSystemPrompt(agent.tools, agent.name);
+					if (result !== null) {
+						textarea.value = result;
+						agent.systemPrompt = result;
+						await plugin.saveSettings();
+						refreshTabLabel(
+							String(idx),
+							this.tabLabel(agent),
+							agent.description || undefined,
+						);
+					}
+				} finally {
+					wrapper.classList.remove("is-generating");
+					genBtn.disabled = false;
+				}
+			})();
+		});
+	}
+
+	/**
 	 * Call the summarizer model to produce a short description from
 	 * the given tool patterns. Returns the generated text, or null
 	 * when generation is not possible (no summarizer, no tools, etc.).
@@ -303,6 +374,71 @@ export class AgentsSettingsSection implements SettingsSection {
 		} catch (err) {
 			if (isAbortError(err)) return null;
 			console.error("[AgentsSection] Description generation failed:", err);
+			new Notice(err instanceof Error ? err.message : String(err));
+			return null;
+		}
+	}
+
+	/**
+	 * Call the summarizer to produce a system prompt from the agent's
+	 * matched tools. Unlike {@link generateDescription}, this includes
+	 * tool names and describes how to use each tool effectively.
+	 */
+	private async generateSystemPrompt(
+		patterns: readonly string[],
+		agentName: string,
+	): Promise<string | null> {
+		const { plugin } = this.ctx;
+
+		const modelConfig = createSummarizerConfig(plugin);
+		if (!modelConfig) {
+			new Notice(t("settings.agentGenerateDescriptionNoSummarizer"));
+			return null;
+		}
+
+		const toolInfos = buildMcpToolInfos(plugin.settings.mcpServers, patterns);
+		if (toolInfos.length === 0) {
+			new Notice(t("settings.agentGenerateDescriptionNoTools"));
+			return null;
+		}
+
+		const toolSummary = toolInfos.map(t => {
+			const desc = t.description?.trim();
+			return desc ? `- ${t.name}: ${desc}` : `- ${t.name}`;
+		}).join('\n');
+
+		try {
+			const generatePrompt = [
+				`You are writing a system prompt for a sub-agent named "${agentName}". Below is the list of MCP tools it has access to.`,
+				'',
+				'Write a clear, instructional system prompt that:',
+				'1. Introduces the agent by name and describes its role.',
+				'2. Lists each tool with a brief explanation of when and how to use it.',
+				'3. Includes any relevant best practices or constraints.',
+				'',
+				'Wrap the final response in a broad description of HOW to handle the task, not just the tool reference.',
+				'',
+				'TOOLS:',
+				toolSummary,
+				'',
+				'Output ONLY the system prompt text, with no additional commentary, no markdown code fences, and no preamble.',
+			].join('\n');
+
+			const generated = await createChatCompletion(
+				modelConfig,
+				[{ role: 'user', content: generatePrompt }],
+			);
+
+			const trimmed = generated.trim();
+			if (!trimmed) {
+				new Notice(t("settings.agentGenerateDescriptionEmpty"));
+				return null;
+			}
+
+			return trimmed;
+		} catch (err) {
+			if (isAbortError(err)) return null;
+			console.error("[AgentsSection] System prompt generation failed:", err);
 			new Notice(err instanceof Error ? err.message : String(err));
 			return null;
 		}

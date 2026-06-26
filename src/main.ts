@@ -536,10 +536,13 @@ export default class NoteAssistantPlugin extends Plugin {
 		} else if (this.settings.agents.length > 0 && typeof this.settings.agents[0] === 'string') {
 			this.settings.agents = [];
 		}
-		// Ensure every agent object has the `name` field (added later).
+		// Ensure every agent object has fields added in later versions.
 		for (const agent of this.settings.agents) {
 			if (typeof agent.name !== 'string') {
 				agent.name = '';
+			}
+			if (typeof agent.systemPrompt !== 'string') {
+				agent.systemPrompt = '';
 			}
 		}
 

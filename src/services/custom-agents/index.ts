@@ -6,3 +6,7 @@ export {
 	matchesWildcard,
 	normalizeAgentTools,
 } from "./custom-agent-parser";
+export {
+	buildCustomSubAgentConfigs,
+	computeClaimedMcpTools,
+} from "./sub-agent-builder";
