@@ -14,7 +14,7 @@ import type { ChatMessage } from "./chat-stream-types";
 
 /** Whether an assistant message carries text/thinking worth persisting. */
 export function assistantHasPersistablePayload(msg: ChatMessage): boolean {
-    return msg.content.length > 0 || (msg.thinkingContent?.length ?? 0) > 0;
+    return msg.content.trim().length > 0 || ((msg.thinkingContent?.trim() ?? '').length > 0);
 }
 
 /**

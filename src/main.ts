@@ -527,6 +527,14 @@ export default class NoteAssistantPlugin extends Plugin {
 			}
 		}
 
+		// Custom agents is a plain string[] of note paths. Older data.json
+		// files predate the field; Object.assign with DEFAULT_SETTINGS seeds
+		// an empty array, but guard against a corrupted non-array value so
+		// the settings UI never iterates over a non-iterable.
+		if (!Array.isArray(this.settings.agents)) {
+			this.settings.agents = [];
+		}
+
 		// Ensure activeProfileId points to a valid profile
 		if (!this.settings.profiles.find(p => p.id === this.settings.activeProfileId)) {
 			if (this.settings.profiles.length > 0) {

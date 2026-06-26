@@ -696,7 +696,7 @@ export class ChatStream implements IChatAgent {
                 }
                 this._config.onUsageUpdate?.(this.sessionTokenUsage);
 
-                const isPureToolCallTurn = !result.content
+                const isPureToolCallTurn = (!result.content || result.content.trim() === '')
                     && !!result.toolCalls
                     && result.toolCalls.length > 0;
                 // Finalize the in-flight assistant that `_processStream` was

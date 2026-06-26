@@ -25,3 +25,6 @@ export const SPEECH_TO_TEXT_SECTION_ID = 'settings.speechToTextSection';
 
 /** Anchor id of the Tools (MCP) section. */
 export const TOOLS_SECTION_ID = 'settings.toolsSection';
+
+/** Anchor id of the Agents (note-defined custom agents) section. */
+export const AGENTS_SECTION_ID = 'settings.agentsSection';

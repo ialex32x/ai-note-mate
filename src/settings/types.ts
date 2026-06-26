@@ -354,6 +354,21 @@ export interface NoteAssistantPluginSettings {
 	 */
 	skillAutoInjectThreshold: number;
 
+	// ── Custom agents (note-defined sub-agents) ─────────────────────────────
+	/**
+	 * Vault-relative paths of notes that each define a custom agent. A note
+	 * is parsed into a {@link import('../services/custom-agents').CustomAgentConfig}:
+	 * its frontmatter `tools` field lists tool-name patterns
+	 * (e.g. `"mcp_xxx_*"`) the agent may use, and its markdown body becomes
+	 * the agent's prompt.
+	 *
+	 * Users author and edit each agent directly in its note; the settings UI
+	 * only manages the path list and shows a read-only preview of the parsed
+	 * configuration. Empty / missing paths are tolerated (they simply render
+	 * as an unconfigured tab).
+	 */
+	agents: string[];
+
 	// ── Custom menu (user-defined right-click prompts) ──────────────────────
 	/**
 	 * Vault-relative path of the markdown note that defines custom menu items.

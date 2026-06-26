@@ -1,4 +1,4 @@
-import { DropdownComponent, Notice, Setting, TFile, TFolder, normalizePath } from "obsidian";
+import { DropdownComponent, Notice, Setting, TFile, TFolder, normalizePath, setIcon, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import type { TextGenConfig } from "../types";
 import { SystemPromptModal } from "../../modals/system-prompt-modal";
@@ -287,6 +287,23 @@ export class GlobalSettingsSection implements SettingsSection {
 		const agentMdPath = plugin.settings.agentMdPath;
 		const fileExists = this._findAgentMdFile() !== null;
 
+		// Cache the extra button's DOM element so the onChange handler
+		// can update its icon/tooltip in-place instead of calling
+		// refreshSection() which would destroy and recreate the text
+		// input, causing focus loss on every keystroke.
+		let actionBtnEl: HTMLElement | null = null;
+		const updateActionBtn = (path: string) => {
+			if (!actionBtnEl) return;
+			const trimmed = path.trim();
+			const exists = trimmed
+				? app.vault.getAbstractFileByPath(normalizePath(trimmed)) instanceof TFile
+				: false;
+			setIcon(actionBtnEl, exists ? 'external-link' : 'file-plus-2');
+			setTooltip(actionBtnEl, exists
+				? t('settings.agentMdOpenNote')
+				: t('settings.agentMdCreateDefault'));
+		};
+
 		const pathSetting = new Setting(container)
 			.setName(t('settings.agentMdPath'))
 			.setDesc(t('settings.agentMdPathDesc'))
@@ -294,16 +311,20 @@ export class GlobalSettingsSection implements SettingsSection {
 				text.setPlaceholder(t('settings.agentMdPathPlaceholder'));
 				text.setValue(agentMdPath);
 				text.onChange(async (value) => {
-					plugin.settings.agentMdPath = value.trim();
+					const trimmed = value.trim();
+					plugin.settings.agentMdPath = trimmed;
 					await plugin.saveSettings();
 					// Refresh cached content so next session creation can pick it up.
 					void plugin.refreshAgentMd();
-					refreshSection(this);
+					// Update the action button in-place instead of
+					// re-rendering the whole section (avoids focus loss).
+					updateActionBtn(trimmed);
 				});
 			});
 
 		// "Create default" / "Open" toggle button
 		pathSetting.addExtraButton(btn => {
+			actionBtnEl = btn.extraSettingsEl;
 			btn.setIcon(fileExists ? 'external-link' : 'file-plus-2');
 			btn.setTooltip(
 				fileExists

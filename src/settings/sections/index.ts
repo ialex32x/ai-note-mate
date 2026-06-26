@@ -5,5 +5,6 @@ export { EmbeddingSettingsSection } from "./embedding-section";
 export { ImageGenSettingsSection } from "./image-gen-section";
 export { SpeechToTextSettingsSection } from "./speech-to-text-section";
 export { ToolsSettingsSection } from "./tools-section";
+export { AgentsSettingsSection } from "./agents-section";
 export { SkillSettingsSection } from "./skill-section";
 export { MemorySettingsSection } from "./memory-section";
