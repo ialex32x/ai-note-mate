@@ -21,8 +21,8 @@ function defaultAgentConfig(): CustomAgentConfig {
 	return { name: "", tools: ["mcp_*"], profile: "", description: "", systemPrompt: "", disabled: false };
 }
 
-/** Computed id for a builtin agent tab. */
-function builtinId(index: number): string { return `builtin_${index}`; }
+/** Computed id for a builtin agent tab (uses stable key). */
+function builtinId(key: string): string { return `builtin_${key}`; }
 /** Computed id for a custom agent tab. */
 function customId(index: number): string { return `custom_${index}`; }
 
@@ -32,7 +32,7 @@ function customId(index: number): string { return `custom_${index}`; }
  */
 export class AgentsSettingsSection implements SettingsSection {
 	readonly titleKey = AGENTS_SECTION_ID;
-	/** Editing target: e.g. "builtin_0" or "custom_1". */
+	/** Editing target: e.g. "builtin_vault_inspector" or "custom_1". */
 	private editingId = '';
 
 	constructor(private readonly ctx: SectionContext) {}
@@ -45,11 +45,11 @@ export class AgentsSettingsSection implements SettingsSection {
 		// ── Build unified tab items ────────────────────────────
 		const tabItems: { id: string; name: string; tooltip?: string; isBuiltin: boolean }[] = [];
 
-		for (let i = 0; i < builtins.length; i++) {
+		for (const b of builtins) {
 			tabItems.push({
-				id: builtinId(i),
-				name: builtins[i]!.name,
-				tooltip: builtins[i]!.description,
+				id: builtinId(b.key),
+				name: b.name,
+				tooltip: b.description,
 				isBuiltin: true,
 			});
 		}
@@ -64,7 +64,9 @@ export class AgentsSettingsSection implements SettingsSection {
 
 		// ── Empty state: only custom agents count, builtins are always present ──
 		if (customs.length === 0 && tabItems.length === builtins.length) {
-			// Render builtins without a tabBar (only builtins, no custom agents yet)
+			// Render builtins without a tabBar (only builtins, no custom agents yet).
+			// Reset editingId so the next custom-agent add starts fresh.
+			this.editingId = '';
 			this.renderBuiltinOnly(container, builtins);
 			return;
 		}
@@ -103,7 +105,7 @@ export class AgentsSettingsSection implements SettingsSection {
 				// Pick next editing target
 				if (customs.length === 0) {
 					// Only builtins left — go to last builtin
-					this.editingId = builtinId(builtins.length - 1);
+					this.editingId = builtinId(builtins[builtins.length - 1]!.key);
 				} else {
 					this.editingId = customId(Math.min(customIdx, customs.length - 1));
 				}
@@ -115,13 +117,20 @@ export class AgentsSettingsSection implements SettingsSection {
 
 		// ── Editor / read-only view ────────────────────────────
 		if (isBuiltinEditing) {
-			const builtinIdx = Number(activeId.replace('builtin_', ''));
-			this.renderBuiltinAgentView(container, builtins[builtinIdx]!);
+			const builtinKey = activeId.replace('builtin_', '');
+			const builtin = builtins.find(b => b.key === builtinKey);
+			if (builtin) this.renderBuiltinAgentView(container, builtin);
 		} else {
 			const customIdx = Number(activeId.replace('custom_', ''));
 			this.renderAgentEditor(container, customIdx, tabBar.refreshTabLabel);
 		}
-	}
+
+		// ── Scroll active tab into view after (re)creation ─────
+		const activeTabEl = tabBar.tabElMap.get(activeId);
+		if (activeTabEl) {
+			activeTabEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+		}
+}
 
 	private tabLabel(agent: CustomAgentConfig): string {
 		return (agent.name ?? "").trim() || t("settings.agentUntitled");
