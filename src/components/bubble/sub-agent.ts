@@ -14,6 +14,6 @@ export function getSubAgentLabel(agentName: string): string {
         case 'vault_editor': return 'Vault Editor';
         case 'web': return 'Web';
         case 'code': return 'Code';
-        default: return agentName;
+        default: return agentName.startsWith('custom_') ? agentName.slice(7) : agentName;
     }
 }
