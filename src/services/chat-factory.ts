@@ -1,5 +1,5 @@
 import type NoteAssistantPlugin from 'main';
-import { ChatStream, IChatAgent, ChatMessage, type ContextCompressionOptions, type ToolFilterOptions } from './chat-stream';
+import { IChatAgent, ChatMessage, type ContextCompressionOptions, type ToolFilterOptions } from './chat-stream';
 import type { GeneratedAsset } from './generated-asset-collection';
 import { AgentOrchestrator } from './agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
@@ -19,14 +19,12 @@ import { buildCustomSubAgentConfigs, computeClaimedMcpTools } from './custom-age
 import { buildSkillSystemPromptForQuery } from '../skills/skill-catalogue';
 import { buildMemorySystemPromptPrefix } from './memory';
 import type { ArtifactStore } from './artifact-store';
-import { createObsidianTools, createObsidianMutationTools } from './tools/obsidian';
+import { createObsidianMutationTools } from './tools/obsidian';
 import { vaultReadSection } from './tools/obsidian/read';
-import { createWebSearchTools, createImageDownloadTools } from './tools/web-search-toolcall';
-import { createWebFetchTools } from './tools/web-fetch-toolcall';
-import { createRSSFetchTools } from './tools/rss-fetch-toolcall';
+import { createImageDownloadTools } from './tools/web-search-toolcall';
+
 import { createBuiltinTools } from './tools/builtin-toolcall';
 import { createMemoryTools } from './tools/memory-toolcall';
-import { createJavaScriptTools } from './tools/js_toolcall';
 import { createSkillTools } from './tools/skill-toolcall';
 import { createImageTool } from './tools/image-toolcall';
 import { createSpeechToTextTool } from './tools/speech-to-text-toolcall';
@@ -572,30 +570,14 @@ export function createChatAgent(
             chat.registerTool(createTodoTool(() => callbacks.getTodoStateSource!()));
         }
     } else {
-        // Fallback: single-agent mode (all tools on one ChatStream)
-        chat = new ChatStream(chatStreamConfig);
-
-        createObsidianTools(plugin).forEach(tool => chat.registerTool(tool));
-        if (settings.builtinWebAgentEnabled) {
-            createWebSearchTools(plugin).forEach(tool => chat.registerTool(tool));
-            createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
-            createWebFetchTools(plugin).forEach(tool => chat.registerTool(tool));
-            createRSSFetchTools(plugin).forEach(tool => chat.registerTool(tool));
-        }
-        createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
-        if (settings.builtinCodeAgentEnabled) {
-            createJavaScriptTools(plugin).forEach(tool => chat.registerTool(tool));
-        }
-        createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
-
-        // `manage_todos` — same single source-of-truth registration
-        // path as the multi-agent branch. Single-agent sessions
-        // benefit from the planning channel too, especially when the
-        // user kicks off a multi-step vault refactor that runs end
-        // to end without delegation.
-        if (callbacks.getTodoStateSource) {
-            chat.registerTool(createTodoTool(() => callbacks.getTodoStateSource!()));
-        }
+        // buildSubAgentConfigs() always returns at least vault_inspector
+        // and vault_editor (hardcoded, no off-switch), so this branch is
+        // unreachable.  Crash loudly so a future refactor that violates
+        // this invariant can't silently fall through to a tool-less chat.
+        throw new Error(
+            'chat-factory: subAgentConfigs is empty — this should never happen. ' +
+            'vault_inspector and vault_editor are hardcoded in buildSubAgentConfigs().',
+        );
     }
     return chat;
 }
