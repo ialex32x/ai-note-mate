@@ -183,20 +183,20 @@ describe("write_result tool (scalar)", () => {
         expect(store.get("k")).toBeNull();
     });
 
-    it("rejects objects (must use write_result_object)", async () => {
+    it("auto-dispatches objects to write_result_object", async () => {
         const store: HandoffStore = new Map();
         const r = await runWriteScalar(store, { key: "k", value: { a: 1 } });
-        expect(r.success).toBe(false);
-        expect(String(r.content)).toMatch(/write_result_object/i);
-        expect(store.size).toBe(0);
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "k" });
+        expect(store.get("k")).toEqual({ a: 1 });
     });
 
-    it("rejects arrays (must use write_result_array)", async () => {
+    it("auto-dispatches arrays to write_result_array", async () => {
         const store: HandoffStore = new Map();
         const r = await runWriteScalar(store, { key: "k", value: [1, 2] });
-        expect(r.success).toBe(false);
-        expect(String(r.content)).toMatch(/write_result_array/i);
-        expect(store.size).toBe(0);
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "k" });
+        expect(store.get("k")).toEqual([1, 2]);
     });
 
     it("rejects NaN/Infinity", async () => {
@@ -252,12 +252,42 @@ describe("write_result_array tool", () => {
         expect(store.get("paths")).toEqual(["a.md", "b.md"]);
     });
 
-    it("rejects non-array values", async () => {
+    it("auto-dispatches scalars to write_result", async () => {
         const store: HandoffStore = new Map();
-        const r = await runWriteArray(store, { key: "paths", value: "not-an-array" });
-        expect(r.success).toBe(false);
-        expect(String(r.content)).toMatch(/array/i);
-        expect(store.size).toBe(0);
+        const r = await runWriteArray(store, { key: "paths", value: "a-string" });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "paths" });
+        expect(store.get("paths")).toBe("a-string");
+    });
+
+    it("auto-dispatches objects to write_result_object", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteArray(store, { key: "meta", value: { count: 5 } });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "meta" });
+        expect(store.get("meta")).toEqual({ count: 5 });
+    });
+
+    it("deserializes JSON array string to native array", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteArray(store, { key: "items", value: '[1, 2, 3]' });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "items" });
+        expect(store.get("items")).toEqual([1, 2, 3]);
+    });
+
+    it("deserializes JSON array string with whitespace", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteArray(store, { key: "items", value: '  [{"a":1}]  ' });
+        expect(r.success).toBe(true);
+        expect(store.get("items")).toEqual([{ a: 1 }]);
+    });
+
+    it("stores bracket-like string as scalar when JSON parse fails", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteArray(store, { key: "note", value: "[not valid json" });
+        expect(r.success).toBe(true);
+        expect(store.get("note")).toBe("[not valid json");
     });
 
     it("rejects arrays with non-serializable elements", async () => {
@@ -281,17 +311,42 @@ describe("write_result_object tool", () => {
         expect(store.get("diff")).toEqual({ before: "old", after: "new" });
     });
 
-    it("rejects null", async () => {
+    it("auto-dispatches null to write_result", async () => {
         const store: HandoffStore = new Map();
         const r = await runWriteObject(store, { key: "k", value: null });
-        expect(r.success).toBe(false);
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "k" });
+        expect(store.get("k")).toBeNull();
     });
 
-    it("rejects arrays (must use write_result_array)", async () => {
+    it("auto-dispatches arrays to write_result_array", async () => {
         const store: HandoffStore = new Map();
         const r = await runWriteObject(store, { key: "k", value: [1, 2] });
-        expect(r.success).toBe(false);
-        expect(String(r.content)).toMatch(/write_result_array/i);
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "k" });
+        expect(store.get("k")).toEqual([1, 2]);
+    });
+
+    it("deserializes JSON object string to native object", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "meta", value: '{"count":5,"name":"x"}' });
+        expect(r.success).toBe(true);
+        expect(r.content).toEqual({ ok: true, key: "meta" });
+        expect(store.get("meta")).toEqual({ count: 5, name: "x" });
+    });
+
+    it("deserializes JSON object string with whitespace", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "meta", value: '  {"a": [1,2]}  ' });
+        expect(r.success).toBe(true);
+        expect(store.get("meta")).toEqual({ a: [1, 2] });
+    });
+
+    it("stores brace-like string as scalar when JSON parse fails", async () => {
+        const store: HandoffStore = new Map();
+        const r = await runWriteObject(store, { key: "note", value: "{not valid json" });
+        expect(r.success).toBe(true);
+        expect(store.get("note")).toBe("{not valid json");
     });
 
     it("rejects non-serializable values", async () => {

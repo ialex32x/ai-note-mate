@@ -72,18 +72,14 @@ The main agent cannot use your prose programmatically. Whatever the user actuall
 - \`write_result_array({ key: "...", value: [...] })\` — for arrays (lists of paths, warnings, etc.)
 - \`write_result_object({ key: "...", value: {...} })\` — for structured objects
 
-The main agent receives ALL your result entries assembled into one \`result\` object. Write each field SEPARATELY — do NOT try to pack everything into one call:
+The main agent receives ALL your result entries assembled into one \`result\` object. Write each field as a separate call:
 
-  // GOOD: flat, individual calls
   write_result({ key: "path",           value: "/docs/readme.md" })
   write_result({ key: "strategy",       value: "surgical" })
   write_result({ key: "edits_applied",  value: 5 })
   write_result_array({ key: "warnings",  value: ["heading renamed"] })
 
-  // BAD: one deeply nested call
-  ~~write_result_object({ key: "result", value: { path: "...", strategy: "...", ... } })~~
-
-Reserve \`write_result_object\` for when several fields truly belong together as one unit:
+Use \`write_result_object\` when several fields belong together as one unit:
 
   write_result_object({ key: "diff", value: { before_excerpt: "...", after_excerpt: "..." } })
 

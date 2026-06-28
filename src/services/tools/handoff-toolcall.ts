@@ -466,6 +466,14 @@ export function createResultTools(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Op handlers — result (write) side
+//
+// Auto-dispatch: each handler silently delegates to the correct variant when
+// the LLM passes a value whose runtime type doesn't match the tool's declared
+// schema. This makes the type-split transparent — the model can call ANY
+// write_result* tool with ANY value and it will just work. Rationale: LLMs
+// are bad at pre-call type-checking (they think "store items=[1,2,3]" not
+// "is [1,2,3] an array? then call write_result_array"), and a rejected call
+// costs a full API round-trip for the model to read the error and retry.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function execWriteScalar(store: HandoffStore, args: Record<string, unknown>): ToolCallResult {
@@ -478,6 +486,15 @@ function execWriteScalar(store: HandoffStore, args: Record<string, unknown>): To
     }
 
     const value = args["value"];
+
+    // Auto-dispatch: route to the correct handler based on runtime type.
+    if (Array.isArray(value)) {
+        return execWriteArray(store, args);
+    }
+    if (value !== null && typeof value === "object") {
+        return execWriteObject(store, args);
+    }
+
     const t = typeof value;
     if (t === "string" || t === "boolean") {
         store.set(key.trim(), value);
@@ -496,8 +513,8 @@ function execWriteScalar(store: HandoffStore, args: Record<string, unknown>): To
     }
 
     return errorResult(
-        `write_result only accepts scalar values (string, number, boolean, null). ` +
-        `Got ${t}. For arrays use write_result_array; for objects use write_result_object.`,
+        `write_result cannot store values of type ${t}. ` +
+        `Allowed: string, number (finite), boolean, null, plain array, plain object.`,
     );
 }
 
@@ -511,11 +528,27 @@ function execWriteArray(store: HandoffStore, args: Record<string, unknown>): Too
     }
 
     const value = args["value"];
+
+    // Auto-dispatch: route to the correct handler based on runtime type.
     if (!Array.isArray(value)) {
-        return errorResult(
-            `write_result_array requires an array value; got ${typeof value}. ` +
-            "For scalar values use write_result. For objects use write_result_object.",
-        );
+        // Best-effort JSON string deserialization: LLMs sometimes pass
+        // serialized JSON strings instead of native objects/arrays in
+        // function-call arguments (e.g. write_result_array({ value: "[1,2]" })).
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+                try {
+                    const parsed: unknown = JSON.parse(trimmed) as unknown;
+                    if (Array.isArray(parsed)) {
+                        return execWriteArray(store, { ...args, value: parsed });
+                    }
+                } catch { /* not valid JSON — fall through to type dispatch */ }
+            }
+        }
+        if (value !== null && typeof value === "object") {
+            return execWriteObject(store, args);
+        }
+        return execWriteScalar(store, args);
     }
 
     const reason = validateSerializable(value);
@@ -542,11 +575,26 @@ function execWriteObject(store: HandoffStore, args: Record<string, unknown>): To
     }
 
     const value = args["value"];
+
+    // Auto-dispatch: route to the correct handler based on runtime type.
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
-        return errorResult(
-            `write_result_object requires a plain object value; got ${value === null ? "null" : Array.isArray(value) ? "array" : typeof value}. ` +
-            "For arrays use write_result_array. For scalar values use write_result.",
-        );
+        // Best-effort JSON string deserialization: LLMs sometimes pass
+        // serialized JSON strings (e.g. write_result_object({ value: "{\"a\":1}" })).
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                try {
+                    const parsed: unknown = JSON.parse(trimmed) as unknown;
+                    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+                        return execWriteObject(store, { ...args, value: parsed });
+                    }
+                } catch { /* not valid JSON — fall through to type dispatch */ }
+            }
+        }
+        if (Array.isArray(value)) {
+            return execWriteArray(store, args);
+        }
+        return execWriteScalar(store, args);
     }
 
     const reason = validateSerializable(value);
