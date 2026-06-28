@@ -113,11 +113,11 @@ export class ToolsSettingsSection implements SettingsSection {
 
 		createToggleField({
 			container,
-			name: t('settings.builtinWebSearch'),
-			desc: t('settings.builtinWebSearchDesc'),
-			value: plugin.settings.builtinWebSearchEnabled,
+			name: t('settings.builtinWebAgent'),
+			desc: t('settings.builtinWebAgentDesc'),
+			value: plugin.settings.builtinWebAgentEnabled,
 			onChange: async (value) => {
-				plugin.settings.builtinWebSearchEnabled = value;
+				plugin.settings.builtinWebAgentEnabled = value;
 				await plugin.saveSettings();
 			},
 			sessionRestartRequired: true,
@@ -125,35 +125,11 @@ export class ToolsSettingsSection implements SettingsSection {
 
 		createToggleField({
 			container,
-			name: t('settings.builtinWebFetch'),
-			desc: t('settings.builtinWebFetchDesc'),
-			value: plugin.settings.builtinWebFetchEnabled,
+			name: t('settings.builtinCodeAgent'),
+			desc: t('settings.builtinCodeAgentDesc'),
+			value: plugin.settings.builtinCodeAgentEnabled,
 			onChange: async (value) => {
-				plugin.settings.builtinWebFetchEnabled = value;
-				await plugin.saveSettings();
-			},
-			sessionRestartRequired: true,
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.builtinRSSFetch'),
-			desc: t('settings.builtinRSSFetchDesc'),
-			value: plugin.settings.builtinRSSFetchEnabled,
-			onChange: async (value) => {
-				plugin.settings.builtinRSSFetchEnabled = value;
-				await plugin.saveSettings();
-			},
-			sessionRestartRequired: true,
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.builtinJavaScript'),
-			desc: t('settings.builtinJavaScriptDesc'),
-			value: plugin.settings.builtinJavaScriptEnabled,
-			onChange: async (value) => {
-				plugin.settings.builtinJavaScriptEnabled = value;
+				plugin.settings.builtinCodeAgentEnabled = value;
 				await plugin.saveSettings();
 			},
 			sessionRestartRequired: true,

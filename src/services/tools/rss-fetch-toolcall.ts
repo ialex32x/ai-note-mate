@@ -10,7 +10,6 @@ import { isAbortError } from "../../utils/abortable-request";
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function createRSSFetchTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
-    if (!plugin.settings.builtinRSSFetchEnabled) return [];
     return [rssFetch(plugin)];
 }
 

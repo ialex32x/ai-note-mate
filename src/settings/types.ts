@@ -262,10 +262,8 @@ export interface NoteAssistantPluginSettings {
 	 */
 	saveAsNoteDir: string;
 
-	builtinWebSearchEnabled: boolean;
-	builtinWebFetchEnabled: boolean;
-	builtinRSSFetchEnabled: boolean;
-	builtinJavaScriptEnabled: boolean;
+	builtinWebAgentEnabled: boolean;
+	builtinCodeAgentEnabled: boolean;
 
 	/**
 	 * Per-turn call budget for the built-in `web_fetch_url` tool.

@@ -8,8 +8,6 @@ import type { ToolCapability } from "../llm-provider";
  * @returns Array of registered tools
  */
 export function createJavaScriptTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
-    if (!plugin.settings.builtinJavaScriptEnabled) return [];
-
     return [
         evaluateJavaScript(plugin),
     ];

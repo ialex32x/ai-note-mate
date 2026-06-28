@@ -80,35 +80,40 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
         });
     }
 
-    // Web search sub-agent: handles internet searches and content fetching
-    const webSearchTools = createWebSearchTools(plugin);
-    const webTools = [
-        ...webSearchTools,
-        ...createWebFetchTools(plugin),
-        ...createRSSFetchTools(plugin),
-    ];
-    if (webTools.length > 0) {
-        configs.push({
-            name: 'web',
-            description: WEB_AGENT_DESCRIPTION,
-            systemPrompt: createWebAgentPrompt(webSearchTools.length > 0),
-            tools: [...webTools, ...createBuiltinTools(plugin)],
-            resultMaxTokens: 15000,
-            routingKeywords: WEB_ROUTING_KEYWORDS,
-        });
+    // Web search sub-agent: handles internet searches and content fetching.
+    // Only created when the built-in web agent is enabled.
+    if (plugin.settings.builtinWebAgentEnabled) {
+        const webTools = [
+            ...createWebSearchTools(plugin),
+            ...createWebFetchTools(plugin),
+            ...createRSSFetchTools(plugin),
+        ];
+        if (webTools.length > 0) {
+            configs.push({
+                name: 'web',
+                description: WEB_AGENT_DESCRIPTION,
+                systemPrompt: createWebAgentPrompt(),
+                tools: [...webTools, ...createBuiltinTools(plugin)],
+                resultMaxTokens: 15000,
+                routingKeywords: WEB_ROUTING_KEYWORDS,
+            });
+        }
     }
 
-    // Code execution sub-agent: handles JavaScript code execution
-    const jsTools = createJavaScriptTools(plugin);
-    if (jsTools.length > 0) {
-        configs.push({
-            name: 'code',
-            description: CODE_AGENT_DESCRIPTION,
-            systemPrompt: CODE_AGENT_PROMPT,
-            tools: [...jsTools, ...createBuiltinTools(plugin)],
-            resultMaxTokens: 10000,
-            routingKeywords: CODE_ROUTING_KEYWORDS,
-        });
+    // Code execution sub-agent: handles JavaScript code execution.
+    // Only created when the built-in JavaScript tool is enabled.
+    if (plugin.settings.builtinCodeAgentEnabled) {
+        const jsTools = createJavaScriptTools(plugin);
+        if (jsTools.length > 0) {
+            configs.push({
+                name: 'code',
+                description: CODE_AGENT_DESCRIPTION,
+                systemPrompt: CODE_AGENT_PROMPT,
+                tools: [...jsTools, ...createBuiltinTools(plugin)],
+                resultMaxTokens: 10000,
+                routingKeywords: CODE_ROUTING_KEYWORDS,
+            });
+        }
     }
 
     return configs;

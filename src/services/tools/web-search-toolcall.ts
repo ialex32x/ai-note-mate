@@ -8,7 +8,6 @@ import { DEFAULT_SETTINGS } from "settings";
 import { checkAbort, isAbortError } from "../../utils/abortable-request";
 
 export function createWebSearchTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
-    if (!plugin.settings.builtinWebSearchEnabled) return [];
 
     // Read-only web tools live with the `web` sub-agent. The image
     // *download* tool is intentionally excluded here — it writes to the
@@ -41,7 +40,6 @@ export function createWebSearchTools(plugin: NoteAssistantPlugin): RegisteredToo
  * trivially express as two calls.
  */
 export function createImageDownloadTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
-    if (!plugin.settings.builtinWebSearchEnabled) return [];
 
     return [
         downloadImageUrls(plugin),

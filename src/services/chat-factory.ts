@@ -537,7 +537,12 @@ export function createChatAgent(
         // agent for the same reason as the other mutation tools — see the
         // comment block above. The web sub-agent only returns image URLs
         // via `image_search`; the main agent saves them.
-        createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
+        //
+        // Only registered when the built-in web agent is enabled — without
+        // it there is no `image_search` to produce URLs from.
+        if (settings.builtinWebAgentEnabled) {
+            createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
+        }
 
         // Register `recall_artifact` only when an artifact store is wired
         // (production: SessionRuntime supplies one; some tests deliberately
@@ -571,12 +576,16 @@ export function createChatAgent(
         chat = new ChatStream(chatStreamConfig);
 
         createObsidianTools(plugin).forEach(tool => chat.registerTool(tool));
-        createWebSearchTools(plugin).forEach(tool => chat.registerTool(tool));
-        createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
-        createWebFetchTools(plugin).forEach(tool => chat.registerTool(tool));
-        createRSSFetchTools(plugin).forEach(tool => chat.registerTool(tool));
+        if (settings.builtinWebAgentEnabled) {
+            createWebSearchTools(plugin).forEach(tool => chat.registerTool(tool));
+            createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
+            createWebFetchTools(plugin).forEach(tool => chat.registerTool(tool));
+            createRSSFetchTools(plugin).forEach(tool => chat.registerTool(tool));
+        }
         createBuiltinTools(plugin).forEach(tool => chat.registerTool(tool));
-        createJavaScriptTools(plugin).forEach(tool => chat.registerTool(tool));
+        if (settings.builtinCodeAgentEnabled) {
+            createJavaScriptTools(plugin).forEach(tool => chat.registerTool(tool));
+        }
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
 
         // `manage_todos` — same single source-of-truth registration
