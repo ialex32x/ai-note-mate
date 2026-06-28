@@ -538,15 +538,16 @@ export function createChatAgent(
         createSkillTools(plugin).forEach(tool => chat.registerTool(tool));
         createObsidianMutationTools(plugin).forEach(tool => chat.registerTool(tool));
         chat.registerTool(vaultReadSection(plugin));
-        // `download_image_urls` is a vault-write tool (creates files under
-        // the configured attachments folder), so it lives on the main
-        // agent for the same reason as the other mutation tools — see the
-        // comment block above. The web sub-agent only returns image URLs
-        // via `image_search`; the main agent saves them.
-        //
-        // Only registered when the built-in web agent is enabled — without
-        // it there is no `image_search` to produce URLs from.
-        if (settings.builtinWebAgentEnabled) {
+		// `download_image_urls` is a vault-write tool (creates files under
+		// the configured attachments folder), so it lives on the main
+		// agent for the same reason as the other mutation tools — see the
+		// comment block above. The web sub-agent only returns image URLs
+		// via `image_search`; the main agent saves them.
+		//
+		// Only registered when the web sub-agent is present (not disabled
+		// by the user) — without it there is no `image_search` to produce
+		// URLs from.
+		if (allSubAgentConfigs.some(c => c.name === 'web')) {
             createImageDownloadTools(plugin).forEach(tool => chat.registerTool(tool));
         }
 

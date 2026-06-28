@@ -19,6 +19,22 @@ import {
     CODE_AGENT_DESCRIPTION, CODE_AGENT_PROMPT, CODE_ROUTING_KEYWORDS,
 } from './prompts/sub-agent-prompts';
 
+/**
+ * Default disabled state for built-in agents whose `canToggle` is true.
+ *
+ * Agents not listed here default to `false` (enabled). Entries are
+ * overridden when {@link BuiltinAgentOverride.disabled} is present in
+ * the user's settings.
+ */
+export const BUILTIN_AGENT_DEFAULT_DISABLED: Record<string, boolean> = {
+    code: true,
+};
+
+/** Resolve whether a built-in agent is disabled from overrides + defaults. */
+function isBuiltinDisabled(overrides: Record<string, { disabled?: boolean }>, key: string): boolean {
+    return overrides[key]?.disabled ?? BUILTIN_AGENT_DEFAULT_DISABLED[key] ?? false;
+}
+
 export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfig[] {
     const configs: SubAgentConfig[] = [];
     const overrides = plugin.settings.builtinAgentOverrides;
@@ -84,8 +100,8 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
     }
 
     // Web search sub-agent: handles internet searches and content fetching.
-    // Only created when the built-in web agent is enabled.
-    if (plugin.settings.builtinWebAgentEnabled) {
+    // Gated by the user's override (or built-in default — enabled by default).
+    if (!isBuiltinDisabled(overrides, 'web')) {
         const webTools = [
             ...createWebSearchTools(plugin),
             ...createWebFetchTools(plugin),
@@ -105,8 +121,8 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
     }
 
     // Code execution sub-agent: handles JavaScript code execution.
-    // Only created when the built-in JavaScript tool is enabled.
-    if (plugin.settings.builtinCodeAgentEnabled) {
+    // Gated by the user's override (or built-in default — disabled by default).
+    if (!isBuiltinDisabled(overrides, 'code')) {
         const jsTools = createJavaScriptTools(plugin);
         if (jsTools.length > 0) {
             configs.push({
@@ -155,6 +171,7 @@ export interface BuiltinAgentMeta {
  */
 export function getBuiltinAgentMeta(plugin: NoteAssistantPlugin): BuiltinAgentMeta[] {
     const meta: BuiltinAgentMeta[] = [];
+    const overrides = plugin.settings.builtinAgentOverrides;
 
     // vault_inspector — always present (hardcoded, no off-switch)
     {
@@ -194,7 +211,7 @@ export function getBuiltinAgentMeta(plugin: NoteAssistantPlugin): BuiltinAgentMe
         });
     }
 
-    // web — gated by builtinWebAgentEnabled
+    // web — gated by override (default: enabled)
     {
         const webTools = [
             ...createWebSearchTools(plugin),
@@ -212,12 +229,12 @@ export function getBuiltinAgentMeta(plugin: NoteAssistantPlugin): BuiltinAgentMe
             description: WEB_AGENT_DESCRIPTION,
             systemPrompt: createWebAgentPrompt(),
             toolNames: allToolNames,
-            enabled: plugin.settings.builtinWebAgentEnabled,
+            enabled: !isBuiltinDisabled(overrides, 'web'),
             canToggle: true,
         });
     }
 
-    // code — gated by builtinCodeAgentEnabled
+    // code — gated by override (default: disabled)
     {
         const jsTools = createJavaScriptTools(plugin);
         const builtinTools = createBuiltinTools(plugin);
@@ -231,7 +248,7 @@ export function getBuiltinAgentMeta(plugin: NoteAssistantPlugin): BuiltinAgentMe
             description: CODE_AGENT_DESCRIPTION,
             systemPrompt: CODE_AGENT_PROMPT,
             toolNames: allToolNames,
-            enabled: plugin.settings.builtinCodeAgentEnabled,
+            enabled: !isBuiltinDisabled(overrides, 'code'),
             canToggle: true,
         });
     }

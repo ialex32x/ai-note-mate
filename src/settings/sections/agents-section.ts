@@ -14,7 +14,7 @@ import { createSummarizerConfig } from "../../services/chat-factory";
 import { createChatCompletion } from "../../services/context-compression";
 import { isAbortError } from "../../utils/abortable-request";
 import type { BuiltinAgentMeta } from "../../services/sub-agent-registry";
-import { getBuiltinAgentMeta } from "../../services/sub-agent-registry";
+import { getBuiltinAgentMeta, BUILTIN_AGENT_DEFAULT_DISABLED } from "../../services/sub-agent-registry";
 
 /** Default config seeded when adding a new agent. */
 function defaultAgentConfig(): CustomAgentConfig {
@@ -172,16 +172,11 @@ export class AgentsSettingsSection implements SettingsSection {
 	private renderBuiltinAgentView(container: HTMLElement, meta: BuiltinAgentMeta): void {
 		const { plugin } = this.ctx;
 
-		// ── Badge row: "Built-in" chip + enabled status ──────────
+		// ── Badge row: "Built-in" chip ──────────────────────────
 		const badgeRow = container.createDiv({ cls: "oap-builtin-agent-badge-row" });
 		const badge = badgeRow.createDiv({ cls: "oap-builtin-agent-badge" });
 		setIcon(badge.createSpan({ cls: "oap-builtin-agent-badge-icon" }), "lock");
 		badge.createSpan({ cls: "oap-builtin-agent-badge-text", text: t("settings.agentBuiltinBadge") });
-
-		if (!meta.enabled) {
-			const disabledTag = badgeRow.createDiv({ cls: "oap-builtin-agent-disabled-tag" });
-			disabledTag.setText(t("settings.agentBuiltinDisabled"));
-		}
 
 		// ── Name (read-only) ────────────────────────────────────
 		new Setting(container)
@@ -192,6 +187,43 @@ export class AgentsSettingsSection implements SettingsSection {
 				text.setDisabled(true);
 				text.inputEl.classList.add("oap-input-readonly");
 			});
+
+		// ── Enabled toggle (only for agents the user can toggle) ──
+		if (meta.canToggle) {
+			new Setting(container)
+				.setName(t("settings.agentDisabled"))
+				.setDesc(t("settings.agentDisabledDesc"))
+				.addToggle(toggle => {
+					const overrides = plugin.settings.builtinAgentOverrides ?? {};
+					const currentDisabled = overrides[meta.key]?.disabled
+						?? BUILTIN_AGENT_DEFAULT_DISABLED[meta.key]
+						?? false;
+					toggle.setValue(!currentDisabled);
+					toggle.onChange(async (value) => {
+						if (!plugin.settings.builtinAgentOverrides) {
+							plugin.settings.builtinAgentOverrides = {};
+						}
+						const newDisabled = !value;
+						const defaultDisabled = BUILTIN_AGENT_DEFAULT_DISABLED[meta.key] ?? false;
+						if (newDisabled === defaultDisabled) {
+							// Reverting to default — clear disabled from override
+							const existing = plugin.settings.builtinAgentOverrides[meta.key];
+							if (existing) {
+								delete existing.disabled;
+								if (Object.keys(existing).length === 0) {
+									delete plugin.settings.builtinAgentOverrides[meta.key];
+								}
+							}
+						} else {
+							plugin.settings.builtinAgentOverrides[meta.key] = {
+								...plugin.settings.builtinAgentOverrides[meta.key],
+								disabled: newDisabled,
+							};
+						}
+						await plugin.saveSettings();
+					});
+				});
+		}
 
 		// ── Profile ────────────────────────────────────────────
 		new Setting(container)
@@ -214,9 +246,18 @@ export class AgentsSettingsSection implements SettingsSection {
 						plugin.settings.builtinAgentOverrides = {};
 					}
 					if (value) {
-						plugin.settings.builtinAgentOverrides[meta.key] = { profile: value };
+						plugin.settings.builtinAgentOverrides[meta.key] = {
+							...plugin.settings.builtinAgentOverrides[meta.key],
+							profile: value,
+						};
 					} else {
-						delete plugin.settings.builtinAgentOverrides[meta.key];
+						const existing = plugin.settings.builtinAgentOverrides[meta.key];
+						if (existing) {
+							delete existing.profile;
+							if (Object.keys(existing).length === 0) {
+								delete plugin.settings.builtinAgentOverrides[meta.key];
+							}
+						}
 					}
 					await plugin.saveSettings();
 				});

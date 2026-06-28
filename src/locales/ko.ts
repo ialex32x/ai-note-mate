@@ -435,7 +435,7 @@ export const ko: Record<string, string> = {
 	'settings.agentNameDesc': '이 에이전트의 표시 이름입니다. 탭 바에 표시됩니다. 짧게 유지하세요.',
 	'settings.agentNamePlaceholder': '예: 웹 검색기',
 	'settings.agentDisabled': '활성화',
-	'settings.agentDisabledDesc': '비활성화하면 세션 생성 시 이 에이전트를 건너뛰고, 도구 패턴이 MCP 도구를 점유하지 않습니다.',
+	'settings.agentDisabledDesc': '비활성화하면 세션 생성 시 이 에이전트를 건너뛰고, 작업 위임 대상에서 제외됩니다.',
 	'settings.agentTools': '도구 패턴',
 	'settings.agentToolsDesc': 'MCP 도구와 일치하는 와일드카드 패턴. 한 줄에 하나씩 (예: `mcp_*`).',
 	'settings.agentProfile': '모델',

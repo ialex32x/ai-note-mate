@@ -184,14 +184,23 @@ export interface SpeechToTextConfig {
  * Each key is a built-in agent's stable key (e.g. `"vault_inspector"`,
  * `"web"`, `"code"`). Keys are only written when the user explicitly
  * overrides a setting — missing keys mean "use built-in defaults".
+ *
+ * All fields are optional: an override object may carry only the
+ * fields the user has changed from defaults.
  */
 export interface BuiltinAgentOverride {
 	/**
 	 * ID of the provider profile this agent should use for its
-	 * requests. Empty string means "inherit the main agent's
-	 * profile at runtime".
+	 * requests. `undefined` or empty string means "inherit the main
+	 * agent's profile at runtime".
 	 */
-	profile: string;
+	profile?: string;
+	/**
+	 * When true, this agent is disabled and skipped at session
+	 * creation. Defaults vary per agent — see
+	 * {@link BUILTIN_AGENT_DEFAULT_DISABLED} in sub-agent-registry.ts.
+	 */
+	disabled?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -281,9 +290,6 @@ export interface NoteAssistantPluginSettings {
 	 * explicit createFolder() call before write.
 	 */
 	saveAsNoteDir: string;
-
-	builtinWebAgentEnabled: boolean;
-	builtinCodeAgentEnabled: boolean;
 
 	/**
 	 * Per-turn call budget for the built-in `web_fetch_url` tool.

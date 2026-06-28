@@ -435,7 +435,7 @@ export const en: Record<string, string> = {
 	'settings.agentNameDesc': 'Display name for this agent, shown in the tab bar. Keep it short.',
 	'settings.agentNamePlaceholder': 'e.g. Web Searcher',
 	'settings.agentDisabled': 'Enabled',
-	'settings.agentDisabledDesc': 'When disabled, this agent is skipped at session creation and its tool patterns do not claim MCP tools.',
+	'settings.agentDisabledDesc': 'When disabled, this agent is skipped at session creation and is not available for delegation.',
 	'settings.agentTools': 'Tool patterns',
 	'settings.agentToolsDesc': 'Wildcard patterns matching MCP tools this agent may use. One per line (e.g. `mcp_*`).',
 	'settings.agentProfile': 'Profile',

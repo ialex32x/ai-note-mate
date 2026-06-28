@@ -108,35 +108,6 @@ export class ToolsSettingsSection implements SettingsSection {
 
 	constructor(private readonly ctx: SectionContext) {}
 
-	private renderBuiltinToolToggles(container: HTMLElement): void {
-		const { plugin } = this.ctx;
-
-		createToggleField({
-			container,
-			name: t('settings.builtinWebAgent'),
-			desc: t('settings.builtinWebAgentDesc'),
-			value: plugin.settings.builtinWebAgentEnabled,
-			onChange: async (value) => {
-				plugin.settings.builtinWebAgentEnabled = value;
-				await plugin.saveSettings();
-			},
-			sessionRestartRequired: true,
-		});
-
-		createToggleField({
-			container,
-			name: t('settings.builtinCodeAgent'),
-			desc: t('settings.builtinCodeAgentDesc'),
-			value: plugin.settings.builtinCodeAgentEnabled,
-			onChange: async (value) => {
-				plugin.settings.builtinCodeAgentEnabled = value;
-				await plugin.saveSettings();
-			},
-			sessionRestartRequired: true,
-			experimental: true,
-		});
-	}
-
 	private renderWebFetchLimits(container: HTMLElement): void {
 		const { plugin } = this.ctx;
 
@@ -335,8 +306,6 @@ export class ToolsSettingsSection implements SettingsSection {
 		const mcpServers = plugin.settings.mcpServers;
 
 		this.renderRetrieverTopK(container);
-
-		this.renderBuiltinToolToggles(container);
 
 		this.renderWebFetchLimits(container);
 

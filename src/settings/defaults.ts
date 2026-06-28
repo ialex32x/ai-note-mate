@@ -180,8 +180,6 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	agentMdPath: 'AGENT.md',
 	imageDownloadDir: 'Attachments',
 	saveAsNoteDir: '',
-	builtinWebAgentEnabled: true,
-	builtinCodeAgentEnabled: false,
 	webFetchSoftLimit: DEFAULT_WEB_FETCH_SOFT_LIMIT,
 	webFetchHardLimit: DEFAULT_WEB_FETCH_HARD_LIMIT,
 	allowedCapabilities: [...ALL_TOOL_CAPABILITIES],
