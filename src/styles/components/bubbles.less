@@ -44,6 +44,29 @@
         white-space: pre-wrap;
         overflow-wrap: anywhere;
     }
+
+    // Pasted image attachment thumbnails — rendered above the text.
+    .session-bubble__attachments {
+        display: flex;
+        flex-wrap: wrap;
+        gap: @spacing-sm;
+        margin-bottom: @spacing-md;
+    }
+
+    .session-bubble__attachment-img {
+        display: block;
+        max-width: 96px;
+        max-height: 72px;
+        border-radius: @radius-sm;
+        border: 1px solid @bg-modifier-border;
+        object-fit: cover;
+        cursor: pointer;
+        transition: opacity @duration-normal;
+
+        &:hover {
+            opacity: 0.85;
+        }
+    }
 }
 
 // Assistant message bubble (full width)

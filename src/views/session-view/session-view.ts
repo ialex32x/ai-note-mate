@@ -113,6 +113,25 @@ export class SessionView extends ItemView {
     private messageEditHandler!: MessageEditHandler;
 
     /**
+     * Current user-pasted image attachment (only one allowed at a time).
+     * `thumbnailDataUrl` is a small inline data URL for the chip preview;
+     * the full-resolution file is at `cachePath`.
+     */
+    private currentAttachment: {
+        cachePath: string;
+        mimeType: string;
+        fileName: string;
+        thumbnailDataUrl: string;
+    } | null = null;
+
+    /** DOM container for the image attachment thumbnail row. */
+    private attachmentRow!: HTMLElement;
+    /** Thumbnail <img> element inside {@link attachmentRow}. */
+    private attachmentThumb!: HTMLImageElement;
+    /** Delete button inside {@link attachmentRow}. */
+    private attachmentDeleteBtn!: HTMLElement;
+
+    /**
      * The runtime currently bound to this view, proxied from the
      * {@link SessionRuntimeBinder}. The view does NOT own its lifecycle
      * (the pool does). Read-only on the view side — only the binder
@@ -695,6 +714,29 @@ export class SessionView extends ItemView {
             onGotoMessage: (messageId) => { void this.historyLoader.scrollToMessage(messageId); },
         });
 
+        // ── Image attachment thumbnail row ──────────────────────────────────
+        // Placed between the checkpoint row and the input row so the
+        // user can see the pasted image before typing their message.
+        this.attachmentRow = inputContainer.createEl('div', { cls: 'session-attachment-row session-attachment-row--hidden' });
+        // Thumbnail image
+        this.attachmentThumb = this.attachmentRow.createEl('img', { cls: 'session-attachment-thumb' });
+        // Delete button (×) in the top-right corner of the thumbnail
+        this.attachmentDeleteBtn = this.attachmentRow.createEl('span', {
+            cls: 'session-attachment-delete',
+            attr: { role: 'button', 'aria-label': t('view.removeAttachment') },
+        });
+        setIcon(this.attachmentDeleteBtn, 'x');
+        this.attachmentDeleteBtn.addEventListener('click', () => {
+            void this.removeAttachment();
+        });
+
+        // ── Paste handler ──────────────────────────────────────────────────
+        // Listen on the entire input container so paste events reach us
+        // even when the CodeMirror editor doesn't have focus.
+        this.registerDomEvent(inputContainer, 'paste', (e: ClipboardEvent) => {
+            void this.handlePaste(e);
+        });
+
         // Input area with CodeMirror 6 editor
         const inputRow = inputContainer.createEl('div', { cls: 'session-input-row' });
         const cmContainer = inputRow.createEl('div', { cls: 'session-cm-input' });
@@ -808,6 +850,8 @@ export class SessionView extends ItemView {
             runtimeBinder: this.runtimeBinder,
             getStreaming: () => this.isStreaming,
             getChat: () => this.chat,
+            getAttachment: () => this.getCurrentAttachment(),
+            clearAttachment: () => this.clearAttachmentUI(),
         });
 
         // ── History loader (P6) ─────────────────────────────────────────
@@ -1290,6 +1334,161 @@ export class SessionView extends ItemView {
         this.insightCard?.setBusy(locked);
         // Note: Input remains editable during streaming - user can type but cannot send
         // The send button becomes a stop button when locked
+    }
+
+    // ── Image paste handling ──────────────────────────────────────────
+
+    /**
+     * Get the current image attachment info for the send handler.
+     * Returns only the cache metadata — the base64 payload is resolved
+     * later by {@link ChatStream._rebuildApiMessages}.
+     */
+    getCurrentAttachment(): { cachePath: string; mimeType: string; fileName: string } | null {
+        if (!this.currentAttachment) return null;
+        return {
+            cachePath: this.currentAttachment.cachePath,
+            mimeType: this.currentAttachment.mimeType,
+            fileName: this.currentAttachment.fileName,
+        };
+    }
+
+    /** Clear the attachment UI and state after sending. */
+    clearAttachmentUI(): void {
+        this.currentAttachment = null;
+        this.attachmentRow.addClass('session-attachment-row--hidden');
+        this.attachmentThumb.src = '';
+    }
+
+    /**
+     * Handle paste events on the input container.
+     * If the clipboard contains an image, save it to the session's
+     * refs/ cache directory and display a thumbnail above the input.
+     */
+    private async handlePaste(e: ClipboardEvent): Promise<void> {
+        // Only intercept image pastes; let text pastes through.
+        const items = e.clipboardData?.items;
+        if (!items) return;
+
+        let imageFile: File | null = null;
+        for (let i = 0; i < items.length; i++) {
+            const item = items[i]!;
+            if (item.type.startsWith('image/')) {
+                imageFile = item.getAsFile();
+                break;
+            }
+        }
+        if (!imageFile) return;
+
+        // Stop the event so CodeMirror doesn't insert garbage text.
+        e.preventDefault();
+        e.stopPropagation();
+
+        try {
+            const sessionId = this.runtime?.sessionId;
+            if (!sessionId) {
+                new Notice(t('view.attachmentNoSession'));
+                return;
+            }
+
+            // Read the image data.
+            const buf = await imageFile.arrayBuffer();
+            const mimeType = imageFile.type || 'image/png';
+            const ext = mimeType.split('/')[1] ?? 'png';
+            const fileName = imageFile.name || `paste-${Date.now()}.${ext}`;
+            const timestamp = Date.now();
+
+            // Ensure the refs/ directory exists.
+            const refsDir = `${this.plugin.paths.sessions()}/${sessionId}/refs`;
+            if (!(await this.app.vault.adapter.exists(refsDir))) {
+                await this.app.vault.adapter.mkdir(refsDir);
+            }
+            const cachePath = `${refsDir}/img_${timestamp}.${ext}`;
+
+            // Write the image to the cache.
+            await this.app.vault.adapter.writeBinary(cachePath, buf);
+
+            // Generate a small thumbnail data URL for the preview chip.
+            // Cap at 128px max dimension to keep the data URL compact.
+            const thumbnailDataUrl = await this.createThumbnailDataUrl(buf, mimeType, 128);
+
+            // If there was a previous attachment, delete its cache file.
+            if (this.currentAttachment) {
+                await this.removeAttachmentFile(this.currentAttachment.cachePath);
+            }
+
+            // Update state and show thumbnail.
+            this.currentAttachment = { cachePath, mimeType, fileName, thumbnailDataUrl };
+            this.attachmentThumb.src = thumbnailDataUrl;
+            this.attachmentThumb.alt = fileName;
+            this.attachmentRow.removeClass('session-attachment-row--hidden');
+        } catch (err) {
+            console.error('[SessionView] Failed to handle pasted image:', err);
+            new Notice(t('view.attachmentPasteFailed'));
+        }
+    }
+
+    /**
+     * Remove the current attachment: delete cache file, clear state,
+     * hide thumbnail.
+     */
+    private async removeAttachment(): Promise<void> {
+        if (!this.currentAttachment) return;
+        await this.removeAttachmentFile(this.currentAttachment.cachePath);
+        this.currentAttachment = null;
+        this.attachmentRow.addClass('session-attachment-row--hidden');
+        this.attachmentThumb.src = '';
+    }
+
+    /** Delete a single attachment cache file (fire-and-forget). */
+    private async removeAttachmentFile(cachePath: string): Promise<void> {
+        try {
+            if (await this.app.vault.adapter.exists(cachePath)) {
+                await this.app.vault.adapter.remove(cachePath);
+            }
+        } catch (err) {
+            console.warn('[SessionView] Failed to delete attachment file:', cachePath, err);
+        }
+    }
+
+    /**
+     * Create a thumbnail data URL from raw image bytes.
+     * Uses a canvas to resize the image so the data URL stays small
+     * (ideal for inline chip previews).
+     */
+    private createThumbnailDataUrl(
+        buf: ArrayBuffer,
+        mimeType: string,
+        maxDim: number,
+    ): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const blob = new Blob([buf], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                let { width, height } = img;
+                if (width > maxDim || height > maxDim) {
+                    const ratio = Math.min(maxDim / width, maxDim / height);
+                    width = Math.round(width * ratio);
+                    height = Math.round(height * ratio);
+                }
+                const canvas = activeDocument.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('Failed to get 2d context'));
+                    return;
+                }
+                ctx.drawImage(img, 0, 0, width, height);
+                resolve(canvas.toDataURL(mimeType, 0.7));
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('Failed to load image for thumbnail'));
+            };
+            img.src = url;
+        });
     }
 
     private showStreamingLoader() {

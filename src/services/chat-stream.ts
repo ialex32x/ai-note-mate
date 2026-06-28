@@ -49,6 +49,7 @@ import {
 
 import type {
     ChatMessage,
+    ChatAttachment,
     QuickAskTurn,
     ChatSessionState,
     ToolCallResult,
@@ -76,6 +77,7 @@ export type {
     ToolCallStatus,
     ToolCallResultInfo,
     ChatMessage,
+    ChatAttachment,
     QuickAskTurn,
     ChatSessionState,
     ToolCallArgs,
@@ -405,6 +407,12 @@ export class ChatStream implements IChatAgent {
             onUserMessage?: (userMessage: ChatMessage) => void,
             /** Model identifier for this turn, stored on the assistant message. */
             modelName?: string,
+            /**
+             * User-pasted image attachments for this turn.
+             * Stored as cache-path references on the ChatMessage;
+             * resolved to base64 on demand when building API messages.
+             */
+            attachments?: ChatAttachment[],
         }
     ): Promise<void> {
         // Guard: prevent concurrent calls
@@ -421,6 +429,7 @@ export class ChatStream implements IChatAgent {
         // Append user message to UI-facing history (store original text with [[path]] syntax)
         // Increment turn counter for each user message
         const currentTurn = ++this._currentTurn;
+        const attachments = options?.attachments;
         const userMessage: ChatMessage = {
             id: generateId(),
             role: "user",
@@ -428,6 +437,7 @@ export class ChatStream implements IChatAgent {
             streaming: false,
             timestamp: Date.now(),
             turn: currentTurn,
+            attachments,
         };
         this._messages.push(userMessage);
 
@@ -467,7 +477,7 @@ export class ChatStream implements IChatAgent {
         //     tool_results that the validator would drop anyway.
         const effectiveSystemPrompt = await this._buildEffectiveSystemPrompt(userInput);
 
-        const rawMessages = this._rebuildApiMessages(effectiveSystemPrompt);
+        const rawMessages = await this._rebuildApiMessages(effectiveSystemPrompt);
 
         // Filter tools based on allowed capabilities
         const allowedCapabilities = options?.allowedCapabilities;
@@ -906,8 +916,26 @@ export class ChatStream implements IChatAgent {
      * are skipped.  Pure tool-call turns (assistant with no text/thinking)
      * get a synthesised empty-content assistant so the protocol invariant
      * ("every tool_result has an assistant owner") holds.
+     *
+     * For the most recent user message, {@link ChatMessage.attachments}
+     * are resolved via {@link ChatStreamConfig.resolveAttachment} and
+     * attached as {@link ChatMessageParam.media}.  Historical user
+     * messages always ship without media (the LLM already processed
+     * those images in previous turns).
      */
-    private _rebuildApiMessages(effectiveSystemPrompt: string): ChatMessageParam[] {
+    private async _rebuildApiMessages(effectiveSystemPrompt: string): Promise<ChatMessageParam[]> {
+        // Find the index of the last user message — only its attachments
+        // (if any) should be resolved to media.  Historical images don't
+        // need to be re-sent: the LLM already processed them and their
+        // content is captured in the assistant replies from those turns.
+        let lastUserIndex = -1;
+        for (let i = this._messages.length - 1; i >= 0; i--) {
+            if (this._messages[i]!.role === "user") {
+                lastUserIndex = i;
+                break;
+            }
+        }
+
         const rawMessages: ChatMessageParam[] = [];
         if (effectiveSystemPrompt) {
             rawMessages.push({ role: "system", content: effectiveSystemPrompt });
@@ -915,7 +943,34 @@ export class ChatStream implements IChatAgent {
         for (let i = 0; i < this._messages.length; i++) {
             const msg = this._messages[i]!;
             if (msg.role === "user") {
-                rawMessages.push({ role: "user", content: msg.content, id: msg.id });
+                const media: MediaAttachment[] = [];
+                if (i === lastUserIndex && msg.attachments && msg.attachments.length > 0 && this._config.resolveAttachment) {
+                    for (const att of msg.attachments) {
+                        try {
+                            const resolved = await this._config.resolveAttachment(
+                                att.cachePath,
+                                att.mimeType,
+                                att.fileName,
+                            );
+                            if (resolved) {
+                                media.push(resolved);
+                            }
+                        } catch (err) {
+                            console.warn(
+                                `[ChatStream] Failed to resolve attachment "${att.fileName}"` +
+                                ` at ${att.cachePath}:`, err,
+                            );
+                            // Continue with other attachments — a single
+                            // broken file should not block the entire turn.
+                        }
+                    }
+                }
+                rawMessages.push({
+                    role: "user",
+                    content: msg.content,
+                    id: msg.id,
+                    media: media.length > 0 ? media : undefined,
+                });
                 continue;
             }
             if (msg.role === "assistant" || msg.role === "tool_call") {

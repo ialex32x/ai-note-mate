@@ -365,3 +365,54 @@
         }
     }
 }
+
+// ─────────────────────────────────────────────
+// Image attachment thumbnail row
+// ─────────────────────────────────────────────
+.session-attachment-row {
+    flex: 0 0 auto;
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    padding: @spacing-xs 0;
+    margin-bottom: @spacing-xs;
+
+    // Hidden state — toggled via class instead of inline style
+    &.session-attachment-row--hidden {
+        display: none;
+    }
+
+    .session-attachment-thumb {
+        display: block;
+        max-width: 128px;
+        max-height: 96px;
+        border-radius: @radius-sm;
+        border: 1px solid @bg-modifier-border;
+        object-fit: cover;
+    }
+
+    .session-attachment-delete {
+        position: absolute;
+        top: 0;
+        left: 128px; // flush against the right edge of the 128px thumbnail
+        transform: translate(-50%, -50%);
+        .flex-center();
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: @bg-primary;
+        border: 1px solid @bg-modifier-border;
+        cursor: pointer;
+        color: @text-secondary;
+        font-size: 12px;
+        line-height: 1;
+        z-index: 2;
+        transition: color @duration-normal, background @duration-normal;
+
+        &:hover {
+            color: @text-error;
+            background: var(--background-modifier-error);
+            border-color: @text-error;
+        }
+    }
+}

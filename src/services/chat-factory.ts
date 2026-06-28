@@ -1,5 +1,7 @@
+import { arrayBufferToBase64 } from 'obsidian';
 import type NoteAssistantPlugin from 'main';
 import { IChatAgent, ChatMessage, type ContextCompressionOptions, type ToolFilterOptions } from './chat-stream';
+import type { MediaAttachment } from './llm-provider';
 import type { GeneratedAsset } from './generated-asset-collection';
 import { AgentOrchestrator } from './agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
@@ -461,6 +463,37 @@ export function createChatAgent(
                 return callbacks.onConfirmToolCall!(messageId, signal);
             },
         } : {}),
+        resolveAttachment: async (
+            cachePath: string,
+            mimeType: string,
+            _fileName: string,
+        ): Promise<MediaAttachment | null> => {
+            try {
+                const adapter = plugin.app.vault.adapter;
+                if (!(await adapter.exists(cachePath))) {
+                    console.warn(`[chat-factory] Attachment cache file missing: ${cachePath}`);
+                    return null;
+                }
+                const buf = await adapter.readBinary(cachePath);
+                const base64 = arrayBufferToBase64(buf);
+                // Infer the modality kind from MIME type
+                const m = mimeType.toLowerCase();
+                let kind: MediaAttachment['kind'] = 'image';
+                if (m.startsWith('audio/')) kind = 'audio';
+                else if (m.startsWith('video/')) kind = 'video';
+                else if (m === 'application/pdf') kind = 'pdf';
+                return {
+                    kind,
+                    mimeType,
+                    base64,
+                    sourcePath: _fileName,
+                };
+            } catch (err) {
+                console.warn(`[chat-factory] Failed to resolve attachment: ${cachePath}`, err);
+                return null;
+            }
+        },
+
         onContextCompressed: () => {
             // Drop the active-skill set unconditionally — even when the
             // captured `generationMatches()` check below would short-

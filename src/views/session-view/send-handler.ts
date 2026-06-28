@@ -1,5 +1,5 @@
 import NoteAssistantPlugin from 'main';
-import { IChatAgent } from '../../services/chat-stream';
+import { IChatAgent, type ChatAttachment } from '../../services/chat-stream';
 import { getActiveProfile } from '../../settings';
 import {
     createSummarizerConfig,
@@ -24,6 +24,10 @@ export interface SendHandlerDeps {
     runtimeBinder: SessionRuntimeBinder;
     getStreaming: () => boolean;
     getChat: () => IChatAgent | undefined;
+    /** Returns the current image attachment info, or null if none. */
+    getAttachment: () => { cachePath: string; mimeType: string; fileName: string } | null;
+    /** Clears the attachment UI after the message is sent. */
+    clearAttachment: () => void;
 }
 
 /**
@@ -111,6 +115,12 @@ export class SendHandler {
      * agent's own message cache. See chat-stream.ts: IChatAgent.prompt.
      */
     async sendPrompt(text: string): Promise<void> {
+        // Collect image attachment before clearing the UI.
+        const attachmentInfo = this.deps.getAttachment();
+        const attachments: ChatAttachment[] = attachmentInfo
+            ? [{ cachePath: attachmentInfo.cachePath, mimeType: attachmentInfo.mimeType, fileName: attachmentInfo.fileName }]
+            : [];
+
         const activeProfile = createProviderForActiveProfile(this.deps.plugin);
         await this.deps.runtimeBinder.ensureRuntimeAttached().chat.prompt(text, {
             allowedCapabilities: this.deps.plugin.settings.allowedCapabilities,
@@ -123,10 +133,13 @@ export class SendHandler {
             summarizer: createSummarizerConfig(this.deps.plugin),
             embedding: createEmbeddingConfig(this.deps.plugin),
             embeddingFilter: createToolFilterOptions(this.deps.plugin),
+            attachments: attachments.length > 0 ? attachments : undefined,
             onUserMessage: (msg) => {
                 this.deps.bubbleList.append(msg);
                 this.deps.bubbleList.refreshJumpButtonsForPrevTurn(msg);
                 this.deps.scroller.forceScrollToBottom();
+                // Clear the attachment UI now that the message is sent.
+                this.deps.clearAttachment();
             },
         });
     }

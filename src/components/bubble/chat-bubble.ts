@@ -1,4 +1,5 @@
-import type { ChatMessage } from '../../services/chat-stream';
+import type { ChatMessage, ChatAttachment } from '../../services/chat-stream';
+import { arrayBufferToBase64 } from 'obsidian';
 import type { BubbleContext } from './bubble-context';
 import {
     createActionsContainer,
@@ -272,6 +273,13 @@ export class ChatBubble {
                 // content container here.
                 break;
             case 'user':
+                // Render pasted image attachments as thumbnails above the text.
+                // Must be rendered into `bodyEl` (before `contentEl`), not
+                // inside `contentEl`, because `renderUserContent` may call
+                // `setText()` which replaces all child nodes.
+                if (msg.attachments && msg.attachments.length > 0) {
+                    ChatBubble.renderAttachments(ctx, bodyEl, msg.attachments, contentEl);
+                }
                 renderUserContent(ctx, contentEl, msg.content);
                 break;
             case 'tool_result':
@@ -299,6 +307,77 @@ export class ChatBubble {
         });
 
         ctx.onScrollNeeded();
+    }
+
+    // ── Attachment thumbnails (user-pasted images) ────────────────────
+
+    /**
+     * Render user-pasted image attachment thumbnails inside a user bubble.
+     * Images are read from the session cache and displayed as small
+     * thumbnails above the text content.
+     *
+     * @param beforeChild  Insert the wrapper before this element (e.g. the
+     *   content container).  When omitted the wrapper is appended at the end.
+     */
+    private static renderAttachments(
+        ctx: BubbleContext,
+        container: HTMLElement,
+        attachments: ChatAttachment[],
+        beforeChild?: HTMLElement,
+    ): void {
+        const wrapper = activeDocument.createElement('div');
+        wrapper.className = 'session-bubble__attachments';
+        if (beforeChild && beforeChild.parentNode === container) {
+            container.insertBefore(wrapper, beforeChild);
+        } else {
+            container.appendChild(wrapper);
+        }
+
+        for (const att of attachments) {
+            const img = wrapper.createEl('img', {
+                cls: 'session-bubble__attachment-img',
+                attr: {
+                    src: '',
+                    alt: att.fileName,
+                    title: att.fileName,
+                },
+            });
+
+            // Load the image asynchronously from the cache.
+            this.loadAttachmentThumbnail(ctx, att.cachePath, att.mimeType)
+                .then(dataUrl => {
+                    if (dataUrl) {
+                        img.src = dataUrl;
+                    } else {
+                        img.remove();
+                    }
+                })
+                .catch(() => {
+                    img.remove();
+                });
+        }
+    }
+
+    /**
+     * Read an attachment cache file and return a base64 data URL.
+     * Returns `null` if the file is missing or unreadable.
+     */
+    private static async loadAttachmentThumbnail(
+        ctx: BubbleContext,
+        cachePath: string,
+        mimeType: string,
+    ): Promise<string | null> {
+        try {
+            const adapter = ctx.app.vault.adapter;
+            if (!(await adapter.exists(cachePath))) {
+                return null;
+            }
+            const buf = await adapter.readBinary(cachePath);
+            const base64 = arrayBufferToBase64(buf);
+            return `data:${mimeType};base64,${base64}`;
+        } catch {
+            return null;
+        }
     }
 
     // ── Toolbar (single source of truth for all bubble types) ─────────

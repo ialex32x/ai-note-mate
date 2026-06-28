@@ -14,6 +14,7 @@ import type {
     ThinkingLevel,
     ToolCapability,
     ChatMessageRole,
+    MediaAttachment,
 } from "./llm-provider";
 import type { GeneratedAsset } from "./generated-asset-collection";
 import type { ConversationSummary, ContextCompressionOptions } from "./context-compression";
@@ -50,6 +51,22 @@ export interface ToolCallResultInfo {
     status: ToolCallStatus;
     /** The serialised result string returned by the tool */
     result: string;
+}
+
+/**
+ * User-pasted image attachment stored on a ChatMessage.
+ *
+ * Only cache metadata is persisted — the base64 payload is resolved
+ * on-demand via {@link ChatStreamConfig.resolveAttachment} when
+ * building API-level messages.
+ */
+export interface ChatAttachment {
+    /** Vault-relative path to the cached image file. */
+    cachePath: string;
+    /** MIME type, e.g. "image/png". */
+    mimeType: string;
+    /** Original file name for display / fallback text. */
+    fileName: string;
 }
 
 /**
@@ -165,6 +182,12 @@ export interface ChatMessage {
      * past conversations.
      */
     modelName?: string;
+    /**
+     * User-pasted image attachments for this message.
+     * Only meaningful on user messages. Cache files are resolved to
+     * base64 payloads on demand when building API messages.
+     */
+    attachments?: ChatAttachment[];
 }
 
 /**
@@ -530,6 +553,25 @@ export interface ChatStreamConfig {
      * a separate field on the orchestrator.
      */
     getArtifactStore?: () => ArtifactStore | null;
+
+    /**
+     * Resolve a cached attachment file to a base64-carrying
+     * {@link MediaAttachment} ready for the LLM provider.
+     *
+     * Called during {@link _rebuildApiMessages} for user messages
+     * that carry {@link ChatMessage.attachments}. The callback
+     * performs vault-adapter I/O internally; ChatStream itself
+     * remains filesystem-free.
+     *
+     * Returning `null` silently skips the attachment (e.g. the
+     * cache file was deleted). Providers that don't support the
+     * attachment's MIME type also skip it downstream.
+     */
+    resolveAttachment?: (
+        cachePath: string,
+        mimeType: string,
+        fileName: string,
+    ) => Promise<MediaAttachment | null>;
 }
 
 /** Internal result type returned by _processStream */
@@ -625,6 +667,12 @@ export interface IChatAgent {
              * the UI and persisted to session JSON.
              */
             modelName?: string;
+            /**
+             * User-pasted image attachments for this turn.
+             * Stored as cache-path references on the ChatMessage;
+             * resolved to base64 on demand when building API messages.
+             */
+            attachments?: ChatAttachment[];
         },
     ): Promise<void>;
 

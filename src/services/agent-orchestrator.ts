@@ -25,6 +25,7 @@ import {
     QuickAskTurn,
     QUICK_ASK_SYSTEM_PROMPT,
     type ToolFilterOptions,
+    type ChatAttachment,
 } from "./chat-stream";
 import type { ConversationSummary } from "./context-compression";
 import { createChatCompletion } from "./context-compression";
@@ -762,6 +763,8 @@ export class AgentOrchestrator implements IChatAgent {
             onUserMessage?: (userMessage: ChatMessage) => void;
             /** Model identifier for this turn, stored on assistant messages. */
             modelName?: string;
+            /** User-pasted image attachments (forwarded to main agent). */
+            attachments?: ChatAttachment[];
         },
     ): Promise<void> {
         // Store options for sub-agent use during this prompt cycle.
