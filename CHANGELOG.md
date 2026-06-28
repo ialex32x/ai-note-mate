@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.6.0
+
+### What's new
+
+- **Custom agents (experimental)** — Define your own sub-agents directly in settings. Each custom agent gets an inline system prompt, per-agent profile overrides (choose a different model per agent), and an enable/disable toggle. Built-in agents are now shown in a read-only view so you can see what's available and toggle them individually. *This is an experimental feature and will be refined in future releases.*
+- **Image paste & attachment support** — Paste images from the clipboard into the chat input; the plugin now sends them as first-class message content (referencing images from the vault via wikilinks still works as before). Currently limited to one pasted image per message.
+
+### Refinements
+
+- **Leaner tool registration** — Built-in tool registration is now centralised and injected at runtime, and per-agent tool toggles let you control which tools each agent can access.
+- **Handoff guidance at runtime** — Sub-agent handoff prompts are now constructed on-the-fly instead of being baked in, giving cleaner separation between agent configuration and prompt assembly.
+- **Stable builtin agent keys** — Built-in agent tabs now use stable keys, preventing UI glitches when settings are reloaded.
+
+---
+
 ## 1.5.3
 
 ### What's new
