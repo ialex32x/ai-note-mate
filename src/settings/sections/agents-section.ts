@@ -13,81 +13,256 @@ import {
 import { createSummarizerConfig } from "../../services/chat-factory";
 import { createChatCompletion } from "../../services/context-compression";
 import { isAbortError } from "../../utils/abortable-request";
+import type { BuiltinAgentMeta } from "../../services/sub-agent-registry";
+import { getBuiltinAgentMeta } from "../../services/sub-agent-registry";
 
 /** Default config seeded when adding a new agent. */
 function defaultAgentConfig(): CustomAgentConfig {
 	return { name: "", tools: ["mcp_*"], profile: "", description: "", systemPrompt: "", disabled: false };
 }
 
+/** Computed id for a builtin agent tab. */
+function builtinId(index: number): string { return `builtin_${index}`; }
+/** Computed id for a custom agent tab. */
+function customId(index: number): string { return `custom_${index}`; }
+
 /**
- * Custom agents (sub-agents) settings panel.
+ * Agents settings panel — shows both built-in sub-agents (read-only)
+ * and user-defined custom agents (fully editable).
  */
 export class AgentsSettingsSection implements SettingsSection {
 	readonly titleKey = AGENTS_SECTION_ID;
-	private editingIndex = 0;
+	/** Editing target: e.g. "builtin_0" or "custom_1". */
+	private editingId = '';
 
 	constructor(private readonly ctx: SectionContext) {}
 
 	render(container: HTMLElement): void {
 		const { plugin, refreshSection } = this.ctx;
-		const agents = plugin.settings.agents;
+		const builtins = getBuiltinAgentMeta(plugin);
+		const customs = plugin.settings.agents;
 
-		if (agents.length === 0) {
-			new Setting(container)
-				.setName(t("settings.agentsEmpty"))
-				.setDesc(t("settings.agentsEmptyDesc"))
-				.addButton(btn => {
-					btn.setIcon("plus");
-					btn.setButtonText(t("settings.addAgent"));
-					btn.setCta();
-					btn.onClick(async () => {
-						agents.push(defaultAgentConfig());
-						this.editingIndex = 0;
-						await plugin.saveSettings();
-						refreshSection(this);
-					});
-				});
+		// ── Build unified tab items ────────────────────────────
+		const tabItems: { id: string; name: string; tooltip?: string; isBuiltin: boolean }[] = [];
+
+		for (let i = 0; i < builtins.length; i++) {
+			tabItems.push({
+				id: builtinId(i),
+				name: builtins[i]!.name,
+				tooltip: builtins[i]!.description,
+				isBuiltin: true,
+			});
+		}
+		for (let i = 0; i < customs.length; i++) {
+			tabItems.push({
+				id: customId(i),
+				name: this.tabLabel(customs[i]!),
+				tooltip: customs[i]!.description || undefined,
+				isBuiltin: false,
+			});
+		}
+
+		// ── Empty state: only custom agents count, builtins are always present ──
+		if (customs.length === 0 && tabItems.length === builtins.length) {
+			// Render builtins without a tabBar (only builtins, no custom agents yet)
+			this.renderBuiltinOnly(container, builtins);
 			return;
 		}
 
-		this.editingIndex = Math.min(Math.max(this.editingIndex, 0), agents.length - 1);
-		const idx = this.editingIndex;
+		// ── Validate / default editingId ────────────────────────
+		const validIds = new Set(tabItems.map(it => it.id));
+		if (!validIds.has(this.editingId)) {
+			this.editingId = tabItems[0]!.id;
+		}
+		const activeId = this.editingId;
 
+		// ── Which item is being edited ──────────────────────────
+		const editingItem = tabItems.find(it => it.id === activeId);
+		const isBuiltinEditing = editingItem?.isBuiltin ?? false;
+
+		// ── Tab bar ────────────────────────────────────────────
 		const tabBar = createTabBar({
 			container,
-			items: agents.map((agent, i) => ({
-				id: String(i),
-				name: this.tabLabel(agent),
-				tooltip: agent.description || undefined,
-			})),
-			activeId: String(idx),
-			editingId: String(idx),
+			items: tabItems.map(it => ({ id: it.id, name: it.name, tooltip: it.tooltip })),
+			activeId,
+			editingId: activeId,
 			onTabClick: (id) => {
-				this.editingIndex = Number(id);
+				this.editingId = id;
 				refreshSection(this);
 			},
 			onAdd: async () => {
-				agents.push(defaultAgentConfig());
-				this.editingIndex = agents.length - 1;
+				customs.push(defaultAgentConfig());
+				this.editingId = customId(customs.length - 1);
 				await plugin.saveSettings();
 				refreshSection(this);
 			},
 			addTooltip: t("settings.addAgent"),
-			onDelete: async () => {
-				agents.splice(idx, 1);
-				this.editingIndex = Math.min(idx, agents.length - 1);
+			onDelete: isBuiltinEditing ? undefined : async () => {
+				const customIdx = Number(activeId.replace('custom_', ''));
+				customs.splice(customIdx, 1);
+				// Pick next editing target
+				if (customs.length === 0) {
+					// Only builtins left — go to last builtin
+					this.editingId = builtinId(builtins.length - 1);
+				} else {
+					this.editingId = customId(Math.min(customIdx, customs.length - 1));
+				}
 				await plugin.saveSettings();
 				refreshSection(this);
 			},
 			deleteTooltip: t("settings.deleteAgentDesc"),
 		});
 
-		this.renderAgentEditor(container, idx, tabBar.refreshTabLabel);
+		// ── Editor / read-only view ────────────────────────────
+		if (isBuiltinEditing) {
+			const builtinIdx = Number(activeId.replace('builtin_', ''));
+			this.renderBuiltinAgentView(container, builtins[builtinIdx]!);
+		} else {
+			const customIdx = Number(activeId.replace('custom_', ''));
+			this.renderAgentEditor(container, customIdx, tabBar.refreshTabLabel);
+		}
 	}
 
 	private tabLabel(agent: CustomAgentConfig): string {
 		return (agent.name ?? "").trim() || t("settings.agentUntitled");
 	}
+
+	// ──────────────────────────────────────────────────────────────
+	// Builtin-only state (no custom agents yet)
+	// ──────────────────────────────────────────────────────────────
+
+	private renderBuiltinOnly(container: HTMLElement, builtins: BuiltinAgentMeta[]): void {
+		const { plugin, refreshSection } = this.ctx;
+
+		for (let i = 0; i < builtins.length; i++) {
+			if (i > 0) {
+				container.createDiv({ cls: "oap-builtin-agent-card-divider" });
+			}
+			this.renderBuiltinAgentView(container, builtins[i]!);
+		}
+
+		// "Add a custom agent" button at the bottom
+		const btnRow = container.createDiv({ cls: "oap-builtin-agent-add-row" });
+		const addBtn = btnRow.createEl("button", { cls: "mod-cta" });
+		setIcon(addBtn, "plus");
+		addBtn.createSpan({ text: t("settings.addAgent") });
+		addBtn.addEventListener("click", () => {
+			void (async () => {
+				plugin.settings.agents.push(defaultAgentConfig());
+				this.editingId = customId(0);
+				await plugin.saveSettings();
+				refreshSection(this);
+			})();
+		});
+	}
+
+	// ──────────────────────────────────────────────────────────────
+	// Built-in agent read-only view
+	// ──────────────────────────────────────────────────────────────
+
+	private renderBuiltinAgentView(container: HTMLElement, meta: BuiltinAgentMeta): void {
+		// ── Badge row: "Built-in" chip + enabled status ──────────
+		const badgeRow = container.createDiv({ cls: "oap-builtin-agent-badge-row" });
+		const badge = badgeRow.createDiv({ cls: "oap-builtin-agent-badge" });
+		setIcon(badge.createSpan({ cls: "oap-builtin-agent-badge-icon" }), "lock");
+		badge.createSpan({ cls: "oap-builtin-agent-badge-text", text: t("settings.agentBuiltinBadge") });
+
+		if (!meta.enabled) {
+			const disabledTag = badgeRow.createDiv({ cls: "oap-builtin-agent-disabled-tag" });
+			disabledTag.setText(t("settings.agentBuiltinDisabled"));
+		}
+
+		// ── Name (read-only) ────────────────────────────────────
+		new Setting(container)
+			.setName(t("settings.agentName"))
+			.setDesc(t("settings.agentNameDesc"))
+			.addText(text => {
+				text.setValue(meta.name);
+				text.setDisabled(true);
+				text.inputEl.classList.add("oap-input-readonly");
+			});
+
+		// ── Description (read-only) ─────────────────────────────
+		this.renderReadOnlyTextField(
+			container,
+			t("settings.agentDescription"),
+			t("settings.agentDescriptionDesc"),
+			meta.description,
+			5,
+		);
+
+		// ── System Prompt (read-only) ───────────────────────────
+		this.renderReadOnlyTextField(
+			container,
+			t("settings.agentSystemPrompt"),
+			t("settings.agentSystemPromptDesc"),
+			meta.systemPrompt,
+			10,
+		);
+
+		// ── Tools (read-only chip list) ─────────────────────────
+		this.renderBuiltinToolsPreview(container, meta);
+	}
+
+	/**
+	 * Render a read-only text field that looks like a disabled textarea.
+	 */
+	private renderReadOnlyTextField(
+		container: HTMLElement,
+		name: string,
+		desc: string,
+		value: string,
+		rows: number,
+	): void {
+		const heading = container.createEl("div", { cls: "setting-item" });
+		const info = heading.createEl("div", { cls: "setting-item-info" });
+		info.createEl("div", { cls: "setting-item-name", text: name });
+		info.createEl("div", { cls: "setting-item-description", text: desc });
+
+		const wrapper = container.createEl("div", { cls: "oap-agent-desc-wrapper" });
+		const textarea = wrapper.createEl("textarea", {
+			cls: "oap-agent-desc-textarea oap-agent-desc-textarea--readonly",
+			attr: { rows: String(rows), readonly: "true" },
+			text: value,
+		});
+		// Prevent editing but keep scroll
+		textarea.addEventListener("keydown", (e) => e.preventDefault());
+	}
+
+	/**
+	 * Show tool names available to a built-in agent as read-only chips.
+	 */
+	private renderBuiltinToolsPreview(container: HTMLElement, meta: BuiltinAgentMeta): void {
+		const { toolNames } = meta;
+
+		if (toolNames.length === 0) {
+			new Setting(container)
+				.setName(t("settings.agentToolsPreview"))
+				.setDesc(t("settings.agentBuiltinToolsNone"));
+			return;
+		}
+
+		const previewSetting = new Setting(container)
+			.setName(t("settings.agentToolsPreview"))
+			.setDesc(t("settings.agentBuiltinToolsCount", { count: toolNames.length }));
+
+		const chipList = previewSetting.descEl.createEl("div", {
+			cls: "oap-settings-chip-list",
+		});
+		for (const name of toolNames) {
+			const chip = chipList.createEl("div", {
+				cls: "oap-agent-tool-chip",
+			});
+			chip.createEl("span", {
+				cls: "oap-agent-tool-chip-label",
+				text: name,
+			});
+		}
+	}
+
+	// ──────────────────────────────────────────────────────────────
+	// Custom agent editor (unchanged, except id format)
+	// ──────────────────────────────────────────────────────────────
 
 	private renderAgentEditor(
 		container: HTMLElement,
@@ -108,7 +283,7 @@ export class AgentsSettingsSection implements SettingsSection {
 					agent.name = value.trim();
 					await plugin.saveSettings();
 					refreshTabLabel(
-						String(idx),
+						customId(idx),
 						this.tabLabel(agent),
 						agent.description || undefined,
 					);
@@ -136,7 +311,6 @@ export class AgentsSettingsSection implements SettingsSection {
 				for (const p of plugin.settings.profiles) {
 					dropdown.addOption(p.id, getProfileLabel(p));
 				}
-				// Ensure the stored ID is still valid; fall back to inherited.
 				const validId = agent.profile
 					&& plugin.settings.profiles.some(p => p.id === agent.profile)
 					? agent.profile
@@ -168,10 +342,10 @@ export class AgentsSettingsSection implements SettingsSection {
 		// ── MCP tools preview ──────────────────────────────────
 		void this.renderToolsPreview(container, agent);
 
-		// ── Description (full-width textarea + hover generate button) ──
+		// ── Description ────────────────────────────────────────
 		this.renderDescriptionField(container, agent, idx, refreshTabLabel);
 
-		// ── System Prompt (full-width textarea + hover generate button) ──
+		// ── System Prompt ───────────────────────────────────────
 		this.renderSystemPromptField(container, agent, idx, refreshTabLabel);
 	}
 
@@ -227,7 +401,7 @@ export class AgentsSettingsSection implements SettingsSection {
 			void (async () => {
 				await plugin.saveSettings();
 				refreshTabLabel(
-					String(idx),
+					customId(idx),
 					this.tabLabel(agent),
 					agent.description || undefined,
 				);
@@ -246,7 +420,7 @@ export class AgentsSettingsSection implements SettingsSection {
 						agent.description = result;
 						await plugin.saveSettings();
 						refreshTabLabel(
-							String(idx),
+							customId(idx),
 							this.tabLabel(agent),
 							agent.description || undefined,
 						);
@@ -314,7 +488,7 @@ export class AgentsSettingsSection implements SettingsSection {
 						agent.systemPrompt = result;
 						await plugin.saveSettings();
 						refreshTabLabel(
-							String(idx),
+							customId(idx),
 							this.tabLabel(agent),
 							agent.description || undefined,
 						);

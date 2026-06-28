@@ -713,6 +713,82 @@
     border-radius: @radius-md @radius-md 0 0;
 }
 
+// ─────────────────────────────────────────────
+// Built-in agent (read-only) display
+// ─────────────────────────────────────────────
+
+// Badge row showing "Built-in" chip + optional disabled tag
+.oap-builtin-agent-badge-row {
+    display: flex;
+    align-items: center;
+    gap: @spacing-sm;
+    margin: 0 @spacing-lg @spacing-md;
+}
+
+// "Built-in" badge chip — muted pill with lock icon
+.oap-builtin-agent-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    font-size: 0.75em;
+    font-weight: 600;
+    color: @text-secondary;
+    background: @bg-modifier-border;
+    border-radius: @radius-sm;
+    user-select: none;
+}
+
+.oap-builtin-agent-badge-icon {
+    display: flex;
+    align-items: center;
+
+    svg {
+        width: 11px;
+        height: 11px;
+    }
+}
+
+// "Disabled" tag next to the built-in badge
+.oap-builtin-agent-disabled-tag {
+    font-size: 0.75em;
+    color: @text-faint;
+    user-select: none;
+}
+
+// Read-only textarea variant — muted background, no focus ring
+.oap-agent-desc-textarea--readonly {
+    color: @text-secondary;
+    background: @bg-modifier-border;
+    border-color: transparent;
+    cursor: default;
+
+    &:focus {
+        border-color: transparent;
+    }
+}
+
+// Read-only text input
+.oap-input-readonly {
+    opacity: 0.7;
+}
+
+// Divider between built-in agent cards (builtin-only mode)
+.oap-builtin-agent-card-divider {
+    height: 1px;
+    background: @bg-modifier-border;
+    margin: @spacing-md @spacing-lg;
+}
+
+// "Add custom agent" button row at the bottom of builtin-only mode
+.oap-builtin-agent-add-row {
+    display: flex;
+    justify-content: center;
+    padding: @spacing-lg;
+    border-top: 1px solid @bg-modifier-border;
+    margin-top: @spacing-md;
+}
+
 @keyframes oap-shimmer {
     0% { background-position: 200% 0; }
     100% { background-position: -200% 0; }

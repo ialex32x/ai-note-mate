@@ -118,3 +118,118 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
 
     return configs;
 }
+
+/**
+ * Lightweight metadata for a single built-in agent, used by the settings
+ * UI to display read-only information. Does NOT construct full tool objects.
+ */
+export interface BuiltinAgentMeta {
+    /** Stable internal key (e.g. "vault_inspector", "web") */
+    key: string;
+    /** Human-readable name for the settings tab */
+    name: string;
+    /** High-level description shown to the main agent for routing */
+    description: string;
+    /** Full system prompt injected when this agent executes */
+    systemPrompt: string;
+    /** Tool function names available to this agent at the current plugin state */
+    toolNames: string[];
+    /** Whether this agent is currently enabled (affects whether it appears in agent menus) */
+    enabled: boolean;
+    /** Whether the user can toggle this agent on/off in settings */
+    canToggle: boolean;
+}
+
+/**
+ * Returns read-only metadata for all built-in sub-agents.
+ *
+ * Called by the Agents settings section to render built-in agent cards
+ * alongside user-defined custom agents. Tool names are resolved from
+ * the same factory functions used at runtime, so they accurately reflect
+ * the current plugin state (e.g. tools gated behind feature toggles).
+ */
+export function getBuiltinAgentMeta(plugin: NoteAssistantPlugin): BuiltinAgentMeta[] {
+    const meta: BuiltinAgentMeta[] = [];
+
+    // vault_inspector — always present (hardcoded, no off-switch)
+    {
+        const vaultTools = createObsidianReadOnlyTools(plugin);
+        const builtinTools = createBuiltinTools(plugin);
+        const allToolNames = [
+            ...vaultTools.map(t => t.schema.function.name),
+            ...builtinTools.map(t => t.schema.function.name),
+        ];
+        meta.push({
+            key: 'vault_inspector',
+            name: 'Vault Inspector',
+            description: VAULT_AGENT_DESCRIPTION,
+            systemPrompt: VAULT_AGENT_PROMPT,
+            toolNames: allToolNames,
+            enabled: vaultTools.length > 0,
+            canToggle: false,
+        });
+    }
+
+    // vault_editor — always present (hardcoded, no off-switch)
+    {
+        const editorTools = createObsidianEditorTools(plugin);
+        const builtinTools = createBuiltinTools(plugin);
+        const allToolNames = [
+            ...editorTools.map(t => t.schema.function.name),
+            ...builtinTools.map(t => t.schema.function.name),
+        ];
+        meta.push({
+            key: 'vault_editor',
+            name: 'Vault Editor',
+            description: VAULT_EDITOR_DESCRIPTION,
+            systemPrompt: VAULT_EDITOR_PROMPT,
+            toolNames: allToolNames,
+            enabled: editorTools.length > 0,
+            canToggle: false,
+        });
+    }
+
+    // web — gated by builtinWebAgentEnabled
+    {
+        const webTools = [
+            ...createWebSearchTools(plugin),
+            ...createWebFetchTools(plugin),
+            ...createRSSFetchTools(plugin),
+        ];
+        const builtinTools = createBuiltinTools(plugin);
+        const allToolNames = [
+            ...webTools.map(t => t.schema.function.name),
+            ...builtinTools.map(t => t.schema.function.name),
+        ];
+        meta.push({
+            key: 'web',
+            name: 'Web Search',
+            description: WEB_AGENT_DESCRIPTION,
+            systemPrompt: createWebAgentPrompt(),
+            toolNames: allToolNames,
+            enabled: plugin.settings.builtinWebAgentEnabled,
+            canToggle: true,
+        });
+    }
+
+    // code — gated by builtinCodeAgentEnabled
+    {
+        const jsTools = createJavaScriptTools(plugin);
+        const builtinTools = createBuiltinTools(plugin);
+        const allToolNames = [
+            ...jsTools.map(t => t.schema.function.name),
+            ...builtinTools.map(t => t.schema.function.name),
+        ];
+        meta.push({
+            key: 'code',
+            name: 'Code Executor',
+            description: CODE_AGENT_DESCRIPTION,
+            systemPrompt: CODE_AGENT_PROMPT,
+            toolNames: allToolNames,
+            enabled: plugin.settings.builtinCodeAgentEnabled,
+            canToggle: true,
+        });
+    }
+
+    return meta;
+}
