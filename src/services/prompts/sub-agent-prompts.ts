@@ -206,8 +206,6 @@ Hard limits (the main agent's context budget depends on these):
 - \`summary\` ≤ 80 words; each \`key_points\` item ≤ 30 words; \`anchors\` ≤ 6 per file.
 - If a file is genuinely irrelevant after metadata inspection, STILL emit a digest entry with \`summary: "(not relevant: <one-line reason>)"\`, empty \`key_points\`, empty \`anchors\`. The main agent must be able to trust that \`digests.length === input paths.length\` — never silently drop a path.
 - \`anchors[].heading_path\` MUST be a path that \`read_section\` would resolve unambiguously on the same file (the main agent will feed it to \`insert_text\`'s heading mode for follow-up edits).
-${READING_HANDOFF_SECTION}
-${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 
 // Routing keywords for the (read-only) vault inspector. Verbs that imply
@@ -259,8 +257,6 @@ You are a specialized web search and information retrieval agent. Your role is t
 ${capabilities}
 
 ${rules}
-${READING_HANDOFF_SECTION}
-${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 }
 
@@ -293,8 +289,6 @@ You are a specialized code execution agent. Your role is to write and execute Ja
 - Do not attempt to access the filesystem or network directly
 - The execution environment is sandboxed with limited APIs
 - Do NOT retry the same tool call more than 3 times if it fails
-${READING_HANDOFF_SECTION}
-${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 
 export const CODE_ROUTING_KEYWORDS = [
@@ -394,8 +388,6 @@ write_result_array({ key: "warnings", value: [ "...", "..." ] })
 - Multi-file task → refuse with one sentence + \`result = { error: "..." }\`. No tool calls.
 - Task asks you to also create / delete / move / rename the file, or edit tags → do the body rewrite if it stands alone, then add a \`warnings[]\` entry describing the structural change that's still needed. Do not attempt the structural change yourself.
 - Task asks for a change that would alter the file's identity (e.g. "rewrite A.md into B.md and delete A.md") → refuse; return \`result = { error: "identity-changing task; use main agent." }\`.
-${READING_HANDOFF_SECTION}
-${RETURNING_STRUCTURED_DATA_SECTION}
 `;
 
 // Routing keywords for the vault_editor sub-agent. Skews toward verbs

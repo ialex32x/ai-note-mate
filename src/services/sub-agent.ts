@@ -14,6 +14,7 @@ import { type ContextCompressionOptions } from "./context-compression";
 import { safeSliceHead, stripLoneSurrogates } from "../utils/string-safe";
 import { createHandoffTools, createResultTools, type HandoffStore } from "./tools/handoff-toolcall";
 import { isAbortError } from "../utils/abortable-request";
+import { READING_HANDOFF_SECTION, RETURNING_STRUCTURED_DATA_SECTION } from "./prompts/sub-agent-prompts";
 
 // ─────────────────────────────────────────────
 // Types
@@ -513,6 +514,14 @@ export class SubAgent {
         // `_currentExec*` fields refreshed at the start of each execute() call.
         const chatStream = new ChatStream({
             systemPrompt: this._config.systemPrompt,
+            // Append the shared handoff-tool guidance (read_handoff /
+            // write_result etc.) to every sub-agent's effective system
+            // prompt at runtime. Previously these sections were statically
+            // embedded in each built-in prompt template; moving them here
+            // guarantees custom sub-agents also receive the same guidance
+            // without duplicating the text in every template.
+            systemPromptSuffix: () =>
+                `${READING_HANDOFF_SECTION}\n${RETURNING_STRUCTURED_DATA_SECTION}`,
             // Tag every LLM-call debug log with this sub-agent's name so
             // a mixed orchestration trace (main + multiple sub-agents
             // interleaving over many tool-call rounds) can be untangled
