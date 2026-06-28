@@ -6,7 +6,7 @@ import type { RegisteredTool, ToolCallResult } from "../chat-stream";
  * @param _plugin Plugin instance
  * @returns Array of registered tools
  */
-export function createBuiltinTools(_plugin: NoteAssistantPlugin): RegisteredTool[] {
+export function createBuiltinTools(_plugin?: NoteAssistantPlugin): RegisteredTool[] {
     return [
         getCurrentDateTime(),
     ];

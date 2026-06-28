@@ -13,6 +13,7 @@ import type { LLMProvider, TokenUsage, ThinkingLevel, ToolCapability, MinimalMod
 import { type ContextCompressionOptions } from "./context-compression";
 import { safeSliceHead, stripLoneSurrogates } from "../utils/string-safe";
 import { createHandoffTools, createResultTools, type HandoffStore } from "./tools/handoff-toolcall";
+import { createBuiltinTools } from "./tools/builtin-toolcall";
 import { isAbortError } from "../utils/abortable-request";
 import { READING_HANDOFF_SECTION, RETURNING_STRUCTURED_DATA_SECTION } from "./prompts/sub-agent-prompts";
 
@@ -592,6 +593,15 @@ export class SubAgent {
 
         // Register all tools for this sub-agent
         for (const tool of this._config.tools) {
+            chatStream.registerTool(tool);
+        }
+
+        // Register shared built-in tools (e.g. `get_current_datetime`)
+        // for every sub-agent — built-in and custom alike. Previously
+        // each built-in agent manually appended these in
+        // sub-agent-registry.ts; centralising here guarantees custom
+        // agents also receive them without duplicating the wiring.
+        for (const tool of createBuiltinTools()) {
             chatStream.registerTool(tool);
         }
 

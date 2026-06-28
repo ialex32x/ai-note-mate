@@ -57,7 +57,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
             name: 'vault_inspector',
             description: VAULT_AGENT_DESCRIPTION,
             systemPrompt: VAULT_AGENT_PROMPT,
-            tools: [...vaultTools, ...createBuiltinTools(plugin)],
+            tools: vaultTools,
             resultMaxTokens: 15000,
             routingKeywords: VAULT_ROUTING_KEYWORDS,
             profile: overrides['vault_inspector']?.profile ?? undefined,
@@ -89,7 +89,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
             name: 'vault_editor',
             description: VAULT_EDITOR_DESCRIPTION,
             systemPrompt: VAULT_EDITOR_PROMPT,
-            tools: [...editorTools, ...createBuiltinTools(plugin)],
+            tools: editorTools,
             // Diff summaries are far smaller than digest arrays — cap
             // at 4K to keep a wholesale-rewrite result trimmed even if
             // the sub-agent stuffs all 5 samples at full 240-char cap.
@@ -112,7 +112,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
                 name: 'web',
                 description: WEB_AGENT_DESCRIPTION,
                 systemPrompt: createWebAgentPrompt(),
-                tools: [...webTools, ...createBuiltinTools(plugin)],
+                tools: webTools,
                 resultMaxTokens: 15000,
                 routingKeywords: WEB_ROUTING_KEYWORDS,
                 profile: overrides['web']?.profile ?? undefined,
@@ -129,7 +129,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
                 name: 'code',
                 description: CODE_AGENT_DESCRIPTION,
                 systemPrompt: CODE_AGENT_PROMPT,
-                tools: [...jsTools, ...createBuiltinTools(plugin)],
+                tools: jsTools,
                 resultMaxTokens: 10000,
                 routingKeywords: CODE_ROUTING_KEYWORDS,
                 profile: overrides['code']?.profile ?? undefined,
