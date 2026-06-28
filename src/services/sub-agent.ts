@@ -42,11 +42,20 @@ export interface SubAgentConfig {
      */
     routingKeywords?: string[];
     /**
+     * ID of the provider profile this sub-agent should use for its
+     * requests. When empty or undefined, the sub-agent inherits the
+     * main agent's profile at runtime.
+     *
+     * Built-in agents read this from {@link BuiltinAgentOverride.profile};
+     * custom agents read it from {@link CustomAgentConfig.profile}.
+     */
+    profile?: string;
+    /**
      * Per-profile context-compression overrides forwarded to the inner
-     * ChatStream. Sub-agents share the user's active profile (we don't
-     * expose a separate profile per sub-agent) so the orchestrator passes
-     * the same numbers it gives the main agent. `undefined` falls back to
-     * the compressor's built-in defaults.
+     * ChatStream. The orchestrator passes the same numbers it gives the
+     * main agent so sub-agents share the main agent's compression tuning
+     * regardless of which profile they use for LLM calls.
+     * `undefined` falls back to the compressor's built-in defaults.
      */
     compressionOptions?: Pick<ContextCompressionOptions,
         'compressionThreshold' | 'slidingWindowSize' | 'maxSummariesThreshold' | 'modelContextWindow'
@@ -186,6 +195,11 @@ export class SubAgent {
     /** Get routing keywords for this sub-agent */
     get routingKeywords(): string[] {
         return this._config.routingKeywords ?? [];
+    }
+
+    /** Get the profile ID override for this sub-agent (empty string = inherited) */
+    get profile(): string | undefined {
+        return this._config.profile;
     }
 
     /**

@@ -21,6 +21,7 @@ import {
 
 export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfig[] {
     const configs: SubAgentConfig[] = [];
+    const overrides = plugin.settings.builtinAgentOverrides;
 
     // Vault inspector sub-agent: read-only inspection (read / search /
     // list / metadata / link graph / tag queries). All vault MUTATIONS —
@@ -43,6 +44,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
             tools: [...vaultTools, ...createBuiltinTools(plugin)],
             resultMaxTokens: 15000,
             routingKeywords: VAULT_ROUTING_KEYWORDS,
+            profile: overrides['vault_inspector']?.profile ?? undefined,
         });
     }
 
@@ -77,6 +79,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
             // the sub-agent stuffs all 5 samples at full 240-char cap.
             resultMaxTokens: 4000,
             routingKeywords: VAULT_EDITOR_ROUTING_KEYWORDS,
+            profile: overrides['vault_editor']?.profile ?? undefined,
         });
     }
 
@@ -96,6 +99,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
                 tools: [...webTools, ...createBuiltinTools(plugin)],
                 resultMaxTokens: 15000,
                 routingKeywords: WEB_ROUTING_KEYWORDS,
+                profile: overrides['web']?.profile ?? undefined,
             });
         }
     }
@@ -112,6 +116,7 @@ export function buildSubAgentConfigs(plugin: NoteAssistantPlugin): SubAgentConfi
                 tools: [...jsTools, ...createBuiltinTools(plugin)],
                 resultMaxTokens: 10000,
                 routingKeywords: CODE_ROUTING_KEYWORDS,
+                profile: overrides['code']?.profile ?? undefined,
             });
         }
     }

@@ -3,6 +3,7 @@ import { IChatAgent, ChatMessage, type ContextCompressionOptions, type ToolFilte
 import type { GeneratedAsset } from './generated-asset-collection';
 import { AgentOrchestrator } from './agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
+import { resolveSubAgentProvider } from '../settings/helpers';
 import type { TextGenConfig } from '../settings/types';
 import {
     DEFAULT_TOOL_FILTER_TOP_K,
@@ -506,6 +507,13 @@ export function createChatAgent(
             subAgentFilterTopK: settings.subAgentFilterTopK > 0
                 ? settings.subAgentFilterTopK
                 : DEFAULT_SUB_AGENT_FILTER_TOP_K,
+            // Per-agent profile resolver: when a sub-agent has a
+            // non-empty `profile` override, resolve it to a provider.
+            // Falls back to the main agent's provider when the profile
+            // id is empty, the profile is missing, or the API key is
+            // not configured.
+            resolveSubAgentProvider: (profileId: string) =>
+                resolveSubAgentProvider(plugin.app, settings, profileId),
             onSubAgentMessageUpdate: (agentName, msg) => {
                 if (!callbacks.generationMatches()) return;
                 callbacks.onSubAgentMessageUpdate(agentName, msg);

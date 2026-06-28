@@ -24,5 +24,6 @@ export {
 	isValidCosBucketName,
 	isCosConfigured,
 	hasMcpServersConfigured,
+	resolveSubAgentProvider,
 } from "./settings/helpers";
 export { NoteAssistantSettingTab } from "./settings/settings-tab";

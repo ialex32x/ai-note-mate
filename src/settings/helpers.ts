@@ -1,6 +1,8 @@
 import type { App } from "obsidian";
 import { createDefaultProfile } from "./defaults";
 import { ARTIFACT_STORE_DEFAULTS, type ArtifactStoreOptions } from "../services/artifact-store";
+import { createLLMProvider } from "../services/providers";
+import type { LLMProvider } from "../services/llm-provider";
 import { resolveSecret } from "../utils/secret-helper";
 import type {
 	EmbeddingConfig,
@@ -219,4 +221,39 @@ export function isCosConfigured(config: SpeechToTextConfig): boolean {
 	const bucket = (config.cosBucket || '').trim();
 	const region = (config.cosRegion || '').trim();
 	return bucket.length > 0 && region.length > 0 && isValidCosBucketName(bucket);
+}
+
+/**
+ * Resolve an `LLMProvider` for a sub-agent that overrides its profile.
+ *
+ * Looks up the profile by id from settings, resolves its API key through
+ * Obsidian's secret storage, and creates a fresh provider instance.
+ *
+ * @param app          Obsidian App (for secret resolution)
+ * @param settings     Plugin settings (for profile lookup)
+ * @param profileId    Profile id to resolve. Empty string means "inherited".
+ * @returns A new `LLMProvider`, or `undefined` when the profile is
+ *          inherited (empty id), the profile is not found, or the API key
+ *          cannot be resolved. Callers should fall back to the main agent's
+ *          provider when `undefined` is returned.
+ */
+export function resolveSubAgentProvider(
+	app: App,
+	settings: NoteAssistantPluginSettings,
+	profileId: string,
+): LLMProvider | undefined {
+	if (!profileId) return undefined;
+
+	const profile = settings.profiles.find(p => p.id === profileId);
+	if (!profile) return undefined;
+
+	const apiKey = resolveSecret(app, profile.apiKey);
+	if (!apiKey) return undefined;
+
+	return createLLMProvider(profile.provider, {
+		apiKey,
+		baseURL: profile.baseUrl,
+		model: profile.model,
+		modalities: profile.modalities,
+	});
 }

@@ -94,6 +94,7 @@ export function buildCustomSubAgentConfigs(
 			systemPrompt: agent.systemPrompt.trim() || defaultSystemPrompt(agent.name),
 			tools: matchedTools,
 			routingKeywords: [],
+			profile: agent.profile || undefined,
 		});
 	}
 

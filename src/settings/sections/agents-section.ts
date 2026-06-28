@@ -170,6 +170,8 @@ export class AgentsSettingsSection implements SettingsSection {
 	// ──────────────────────────────────────────────────────────────
 
 	private renderBuiltinAgentView(container: HTMLElement, meta: BuiltinAgentMeta): void {
+		const { plugin } = this.ctx;
+
 		// ── Badge row: "Built-in" chip + enabled status ──────────
 		const badgeRow = container.createDiv({ cls: "oap-builtin-agent-badge-row" });
 		const badge = badgeRow.createDiv({ cls: "oap-builtin-agent-badge" });
@@ -189,6 +191,35 @@ export class AgentsSettingsSection implements SettingsSection {
 				text.setValue(meta.name);
 				text.setDisabled(true);
 				text.inputEl.classList.add("oap-input-readonly");
+			});
+
+		// ── Profile ────────────────────────────────────────────
+		new Setting(container)
+			.setName(t("settings.agentProfile"))
+			.setDesc(t("settings.agentProfileDesc"))
+			.addDropdown((dropdown: DropdownComponent) => {
+				dropdown.addOption("", t("settings.agentProfileInherited"));
+				for (const p of plugin.settings.profiles) {
+					dropdown.addOption(p.id, getProfileLabel(p));
+				}
+				const overrides = plugin.settings.builtinAgentOverrides ?? {};
+				const current = overrides[meta.key]?.profile ?? "";
+				const validId = current
+					&& plugin.settings.profiles.some(p => p.id === current)
+					? current
+					: "";
+				dropdown.setValue(validId);
+				dropdown.onChange(async (value: string) => {
+					if (!plugin.settings.builtinAgentOverrides) {
+						plugin.settings.builtinAgentOverrides = {};
+					}
+					if (value) {
+						plugin.settings.builtinAgentOverrides[meta.key] = { profile: value };
+					} else {
+						delete plugin.settings.builtinAgentOverrides[meta.key];
+					}
+					await plugin.saveSettings();
+				});
 			});
 
 		// ── Description (read-only) ─────────────────────────────

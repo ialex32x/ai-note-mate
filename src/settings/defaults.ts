@@ -202,6 +202,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	skillHintThreshold: DEFAULT_SKILL_HINT_THRESHOLD,
 	skillAutoInjectThreshold: DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
 	agents: [],
+	builtinAgentOverrides: {},
 	customMenuNotePath: 'MENU.md',
 	memoryEnabled: true,
 	memoryNotePath: 'MEMORY.md',

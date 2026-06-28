@@ -175,6 +175,26 @@ export interface SpeechToTextConfig {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Built-in agent overrides
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-builtin-agent overrides persisted by the user.
+ *
+ * Each key is a built-in agent's stable key (e.g. `"vault_inspector"`,
+ * `"web"`, `"code"`). Keys are only written when the user explicitly
+ * overrides a setting — missing keys mean "use built-in defaults".
+ */
+export interface BuiltinAgentOverride {
+	/**
+	 * ID of the provider profile this agent should use for its
+	 * requests. Empty string means "inherit the main agent's
+	 * profile at runtime".
+	 */
+	profile: string;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Custom agent (sub-agent) configuration
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -401,6 +421,20 @@ export interface NoteAssistantPluginSettings {
 	 * to the main agent for sub-agent routing.
 	 */
 	agents: CustomAgentConfig[];
+
+	// ── Built-in agent overrides ──────────────────────────────────────────
+	/**
+	 * Per-builtin-agent overrides, keyed by stable agent key
+	 * (e.g. `"vault_inspector"`, `"web"`, `"code"`).
+	 *
+	 * Only keys with explicit user overrides appear here. Missing keys
+	 * mean "use built-in defaults" (i.e. profile = inherited).
+	 *
+	 * This is a generic override bag — new overrideable fields can be
+	 * added to {@link BuiltinAgentOverride} without a dedicated
+	 * top-level settings field each time.
+	 */
+	builtinAgentOverrides: Record<string, BuiltinAgentOverride>;
 
 	// ── Custom menu (user-defined right-click prompts) ──────────────────────
 	/**

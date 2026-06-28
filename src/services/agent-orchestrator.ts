@@ -93,6 +93,17 @@ export interface AgentOrchestratorConfig extends ChatStreamConfig {
      */
     subAgentFilterTopK?: number;
 
+    /**
+     * Optional callback that resolves a profile ID to an `LLMProvider`
+     * for sub-agent dispatch. When provided, each sub-agent with a
+     * non-empty {@link SubAgentConfig.profile} will call this to
+     * obtain its own provider instead of inheriting the main agent's.
+     *
+     * Return `undefined` to fall back to inheritance (same as when the
+     * callback is omitted entirely).
+     */
+    resolveSubAgentProvider?: (profileId: string) => LLMProvider | undefined;
+
     /** Called when a sub-agent starts executing a task */
     onSubAgentStart?: (agentName: string, task: string) => void;
     /** Called when a sub-agent finishes executing a task */
@@ -894,8 +905,16 @@ export class AgentOrchestrator implements IChatAgent {
         // cross-dispatch leakage. Zero risk of seed/output key collision.
 
         try {
+            // Resolve the provider for this sub-agent: use its override
+            // profile when configured, otherwise inherit the main agent's.
+            const resolvedProvider =
+                this._config.resolveSubAgentProvider && subAgent.profile
+                    ? (this._config.resolveSubAgentProvider(subAgent.profile)
+                        ?? this._currentPromptOptions.provider)
+                    : this._currentPromptOptions.provider;
+
             const result = await subAgent.execute(task, {
-                provider: this._currentPromptOptions.provider,
+                provider: resolvedProvider,
                 thinkingLevel: this._currentPromptOptions.thinkingLevel,
                 allowedCapabilities: this._currentPromptOptions.allowedCapabilities,
                 summarizer: this._currentPromptOptions.summarizer,
