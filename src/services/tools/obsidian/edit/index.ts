@@ -15,3 +15,4 @@ export { vaultInsertText } from "./insert-text";
 export { vaultBatchSetFrontmatter, vaultBatchUnsetFrontmatter } from "./edit-frontmatter";
 export { vaultWriteFile } from "./write-file";
 export { vaultInstantiateTemplate } from "./instantiate-template";
+export { vaultSaveChatAttachment } from "./save-chat-attachment";

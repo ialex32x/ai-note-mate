@@ -25,6 +25,7 @@ import {
     vaultBatchReplaceText,
     vaultSetSection,
     vaultWriteFile,
+    vaultSaveChatAttachment,
 } from "./edit";
 import {
     vaultBrowseFolder,
@@ -128,6 +129,8 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultBatchReplaceText(plugin),
         vaultSetSection(plugin),
         vaultInsertText(plugin),
+        // Chat attachment saving (save pasted images to vault)
+        vaultSaveChatAttachment(plugin),
         // Template instantiation (read template → replace vars → create file)
         vaultInstantiateTemplate(plugin),
         // Canvas / Bases (validated JSON Canvas / YAML writes)

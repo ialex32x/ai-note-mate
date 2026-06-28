@@ -733,6 +733,7 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tool.triggers.web_fetch_url':  'fetch url, open url, browse url, fetch page, get webpage, scrape url, download page',
 	'tool.triggers.image_search':   'image search, find images, search pictures, photo search, search photos, find pictures',
 	'tool.triggers.generate_image': 'generate image, create image, make image, ai image, dall-e, draw picture, image generation, ai art',
+	'tool.triggers.save_chat_attachment': 'save image, save attachment, store image, save picture, keep image, download image, save to vault, save to library',
 
 	// ─── Insight "deepen" prompt ────────────────────────────────
 	// Composed and sent on the user's behalf when they click the

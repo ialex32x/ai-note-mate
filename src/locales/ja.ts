@@ -733,6 +733,7 @@ export const ja: Record<string, string> = {
 	'tool.triggers.web_fetch_url':  'ウェブ取得, URL取得, ページ取得, リンクを開く, ウェブページ, ページを読み込む, ウェブをダウンロード',
 	'tool.triggers.image_search':   '画像検索, 写真検索, 画像を探す, 画像を見つける, 写真を探す',
 	'tool.triggers.generate_image': '画像生成, 画像作成, AI画像, 絵を描く, イラスト生成, 画像を作る, AIイラスト',
+	'tool.triggers.save_chat_attachment': '画像を保存, 添付を保存, 画像保存, ノートに保存, この画像を保存, ダウンロード, 画像を保管',
 
 	// ─── インサイト「深掘り」プロンプト ────────────────────
 	// インサイトカードの「深掘り」ボタンを押したときに、ユーザーの

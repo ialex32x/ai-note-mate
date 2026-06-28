@@ -733,6 +733,7 @@ export const zhCN: Record<string, string> = {
 	'tool.triggers.web_fetch_url':  '抓取网页, 获取链接, 打开链接, 获取链接内容, 访问网页, 读取链接, 网页内容, 下载网页',
 	'tool.triggers.image_search':   '图片搜索, 搜索图片, 找图, 找图片, 搜图, 图像搜索, 搜索照片',
 	'tool.triggers.generate_image': '生成图片, 画图, 画一张, AI画图, AI绘图, 图片生成, 制作图片, 创作图片, 出图, AI作画',
+	'tool.triggers.save_chat_attachment': '保存图片, 存图, 保存附件, 存到笔记库, 保存这张图, 下载图片, 存储图片, 保存图像',
 
 	// ─── 见解"深入"提示词 ─────────────────────────────────
 	// 用户点击见解卡片的"深入"按钮时，以用户身份发送的提示词。

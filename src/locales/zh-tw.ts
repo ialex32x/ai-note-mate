@@ -733,6 +733,7 @@ export const zhTW: Record<string, string> = {
 	'tool.triggers.web_fetch_url':  '抓取網頁, 取得連結, 開啟連結, 取得連結內容, 存取網頁, 讀取連結, 網頁內容, 下載網頁',
 	'tool.triggers.image_search':   '圖片搜尋, 搜尋圖片, 找圖, 找圖片, 搜圖, 圖像搜尋, 搜尋照片',
 	'tool.triggers.generate_image': '生成圖片, 畫圖, 畫一張, AI畫圖, AI繪圖, 圖片生成, 製作圖片, 創作圖片, 出圖, AI作畫',
+	'tool.triggers.save_chat_attachment': '儲存圖片, 存圖, 儲存附件, 存到筆記庫, 儲存這張圖, 下載圖片, 儲存圖片, 儲存圖像',
 
 	// ─── 見解「深入」提示詞 ─────────────────────────────────
 	// 使用者點擊見解卡片的「深入」按鈕時，以使用者身分送出的提示詞。
