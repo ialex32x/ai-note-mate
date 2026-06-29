@@ -117,6 +117,12 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		});
 
 		containerEl.scrollTop = prevScrollTop;
+
+		// After initial render, ensure each section's editing tab is visible.
+		for (const body of this.sectionBodies) {
+			const tabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
+			if (tabScroll) this.scrollEditingTabIntoView(tabScroll);
+		}
 	}
 
 	hide(): void {
@@ -173,37 +179,45 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		const newTabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
 		if (newTabScroll) {
 			newTabScroll.scrollLeft = savedScrollLeft;
-
-			// Ensure the editing tab is fully visible — if the restored
-			// scrollLeft leaves it partially off-screen, adjust minimally,
-			// leaving a small peek into the neighbouring tab when there
-			// are more tabs on that side.
-			const editingTab = newTabScroll.querySelector<HTMLElement>('.oap-profile-tab--active');
-			if (editingTab) {
-				const PEEK_OFFSET = 48;
-				const scrollRect = newTabScroll.getBoundingClientRect();
-				const tabRect = editingTab.getBoundingClientRect();
-				const canScrollLeft = newTabScroll.scrollLeft > 0;
-				const canScrollRight =
-					newTabScroll.scrollLeft + newTabScroll.clientWidth <
-					newTabScroll.scrollWidth - 1;
-
-				if (tabRect.right > scrollRect.right) {
-					newTabScroll.scrollLeft +=
-						tabRect.right - scrollRect.right +
-						(canScrollRight ? PEEK_OFFSET : 0);
-				}
-				if (tabRect.left < scrollRect.left) {
-					newTabScroll.scrollLeft -=
-						scrollRect.left - tabRect.left +
-						(canScrollLeft ? PEEK_OFFSET : 0);
-				}
-			}
+			this.scrollEditingTabIntoView(newTabScroll);
 		}
 
 		if (headerActions && section.renderHeaderActions) {
 			headerActions.empty();
 			section.renderHeaderActions(headerActions);
+		}
+	}
+
+	/**
+	 * Ensure the editing tab inside `tabScroll` is fully visible.
+	 * Adjusts `scrollLeft` only when the tab is partially off-screen;
+	 * leaves a small peek into the neighbouring tab when there are more
+	 * tabs on that side.
+	 */
+	private scrollEditingTabIntoView(tabScroll: HTMLElement): void {
+		const editingTab = tabScroll.querySelector<HTMLElement>('.oap-profile-tab--active');
+		if (!editingTab) return;
+
+		const scrollRect = tabScroll.getBoundingClientRect();
+		const tabRect = editingTab.getBoundingClientRect();
+		// Already fully visible — nothing to do.
+		if (tabRect.left >= scrollRect.left && tabRect.right <= scrollRect.right) return;
+
+		const PEEK_OFFSET = 48;
+		const canScrollLeft = tabScroll.scrollLeft > 0;
+		const canScrollRight =
+			tabScroll.scrollLeft + tabScroll.clientWidth <
+			tabScroll.scrollWidth - 1;
+
+		if (tabRect.right > scrollRect.right) {
+			tabScroll.scrollLeft +=
+				tabRect.right - scrollRect.right +
+				(canScrollRight ? PEEK_OFFSET : 0);
+		}
+		if (tabRect.left < scrollRect.left) {
+			tabScroll.scrollLeft -=
+				scrollRect.left - tabRect.left +
+				(canScrollLeft ? PEEK_OFFSET : 0);
 		}
 	}
 
