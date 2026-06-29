@@ -1,3 +1,4 @@
+import { Notice, Setting } from "obsidian";
 import { t } from "../../i18n";
 import type { EmbeddingProviderType } from "../../services/providers";
 import { createDefaultEmbeddingConfig } from "../defaults";
@@ -5,11 +6,14 @@ import type { EmbeddingConfig } from "../types";
 import {
 	createApiKeyField,
 	createDropdownField,
+	createStatusIcon,
 	createTabBar,
 	createTextField,
 } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { EMBEDDING_SECTION_ID } from "../section-ids";
+import { createEmbeddings } from "../../services/text-embedding";
+import { resolveSecret } from "../../utils/secret-helper";
 
 export class EmbeddingSettingsSection implements SettingsSection {
 	readonly titleKey = EMBEDDING_SECTION_ID;
@@ -171,18 +175,54 @@ export class EmbeddingSettingsSection implements SettingsSection {
 			},
 		});
 
-		// Model
+		// Model + Test button + status on the same row
 		const modelPlaceholder = config.type === 'gemini' ? 'text-embedding-004' : 'text-embedding-3-small';
-		createTextField({
-			container,
-			name: t('common.model'),
-			desc: t('settings.embeddingModelDesc'),
-			placeholder: modelPlaceholder,
-			value: config.model,
-			onChange: async (value) => {
-				config.model = value || modelPlaceholder;
-				await plugin.saveSettings();
-			},
+		const modelSetting = new Setting(container)
+			.setName(t('common.model'))
+			.setDesc(t('settings.embeddingModelDesc'))
+			.addText(text => text
+				.setPlaceholder(modelPlaceholder)
+				.setValue(config.model)
+				.onChange(async (value) => {
+					config.model = value || modelPlaceholder;
+					await plugin.saveSettings();
+				}))
+			.addButton(btn => btn
+				.setIcon('play')
+				.onClick(async () => {
+					const apiKey = resolveSecret(app, config.apiKey);
+					if (!apiKey) {
+						new Notice(t('status.apiKeyRequired'));
+						return;
+					}
+
+					statusIcon.el.removeClass('oap-embedding-status--hidden');
+					statusIcon.setState('loading', t('status.checking'));
+
+					try {
+						const result = await createEmbeddings({
+							type: config.type,
+							baseURL: config.baseUrl,
+							apiKey,
+							model: config.model,
+						}, ['test']);
+
+						if (result.length > 0 && result[0]!.length > 0) {
+							statusIcon.setState('success', t('status.ok'));
+						} else {
+							statusIcon.setState('error', t('status.errorLabel'));
+						}
+					} catch (e) {
+						console.error('Embedding test failed:', e);
+						const msg = e instanceof Error ? e.message : String(e);
+						statusIcon.setState('error', `${t('status.errorLabel')}: ${msg}`);
+					}
+				}));
+
+		const statusIcon = createStatusIcon({
+			container: modelSetting.controlEl,
+			classPrefix: 'oap-embedding-status',
 		});
+		statusIcon.el.addClass('oap-embedding-status--hidden');
 	}
 }

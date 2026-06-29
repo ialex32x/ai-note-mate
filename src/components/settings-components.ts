@@ -855,4 +855,85 @@ export function createAddButton(
 		});
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Status Icon
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Standardised states for a connection/operation status indicator.
+ *
+ * Mappings (icon → CSS class suffix):
+ *   idle    → `circle-off`   → (no modifier)
+ *   loading → `loader-2`     → `--loading`
+ *   success → `check-circle` → `--success`
+ *   error   → `alert-circle` → `--error`
+ */
+export type StatusIconState = 'idle' | 'loading' | 'success' | 'error';
+
+const STATUS_ICON_MAP: Record<StatusIconState, string> = {
+	idle: 'circle-off',
+	loading: 'loader-2',
+	success: 'check-circle',
+	error: 'alert-circle',
+};
+
+export interface StatusIconHandle {
+	/** The DOM element backing this status indicator. */
+	el: HTMLElement;
+	/** Update the visual state and tooltip in one call. */
+	setState(state: StatusIconState, tooltip?: string): void;
+}
+
+/**
+ * Create a reusable status icon element next to a setting row.
+ *
+ * The element is appended to {@link options.container} (typically a
+ * `Setting.controlEl`). The CSS class prefix defines the BEM-style
+ * modifiers that are toggled: `{prefix}`, `{prefix}--loading`,
+ * `{prefix}--success`, `{prefix}--error`.
+ *
+ * When an `onClick` callback is provided the element is rendered as a
+ * `<button>` (with the extra class `clickable-icon`); otherwise it is a
+ * plain `<span>`.
+ */
+export function createStatusIcon(options: {
+	/** Container to append the icon element to. */
+	container: HTMLElement;
+	/** CSS class prefix, e.g. `'oap-mcp-status'` or `'oap-embedding-status'`. */
+	classPrefix: string;
+	/** Initial visual state. */
+	initialState?: StatusIconState;
+	/** Initial tooltip text. */
+	initialTooltip?: string;
+	/** Optional click handler (makes the element a `<button>`). */
+	onClick?: () => void;
+}): StatusIconHandle {
+	const { container, classPrefix, initialState, initialTooltip, onClick } = options;
+
+	const el = onClick
+		? container.createEl('button', { cls: `${classPrefix} clickable-icon` })
+		: container.createSpan({ cls: classPrefix });
+
+	if (onClick) {
+		el.addEventListener('click', onClick);
+	}
+
+	function setState(state: StatusIconState, tooltip?: string): void {
+		setIcon(el, STATUS_ICON_MAP[state]);
+		setTooltip(el, tooltip ?? '');
+		for (const s of (['idle', 'loading', 'success', 'error'] as const)) {
+			el.removeClass(`${classPrefix}--${s}`);
+		}
+		if (state !== 'idle') {
+			el.addClass(`${classPrefix}--${state}`);
+		}
+	}
+
+	if (initialState) {
+		setState(initialState, initialTooltip);
+	}
+
+	return { el, setState };
+}
+
 

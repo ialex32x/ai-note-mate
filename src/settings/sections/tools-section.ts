@@ -1,4 +1,4 @@
-import { SecretComponent, Setting, setIcon, setTooltip } from "obsidian";
+import { SecretComponent, Setting, setTooltip } from "obsidian";
 import { t } from "../../i18n";
 import { MCPManager } from "../../services/mcp/mcp-manager";
 import type { MCPServerConfig, MCPServerState, MCPToolConfig } from "../../services/mcp/mcp-types";
@@ -12,12 +12,14 @@ import {
 import {
 	createDropdownField,
 	createSettingsGroupHeading,
+	createStatusIcon,
 	createTabBar,
 	createTextField,
 	createToggleField,
 	isAdvancedSettingsVisible,
 	markSettingAdvanced,
 } from "../../components/settings-components";
+import type { StatusIconHandle, StatusIconState } from "../../components/settings-components";
 import type { SectionContext, SettingsSection } from "./types";
 import { TOOLS_SECTION_ID } from "../section-ids";
 
@@ -36,13 +38,6 @@ const CAPABILITY_I18N: Record<ToolCapability, { label: string; desc: string }> =
 	execute: { label: 'view.capExecute', desc: 'view.capExecuteTip' },
 };
 
-/** CSS classes applied to the status button, keyed by status. */
-const STATUS_CLASSES = [
-	'oap-settings-mcp-status--connected',
-	'oap-settings-mcp-status--error',
-	'oap-settings-mcp-status--connecting',
-] as const;
-
 /** CSS classes applied to the per-tab status dot, keyed by status. */
 const TAB_DOT_CLASSES = [
 	'oap-mcp-tab-dot--connected',
@@ -50,30 +45,30 @@ const TAB_DOT_CLASSES = [
 	'oap-mcp-tab-dot--connecting',
 ] as const;
 
-function resolveStatusIcon(status: MCPServerState['status'] | undefined): string {
+/** Map MCPServerState status to the shared {@link StatusIconState}. */
+function mcpStatusToState(status: MCPServerState['status'] | undefined): StatusIconState {
 	switch (status) {
-		case 'connected': return 'check-circle';
-		case 'error': return 'alert-circle';
-		case 'connecting': return 'loader-2';
-		default: return 'circle-off';
+		case 'connected': return 'success';
+		case 'error': return 'error';
+		case 'connecting': return 'loading';
+		default: return 'idle';
 	}
 }
 
 function resolveStatusTooltip(state: MCPServerState | undefined): string {
 	if (!state) return '';
-	const parts: string[] = [state.status];
-	if (state.error) parts.push(state.error);
-	if (state.tools.length > 0) parts.push(`${state.tools.length} tools`);
-	return parts.join(' — ');
+	const statusLabel = mcpStatusLabel(state.status);
+	if (state.error) return `${statusLabel}: ${state.error}`;
+	return statusLabel;
 }
 
-function applyStatusToButton(btn: HTMLButtonElement, state: MCPServerState | undefined): void {
-	setIcon(btn, resolveStatusIcon(state?.status));
-	setTooltip(btn, resolveStatusTooltip(state));
-	for (const cls of STATUS_CLASSES) btn.removeClass(cls);
-	if (state?.status === 'connected') btn.addClass('oap-settings-mcp-status--connected');
-	else if (state?.status === 'error') btn.addClass('oap-settings-mcp-status--error');
-	else if (state?.status === 'connecting') btn.addClass('oap-settings-mcp-status--connecting');
+function mcpStatusLabel(status: MCPServerState['status'] | undefined): string {
+	switch (status) {
+		case 'connected': return t('status.ok');
+		case 'error': return t('status.errorLabel');
+		case 'connecting': return t('status.checking');
+		default: return status ?? '';
+	}
 }
 
 function applyStatusToTabDot(dot: HTMLElement, state: MCPServerState | undefined): void {
@@ -91,9 +86,9 @@ export class ToolsSettingsSection implements SettingsSection {
 	private editingServerId: string | null = null;
 
 	private onMcpStateChanged: (() => void) | null = null;
-	/** Status button ref for the currently-rendered editor (null when empty). */
-	private editorStatusBtn: HTMLButtonElement | null = null;
-	/** ID of the server `editorStatusBtn` belongs to. */
+	/** Status icon handle for the currently-rendered editor (null when empty). */
+	private editorStatusIcon: StatusIconHandle | null = null;
+	/** ID of the server `editorStatusIcon` belongs to. */
 	private editorStatusServerId: string | null = null;
 	/** Per-server tab status dots, keyed by server.id. Rebuilt on each render. */
 	private tabDots = new Map<string, HTMLElement>();
@@ -321,7 +316,7 @@ export class ToolsSettingsSection implements SettingsSection {
 		});
 
 		// Reset per-render refs.
-		this.editorStatusBtn = null;
+		this.editorStatusIcon = null;
 		this.editorStatusServerId = null;
 		this.tabDots.clear();
 		this.editorToolsSignature = null;
@@ -408,7 +403,7 @@ export class ToolsSettingsSection implements SettingsSection {
 			this.ctx.plugin.mcpManager?.offChange(this.onMcpStateChanged);
 			this.onMcpStateChanged = null;
 		}
-		this.editorStatusBtn = null;
+		this.editorStatusIcon = null;
 		this.editorStatusServerId = null;
 		this.tabDots.clear();
 		this.editorToolsSignature = null;
@@ -460,10 +455,11 @@ export class ToolsSettingsSection implements SettingsSection {
 			applyStatusToTabDot(dot, manager.getServerState(serverId));
 		}
 
-		if (this.editorStatusBtn && this.editorStatusServerId) {
-			applyStatusToButton(
-				this.editorStatusBtn,
-				manager.getServerState(this.editorStatusServerId),
+		if (this.editorStatusIcon && this.editorStatusServerId) {
+			const serverState = manager.getServerState(this.editorStatusServerId);
+			this.editorStatusIcon.setState(
+				mcpStatusToState(serverState?.status),
+				resolveStatusTooltip(serverState),
 			);
 		}
 
@@ -520,15 +516,17 @@ export class ToolsSettingsSection implements SettingsSection {
 					await plugin.mcpManager?.reconnectServer(server.id);
 				}));
 
-		const statusBtn = headerSetting.controlEl.createEl('button', {
-			cls: 'oap-settings-mcp-status clickable-icon',
+		const statusIcon = createStatusIcon({
+			container: headerSetting.controlEl,
+			classPrefix: 'oap-settings-mcp-status',
+			initialState: mcpStatusToState(state?.status),
+			initialTooltip: resolveStatusTooltip(state),
+			onClick: () => {
+				const currentState = plugin.mcpManager?.getServerState(server.id);
+				void copyToClipboard(resolveStatusTooltip(currentState));
+			},
 		});
-		applyStatusToButton(statusBtn, state);
-		statusBtn.addEventListener('click', () => {
-			const currentState = plugin.mcpManager?.getServerState(server.id);
-			void copyToClipboard(resolveStatusTooltip(currentState));
-		});
-		this.editorStatusBtn = statusBtn;
+		this.editorStatusIcon = statusIcon;
 		this.editorStatusServerId = server.id;
 
 		nameWarningEl = container.createDiv({ cls: 'oap-mcp-name-warning' });

@@ -932,6 +932,37 @@
     }
 }
 
+// ── Embedding test status ────────────────────────────────
+.oap-embedding-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    margin-left: @spacing-sm;
+
+    svg {
+        .icon-size(14px);
+    }
+}
+
+.oap-embedding-status--success {
+    color: @text-success;
+}
+
+.oap-embedding-status--error {
+    color: @text-error;
+}
+
+.oap-embedding-status--testing {
+    color: @text-secondary;
+    animation: spin 1s linear infinite;
+}
+
+.oap-embedding-status--hidden {
+    display: none;
+}
+
 // MCP tools — per-server, user-toggleable list of tools synced from the
 // server on each successful connect. Tool rows are rendered as plain
 // `Setting`s in the same container as the rest of the server fields so
