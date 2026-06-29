@@ -1,4 +1,4 @@
-import { Notice, TFile, TFolder, normalizePath } from 'obsidian';
+import { Notice, TFile, TFolder, normalizePath, type App } from 'obsidian';
 import type { ChatMessage } from './chat-stream';
 import type { ChatAttachment } from './chat-stream-types';
 import type NoteAssistantPlugin from '../main';
@@ -140,7 +140,7 @@ export async function exportSessionToVault(
  * {@link sessionToMarkdown} can emit ![]() references.
  */
 async function copyAttachmentsForExport(
-    app: import('obsidian').App,
+    app: App,
     messages: ChatMessage[],
     exportDir: string,
 ): Promise<Map<string, string>> {

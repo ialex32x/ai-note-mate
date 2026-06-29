@@ -795,6 +795,14 @@ export interface IChatAgent {
      */
     readonly contextBreakdown?: ContextBreakdown;
 
+    /**
+     * Restore a context breakdown from persisted cache data
+     * (e.g. when re-opening a session where debug-mode persistence
+     * was enabled).  Only meaningful for the UI status panel; does
+     * not affect the chat flow.
+     */
+    restoreContextBreakdown?(breakdown: ContextBreakdown): void;
+
     // ── QuickAsk side-turns (追问) ──
 
     /**

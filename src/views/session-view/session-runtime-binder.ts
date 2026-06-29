@@ -32,6 +32,7 @@ import {
     SessionRuntime,
     type RuntimeEvent,
 } from '../../services/session-runtime';
+import { loadContextBreakdownCache } from '../../services/session-runtime/runtime-factory';
 
 export interface SessionRuntimeBinderDeps {
     // ── 基础设施 ──
@@ -547,7 +548,7 @@ export class SessionRuntimeBinder {
             await this.deps.sessionManager.ensureMessagesLoaded(id);
             const runtime = this.deps.plugin.runtimePool.create(id);
             this.attachRuntime(runtime);
-            this.hydrateRuntimeFromDisk(runtime);
+            await this.hydrateRuntimeFromDisk(runtime);
             await this.replayRuntimeUI(runtime, { fromCache: false });
         }
     }
@@ -558,7 +559,7 @@ export class SessionRuntimeBinder {
      * it into the runtime's IChatAgent. Only called for FRESH runtimes;
      * cached ones already have everything in memory.
      */
-    hydrateRuntimeFromDisk(runtime: SessionRuntime): void {
+    async hydrateRuntimeFromDisk(runtime: SessionRuntime): Promise<void> {
         const session = this.deps.sessionManager.getSessionSync(runtime.sessionId);
         if (!session || session.messages.length === 0) return;
 
@@ -623,6 +624,15 @@ export class SessionRuntimeBinder {
         const toolCallAssets = this.deps.sessionManager.getSessionToolCallAssets(runtime.sessionId);
         if (toolCallAssets && toolCallAssets.length > 0) {
             runtime.restoreAssets(toolCallAssets);
+        }
+
+        // Context breakdown cache (debug-mode only). Always safe to
+        // call — returns undefined when the file doesn't exist.
+        const ctxBreakdown = await loadContextBreakdownCache(
+            this.deps.plugin, runtime.sessionId,
+        );
+        if (ctxBreakdown && typeof chat.restoreContextBreakdown === 'function') {
+            chat.restoreContextBreakdown(ctxBreakdown);
         }
     }
 

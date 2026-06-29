@@ -14,6 +14,7 @@ import { SessionRuntimePool } from './services/session-runtime';
 import { VaultMutator, GlobalFileLockManager, SnapshotManager } from './services/vault';
 import { MemoryStore } from './services/memory';
 import { CustomMenuService } from './services/custom-menu/custom-menu-service';
+import type { CustomMenuItem } from './services/custom-menu/types';
 import { replaceMenuVariables } from './services/custom-menu/variable-replacer';
 import { parseFrontmatterFromContent } from './utils/frontmatter';
 
@@ -873,7 +874,7 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * refused.
 	 */
 	private async executeCustomMenuItem(
-		item: import('./services/custom-menu/types').CustomMenuItem,
+		item: CustomMenuItem,
 		ctx: { filePath?: string; editor?: Editor },
 	): Promise<void> {
 		const prompt = replaceMenuVariables(item.promptTemplate, {

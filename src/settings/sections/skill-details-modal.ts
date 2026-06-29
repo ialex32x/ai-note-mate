@@ -1,4 +1,4 @@
-import { Modal, setTooltip } from "obsidian";
+import { Modal, setTooltip, type App } from "obsidian";
 import { t } from "../../i18n";
 import type { SkillDefinition } from "../../skills/skill-loader";
 
@@ -31,7 +31,7 @@ const SHORT_DESCRIPTION_THRESHOLD = 30;
  */
 export class SkillDetailsModal extends Modal {
 	constructor(
-		app: import('obsidian').App,
+		app: App,
 		private readonly skills: SkillDefinition[],
 	) {
 		super(app);

@@ -26,6 +26,7 @@ import {
     QUICK_ASK_SYSTEM_PROMPT,
     type ToolFilterOptions,
     type ChatAttachment,
+    type ContextBreakdown,
 } from "./chat-stream";
 import type { ConversationSummary } from "./context-compression";
 import { createChatCompletion } from "./context-compression";
@@ -503,6 +504,11 @@ export class AgentOrchestrator implements IChatAgent {
     /** Per-turn context composition breakdown, forwarded from the main agent. */
     get contextBreakdown() {
         return this._mainAgent.contextBreakdown;
+    }
+
+    /** Restore a context breakdown from persisted cache (debug mode). */
+    restoreContextBreakdown(breakdown: ContextBreakdown): void {
+        this._mainAgent.restoreContextBreakdown(breakdown);
     }
 
     /** Get sub-agent execution logs (for UI display) */

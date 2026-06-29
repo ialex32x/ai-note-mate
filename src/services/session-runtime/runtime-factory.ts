@@ -7,7 +7,7 @@ import { maybeExtractInsightsAfterFinish } from './insight-runner';
 import { maybeExtractSuggestionsAfterFinish } from './suggestion-runner';
 import { maybeExtractMemoriesAfterFinish } from '../memory';
 import { CheckpointStore } from '../vault';
-import type { ChatMessage } from '../chat-stream';
+import type { ChatMessage, ContextBreakdown } from '../chat-stream';
 
 /**
  * Build a fully-wired {@link SessionRuntime} for the given sessionId.
@@ -196,6 +196,11 @@ export function createSessionRuntime(
         },
         onUsageUpdate: () => {
             runtime.emit({ type: 'usage-update' });
+            // Persist context breakdown to cache when debug mode is on.
+            const breakdown = chat.contextBreakdown;
+            if (plugin.settings.debugEnabled && breakdown) {
+                persistContextBreakdownCache(plugin, sessionId, breakdown);
+            }
         },
         onError: (err: Error) => {
             runtime.markIdle();
@@ -284,4 +289,53 @@ export function createSessionRuntime(
     // recorded mutation back to the session it was performed in.
     chat.contextTag = sessionId;
     return runtime;
+}
+
+// ── Context-breakdown cache persistence (debug mode) ──────────────────
+
+const BREAKDOWN_FILE = 'context-breakdown.json';
+
+/**
+ * Persist a {@link ContextBreakdown} to
+ * `{plugin paths sessions}/{sessionId}/context-breakdown.json`.
+ * Only called when debug mode is on; I/O errors are silently swallowed.
+ */
+export function persistContextBreakdownCache(
+    plugin: NoteAssistantPlugin,
+    sessionId: string,
+    breakdown: ContextBreakdown,
+): void {
+    try {
+        const adapter = plugin.app.vault.adapter;
+        const path = `${plugin.paths.sessions()}/${sessionId}/${BREAKDOWN_FILE}`;
+        void adapter.write(path, JSON.stringify(breakdown))
+            .catch(() => { /* non-critical, ignore */ });
+    } catch { /* non-critical, ignore */ }
+}
+
+/**
+ * Try to load the last persisted context-breakdown for a session.
+ * Returns `undefined` when the file doesn't exist, is malformed,
+ * or the adapter is unavailable (mobile, etc.).
+ *
+ * Always safe to call — errors are silently swallowed.
+ */
+export async function loadContextBreakdownCache(
+    plugin: NoteAssistantPlugin,
+    sessionId: string,
+): Promise<ContextBreakdown | undefined> {
+    try {
+        const adapter = plugin.app.vault.adapter;
+        const path = `${plugin.paths.sessions()}/${sessionId}/${BREAKDOWN_FILE}`;
+        const exists = await adapter.exists(path);
+        if (!exists) return undefined;
+        const raw = await adapter.read(path);
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object'
+            && 'systemPrompt' in parsed && 'conversation' in parsed
+            && 'summaries' in parsed && 'toolSchemas' in parsed) {
+            return parsed as ContextBreakdown;
+        }
+    } catch { /* non-critical, ignore */ }
+    return undefined;
 }

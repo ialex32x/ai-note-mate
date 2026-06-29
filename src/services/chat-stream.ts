@@ -303,6 +303,11 @@ export class ChatStream implements IChatAgent {
         }
     }
 
+    /** Restore a context breakdown from persisted cache (debug mode). */
+    restoreContextBreakdown(breakdown: ContextBreakdown): void {
+        this._contextBreakdown = breakdown;
+    }
+
     /**
      * Restore summaries from a previous session.
      * @param summaries Array of conversation summaries to restore

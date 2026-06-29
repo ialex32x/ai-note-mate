@@ -3,6 +3,7 @@ import type {
     LLMProviderConfig,
     ModalityCapability,
     ToolDefinition,
+    ToolCallDelta,
     StreamChunk,
     ChatMessageParam,
     CompleteToolCall,
@@ -254,7 +255,7 @@ export class GeminiProvider implements LLMProvider {
                     ? geminiFinishReasonToString(rawFinishReason)
                     : null;
 
-            const toolCallDeltas: import("../llm-provider").ToolCallDelta[] = [];
+            const toolCallDeltas: ToolCallDelta[] = [];
             const thoughtSignatures: string[] = [];
             let thoughtText = "";
             let content: string | null = null;
