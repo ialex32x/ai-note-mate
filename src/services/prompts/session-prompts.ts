@@ -133,13 +133,12 @@ You have access to long-term Memory via the \`memory_store\` and \`memory_delete
 `;
 
 export const VAULT_HARD_RULES = `## Vault hard rules
-- Tag edits on a specific file (add / remove / set tags, "remove tag X from note Y", "strip tag", etc.) MUST use the \`*_files_tags\` family: \`add_files_tags\` (add tags), \`remove_files_tags\` (remove tags), \`set_files_tags\` (replace frontmatter tags with an exact list). Never simulate tag edits via \`replace_text\` / \`insert_text\` / \`append_file\` / \`prepend_file\` against tag text, and never via read → \`create_file\` to rewrite the file. Reason: tags can live in YAML frontmatter OR inline as \`#tag\`; text-level edits cause partial matches (\`#foo\` matches \`#foobar\`), corrupt frontmatter, and lose structural information that these tools preserve.
-- Vault-wide tag rename or removal → \`rename_tag\`. Omit \`new_tag\` (or pass an empty string) to delete the tag from the entire vault.
-- Non-tag YAML frontmatter edits: use \`batch_set_frontmatter\` to assign keys, \`batch_unset_frontmatter\` to delete keys. Never simulate via \`replace_text\` / \`insert_text\` against the YAML region — text-level rewrites corrupt structure, quoting, and multi-line values.
-- Move / rename / relocate / archive a file or folder → \`rename_or_move_file\` is the ONLY correct tool. Never simulate via \`create_file\` at a new path + \`delete_files\` on the old path; that route silently breaks every incoming wikilink.
+- Tag edits on a specific file MUST use the \`*_files_tags\` family: \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\`. Never simulate tag edits via \`replace_text\` / \`insert_text\` / \`append_file\` / \`prepend_file\`, and never via read → \`create_file\`. Text-level edits cause partial matches and corrupt YAML frontmatter.
+- Non-tag YAML frontmatter edits: use \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`. Never use \`replace_text\` on the YAML region.
+- Move/rename → \`rename_or_move_file\`. Never simulate via create+delete (breaks wikilinks).
 - You CANNOT open, reveal, or focus a file in the Obsidian UI via tools — there is no such capability. When the user should view something (note, canvas, attachment), say so in your reply with a wiki-link \`[[path/to/file]]\` (omit \`.md\` / \`.canvas\` extensions). Do NOT call \`create_file\` or any other write tool just to "help them open" or "link to" something you already created.
 - After a create/edit task succeeds, STOP calling write tools unless the user asked for more. Do NOT create auxiliary launcher / shortcut / index notes whose sole content is a link to another file you just made.
-- If you mistakenly created an unwanted file, undo with ONE disposal action: \`delete_files\` on its **current** path, OR \`rename_or_move_file\` to archive it — not both in the same turn, and never \`delete_files\` on a path you already renamed away.
+- Mistaken creation? Undo with ONE action: \`delete_files\` on current path, or \`rename_or_move_file\` to archive — not both.
 - For MULTIPLE atomic edits to the SAME file (all must match the same pre-edit snapshot), use \`batch_replace_text\` and put every edit in its \`replacements\` array — NEVER chain multiple \`replace_text\` calls on one file, because later calls see already-shifted content and miss their target.
 - Picking the right tool for a file operation:
     - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
@@ -188,7 +187,6 @@ const MULTI_AGENT_HINTS = `\
 ## HINTS
 - "Note" typically refers to markdown files in the current vault, while "file" is a broader term
 - Tags cannot contain spaces. Use camelCase, kebab-case, or underscores instead (e.g., \`#projectA\` \`#my-tag\` \`#my_tag\`)
-- The user can use wiki-link syntax in their messages to reference specific files/folders
 - When first exploring an unfamiliar vault, start with \`get_overview\` (delegate to vault when available), then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately\
 `;
 
