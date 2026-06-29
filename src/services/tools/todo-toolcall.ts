@@ -132,32 +132,15 @@ const MAX_TODO_CONTENT_LENGTH = 700;
 const TODO_CALLS_PER_TURN = { hard: 50 } as const;
 
 const TOOL_DESCRIPTION =
-    'Maintain a structured TODO list for the current session. Use this when, and ' +
-    'ONLY when, the user request is non-trivial: breaks down into 3+ concrete ' +
-    'subtasks, spans multiple files/tools, or you need to keep track of progress ' +
-    'across many tool calls. Do NOT use it for casual questions, single-step ' +
-    'lookups, or short edits — the overhead is not worth it. ' +
-    'Workflow: ' +
-    '(1) call action="write" once at the start with the full plan, every item ' +
-    '`status: "pending"`; ' +
-    '(2) before starting each item, call action="update" to set it to ' +
-    '"in_progress" (keep AT MOST ONE item in_progress at a time); ' +
-    '(3) IMMEDIATELY after FINISHING work on an item, call action="update" to set ' +
-    '"completed" — you MUST do this BEFORE writing any assistant reply about the ' +
-    'completed work, otherwise the user sees stale in_progress items on the TODO ' +
-    'panel and will think the plugin is broken; ' +
-    '(4) only after updating the last item\'s status to "completed" or "cancelled", ' +
-    'deliver the final assistant reply summarising what was done. ' +
-    'Each item has TWO required strings with disjoint audiences: ' +
-    '`brief` is a short user-facing summary (≤ 80 chars, the user\'s language) ' +
-    'rendered verbatim in the TODO panel — make it a 1-line headline. ' +
-    '`content` is YOUR per-item scratchpad (≤ 700 chars): write the concrete plan ' +
-    'for this step — files involved, operations, dependencies, success criteria. ' +
-    'You will re-read `content` when you return to this item after intervening ' +
-    'tool calls, so include enough detail that "future you" can resume without ' +
-    'guessing. The tool returns the full current list on every call, so you do ' +
-    'not need to remember state between calls; call action="list" to re-sync ' +
-    'after context compression or a session reload.';
+    'Maintain a structured TODO list for the current session. ' +
+    'ONLY use when the user request is non-trivial (3+ subtasks, multi-file, or needs progress tracking). ' +
+    'Do NOT use for casual questions, single-step lookups, or short edits. ' +
+    'Workflow: (1) action="write" once at start with all items status:"pending"; ' +
+    '(2) before starting an item, action="update" to "in_progress" (at most one at a time); ' +
+    '(3) IMMEDIATELY after finishing, action="update" to "completed" BEFORE writing the assistant reply; ' +
+    '(4) after the last item, deliver the final summary reply. ' +
+    'Each item: `brief` = user-facing headline (≤ 80 chars); `content` = your scratchpad (≤ 700 chars, plan details). ' +
+    'Call action="list" to re-sync after context compression or session reload.';
 
 export function createTodoTool(source: TodoStateSourceSource): RegisteredTool {
     const resolveSource: () => TodoStateSource | null = typeof source === 'function'

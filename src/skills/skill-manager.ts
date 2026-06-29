@@ -19,6 +19,13 @@ export {
 } from './skill-loader.js';
 export { createVaultFsAdapter } from './vault-fs-adapter.js';
 
+/** Maximum characters for a skill body injected into context.
+ *  Larger bodies are truncated with a warning to keep prompt footprint
+ *  bounded. Set high enough (10 000 chars ≈ 2,500 tokens) that
+ *  well-authored SKILL.md files pass through unmodified, but
+ *  pathological cases can't single-handedly blow the context window. */
+const MAX_SKILL_BODY_CHARS = 10_000;
+
 /**
  * Configuration for skill discovery directories.
  */
@@ -453,11 +460,17 @@ export class SkillManager {
       );
     }
 
+    const body = skill.body.length > MAX_SKILL_BODY_CHARS
+        ? skill.body.slice(0, MAX_SKILL_BODY_CHARS) +
+          `\n\n⚠️ **Truncated:** skill body exceeds ${MAX_SKILL_BODY_CHARS.toLocaleString()} chars. ` +
+          'The full procedure is available at the skill\'s SKILL.md file.'
+        : skill.body;
+
     parts.push(
       '',
       '**Instructions:**',
       '',
-      skill.body,
+      body,
     );
     return parts.join('\n');
   }

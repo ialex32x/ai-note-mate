@@ -93,17 +93,12 @@ export function vaultWriteFile(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "write_file",
                 description:
-                    "Overwrite the ENTIRE content of an EXISTING markdown file in one atomic operation. " +
-                    "Use when you have produced the FULL new body (e.g. after reformatting, translating, " +
-                    "or restructuring the note). The file MUST exist; this tool refuses to create new " +
-                    "files (use `create_file` for that). " +
+                    "Overwrite the ENTIRE content of an EXISTING markdown file atomically. " +
+                    "File MUST exist (use `create_file` for new files). " +
                     "\n\n" +
-                    "Pass `expected_pre_edit_mtime` (Unix ms; chain from a prior read tool's `mtime` or " +
-                    "another write tool's `new_mtime`) to fail fast on concurrent external edits — strongly " +
-                    "recommended whenever you have the info, since this tool overwrites the whole body. " +
-                    "Use `mtime` rather than file size as the race guard: byte count and character count " +
-                    "can legitimately differ on CRLF / multi-byte / BOM files and would yield false-positive " +
-                    "race errors.",
+                    "Pass `expected_pre_edit_mtime` (Unix ms, from a prior read/write tool) to fail fast on " +
+                    "concurrent external edits. Use `mtime`, not file size, as the race guard — byte/char counts " +
+                    "differ on CRLF/multi-byte/BOM files, causing false-positive races.",
                 parameters: {
                     type: "object",
                     properties: {

@@ -326,26 +326,16 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "replace_text",
                 description:
-                    "Apply a single find-and-replace edit to a file using pattern matching " +
-                    "(literal text or JavaScript regex). " +
+                    "Find-and-replace edit to a file using literal text or JavaScript regex pattern matching. " +
                     "\n\n" +
-                    "Use this for MODIFYING or DELETING existing content: typo fixes, term renames, " +
-                    "deleting a phrase, restructuring inline text. " +
+                    "Use for modifying/deleting existing content: typo fixes, term renames, deleting phrases. " +
+                    "For INSERTING new content, use `insert_text`. For replacing a whole section, use `set_section` (hash-gated). " +
                     "\n\n" +
-                    "For INSERTING new content at a heading boundary, use `insert_text` with " +
-                    "`heading_path`. For inserting relative to literal text, use `insert_text` " +
-                    "with `anchor`. For replacing a whole section, use `set_section` (hash-gated). " +
+                    "⚠️ For multiple atomic edits to the SAME file, use `batch_replace_text` instead — it applies " +
+                    "a `replacements[]` array atomically, avoiding cascading misses from sequential `replace_text` calls. " +
                     "\n\n" +
-                    "⚠️ IMPORTANT: For multiple atomic edits to the SAME file that must all match the " +
-                    "pre-edit snapshot, use `batch_replace_text` instead — it accepts a `replacements[]` " +
-                    "array and applies all entries atomically. Using multiple `replace_text` calls in sequence " +
-                    "will cause later calls to operate on already-modified content, likely missing their target. " +
-                    "\n\n" +
-                    "Tag-shape guard: a `pattern` value that looks like a single tag token (e.g. `#foo`) is " +
-                    "refused by default — raw text replacement cannot tell `#foo` from `#foobar` and risks " +
-                    "frontmatter corruption. Set `force=true` only if a literal text replace is genuinely " +
-                    "intended (run with `dry_run=true` first). " +
-                    "\n\n" +
+                    "Tag-shape guard: a pattern like `#foo` is refused by default (risks `#foobar` mismatch / frontmatter corruption); " +
+                    "set `force=true` only for intentional literal replacement. " +
                     "Pass `expected_pre_edit_mtime` to fail fast on concurrent external edits.",
                 parameters: {
                     type: "object",
@@ -472,21 +462,12 @@ export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTo
             function: {
                 name: "batch_replace_text",
                 description:
-                    "Apply multiple atomic edits to a single file via `replacements[]`. " +
-                    "Each entry uses `pattern` (literal find-and-replace or regex). " +
-                    "All entries match the SAME pre-edit snapshot; matched ranges across entries must be " +
-                    "disjoint. Overlapping matches are rejected and nothing is written. " +
+                    "Apply multiple atomic find-and-replace edits to a single file via `replacements[]`. " +
+                    "All entries match the same pre-edit snapshot with disjoint ranges (overlapping → rejected). " +
                     "\n\n" +
-                    "⚠️ Use this tool ONLY when you need multiple atomic edits to the same file. For single " +
-                    "edits, prefer `replace_text` — its flat schema is less error-prone. Keep batches small " +
-                    "(≤4 entries recommended) to reduce JSON generation errors. " +
+                    "For single edits, prefer `replace_text` (simpler schema). Keep batches ≤4 entries. " +
                     "\n\n" +
-                    "For insertions at heading boundaries, use `insert_text` with `heading_path`. " +
-                    "For replacing a whole section, use `set_section`. " +
-                    "\n\n" +
-                    "Tag-shape guard: a `pattern` that looks like a tag token (e.g. `#foo`) is refused by " +
-                    "default. Set `force=true` on that entry if literal text replace is intended. " +
-                    "\n\n" +
+                    "Tag-shape guard: patterns like `#foo` are refused by default; set `force=true` on that entry for intentional literal replacement. " +
                     "Pass `expected_pre_edit_mtime` to fail fast on concurrent external edits.",
                 parameters: {
                     type: "object",

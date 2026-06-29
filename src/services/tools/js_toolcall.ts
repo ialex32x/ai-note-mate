@@ -85,21 +85,13 @@ function evaluateJavaScript(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "evaluate_javascript",
                 description:
-                    "Execute a JavaScript snippet with direct access to the Obsidian `app` instance. " +
-                    "The code runs as the body of an async function in an isolated lexical scope; " +
-                    "common host globals (window, document, fetch, localStorage, eval, Function, ...) " +
-                    "are shadowed and unavailable, but this is NOT a security sandbox — do not rely on it " +
-                    "to contain untrusted code. " +
-                    "Parameters available inside the snippet: " +
-                    "`app` (Obsidian App), `console` (log/warn/error/info/debug captured into output), " +
-                    "`signal` (AbortSignal that becomes aborted when the user cancels — check it inside long loops). " +
-                    "Use `return` to produce a result; the returned value is JSON-serialized and may be truncated " +
-                    "if very large. " +
-                    "Use this when complex vault operations, metadata cache queries, or workspace manipulation " +
-                    "are needed beyond what dedicated tools provide. " +
-                    "Examples: `return app.vault.getMarkdownFiles().length;` or " +
-                    "`const file = app.workspace.getActiveFile(); return file?.path;`. " +
-                    "Avoid synchronous infinite loops — there is no hard timeout and they will freeze Obsidian.",
+                    "Execute a JavaScript snippet with direct access to Obsidian `app`. " +
+                    "Runs as an async function in an isolated scope (host globals like window/document/fetch are shadowed). " +
+                    "NOT a security sandbox — do not rely on it to contain untrusted code. " +
+                    "Available: `app` (Obsidian App), `console` (captured into output), `signal` (AbortSignal for user cancel). " +
+                    "Use `return` for results (JSON-serialized, may truncate). " +
+                    "Use for complex vault operations / metadata cache queries beyond dedicated tools. " +
+                    "Avoid synchronous infinite loops — no hard timeout, will freeze Obsidian.",
                 parameters: {
                     type: "object",
                     properties: {

@@ -31,17 +31,11 @@ function loadSkill(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "load_skill",
                 description:
-                    "Load the full procedure of a skill listed in the system prompt's " +
-                    "'## Available Skills' catalogue. Call this BEFORE executing a skill, " +
-                    "and ONLY when that skill's procedure has not already been provided " +
-                    "earlier in the current conversation \u2014 catalogue entries tagged " +
-                    "`[loaded]` (or any skill auto-loaded above the catalogue via the " +
-                    "'Skill Pre-Loaded For This Turn' banner) are already in your " +
-                    "context; reuse them directly without re-calling this tool. The only " +
-                    "reason to re-call for a `[loaded]` skill is if the user indicates " +
-                    "the skill has been modified and the latest version is needed. Pass " +
-                    "the skill name verbatim as it appears in the catalogue. Do not " +
-                    "guess skill contents.",
+                    "Load the full procedure of a skill from the system prompt's '## Available Skills' catalogue. " +
+                    "Call BEFORE executing a skill not yet loaded in this conversation. " +
+                    "Skip for skills tagged `[loaded]` or auto-loaded via 'Skill Pre-Loaded For This Turn' banner — " +
+                    "their body is already in context. Only re-call for `[loaded]` skills if the user says it was modified. " +
+                    "Pass the skill name verbatim from the catalogue.",
                 parameters: {
                     type: "object",
                     properties: {

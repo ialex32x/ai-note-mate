@@ -182,8 +182,8 @@ describe('AgentOrchestrator sticky-on-history', () => {
 
     it('seeds the sticky set empty before any dispatch', () => {
         const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
-        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
-        expect(sticky.size).toBe(0);
+        const sticky: string[] = (orch as any)._usedSubAgentNames;
+        expect(sticky.length).toBe(0);
     });
 
     it('rebuilds the sticky set from delegate_task tool_calls in restored history', () => {
@@ -211,9 +211,9 @@ describe('AgentOrchestrator sticky-on-history', () => {
 
         orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
 
-        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
-        expect(sticky.has('vault_inspector')).toBe(true);
-        expect(sticky.has('web')).toBe(false);
+        const sticky: string[] = (orch as any)._usedSubAgentNames;
+        expect(sticky.includes('vault_inspector')).toBe(true);
+        expect(sticky.includes('web')).toBe(false);
     });
 
     it('ignores delegate_task calls whose `agent` does not resolve to a configured sub-agent', () => {
@@ -232,8 +232,8 @@ describe('AgentOrchestrator sticky-on-history', () => {
         ];
 
         orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
-        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
-        expect(sticky.size).toBe(0);
+        const sticky: string[] = (orch as any)._usedSubAgentNames;
+        expect(sticky.length).toBe(0);
     });
 
     it('also seeds the sticky set from restored sub-agent messages', () => {
@@ -249,19 +249,42 @@ describe('AgentOrchestrator sticky-on-history', () => {
             ],
         });
 
-        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
-        expect(sticky.has('web')).toBe(true);
+        const sticky: string[] = (orch as any)._usedSubAgentNames;
+        expect(sticky.includes('web')).toBe(true);
     });
 
     it('clears the sticky set on clearHistory', () => {
         const orch = new AgentOrchestrator({ systemPrompt: 'Test', subAgents: subAgentConfigs });
-        (orch as any)._usedSubAgentNames.add('vault_inspector');
-        (orch as any)._usedSubAgentNames.add('web');
+        (orch as any)._addUsedSubAgent('vault_inspector');
+        (orch as any)._addUsedSubAgent('web');
 
         orch.clearHistory();
 
-        const sticky: Set<string> = (orch as any)._usedSubAgentNames;
-        expect(sticky.size).toBe(0);
+        const sticky: string[] = (orch as any)._usedSubAgentNames;
+        expect(sticky.length).toBe(0);
+    });
+
+    it('caps the sticky window at MAX_STICKY_AGENTS', () => {
+        const orch = new AgentOrchestrator({
+            systemPrompt: 'Test',
+            subAgents: [
+                ...subAgentConfigs,
+                { name: 'vault_editor', description: 'Editor', systemPrompt: 'X', tools: [] },
+                { name: 'code', description: 'Code', systemPrompt: 'X', tools: [] },
+            ],
+        });
+        // Add 4 agents — only the 3 most recent should remain
+        (orch as any)._addUsedSubAgent('vault_inspector');
+        (orch as any)._addUsedSubAgent('web');
+        (orch as any)._addUsedSubAgent('vault_editor');
+        (orch as any)._addUsedSubAgent('code');
+
+        const sticky: string[] = (orch as any)._usedSubAgentNames;
+        expect(sticky.length).toBe(3);
+        // Most recently added is first (MRU order)
+        expect(sticky[0]).toBe('code');
+        // vault_inspector (oldest) should be evicted
+        expect(sticky.includes('vault_inspector')).toBe(false);
     });
 });
 

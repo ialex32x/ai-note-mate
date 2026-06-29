@@ -296,22 +296,13 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 			function: {
 				name: "insert_text",
 				description:
-					"Insert content into a file at a position defined by an anchor. " +
-					"Supports TWO mutually-exclusive anchoring modes — pick ONE:\n\n" +
-					"**Text-anchored** (`anchor` + `where: \"before\"|\"after\"`): " +
-					"finds literal text in the file and inserts `content` before or after it. " +
-					"The anchor text is NOT modified — only new content is added.\n\n" +
-					"**Heading-anchored** (`heading_path` + `where: \"prepend_to_body\"|\"append_to_section\"|\"insert_before_section\"`): " +
-					"resolves a heading by its path (outermost → innermost titles) and inserts " +
-					"`content` at that structural position. `prepend_to_body` inserts right after " +
-					"the heading line; `append_to_section` inserts at the section's end; " +
-					"`insert_before_section` inserts just before the heading line.\n\n" +
-					"⚠️ For REPLACING a whole section, use `set_section` (requires a `body_hash` " +
-					"from a prior `read_section`). For find-and-replace edits, use `replace_text`. " +
-					"For adding to the very start/end of a file, use `prepend_file` / `append_file`.\n\n" +
-					"If `anchor` matches MULTIPLE times and you did not pass `occurrence`, the call " +
-					"is REFUSED with `total_occurrences` + per-match `excerpts` so you can identify " +
-					"the correct spot. Retry with `occurrence: N` (1-based) to target a specific match.",
+					"Insert content into a file at a position defined by an anchor. Pick ONE mode:\n\n" +
+					"**Text-anchored** (`anchor` + `where:\"before\"|\"after\"`): finds literal text, inserts adjacent. " +
+					"**Heading-anchored** (`heading_path` + `where:\"prepend_to_body\"|\"append_to_section\"|\"insert_before_section\"`): " +
+					"inserts at structural position relative to a heading.\n\n" +
+					"For REPLACING, use `replace_text` or `set_section` (hash-gated). For start/end of file, use `prepend_file`/`append_file`.\n\n" +
+					"If `anchor` matches multiple times without `occurrence`, the call is refused with `total_occurrences` + `excerpts`. " +
+					"Retry with `occurrence:N` (1-based).",
 				parameters: {
 					type: "object",
 					properties: {

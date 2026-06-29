@@ -113,8 +113,9 @@ export interface SubAgentRouterOptions {
  * Behaviour by mode:
  *   - **Empty `available`** → returns `[]`.
  *   - **Short query** (`isQueryTooShort`) → returns `fallbackOnShortQuery`
- *     when supplied (continuity with the previous turn), otherwise the
- *     full `available` list. Sticky union still applied.
+ *     when supplied (continuity with the previous turn), otherwise just the
+ *     sticky union. No longer falls back to the full `available` set — a
+ *     first-turn "hello" doesn't need every DELEGATION block injected.
  *   - **Retriever succeeded, ≥ 1 candidate scored** → top-K by fused
  *     score, plus the sticky union.
  *   - **Retriever returned 0 candidates** AND embedding was actually
@@ -156,12 +157,15 @@ export async function selectMatchingSubAgents(
 
     // Short / signal-poor query: prefer last turn's shortlist so the
     // user's "continue" / "yes" picks up where the previous turn left
-    // off. Falling through to the full set is the safe-but-noisy
-    // alternative when there IS no last turn yet.
+    // off. When there IS no last turn, return only sticky agents
+    // rather than the full set — injecting every sub-agent's
+    // DELEGATION block on a first-turn "hello" costs ~800+ tokens
+    // for no benefit. The model can still respond helpfully without
+    // delegation; proper routing kicks in on the next substantive query.
     if (isQueryTooShort(query)) {
         const fallback = opts.fallbackOnShortQuery && opts.fallbackOnShortQuery.length > 0
             ? Array.from(opts.fallbackOnShortQuery)
-            : [...available];
+            : [];
         return applySticky(fallback);
     }
 

@@ -136,11 +136,17 @@ export async function buildSkillSystemPromptForQuery(
     const activeNames = skillManager.getActiveSkillNames();
 
     // Short / signal-poor queries don't drive a meaningful retrieval
-    // ranking on either ranker (BM25 over 1–2 chars is noisy, cosine
-    // even more so). Fall back to the full catalogue in those cases
-    // so a "yes" / "继续" follow-up never starves the model of skills.
+    // ranking. Previously we fell back to the full catalogue, but
+    // injecting every skill on a "yes" / "继续" follow-up costs ~500+
+    // tokens for no gain — the model already had the catalogue on the
+    // previous turn. Now we surface only the already-loaded skills
+    // (activeNames) so the model retains context about loaded
+    // procedures without re-dumping the entire catalogue. If nothing
+    // is loaded, the section is omitted entirely.
     if (isQueryTooShort(query)) {
-        return skillManager.buildSystemPromptForSkills(enabledSkills, { activeNames });
+        if (activeNames.size === 0) return '';
+        const activeSkills = enabledSkills.filter(s => activeNames.has(s.name));
+        return skillManager.buildSystemPromptForSkills(activeSkills, { activeNames });
     }
 
     const topK = Math.max(1, Math.floor(filterOpts?.topK ?? enabledSkills.length));
@@ -242,16 +248,23 @@ export async function buildSkillSystemPromptForQuery(
             const instructions = skillManager.buildSkillInstructions(topSkill.name);
             if (instructions) {
                 skillManager.activateSkill(topSkill.name);
-                // Refresh the snapshot so the catalogue below also tags
-                // the just-injected skill as [loaded].
+                // Refresh the snapshot for the catalogue below. The
+                // auto-injected skill is filtered OUT of the catalogue
+                // on this turn — its full procedure is already inlined
+                // above via the banner, so the catalogue entry would be
+                // pure redundancy (~100-200 chars wasted). Future turns
+                // will still tag it `[loaded]` via activeNames.
                 const refreshedActive = skillManager.getActiveSkillNames();
-                const catalogue = skillManager.buildSystemPromptForSkills(
-                    shortlisted,
-                    {
-                        activeNames: refreshedActive,
-                        headerHint: formatStrongMatchHint(topSkill.name, topCosine, true),
-                    },
-                );
+                const filteredShortlist = shortlisted.filter(s => s.name !== topSkill.name);
+                const catalogue = filteredShortlist.length > 0
+                    ? skillManager.buildSystemPromptForSkills(
+                        filteredShortlist,
+                        {
+                            activeNames: refreshedActive,
+                            headerHint: formatStrongMatchHint(topSkill.name, topCosine, true),
+                        },
+                    )
+                    : '';
                 const banner = [
                     '## Skill Pre-Loaded For This Turn',
                     '',

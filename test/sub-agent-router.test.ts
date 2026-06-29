@@ -118,10 +118,12 @@ describe('selectMatchingSubAgents', () => {
         expect(out.map(c => c.name)).toEqual(['web']);
     });
 
-    it('falls back to the full set on a short query when no last turn cached', async () => {
+    it('returns only sticky agents on a short query when no last turn cached', async () => {
         const out = await selectMatchingSubAgents('y', ALL, { topK: 2 });
-        // Full available set when there is no prior shortlist to lean on
-        expect(out.length).toBe(ALL.length);
+        // With no prior shortlist and no sticky agents, a short query
+        // now returns an empty set rather than the full set — injecting
+        // every DELEGATION block on a first-turn "hello" is wasteful.
+        expect(out.length).toBe(0);
     });
 
     it('applies sticky union even on short-query fallback', async () => {

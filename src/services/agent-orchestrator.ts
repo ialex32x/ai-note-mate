@@ -124,6 +124,12 @@ export interface AgentOrchestratorConfig extends ChatStreamConfig {
  */
 const FALLBACK_SUB_AGENT_FILTER_TOP_K = 2;
 
+/** Maximum number of sub-agents kept in the sticky-on-history window.
+ *  Once a sub-agent drops out of the most-recent N, the router no longer
+ *  unions it into the shortlist, saving DELEGATION block tokens on long
+ *  conversations where early-turn agents are no longer relevant. */
+const MAX_STICKY_AGENTS = 3;
+
 // ─────────────────────────────────────────────
 // AgentOrchestrator
 // ─────────────────────────────────────────────
@@ -220,18 +226,35 @@ export class AgentOrchestrator implements IChatAgent {
     private _lastAssistantTextForRouting: string = '';
 
     /**
-     * Names of sub-agents that have been dispatched at least once in
-     * this conversation. Drives the sticky-on-history union in the
-     * router so a sub-agent that produced messages / tool_calls
-     * visible to the main LLM can never silently drop out of the
-     * DELEGATION block later (which would leave the model with
-     * envelope references it can no longer interpret).
+     * Names of recently-used sub-agents in MRU (most-recently-used) order.
+     * Drives the sticky-on-history union in the router. Capped at
+     * {@link MAX_STICKY_AGENTS} so long conversations naturally rotate
+     * out early-turn sub-agents whose envelope references the model no
+     * longer needs to interpret.
      *
      * Rebuilt from history on `restoreState` /
      * `restoreSubAgentMessages` so a session reload preserves the
      * sticky behaviour across persistence boundaries.
      */
-    private _usedSubAgentNames: Set<string> = new Set();
+    private _usedSubAgentNames: string[] = [];
+
+    /** Return the sticky set as a {@link ReadonlySet} for the router. */
+    private _getStickyAgentNames(): ReadonlySet<string> {
+        return new Set(this._usedSubAgentNames);
+    }
+
+    /** Record a sub-agent as used, maintaining MRU order capped at {@link MAX_STICKY_AGENTS}. */
+    private _addUsedSubAgent(name: string): void {
+        // Remove existing occurrence (dedup)
+        const idx = this._usedSubAgentNames.indexOf(name);
+        if (idx !== -1) this._usedSubAgentNames.splice(idx, 1);
+        // Push to front (most recent)
+        this._usedSubAgentNames.unshift(name);
+        // Truncate to window
+        if (this._usedSubAgentNames.length > MAX_STICKY_AGENTS) {
+            this._usedSubAgentNames.length = MAX_STICKY_AGENTS;
+        }
+    }
 
     /**
      * Opaque contextTag forwarded to the main agent ChatStream and
@@ -541,7 +564,7 @@ export class AgentOrchestrator implements IChatAgent {
         // conversation.
         this._currentTurnFilteredSubAgents = null;
         this._lastMatchedSubAgents = null;
-        this._usedSubAgentNames.clear();
+        this._usedSubAgentNames = [];
         this._turnLevelUserInput = '';
         this._turnLevelCandidateTexts = [];
         this._lastAssistantTextForRouting = '';
@@ -595,7 +618,7 @@ export class AgentOrchestrator implements IChatAgent {
         for (const messages of this._subAgentMessages.values()) {
             for (const msg of messages) {
                 const name = msg.subAgent?.agentName;
-                if (name) this._usedSubAgentNames.add(name);
+                if (name) this._addUsedSubAgent(name);
             }
         }
     }
@@ -698,14 +721,14 @@ export class AgentOrchestrator implements IChatAgent {
      * rather than risk poisoning the set with garbage.
      */
     private _rebuildUsedSubAgentNamesFromHistory(): void {
-        this._usedSubAgentNames.clear();
+        this._usedSubAgentNames = [];
         for (const msg of this._mainAgent.messages) {
             if (msg.role !== 'tool_call') continue;
             const meta = msg.toolCallMeta;
             if (!meta || meta.toolName !== 'delegate_task') continue;
             const agent = (meta.toolArgs as Record<string, unknown> | undefined)?.['agent'];
             if (typeof agent === 'string' && this._subAgents.has(agent)) {
-                this._usedSubAgentNames.add(agent);
+                this._addUsedSubAgent(agent);
             }
         }
     }
@@ -886,7 +909,7 @@ export class AgentOrchestrator implements IChatAgent {
         // execute() so even an aborted / failed dispatch counts —
         // failure leaves the same kind of dangling references in
         // history as success does.
-        this._usedSubAgentNames.add(agentName);
+        this._addUsedSubAgent(agentName);
 
         // Notify UI that sub-agent is starting
         this._config.onSubAgentStart?.(agentName, task);
@@ -1076,7 +1099,7 @@ export class AgentOrchestrator implements IChatAgent {
                 topK,
                 embeddingConfig: this._currentPromptOptions?.embedding ?? null,
                 signal,
-                stickyAgentNames: this._usedSubAgentNames,
+                stickyAgentNames: this._getStickyAgentNames(),
                 fallbackOnShortQuery: this._lastMatchedSubAgents ?? undefined,
             });
         } catch (err) {
@@ -1157,7 +1180,7 @@ export class AgentOrchestrator implements IChatAgent {
             {
                 topK,
                 baselineShortlist: baseline,
-                stickyAgentNames: this._usedSubAgentNames,
+                stickyAgentNames: this._getStickyAgentNames(),
             },
         );
 

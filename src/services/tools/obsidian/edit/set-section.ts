@@ -40,21 +40,15 @@ export function vaultSetSection(plugin: NoteAssistantPlugin): RegisteredTool {
             function: {
                 name: "set_section",
                 description:
-                    "Replace a section's body (or the entire section including its heading) " +
-                    "with new content. **You MUST first call `read_section` on the same heading " +
-                    "and pass its `body_hash` as `expected_body_hash`.** " +
-                    "The call will FAIL with zero write if the on-disk body has changed since " +
-                    "your read — no data is lost on mismatch. " +
+                    "Replace a section's body (or the entire section including heading) with new content. " +
+                    "**MUST first call `read_section` and pass its `body_hash` as `expected_body_hash`.** " +
+                    "Fails with zero write on mismatch — no data lost. " +
                     "\n\n" +
-                    "`where`: `replace_body` (body only, heading line stays) or " +
-                    "`replace_section` (heading line + body). " +
+                    "`where`: `replace_body` (body only, heading stays) or `replace_section` (heading + body). " +
                     "\n\n" +
-                    "⚠️ `replace_section` deletes the heading line — your `content` must " +
-                    "include the replacement heading. `replace_body` keeps the heading and " +
-                    "replaces everything below it. Both modes replace the ENTIRE region — any " +
-                    "subsections, dividers (---), or trailing content will be lost unless you " +
-                    "include them in `content`. For additions, prefer `append_to_section` or " +
-                    "`prepend_to_body` via `insert_text` heading mode.",
+                    "⚠️ Both modes replace the ENTIRE region — subsections, dividers, trailing content are lost " +
+                    "unless included in `content`. `replace_section` deletes the heading line (your `content` must include the replacement heading). " +
+                    "For additions, prefer `insert_text` heading mode.",
                 parameters: {
                     type: "object",
                     properties: {
