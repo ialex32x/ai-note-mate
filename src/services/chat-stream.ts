@@ -576,11 +576,12 @@ export class ChatStream implements IChatAgent {
                     capabilityFilteredTools,
                     options.embeddingFilter,
                     this._abortController?.signal,
+                    stickyOndemandToolNames,
                 );
 
                 // Re-add any sticky on-demand tools the embedding filter
-                // dropped this round. See `stickyOndemandToolNames` doc
-                // above for rationale; this is the enforcement step.
+                // dropped this round. (Short queries are already handled
+                // inside _getBestMatchedTools — this is a no-op for them.)
                 if (stickyOndemandToolNames.size > 0) {
                     const matchedNames = new Set(matchedTools.map(t => t.schema.function.name));
                     for (const tool of capabilityFilteredTools) {
@@ -1358,11 +1359,20 @@ export class ChatStream implements IChatAgent {
         tools: RegisteredTool[],
         filterOpts?: ToolFilterOptions,
         signal?: AbortSignal,
+        stickyOndemandToolNames?: ReadonlySet<string>,
     ): Promise<RegisteredTool[]> {
-        // Short / signal-poor queries (typically follow-ups like "yes" /
-        // "继续") should never collapse the on-demand surface — the user
-        // is implicitly referring to the previous turn's intent.
-        if (isQueryTooShort(query)) return tools;
+        // Short / signal-poor queries can't drive meaningful retrieval.
+        // Collapse to always-on tools + previously-used on-demand tools
+        // only — saves ~37 tool schemas (~13 000 tokens) on "Hi" / "yes".
+        if (isQueryTooShort(query)) {
+            if (!stickyOndemandToolNames || stickyOndemandToolNames.size === 0) {
+                return tools.filter(t => !t.ondemand);
+            }
+            return tools.filter(t =>
+                !t.ondemand ||
+                stickyOndemandToolNames.has(t.schema.function.name),
+            );
+        }
 
         const topK = Math.max(1, Math.floor(filterOpts?.topK ?? 9));
 
