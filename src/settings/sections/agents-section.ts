@@ -124,13 +124,7 @@ export class AgentsSettingsSection implements SettingsSection {
 			const customIdx = Number(activeId.replace('custom_', ''));
 			this.renderAgentEditor(container, customIdx, tabBar.refreshTabLabel);
 		}
-
-		// ── Scroll active tab into view after (re)creation ─────
-		const activeTabEl = tabBar.tabElMap.get(activeId);
-		if (activeTabEl) {
-			activeTabEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-		}
-}
+	}
 
 	private tabLabel(agent: CustomAgentConfig): string {
 		return (agent.name ?? "").trim() || t("settings.agentUntitled");

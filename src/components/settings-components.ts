@@ -275,7 +275,6 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 
 		tab.addEventListener('click', () => {
 			void onTabClick(item.id);
-			tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
 		});
 
 		tabElMap.set(item.id, tab);
@@ -364,6 +363,27 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 			}
 		}
 	};
+
+	// Ensure the editing tab is visible in the horizontal scroll area
+	// after DOM recreation (via refreshSection). Uses minimal scrollLeft
+	// adjustment instead of scrollIntoView to avoid "snap to nearest edge".
+	const editingTab = tabElMap.get(editingId);
+	if (editingTab) {
+		window.requestAnimationFrame(() => {
+			window.requestAnimationFrame(() => {
+				const scrollRect = tabScroll.getBoundingClientRect();
+				const tabRect = editingTab.getBoundingClientRect();
+				// Tab extends beyond right edge → scroll right just enough
+				if (tabRect.right > scrollRect.right) {
+					tabScroll.scrollLeft += tabRect.right - scrollRect.right;
+				}
+				// Tab extends beyond left edge → scroll left just enough
+				if (tabRect.left < scrollRect.left) {
+					tabScroll.scrollLeft -= scrollRect.left - tabRect.left;
+				}
+			});
+		});
+	}
 
 	return {
 		tabBar,
@@ -854,20 +874,4 @@ export function createAddButton(
 		});
 }
 
-/**
- * Scroll active tab into view within a tab bar container.
- * @param containerEl The settings container element
- * @param tabBarSelector CSS selector for the tab bar scroll container
- */
-export function scrollActiveTabIntoView(
-	containerEl: HTMLElement,
-	tabBarSelector: string
-): void {
-	const scrollContainer = containerEl.querySelector<HTMLElement>(tabBarSelector);
-	const activeTab = scrollContainer?.querySelector<HTMLButtonElement>(
-		'.oap-profile-tab:has(.oap-profile-tab__active-dot)'
-	);
-	if (scrollContainer && activeTab) {
-		activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
-	}
-}
+

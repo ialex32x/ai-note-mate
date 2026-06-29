@@ -145,8 +145,9 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 
 	/**
 	 * Re-render a single section in place without rebuilding the whole tab.
-	 * Keeps scroll position, hover state, and focus on unrelated sections
-	 * intact.
+	 * Preserves the horizontal scroll position of the section's internal tab
+	 * bar (if any) so switching between profiles / configs / servers doesn't
+	 * reset the tab bar to the leftmost position.
 	 */
 	private refreshSection(section: SettingsSection): void {
 		const idx = this.sections.indexOf(section);
@@ -158,9 +159,22 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			this.display();
 			return;
 		}
+
+		// Save the horizontal scroll position of any internal tab bar
+		// before we destroy it, so we can restore it after re-render.
+		const oldTabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
+		const savedScrollLeft = oldTabScroll?.scrollLeft ?? 0;
+
 		body.empty();
 		setAdvancedSettingsVisible(this.plugin.settings.showAdvanced);
 		section.render(body);
+
+		// Restore the tab bar scroll position on the newly created element.
+		const newTabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
+		if (newTabScroll) {
+			newTabScroll.scrollLeft = savedScrollLeft;
+		}
+
 		if (headerActions && section.renderHeaderActions) {
 			headerActions.empty();
 			section.renderHeaderActions(headerActions);
