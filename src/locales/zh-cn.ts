@@ -544,6 +544,7 @@ export const zhCN: Record<string, string> = {
 
 	// ── Session status ────────────────────────────────────
 	'status.tokenSection': 'Token 使用',
+	'status.contextCompositionSection': '上下文构成',
 	'status.sessionSection': '会话',
 	'status.agentsSection': '智能体',
 	'status.mcpSection': 'MCP 服务器',
@@ -560,6 +561,12 @@ export const zhCN: Record<string, string> = {
 	'statusLabel.messages': '消息',
 	'statusLabel.summaries': '摘要',
 	'statusLabel.embedding': '嵌入',
+	'statusLabel.systemPrompt': '系统提示',
+	'statusLabel.memory': '记忆',
+	'statusLabel.skills': '技能',
+	'statusLabel.suffix': '后缀',
+	'statusLabel.conversation': '对话历史',
+	'statusLabel.toolSchemas': '工具定义',
 	'statusLabel.artifactsLive': '存活',
 	'statusLabel.artifactsBytes': '占用',
 	'statusLabel.artifactsTombstones': '墓碑',

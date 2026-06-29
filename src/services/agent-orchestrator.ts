@@ -500,6 +500,11 @@ export class AgentOrchestrator implements IChatAgent {
         return this._mainAgent.summaries;
     }
 
+    /** Per-turn context composition breakdown, forwarded from the main agent. */
+    get contextBreakdown() {
+        return this._mainAgent.contextBreakdown;
+    }
+
     /** Get sub-agent execution logs (for UI display) */
     get subAgentLogs(): ReadonlyArray<SubAgentExecutionLog> {
         return [...this._subAgentLogs];

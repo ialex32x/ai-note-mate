@@ -545,6 +545,7 @@ Write the result directly into the note — do not reply with the edited text in
 
 	// ── Session status ────────────────────────────────────
 	'status.tokenSection': 'Token Usage',
+	'status.contextCompositionSection': 'Context Composition',
 	'status.sessionSection': 'Session',
 	'status.agentsSection': 'Agents',
 	'status.mcpSection': 'MCP servers',
@@ -561,6 +562,12 @@ Write the result directly into the note — do not reply with the edited text in
 	'statusLabel.messages': 'Messages',
 	'statusLabel.summaries': 'Summaries',
 	'statusLabel.embedding': 'Embedding',
+	'statusLabel.systemPrompt': 'System Prompt',
+	'statusLabel.memory': 'Memory',
+	'statusLabel.skills': 'Skills',
+	'statusLabel.suffix': 'Suffix',
+	'statusLabel.conversation': 'Conversation',
+	'statusLabel.toolSchemas': 'Tool Schemas',
 	'statusLabel.artifactsLive': 'Live',
 	'statusLabel.artifactsBytes': 'Size',
 	'statusLabel.artifactsTombstones': 'Tombstones',

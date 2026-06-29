@@ -1,4 +1,4 @@
-import type { IChatAgent } from '../services/chat-stream';
+import type { IChatAgent, ContextBreakdown } from '../services/chat-stream';
 import { formatCompact } from './format';
 
 /**
@@ -41,4 +41,47 @@ export function formatContextDisplayValue(
     maxTokens: number,
 ): string {
     return formatContextTooltip(chat, maxTokens);
+}
+
+/**
+ * Compute the total estimated tokens from a {@link ContextBreakdown}.
+ * Sums all layers: system prompt (memory + skills + baseline + suffix),
+ * conversation (user + assistant + tool), summaries, and tool schemas.
+ */
+export function breakdownTotalTokens(bd: ContextBreakdown): number {
+    return (
+        bd.systemPrompt.memory +
+        bd.systemPrompt.skills +
+        bd.systemPrompt.baseline +
+        bd.systemPrompt.suffix +
+        bd.conversation.user +
+        bd.conversation.assistant +
+        bd.conversation.tool +
+        bd.summaries +
+        bd.toolSchemas
+    );
+}
+
+/**
+ * Format a token count compactly (e.g. 1234 → "1,234").
+ */
+export function formatBreakdownTokens(tokens: number): string {
+    if (tokens <= 0) return '—';
+    return formatCompact(tokens);
+}
+
+/**
+ * Compute the percentage of one category relative to the breakdown total.
+ */
+export function breakdownPercent(part: number, total: number): number {
+    if (total <= 0 || part <= 0) return 0;
+    return Math.round((part / total) * 100);
+}
+
+/**
+ * Format a percentage as a compact string, e.g. "12%".
+ */
+export function formatBreakdownPercent(pct: number): string {
+    if (pct < 0) return '';
+    return `${pct}%`;
 }

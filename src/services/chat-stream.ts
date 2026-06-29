@@ -58,6 +58,8 @@ import type {
     ChatStreamConfig,
     StreamResultInternal,
     IChatAgent,
+    ContextBreakdown,
+    SystemPromptBreakdown,
 } from "./chat-stream-types";
 
 // ─────────────────────────────────────────────
@@ -88,6 +90,8 @@ export type {
     StreamResultInternal,
     AgentTokenBreakdown,
     IChatAgent,
+    ContextBreakdown,
+    SystemPromptBreakdown,
 } from "./chat-stream-types";
 
 // Re-exports from context-compression for external consumers
@@ -149,6 +153,8 @@ export class ChatStream implements IChatAgent {
     private _inFlightAssistantMessage: ChatMessage | null = null;
     /** Model identifier for the current turn, set from prompt() options. */
     private _currentModelName = '';
+    /** Per-turn context composition breakdown, updated at the start of each prompt(). */
+    private _contextBreakdown: ContextBreakdown | undefined;
 
     // ── Constructor ─────────────────────────────────────────────────────────
 
@@ -224,6 +230,11 @@ export class ChatStream implements IChatAgent {
         return [...this._summaries];
     }
 
+    /** Per-turn context composition breakdown (undefined when no turn has run). */
+    get contextBreakdown(): ContextBreakdown | undefined {
+        return this._contextBreakdown;
+    }
+
     // ── QuickAsk side-turns ─────────────────────────────────────────────────
     // Implementation extracted to chat-stream-quickask.ts.
 
@@ -264,6 +275,7 @@ export class ChatStream implements IChatAgent {
         this._abortController = null;
         this._sessionTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
         this._currentTurn = 0;
+        this._contextBreakdown = undefined;
         this._inFlightAssistantMessage = null;
     }
 
@@ -424,6 +436,7 @@ export class ChatStream implements IChatAgent {
         this._state = "streaming";
         this._abortController = new AbortController();
         this._currentModelName = options?.modelName ?? '';
+        this._contextBreakdown = undefined; // reset per-turn
         this._config.onStart?.();
 
         // Append user message to UI-facing history (store original text with [[path]] syntax)
@@ -475,7 +488,8 @@ export class ChatStream implements IChatAgent {
         //   * Orphan `tool_call` messages (no preceding assistant, or no
         //     completed result yet) are skipped \u2014 they would produce orphan
         //     tool_results that the validator would drop anyway.
-        const effectiveSystemPrompt = await this._buildEffectiveSystemPrompt(userInput);
+        const { text: effectiveSystemPrompt, breakdown: spBreakdown } =
+            await this._buildEffectiveSystemPrompt(userInput);
 
         const rawMessages = await this._rebuildApiMessages(effectiveSystemPrompt);
 
@@ -542,6 +556,21 @@ export class ChatStream implements IChatAgent {
             // Only on-demand tools are tracked; always-on tools are never
             // filtered to begin with, so stickiness would be a no-op.
             const stickyOndemandToolNames = new Set<string>();
+
+            // Compute conversation-history token breakdown (excludes the
+            // system message — that's already tracked via spBreakdown).
+            let conversationUser = 0;
+            let conversationAssistant = 0;
+            let conversationTool = 0;
+            for (const msg of rawMessages) {
+                if (msg.role === 'system') continue;
+                const tok = estimateTokens(
+                    typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+                );
+                if (msg.role === 'user') conversationUser += tok;
+                else if (msg.role === 'assistant') conversationAssistant += tok;
+                else if (msg.role === 'tool_result') conversationTool += tok;
+            }
 
             // Tool-call loop: keep requesting until no more tool calls
             while (true) {
@@ -667,6 +696,29 @@ export class ChatStream implements IChatAgent {
                     }
                 } else {
                     // console.log("no summarizer configured, skipping context reduction");
+                }
+
+                // Compute context breakdown once per turn — the first
+                // tool-loop iteration stores it; `prompt()` resets the
+                // field to undefined at the top of each turn.
+                if (!this._contextBreakdown) {
+                    const toolSchemaTokens = toolSchemas.length > 0
+                        ? estimateTokens(JSON.stringify(toolSchemas))
+                        : 0;
+                    let summaryTokens = 0;
+                    for (const s of this._summaries) {
+                        summaryTokens += estimateTokens(s.content);
+                    }
+                    this._contextBreakdown = {
+                        systemPrompt: spBreakdown,
+                        conversation: {
+                            user: conversationUser,
+                            assistant: conversationAssistant,
+                            tool: conversationTool,
+                        },
+                        summaries: summaryTokens,
+                        toolSchemas: toolSchemaTokens,
+                    };
                 }
 
                 // Per-LLM-call tool-count log. Emitted on every iteration
@@ -867,45 +919,104 @@ export class ChatStream implements IChatAgent {
     /**
      * Resolve the effective system prompt for this turn.
      *
-     * Static `systemPrompt` is the baseline; `systemPromptPrefix` /
-     * `systemPromptSuffix` can wrap a per-turn, query-aware fragment
-     * around it.  Prefix / suffix failures degrade silently to the
-     * baseline.  The final order is:
-     *   [prefix] · "\n\n" · [baseline] · "\n\n" · [suffix]
+     * Assembly order (top → bottom, i.e. what the model sees first):
+     *   1. `memoryPrefix`    — long-term memory context
+     *   2. `skillPrefix`     — per-turn skill catalogue
+     *   3. `systemPrompt`    — static builtin rules + custom instructions
+     *   4. `systemPromptSuffix` — TODO reminders / delegation block
+     *
+     * When the new segregated callbacks ({@link memoryPrefix},
+     * {@link skillPrefix}) are not supplied but the legacy
+     * {@link systemPromptPrefix} is, the old single-prefix path is
+     * used and the entire prefix is attributed to 'skills' in the
+     * breakdown (the most common use-case for the legacy callback).
+     *
+     * Each segment is token-estimated individually via
+     * {@link estimateTokens} so the breakdown has zero runtime
+     * overhead on the chained LLM call itself.
      */
-    private async _buildEffectiveSystemPrompt(userInput: string): Promise<string> {
+    private async _buildEffectiveSystemPrompt(userInput: string): Promise<{
+        text: string;
+        breakdown: SystemPromptBreakdown;
+    }> {
+        const signal = this._abortController?.signal;
         const baseline = this._config.systemPrompt ?? '';
         const segments: string[] = [];
+        let memoryTokens = 0;
+        let skillsTokens = 0;
 
-        if (this._config.systemPromptPrefix) {
+        // 1. Memory prefix (new callback, takes priority over legacy prefix)
+        const hasSegregated = !!(this._config.memoryPrefix || this._config.skillPrefix);
+
+        if (this._config.memoryPrefix) {
             try {
-                const prefix = await this._config.systemPromptPrefix(
-                    userInput,
-                    this._abortController?.signal,
-                );
-                if (prefix) segments.push(prefix);
+                const memory = await this._config.memoryPrefix(userInput, signal);
+                if (memory) {
+                    memoryTokens = estimateTokens(memory);
+                    segments.push(memory);
+                }
+            } catch (err) {
+                if (isAbortError(err)) throw err;
+                console.warn('ChatStream: memoryPrefix threw, ignoring', err);
+            }
+        }
+
+        if (this._config.skillPrefix) {
+            try {
+                const skills = await this._config.skillPrefix(userInput, signal);
+                if (skills) {
+                    skillsTokens = estimateTokens(skills);
+                    segments.push(skills);
+                }
+            } catch (err) {
+                if (isAbortError(err)) throw err;
+                console.warn('ChatStream: skillPrefix threw, ignoring', err);
+            }
+        }
+
+        // Legacy fallback: when neither new callback is set but
+        // systemPromptPrefix is, fold its entire output into 'skills'.
+        if (!hasSegregated && this._config.systemPromptPrefix) {
+            try {
+                const prefix = await this._config.systemPromptPrefix(userInput, signal);
+                if (prefix) {
+                    skillsTokens = estimateTokens(prefix);
+                    segments.push(prefix);
+                }
             } catch (err) {
                 if (isAbortError(err)) throw err;
                 console.warn('ChatStream: systemPromptPrefix threw, falling back to base prompt', err);
             }
         }
 
+        // 2. Baseline (static system prompt)
+        const baselineTokens = baseline ? estimateTokens(baseline) : 0;
         if (baseline) segments.push(baseline);
 
+        // 3. Suffix (TODO reminders / delegation block)
+        let suffixTokens = 0;
         if (this._config.systemPromptSuffix) {
             try {
-                const suffix = await this._config.systemPromptSuffix(
-                    userInput,
-                    this._abortController?.signal,
-                );
-                if (suffix) segments.push(suffix);
+                const suffix = await this._config.systemPromptSuffix(userInput, signal);
+                if (suffix) {
+                    suffixTokens = estimateTokens(suffix);
+                    segments.push(suffix);
+                }
             } catch (err) {
                 if (isAbortError(err)) throw err;
                 console.warn('ChatStream: systemPromptSuffix threw, falling back to base prompt', err);
             }
         }
 
-        return segments.join('\n\n');
+        return {
+            text: segments.join('\n\n'),
+            breakdown: {
+                memory: memoryTokens,
+                skills: skillsTokens,
+                baseline: baselineTokens,
+                suffix: suffixTokens,
+            },
+        };
     }
 
     /**

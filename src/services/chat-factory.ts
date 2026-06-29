@@ -273,48 +273,41 @@ export function createChatAgent(
 
     const chatStreamConfig = {
         systemPrompt: fullSystemPrompt,
-        // Per-turn skill catalogue, prepended at the very top of the
-        // system prompt so the "STEP 0: scan skills" framing is the
-        // first thing the model sees. Shortlist by embedding similarity
-        // to the current user input when an embedding profile is
-        // configured; otherwise return the full enabled-skill catalogue.
-        // Errors degrade silently to the full catalogue —
-        // `ChatStream.prompt()` also swallows non-abort errors from
-        // this callback as an extra safety net.
-        systemPromptPrefix: async (query: string, signal?: AbortSignal) => {
-            // Memory and skills both want to live ABOVE the static
-            // system prompt; we build them in parallel and concatenate
-            // memory-first so the model treats long-term facts as
-            // background context BEFORE the per-turn skill catalogue.
-            // Either path may fail silently (returning '') — the chat
-            // turn must never block on either.
+
+        // Memory layer: long-term memory facts injected per-turn
+        // above the skill catalogue and the static system prompt.
+        // Runs first so the model treats these as background context.
+        memoryPrefix: async (query: string, signal?: AbortSignal) => {
             const embeddingConfig = createEmbeddingConfig(plugin) ?? null;
-            const [memoryPrefix, skillPrefix] = await Promise.all([
-                buildMemorySystemPromptPrefix({
-                    plugin,
-                    store: plugin.memoryStore,
-                    query,
-                    embeddingConfig,
-                    signal,
-                }).catch(err => {
-                    if (isAbortError(err)) throw err;
-                    console.warn('[chat-factory] memory prefix failed, ignoring:', err);
-                    return '';
-                }),
-                buildSkillSystemPromptForQuery({
-                    skillManager: plugin.skillManager,
-                    query,
-                    embeddingConfig,
-                    filterOpts: createSkillFilterOptions(plugin),
-                    hintThreshold: settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
-                    autoInjectThreshold: settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
-                    signal,
-                }),
-            ]);
-            if (!memoryPrefix && !skillPrefix) return '';
-            if (!memoryPrefix) return skillPrefix;
-            if (!skillPrefix) return memoryPrefix;
-            return `${memoryPrefix}\n${skillPrefix}`;
+            return buildMemorySystemPromptPrefix({
+                plugin,
+                store: plugin.memoryStore,
+                query,
+                embeddingConfig,
+                signal,
+            }).catch(err => {
+                if (isAbortError(err)) throw err;
+                console.warn('[chat-factory] memory prefix failed, ignoring:', err);
+                return '';
+            });
+        },
+
+        // Skill layer: skill catalogue shortlisted by embedding
+        // similarity to the current user query.  Placed after
+        // memory but before the static system prompt so the
+        // "STEP 0: scan skills" framing is the first rules block
+        // the model sees (memory is pure context, not rules).
+        skillPrefix: async (query: string, signal?: AbortSignal) => {
+            const embeddingConfig = createEmbeddingConfig(plugin) ?? null;
+            return buildSkillSystemPromptForQuery({
+                skillManager: plugin.skillManager,
+                query,
+                embeddingConfig,
+                filterOpts: createSkillFilterOptions(plugin),
+                hintThreshold: settings.skillHintThreshold ?? DEFAULT_SKILL_HINT_THRESHOLD,
+                autoInjectThreshold: settings.skillAutoInjectThreshold ?? DEFAULT_SKILL_AUTO_INJECT_THRESHOLD,
+                signal,
+            });
         },
         // Per-turn TODO reminder: inject the active (pending / in_progress)
         // items directly into the system prompt so the model sees them

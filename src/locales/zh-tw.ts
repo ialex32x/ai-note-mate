@@ -545,6 +545,7 @@ export const zhTW: Record<string, string> = {
 
 	// ── Session status ────────────────────────────────────
 	'status.tokenSection': 'Token 使用',
+	'status.contextCompositionSection': '上下文構成',
 	'status.sessionSection': '會話',
 	'status.agentsSection': '智慧體',
 	'status.mcpSection': 'MCP 伺服器',
@@ -561,6 +562,12 @@ export const zhTW: Record<string, string> = {
 	'statusLabel.messages': '訊息',
 	'statusLabel.summaries': '摘要',
 	'statusLabel.embedding': '嵌入',
+	'statusLabel.systemPrompt': '系統提示',
+	'statusLabel.memory': '記憶',
+	'statusLabel.skills': '技能',
+	'statusLabel.suffix': '後綴',
+	'statusLabel.conversation': '對話歷史',
+	'statusLabel.toolSchemas': '工具定義',
 	'statusLabel.artifactsLive': '存活',
 	'statusLabel.artifactsBytes': '佔用',
 	'statusLabel.artifactsTombstones': '墓碑',

@@ -350,6 +350,30 @@ export interface ChatStreamConfig {
     /** Optional system prompt prepended to every conversation */
     systemPrompt?: string;
     /**
+     * Optional callback that produces memory context text, prepended
+     * at the very top of the system prompt (before skills, baseline,
+     * and suffix).  Runs per-turn with the current user query.
+     *
+     * Prefer this over {@link systemPromptPrefix} when you need
+     * independent token tracking for the memory layer.
+     *
+     * Errors are caught and ignored so a failing prefix provider can
+     * never block the actual LLM request.
+     */
+    memoryPrefix?: (query: string, signal?: AbortSignal) => string | Promise<string>;
+    /**
+     * Optional callback that produces skill-catalogue text, prepended
+     * after {@link memoryPrefix} but before the static
+     * {@link systemPrompt}.  Runs per-turn with the current user query.
+     *
+     * Prefer this over {@link systemPromptPrefix} when you need
+     * independent token tracking for the skill layer.
+     *
+     * Errors are caught and ignored so a failing prefix provider can
+     * never block the actual LLM request.
+     */
+    skillPrefix?: (query: string, signal?: AbortSignal) => string | Promise<string>;
+    /**
      * Optional callback that produces extra system-prompt text to
      * prepend on each {@link prompt} call. Same shape as
      * {@link systemPromptSuffix} but the returned text lands *before*
@@ -365,6 +389,10 @@ export interface ChatStreamConfig {
      * never block the actual LLM request. Aborts (DOMException with
      * `name === 'AbortError'`) propagate to the surrounding flow as
      * usual.
+     *
+     * Legacy compatibility: prefer {@link memoryPrefix} + {@link skillPrefix}
+     * for granular token tracking.  When both new callbacks are
+     * omitted but this one is set, the old behaviour is preserved.
      */
     systemPromptPrefix?: (query: string, signal?: AbortSignal) => string | Promise<string>;
     /**
@@ -574,6 +602,52 @@ export interface ChatStreamConfig {
     ) => Promise<MediaAttachment | null>;
 }
 
+// ─────────────────────────────────────────────
+// Context breakdown for fine-grained statistics
+// ─────────────────────────────────────────────
+
+/**
+ * Estimated token counts for each layer of the system prompt,
+ * computed during {@link ChatStream._buildEffectiveSystemPrompt}.
+ * All values are through {@link estimateTokens} — deliberately not
+ * exact tokenizer output so the cost is zero on the hot path.
+ */
+export interface SystemPromptBreakdown {
+    /** Memory layer (from {@link ChatStreamConfig.memoryPrefix}) */
+    memory: number;
+    /** Skill catalogue layer (from {@link ChatStreamConfig.skillPrefix}) */
+    skills: number;
+    /** Static system prompt (from {@link ChatStreamConfig.systemPrompt}) */
+    baseline: number;
+    /** Per-turn suffix (from {@link ChatStreamConfig.systemPromptSuffix}) */
+    suffix: number;
+}
+
+/**
+ * Per-turn context composition breakdown.
+ *
+ * Populated during {@link ChatStream.prompt} and exposed via
+ * {@link IChatAgent.contextBreakdown}.  Values are heuristic
+ * estimates — use them for relative-proportion analysis, not
+ * for byte-precise budget calculation.
+ */
+export interface ContextBreakdown {
+    /** System prompt segmented by layer */
+    systemPrompt: SystemPromptBreakdown;
+    /** Raw conversation history (user / assistant / tool messages) */
+    conversation: {
+        user: number;
+        assistant: number;
+        tool: number;
+    };
+    /** Compressed summaries injected into the context */
+    summaries: number;
+    /** Tool schema JSON sent with the request */
+    toolSchemas: number;
+}
+
+// ─────────────────────────────────────────────
+
 /** Internal result type returned by _processStream */
 export interface StreamResultInternal {
     content: string;
@@ -709,6 +783,17 @@ export interface IChatAgent {
      * Called when loading a session from disk.
      */
     restoreAgentTokenBreakdown?(breakdown: AgentTokenBreakdown): void;
+
+    /**
+     * Per-turn context composition breakdown — shows how the last
+     * assembled prompt was split across system layers (memory,
+     * skills, baseline, suffix), conversation history, summaries,
+     * and tool schemas.
+     *
+     * Updated at the start of every `prompt()` call (before the
+     * first provider stream).  `undefined` when no turn has run yet.
+     */
+    readonly contextBreakdown?: ContextBreakdown;
 
     // ── QuickAsk side-turns (追问) ──
 

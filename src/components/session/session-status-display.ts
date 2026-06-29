@@ -8,6 +8,10 @@ import type { ArtifactStoreStats } from '../../services/artifact-store';
 import {
     computeContextPercent,
     formatContextTooltip,
+    breakdownTotalTokens,
+    formatBreakdownTokens,
+    breakdownPercent,
+    formatBreakdownPercent,
 } from '../../utils/context-usage';
 import { formatCompact, formatBytes } from '../../utils/format';
 import { humanizeIdentifier } from '../../utils/humanize';
@@ -215,6 +219,86 @@ export class SessionStatusDisplay {
                 );
             }
         });
+
+        // ── Context Composition section ────────────────────────────────────
+        // Shows the last turn's estimated token split across context layers:
+        // system prompt (memory/skills/baseline/suffix), conversation history,
+        // summaries, and tool schemas.
+        const ctxBreakdown = chat.contextBreakdown;
+        if (ctxBreakdown) {
+            const total = breakdownTotalTokens(ctxBreakdown);
+            this.renderSection(el, t('status.contextCompositionSection'), (section) => {
+                // System Prompt sub-group
+                const sp = ctxBreakdown.systemPrompt;
+                const spTotal = sp.memory + sp.skills + sp.baseline + sp.suffix;
+                if (spTotal > 0) {
+                    this.renderRow(
+                        section,
+                        t('statusLabel.systemPrompt'),
+                        formatBreakdownTokens(spTotal),
+                        `${spTotal.toLocaleString()} (${formatBreakdownPercent(breakdownPercent(spTotal, total))}%)`,
+                    );
+                    if (sp.memory > 0) {
+                        this.renderRow(
+                            section,
+                            `  ${t('statusLabel.memory')}`,
+                            formatBreakdownTokens(sp.memory),
+                        );
+                    }
+                    if (sp.skills > 0) {
+                        this.renderRow(
+                            section,
+                            `  ${t('statusLabel.skills')}`,
+                            formatBreakdownTokens(sp.skills),
+                        );
+                    }
+                    if (sp.baseline > 0) {
+                        this.renderRow(
+                            section,
+                            `  ${t('statusLabel.systemPrompt')} (base)`,
+                            formatBreakdownTokens(sp.baseline),
+                        );
+                    }
+                    if (sp.suffix > 0) {
+                        this.renderRow(
+                            section,
+                            `  ${t('statusLabel.suffix')}`,
+                            formatBreakdownTokens(sp.suffix),
+                        );
+                    }
+                }
+
+                // Conversation history
+                const conv = ctxBreakdown.conversation;
+                const convTotal = conv.user + conv.assistant + conv.tool;
+                if (convTotal > 0) {
+                    this.renderRow(
+                        section,
+                        t('statusLabel.conversation'),
+                        formatBreakdownTokens(convTotal),
+                        `${convTotal.toLocaleString()} (${formatBreakdownPercent(breakdownPercent(convTotal, total))}%)`,
+                    );
+                }
+
+                // Summaries
+                if (ctxBreakdown.summaries > 0) {
+                    this.renderRow(
+                        section,
+                        t('statusLabel.summaries'),
+                        formatBreakdownTokens(ctxBreakdown.summaries),
+                    );
+                }
+
+                // Tool schemas
+                if (ctxBreakdown.toolSchemas > 0) {
+                    this.renderRow(
+                        section,
+                        t('statusLabel.toolSchemas'),
+                        formatBreakdownTokens(ctxBreakdown.toolSchemas),
+                    );
+                }
+            });
+        }
 
         // ── Agents section ───────────────────────────────────────────────
         // Only shown when the chat exposes a per-agent breakdown (multi-agent mode).
