@@ -3,6 +3,7 @@ import type { ChatStream, RegisteredTool, ToolCallResult } from "../../../chat-s
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
+import { getFrontMatterInfo } from "obsidian";
 import {
     findAllOccurrences,
     findAllRegexMatches,
@@ -117,7 +118,7 @@ async function executeReplaceTextCore(
                 `Refusing to use ${toolName} on tag-shaped text: ${tagRefusals.join("; ")}. ` +
                 `Tags may appear in YAML frontmatter or as inline #tag, and text replacement ` +
                 `can partial-match (e.g. '#foo' inside '#foobar') or corrupt frontmatter. ` +
-                `Prefer add_files_tags / remove_files_tags / set_files_tags (accepts one or more paths) or rename_tag (vault-wide). ` +
+                `Prefer batch_add_note_tags / batch_remove_note_tags / batch_set_note_tags (accepts one or more paths) or rename_tag (vault-wide). ` +
                 `If you really intend a raw text replace, retry the offending entries with force=true ` +
                 `(running with dry_run=true first is recommended).`,
         };
@@ -132,6 +133,19 @@ async function executeReplaceTextCore(
     // is meaningless for Markdown and Obsidian normalises on save.
     const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
+    // ── Frontmatter protection ──
+    // Split the file into frontmatter block + body. All pattern matching
+    // runs exclusively on the body to prevent accidental corruption of
+    // YAML frontmatter (use `batch_set_frontmatter` / `batch_unset_frontmatter`
+    // for frontmatter edits).
+    const fmInfo = getFrontMatterInfo(original);
+    const frontmatterBlock = fmInfo.exists
+        ? original.substring(0, fmInfo.contentStart)
+        : "";
+    const searchOriginal = fmInfo.exists
+        ? original.substring(fmInfo.contentStart)
+        : original;
+
     const spans: Span[] = [];
     const summaries: ReplacementSummary[] = [];
     const summaryUniqueSpanIdx: Array<number | null> = [];
@@ -139,14 +153,14 @@ async function executeReplaceTextCore(
     for (let i = 0; i < normalised.length; i++) {
         const n = normalised[i]!;
 
-        const regexMatches = n.useRegex ? findAllRegexMatches(original, n.pattern) : null;
+        const regexMatches = n.useRegex ? findAllRegexMatches(searchOriginal, n.pattern) : null;
         // Normalise pattern line endings for literal search so that
         // \r\n, \r, and \n all match the normalised \n in the file.
         const literalPattern = n.useRegex ? n.pattern : n.pattern.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
         const positions: Array<{ start: number; end: number; match?: RegexMatch }> =
             regexMatches
                 ? regexMatches.map((m) => ({ start: m.start, end: m.end, match: m }))
-                : findAllOccurrences(original, literalPattern).map((pos) => ({ start: pos, end: pos + literalPattern.length }));
+                : findAllOccurrences(searchOriginal, literalPattern).map((pos) => ({ start: pos, end: pos + literalPattern.length }));
 
         // Check "not found" FIRST — the hint for regex-looking
         // patterns is more actionable than just the count mismatch.
@@ -176,8 +190,8 @@ async function executeReplaceTextCore(
                 // how many and give copy-paste retry examples.
                 const pos = positions[0]!;
                 const ctxStart = Math.max(0, pos.start - 40);
-                const ctxEnd = Math.min(original.length, pos.end + 40);
-                const ctx = JSON.stringify(original.slice(ctxStart, ctxEnd));
+                const ctxEnd = Math.min(searchOriginal.length, pos.end + 40);
+                const ctx = JSON.stringify(searchOriginal.slice(ctxStart, ctxEnd));
                 return {
                     success: false,
                     type: "text",
@@ -244,10 +258,13 @@ async function executeReplaceTextCore(
 
     // Apply spans back-to-front.
     const sortedDesc = [...spans].sort((a, b) => b.from - a.from || b.to - a.to);
-    let working = original;
+    let working = searchOriginal;
     for (const span of sortedDesc) {
         working = working.substring(0, span.from) + span.replacement + working.substring(span.to);
     }
+
+    // Reassemble: prepend preserved frontmatter (if any).
+    const finalContent = frontmatterBlock + working;
 
     // Compute post-edit offsets for excerpt generation.
     const spanPostEdit: Array<{ newFrom: number; newTo: number }> = [];
@@ -272,7 +289,7 @@ async function executeReplaceTextCore(
         const summary = summaries[i]!;
         const span = spans[uniq]!;
         const post = spanPostEdit[uniq]!;
-        const ex = buildSpanExcerpts(original, working, span.from, span.to, post.newFrom, post.newTo);
+        const ex = buildSpanExcerpts(searchOriginal, working, span.from, span.to, post.newFrom, post.newTo);
         summary.before_excerpt = ex.before;
         summary.after_excerpt = ex.after;
         if (ex.truncated) {
@@ -285,7 +302,7 @@ async function executeReplaceTextCore(
             kind: "modify",
             path,
             toolName,
-            perform: async () => { await plugin.app.vault.modify(file, working); },
+            perform: async () => { await plugin.app.vault.modify(file, finalContent); },
         });
         if (lockErr) return lockErr;
     }
@@ -304,7 +321,7 @@ async function executeReplaceTextCore(
             dry_run: dryRun,
             previous_mtime: previousMtime,
             new_mtime: newMtime,
-            ...(dryRun ? { preview: working } : {}),
+            ...(dryRun ? { preview: finalContent } : {}),
         },
     };
 }

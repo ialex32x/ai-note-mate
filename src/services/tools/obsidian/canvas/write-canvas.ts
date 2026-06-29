@@ -46,7 +46,7 @@ export function vaultCreateCanvas(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Create a NEW Obsidian Canvas file (`.canvas`, JSON Canvas 1.0). Content is validated " +
                     "against the JSON Canvas schema before writing. REFUSES if the path already exists. " +
-                    "Prefer this over `create_file` for canvas files. Missing parent folders are created " +
+                    "Prefer this over `create_note` for canvas files. Missing parent folders are created " +
                     "automatically. Place nodes at sensible coordinates and use `layout_canvas_grid` " +
                     "to rearrange specific nodes on a uniform grid if needed.",
                 parameters: {

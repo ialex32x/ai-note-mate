@@ -26,7 +26,7 @@ export function vaultCreateBase(plugin: NoteAssistantPlugin): RegisteredTool {
                 description:
                     "Create a NEW Obsidian Bases file (`.base`, YAML). Content is validated (YAML parse + " +
                     "view structure) before writing. REFUSES if the path already exists. Prefer this over " +
-                    "`create_file` for Bases files. Does NOT execute filter expressions — only static validation.",
+                    "`create_note` for Bases files. Does NOT execute filter expressions — only static validation.",
                 parameters: {
                     type: "object",
                     properties: {

@@ -20,8 +20,8 @@ import { runVaultMutation } from "../../../vault";
 // operation in the tool name gives the LLM a stronger signal.
 //
 // SCOPE BOUNDARY: deliberately refuses edits to `tags` / `tag` keys.
-// Tag operations belong on `add_files_tags` / `remove_files_tags` /
-// `set_files_tags` (targeted files — accepts one or more paths, with
+// Tag operations belong on `batch_add_note_tags` / `batch_remove_note_tags` /
+// `batch_set_note_tags` (targeted notes — accepts one or more paths, with
 // inline-tag awareness) and `rename_tag` (vault-wide). Routing tag edits
 // through this generic tool would either:
 //   - drop the inline `#tag` body channel (silent capability gap), or
@@ -165,7 +165,7 @@ async function execFrontmatterEdit(
                     type: "text",
                     content:
                         `${toolName} cannot edit the '${key}' key. ` +
-                        `For tag operations use \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` ` +
+                        `For tag operations use \`batch_add_note_tags\` / \`batch_remove_note_tags\` / \`batch_set_note_tags\` ` +
                         `(each accepts one or more paths, with inline-tag awareness) or \`rename_tag\` ` +
                         `(vault-wide rename). These tools handle YAML + inline tags safely and support ` +
                         `add/remove/descendant semantics that this generic tool intentionally does not.`,
@@ -215,8 +215,8 @@ async function execFrontmatterEdit(
                     type: "text",
                     content:
                         `${toolName} cannot unset the '${k}' key. ` +
-                        `Use \`set_files_tags\` with an empty tags array to clear frontmatter tags safely — ` +
-                        `that path also coalesces the alternate 'tag'/'tags' keys. Use \`remove_files_tags\` ` +
+                        `Use \`batch_set_note_tags\` with an empty tags array to clear frontmatter tags safely — ` +
+                        `that path also coalesces the alternate 'tag'/'tags' keys. Use \`batch_remove_note_tags\` ` +
                         `for inline tag removal.`,
                 };
             }
@@ -394,8 +394,8 @@ export function vaultBatchSetFrontmatter(plugin: NoteAssistantPlugin): Registere
                     "\n\n" +
                     "Example: {\"paths\": [\"Notes/Todo.md\"], \"properties\": {\"status\": \"done\"}} " +
                     "\n\n" +
-                    "Editing the `tags` / `tag` keys is REFUSED — use `add_files_tags` / " +
-                    "`remove_files_tags` / `set_files_tags` instead. " +
+                    "Editing the `tags` / `tag` keys is REFUSED — use `batch_add_note_tags` / " +
+                    "`batch_remove_note_tags` / `batch_set_note_tags` instead. " +
                     "\n\n" +
                     "Use this for any non-tag frontmatter property change (e.g. 'set status to done', " +
                     "'add author=John', 'set aliases to [...]').",
@@ -415,7 +415,7 @@ export function vaultBatchSetFrontmatter(plugin: NoteAssistantPlugin): Registere
                             description:
                                 "Object mapping frontmatter key → new value. " +
                                 "Values may be string, number, boolean, array, object, or null. " +
-                                "Keys `tags` / `tag` are refused — use add_files_tags / remove_files_tags / set_files_tags.",
+                                "Keys `tags` / `tag` are refused — use batch_add_note_tags / batch_remove_note_tags / batch_set_note_tags.",
                             additionalProperties: true,
                         },
                         dry_run: {
@@ -451,8 +451,8 @@ export function vaultBatchUnsetFrontmatter(plugin: NoteAssistantPlugin): Registe
                     "\n\n" +
                     "Example: {\"paths\": [\"Notes/Todo.md\"], \"keys\": [\"due_date\", \"status\"]} " +
                     "\n\n" +
-                    "Editing the `tags` / `tag` keys is REFUSED — use `remove_files_tags` or " +
-                    "`set_files_tags` with an empty array instead. " +
+                    "Editing the `tags` / `tag` keys is REFUSED — use `batch_remove_note_tags` or " +
+                    "`batch_set_note_tags` with an empty array instead. " +
                     "\n\n" +
                     "Use this to clear frontmatter keys (e.g. 'remove due_date from these notes', " +
                     "'clear the status field').",
@@ -473,7 +473,7 @@ export function vaultBatchUnsetFrontmatter(plugin: NoteAssistantPlugin): Registe
                             minItems: 1,
                             description:
                                 "Frontmatter keys to remove. " +
-                                "Keys `tags` / `tag` are refused — use remove_files_tags / set_files_tags.",
+                                "Keys `tags` / `tag` are refused — use batch_remove_note_tags / batch_set_note_tags.",
                         },
                         dry_run: {
                             type: "boolean",

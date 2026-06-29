@@ -93,7 +93,7 @@ export function isWholeFileReadAvailable(totalLines: number): boolean {
 /**
  * When the target path is a structured Obsidian format that has dedicated
  * create tools, return a redirect failure so the model does not hand-write
- * JSON/YAML through generic `create_file`.
+ * JSON/YAML through generic \`create_note\`.
  */
 export function structuredFileCreateRedirect(path: string): ToolCallResult | null {
     const lower = path.toLowerCase();
@@ -102,7 +102,7 @@ export function structuredFileCreateRedirect(path: string): ToolCallResult | nul
             success: false,
             type: "text",
             content:
-                `Path '${path}' is an Obsidian Canvas file. Use \`create_canvas\` instead of \`create_file\` — ` +
+                `Path '${path}' is an Obsidian Canvas file. Use \`create_canvas\` instead of \`create_note\` — ` +
                 `it validates JSON Canvas 1.0 before writing. For incremental edits on an existing canvas, ` +
                 `use \`add_canvas_nodes\`, \`add_canvas_edges\`, or \`layout_canvas_grid\`.`,
         };
@@ -112,7 +112,7 @@ export function structuredFileCreateRedirect(path: string): ToolCallResult | nul
             success: false,
             type: "text",
             content:
-                `Path '${path}' is an Obsidian Bases file. Use \`create_base\` instead of \`create_file\` — ` +
+                `Path '${path}' is an Obsidian Bases file. Use \`create_base\` instead of \`create_note\` — ` +
                 `it validates the YAML structure before writing. For view-level edits on an existing base, ` +
                 `use \`add_base_view\`, \`update_base_filters\`, or \`update_base_view_order\`.`,
         };

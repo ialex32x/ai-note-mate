@@ -37,7 +37,7 @@ interface EditTagsFileResult {
 type EffLocation = "frontmatter" | "inline" | "both";
 
 interface SharedExecParams {
-    /** Tool name for the response `action` field, e.g. "add_files_tags". */
+    /** Tool name for the response `action` field, e.g. "batch_add_note_tags". */
     actionName: string;
     /** The underlying operation. */
     opName: "add" | "remove" | "set";
@@ -348,21 +348,21 @@ async function executeTagsEdit(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: add_files_tags
+// Tool: batch_add_note_tags
 //
 // Add tags to one or more specific notes. Writes to frontmatter by default;
 // can optionally write inline `#tag` occurrences instead via `location`.
 // Idempotent: adding a tag that already exists is a no-op for that file.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultBatchAddNoteTags(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "add_files_tags",
+                name: "batch_add_note_tags",
                 description:
                     "Add tags to one or more specific notes. Tags are written to YAML frontmatter by default " +
                     "(preserving existing structure); use `location='inline'` to append inline `#tag` occurrences " +
@@ -436,7 +436,7 @@ export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
             }
 
             return executeTagsEdit(plugin, {
-                actionName: "add_files_tags",
+                actionName: "batch_add_note_tags",
                 opName: "add",
                 chatStream,
                 paths,
@@ -451,21 +451,21 @@ export function vaultAddFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: remove_files_tags
+// Tool: batch_remove_note_tags
 //
 // Remove tags from one or more specific notes. Removes from BOTH frontmatter
 // and inline `#tag` occurrences by default; can be scoped via `location`.
 // Idempotent: removing a tag that doesn't exist is a no-op.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultBatchRemoveNoteTags(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "remove_files_tags",
+                name: "batch_remove_note_tags",
                 description:
                     "Remove tags from one or more specific notes. Removes from BOTH YAML frontmatter and inline " +
                     "`#tag` occurrences by default; use `location` to scope to frontmatter-only or inline-only. " +
@@ -549,7 +549,7 @@ export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredToo
             }
 
             return executeTagsEdit(plugin, {
-                actionName: "remove_files_tags",
+                actionName: "batch_remove_note_tags",
                 opName: "remove",
                 chatStream,
                 paths,
@@ -564,26 +564,26 @@ export function vaultRemoveFilesTags(plugin: NoteAssistantPlugin): RegisteredToo
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: set_files_tags
+// Tool: batch_set_note_tags
 //
 // Replace the frontmatter tags on one or more notes with exactly the given
 // list. Deliberately does NOT touch inline `#tag` occurrences — use
-// `remove_files_tags` explicitly for those. Pass an empty `tags` array to
+// `batch_remove_note_tags` explicitly for those. Pass an empty `tags` array to
 // clear all frontmatter tags.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultSetFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultBatchSetNoteTags(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "set_files_tags",
+                name: "batch_set_note_tags",
                 description:
                     "Replace the YAML frontmatter tags on one or more notes with exactly the given list " +
                     "(deduplicated). This operates ONLY on frontmatter — inline `#tag` occurrences in the body " +
-                    "are deliberately NOT touched. To also remove inline tags, use `remove_files_tags` first. " +
+                    "are deliberately NOT touched. To also remove inline tags, use `batch_remove_note_tags` first. " +
                     "Pass an empty `tags` array to clear all frontmatter tags from the selected notes. " +
                     "Frontmatter is updated via `processFrontMatter` (preserves YAML structure, quoting, key order).",
                 parameters: {
@@ -638,7 +638,7 @@ export function vaultSetFilesTags(plugin: NoteAssistantPlugin): RegisteredTool {
             const paths = rawPaths as string[];
 
             return executeTagsEdit(plugin, {
-                actionName: "set_files_tags",
+                actionName: "batch_set_note_tags",
                 opName: "set",
                 chatStream,
                 paths,

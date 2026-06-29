@@ -12,7 +12,7 @@ import {
 import { vaultGrepFile, vaultSearchContent, vaultSearchFiles } from "./find";
 import {
     vaultAppendFile,
-    vaultCreateFile,
+    vaultCreateNote,
     vaultDeleteFiles,
     vaultDeleteFolder,
     vaultBatchSetFrontmatter,
@@ -37,7 +37,7 @@ import {
     vaultListFilesSorted,
     vaultRankNotesByEmbeddedSize,
 } from "./vault";
-import { vaultAddFilesTags, vaultRemoveFilesTags, vaultSetFilesTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
+import { vaultBatchAddNoteTags, vaultBatchRemoveNoteTags, vaultBatchSetNoteTags, vaultListTags, vaultRenameTag, vaultSearchByTag } from "./tags";
 import {
     vaultReadCanvas,
     vaultReadCanvasNode,
@@ -83,11 +83,11 @@ import {
  *     → main") instead of nuanced ("only delegate writes that don't
  *     have a content body").
  *  2. Removes the prompt-injection seam for content-bearing writes
- *     (`create_file` / `append_file` / `replace_text`):
+ *     (`create_note` / `append_file` / `replace_text`):
  *     the literal file body rides as a JSON `content` field, never as
  *     prose inside `delegate_task.task`.
  *  3. Keeps the related hard rules (e.g. "tag edits MUST use
- *     `add_files_tags` / `remove_files_tags` / `set_files_tags`, not `replace_text`"; "moves MUST
+ *     `batch_add_note_tags` / `batch_remove_note_tags` / `batch_set_note_tags`, not `replace_text`"; "moves MUST
  *     use `rename_or_move_file`, not delete+create") on the
  *     same agent that owns the tools they constrain — the rules and
  *     the tools live together.
@@ -117,12 +117,12 @@ import {
  *  - Frontmatter: batch_set_frontmatter / batch_unset_frontmatter
  *    (set/unset arbitrary YAML keys; tag keys are refused and routed
  *    to the tag-specific tools below)
- *  - Tag edits:   add_files_tags / remove_files_tags / set_files_tags / rename_tag (vault-wide)
+ *  - Tag edits:   batch_add_note_tags / batch_remove_note_tags / batch_set_note_tags / rename_tag (vault-wide)
  */
 export function createObsidianMutationTools(plugin: NoteAssistantPlugin): RegisteredTool[] {
     return [
         // Content writes (path + literal body)
-        vaultCreateFile(plugin),
+        vaultCreateNote(plugin),
         vaultAppendFile(plugin),
         vaultPrependFile(plugin),
         vaultReplaceText(plugin),
@@ -156,9 +156,9 @@ export function createObsidianMutationTools(plugin: NoteAssistantPlugin): Regist
         vaultBatchSetFrontmatter(plugin),
         vaultBatchUnsetFrontmatter(plugin),
         // Tag edits
-        vaultAddFilesTags(plugin),
-        vaultRemoveFilesTags(plugin),
-        vaultSetFilesTags(plugin),
+        vaultBatchAddNoteTags(plugin),
+        vaultBatchRemoveNoteTags(plugin),
+        vaultBatchSetNoteTags(plugin),
         vaultRenameTag(plugin),
     ];
 }
@@ -233,7 +233,7 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
  *
  * Deliberately EXCLUDED — and the rationale matters enough to spell out:
  *
- *  - `create_file`: creating a new file is a main-agent planning
+ *  - `create_note`: creating a new note is a main-agent planning
  *    decision. "Rewrite Foo.md" should never turn into "…and while I'm
  *    at it, spawn Foo-v2.md". If a task legitimately requires creating
  *    a sibling file (e.g. splitting one note into two), the editor
@@ -244,7 +244,7 @@ export function createObsidianTools(plugin: NoteAssistantPlugin): RegisteredTool
  *    these tools just tempts it to "tidy up" on its own, which hides
  *    state changes from the main agent (violating the
  *    `§0.3 principle 1` of `docs/vault-editor-subagent-plan.md`).
- *  - `add_files_tags` / `remove_files_tags` / `set_files_tags` / `rename_tag` /
+ *  - `batch_add_note_tags` / `batch_remove_note_tags` / `batch_set_note_tags` / `rename_tag` /
  *    `batch_set_frontmatter` / `batch_unset_frontmatter`: tag and frontmatter property edits are
  *    structural (vs content) when per-file, or vault-wide. Either way,
  *    they should stay explicit in the main agent's plan. The editor can

@@ -3,6 +3,7 @@ import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { isFailure, requireFile } from "../_shared";
 import { runVaultMutation } from "../../../vault";
+import { getFrontMatterInfo } from "obsidian";
 import {
 	formatFindSectionError,
 	resolveHeadingPathToRange,
@@ -440,12 +441,23 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 			const fileErr = requireFile(plugin.app, path);
 			if (isFailure(fileErr)) return fileErr;
 
-			const file = plugin.app.vault.getAbstractFileByPath(path)!;
-			const rawOriginal = await plugin.app.vault.read(file as import("obsidian").TFile);
-			const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+            const file = plugin.app.vault.getAbstractFileByPath(path)!;
+            const rawOriginal = await plugin.app.vault.read(file as import("obsidian").TFile);
+            const original = rawOriginal.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-			// ── Execute ──
-			if (hasHeadingPath) {
+            // ── Frontmatter protection (text-anchored mode only) ──
+            // For text-anchored insertion, restrict anchor search to the body
+            // to prevent accidental insertion into YAML frontmatter.
+            const fmInfo = getFrontMatterInfo(original);
+            const frontmatterBlock = fmInfo.exists
+                ? original.substring(0, fmInfo.contentStart)
+                : "";
+            const bodyOnly = fmInfo.exists
+                ? original.substring(fmInfo.contentStart)
+                : original;
+
+            // ── Execute ──
+            if (hasHeadingPath) {
 				// Heading-anchored insertion
 				const headingPath = rawHeadingPath as string[];
 				const cache = plugin.app.metadataCache.getFileCache(file as import("obsidian").TFile);
@@ -490,57 +502,76 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 				};
 			}
 
-			// Text-anchored insertion (existing path)
-			const anchor = rawAnchor as string;
-			const res = insertContent(original, anchor, where as TextWhere, content, occurrence);
-			if (!res.ok) {
-				return {
-					success: false,
-					type: "object",
-					content: {
-						error: res.error,
-						total_occurrences: res.totalOccurrences,
-						...(res.excerpts ? { excerpts: res.excerpts } : {}),
-					},
-				};
-			}
+            // Text-anchored insertion (existing path)
+            const anchor = rawAnchor as string;
+            const res = insertContent(bodyOnly, anchor, where as TextWhere, content, occurrence);
+            if (!res.ok) {
+                // If anchor was not found in body, check if it exists in frontmatter
+                // to give a helpful error.
+                if (res.totalOccurrences === 0 && fmInfo.exists) {
+                    const fmOnly = original.substring(0, fmInfo.contentStart);
+                    if (fmOnly.includes(anchor)) {
+                        const fullMsg = res.error +
+                            ` The anchor text was found inside the YAML frontmatter block, which ` +
+                            `\`insert_text\` does not modify. Use \`batch_set_frontmatter\` / \`batch_unset_frontmatter\` ` +
+                            `to edit frontmatter.`;
+                        return {
+                            success: false,
+                            type: "text",
+                            content: fullMsg,
+                        };
+                    }
+                }
+                return {
+                    success: false,
+                    type: "object",
+                    content: {
+                        error: res.error,
+                        total_occurrences: res.totalOccurrences,
+                        ...(res.excerpts ? { excerpts: res.excerpts } : {}),
+                    },
+                };
+            }
 
-			const lockErr = await runVaultMutation(plugin, chatStream, {
-				kind: "modify",
-				path,
-				toolName: "insert_text",
-				perform: async () => {
-					await plugin.app.vault.modify(file as import("obsidian").TFile, res.result);
-				},
-			});
-			if (lockErr) return lockErr;
+            // Reassemble: prepend frontmatter to the body with the insertion.
+            const finalResult = frontmatterBlock + res.result;
 
-			const targetOccurrence = occurrence ?? 1;
-			const anchorIdx = findNthOccurrence(original, anchor, targetOccurrence);
-			const excerptStart = Math.max(0, anchorIdx - 60);
-			const excerptEnd = Math.min(original.length, anchorIdx + anchor.length + 60);
-			const beforeExcerpt = original.substring(excerptStart, excerptEnd);
+            const lockErr = await runVaultMutation(plugin, chatStream, {
+                kind: "modify",
+                path,
+                toolName: "insert_text",
+                perform: async () => {
+                    await plugin.app.vault.modify(file as import("obsidian").TFile, finalResult);
+                },
+            });
+            if (lockErr) return lockErr;
 
-			const resultAnchorIdx = findNthOccurrence(res.result, anchor, targetOccurrence);
-			const resultExcerptStart = Math.max(0, resultAnchorIdx - 60);
-			const resultExcerptEnd = Math.min(res.result.length, resultAnchorIdx + anchor.length + 60 + content.length);
-			const afterExcerpt = res.result.substring(resultExcerptStart, resultExcerptEnd);
+            const targetOccurrence = occurrence ?? 1;
+            const anchorIdx = findNthOccurrence(bodyOnly, anchor, targetOccurrence);
+            const excerptStart = Math.max(0, anchorIdx - 60);
+            const excerptEnd = Math.min(bodyOnly.length, anchorIdx + anchor.length + 60);
+            const beforeExcerpt = bodyOnly.substring(excerptStart, excerptEnd);
 
-			return {
-				success: true,
-				type: "object",
-				content: {
-					action: "text_inserted",
-					path,
-					mode: "text",
-					where,
-					anchor,
-					occurrence: targetOccurrence,
-					total_occurrences: res.totalOccurrences,
-					before_excerpt: beforeExcerpt,
-					after_excerpt: afterExcerpt,
-				},
-			};
+            const resultAnchorIdx = findNthOccurrence(res.result, anchor, targetOccurrence);
+            const resultExcerptStart = Math.max(0, resultAnchorIdx - 60);
+            const resultExcerptEnd = Math.min(res.result.length, resultAnchorIdx + anchor.length + 60 + content.length);
+            const afterExcerpt = res.result.substring(resultExcerptStart, resultExcerptEnd);
+
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    action: "text_inserted",
+                    path,
+                    mode: "text",
+                    where,
+                    anchor,
+                    occurrence: targetOccurrence,
+                    total_occurrences: res.totalOccurrences,
+                    before_excerpt: beforeExcerpt,
+                    after_excerpt: afterExcerpt,
+                },
+            };
 		},
 		requiresConfirmation: true,
 	};

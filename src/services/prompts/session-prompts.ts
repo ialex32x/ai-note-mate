@@ -133,17 +133,17 @@ You have access to long-term Memory via the \`memory_store\` and \`memory_delete
 `;
 
 export const VAULT_HARD_RULES = `## Vault hard rules
-- Tag edits on a specific file MUST use the \`*_files_tags\` family: \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\`. Never simulate tag edits via \`replace_text\` / \`insert_text\` / \`append_file\` / \`prepend_file\`, and never via read → \`create_file\`. Text-level edits cause partial matches and corrupt YAML frontmatter.
+- Tag edits on a specific file MUST use the \`*_note_tags\` family: \`batch_add_note_tags\` / \`batch_remove_note_tags\` / \`batch_set_note_tags\`. Never simulate tag edits via \`replace_text\` / \`insert_text\` / \`append_file\` / \`prepend_file\`, and never via read → \`create_note\`. Text-level edits cause partial matches and corrupt YAML frontmatter.
 - Non-tag YAML frontmatter edits: use \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`. Never use \`replace_text\` on the YAML region.
 - Move/rename → \`rename_or_move_file\`. Never simulate via create+delete (breaks wikilinks).
-- You CANNOT open, reveal, or focus a file in the Obsidian UI via tools — there is no such capability. When the user should view something (note, canvas, attachment), say so in your reply with a wiki-link \`[[path/to/file]]\` (omit \`.md\` / \`.canvas\` extensions). Do NOT call \`create_file\` or any other write tool just to "help them open" or "link to" something you already created.
+- You CANNOT open, reveal, or focus a file in the Obsidian UI via tools — there is no such capability. When the user should view something (note, canvas, attachment), say so in your reply with a wiki-link \`[[path/to/file]]\` (omit \`.md\` / \`.canvas\` extensions). Do NOT call \`create_note\` or any other write tool just to "help them open" or "link to" something you already created.
 - After a create/edit task succeeds, STOP calling write tools unless the user asked for more. Do NOT create auxiliary launcher / shortcut / index notes whose sole content is a link to another file you just made.
 - Mistaken creation? Undo with ONE action: \`delete_files\` on current path, or \`rename_or_move_file\` to archive — not both.
 - For MULTIPLE atomic edits to the SAME file (all must match the same pre-edit snapshot), use \`batch_replace_text\` and put every edit in its \`replacements\` array — NEVER chain multiple \`replace_text\` calls on one file, because later calls see already-shifted content and miss their target.
 - Picking the right tool for a file operation:
-    - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
+    - Tags → \`batch_add_note_tags\` / \`batch_remove_note_tags\` / \`batch_set_note_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
     - Non-tag frontmatter → \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`.
-    - \`create_file\` is STRICTLY for files that do NOT yet exist. It refuses if the path already exists — do NOT use it to overwrite.
+    - \`create_note\` is STRICTLY for notes that do NOT yet exist. It refuses if the path already exists — do NOT use it to overwrite. Pass \`body\` (markdown text) and optionally \`frontmatter\` (YAML key-value object) — the tool handles \`---\` delimiters.
     - Path / link / move → \`rename_or_move_file\`.
     - Content editing (modify, insert, append, prepend, replace sections): delegate to \`vault_editor\` for non-trivial changes. For trivial one-shot fixes (single typo, one word at a known line), call \`replace_text\` or \`insert_text\` directly.
     - Whole-body rewrite (reformat / translate / restructure the entire file): delegate to \`vault_editor\`.
@@ -294,7 +294,7 @@ Do NOT delegate to \`vault_editor\` when:
 - The change is trivial and you already know exactly what to write (e.g. fix one specific typo at a known line, add one word to a heading) — call \`replace_text\` or \`insert_text\` directly. Delegating overhead would cost more than the edit itself.
 - The change spans multiple files. Delegate ONE task per file; \`vault_editor\` refuses multi-file tasks by design.
 - The task involves creating, renaming, moving, or deleting the file. Those are your tools — do them yourself, and only then (if needed) delegate the body rewrite of the surviving file.
-- The task requires tag edits (\`add_files_tags\`, \`remove_files_tags\`, \`set_files_tags\`, \`rename_tag\`). Do those yourself; the editor cannot.
+- The task requires tag edits (\`batch_add_note_tags\`, \`batch_remove_note_tags\`, \`batch_set_note_tags\`, \`rename_tag\`). Do those yourself; the editor cannot.
 
 If \`result.warnings\` contains a structural follow-up (e.g. "file also needs to be renamed"), treat it as a follow-up handoff and act on it with your own tools.`;
 

@@ -1,4 +1,4 @@
-import { TAbstractFile, TFile, TFolder } from "obsidian";
+import { TAbstractFile, TFile, TFolder, stringifyYaml } from "obsidian";
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
@@ -6,28 +6,35 @@ import { ensureParentFolder, requireFileExtension, structuredFileCreateRedirect 
 import { runVaultMutation } from "../../../vault";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Tool: create_file
+// Tool: create_note
 //
-// Strictly creates a NEW file. If the path already exists, the call
+// Strictly creates a NEW markdown note. If the path already exists, the call
 // fails with a pointer to the right tool for the caller's actual
 // intent (overwrite the body / append / prepend). Wholesale overwrite
 // of an existing file is intentionally NOT this tool's job — see
 // `write-file.ts` (sub-agent only) and `docs/vault-editor-subagent-plan.md`.
+//
+// Takes `body` and optional `frontmatter` as separate parameters so the LLM
+// doesn't have to manually construct YAML delimiters — the tool embeds
+// frontmatter as a proper `---` block.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
+export function vaultCreateNote(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
         ondemand: true,
 
         schema: {
             type: "function",
             function: {
-                name: "create_file",
+                name: "create_note",
                 description:
-                    "Create a NEW file in the vault with the given content. Missing parent folders are " +
+                    "Create a NEW markdown note in the vault. Missing parent folders are " +
                     "created automatically. REFUSES if the path already exists — this tool does not " +
                     "overwrite (use the appropriate edit tool to change an existing file). " +
-                    "Do NOT use for `.canvas` or `.base` files — use `create_canvas` / `create_base` instead.",
+                    "Do NOT use for `.canvas` or `.base` files — use `create_canvas` / `create_base` instead." +
+                    "\n\n" +
+                    "Pass `body` (the markdown text) and optionally `frontmatter` (a flat key-value object " +
+                    "for YAML frontmatter like {\"tags\":[\"a\"],\"title\":\"X\"}) — the tool handles the `---` delimiters.",
                 parameters: {
                     type: "object",
                     properties: {
@@ -39,19 +46,27 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
                                 "use '.md' for markdown notes. " +
                                 "Must NOT already exist; the call fails otherwise.",
                         },
-                        content: {
+                        body: {
                             type: "string",
-                            description: "Text content to write into the file.",
+                            description: "The markdown body of the note (without frontmatter).",
+                        },
+                        frontmatter: {
+                            type: "object",
+                            description:
+                                "Optional YAML frontmatter as a flat key-value object, e.g. " +
+                                "{\"title\":\"My Note\", \"tags\":[\"project\",\"draft\"]}. " +
+                                "The tool wraps this in `---` delimiters. Omit for a note without frontmatter.",
                         },
                     },
-                    required: ["path", "content"],
+                    required: ["path", "body"],
                 },
             },
         },
         capabilities: ["create_file"] as ToolCapability[],
         exec: async (chatStream, args, _signal) => {
             const path = args["path"] as string;
-            const content = args["content"] as string;
+            const body = args["body"] as string;
+            const frontmatter = args["frontmatter"] as Record<string, unknown> | undefined;
 
             const extErr = requireFileExtension(path);
             if (extErr) return extErr;
@@ -66,7 +81,7 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
                     success: false,
                     type: "text",
                     content:
-                        `File already exists: ${path}. \`create_file\` does not overwrite. ` +
+                        `File already exists: ${path}. \`create_note\` does not overwrite. ` +
                         `For surgical edits use \`replace_text\` or \`insert_text\`; ` +
                         `to add content use \`append_file\` or \`prepend_file\`; ` +
                         `for a full-body rewrite delegate to the \`vault_editor\` sub-agent.`,
@@ -82,16 +97,33 @@ export function vaultCreateFile(plugin: NoteAssistantPlugin): RegisteredTool {
                 };
             }
 
+            // Build content: optional frontmatter + body
+            let content: string;
+            if (frontmatter && typeof frontmatter === "object" && Object.keys(frontmatter).length > 0) {
+                const yaml = stringifyYaml(frontmatter);
+                content = `---\n${yaml}\n---\n${body}`;
+            } else {
+                content = body;
+            }
+
             const parentErr = await ensureParentFolder(plugin.app, path);
             if (parentErr) return parentErr;
             const lockErr = await runVaultMutation(plugin, chatStream, {
                 kind: "create",
                 path,
-                toolName: "create_file",
+                toolName: "create_note",
                 perform: async () => { await plugin.app.vault.create(path, content); },
             });
             if (lockErr) return lockErr;
-            return { success: true, type: "object", content: { action: "created", path } };
+            return {
+                success: true,
+                type: "object",
+                content: {
+                    action: "created",
+                    path,
+                    ...(frontmatter ? { has_frontmatter: true } : {}),
+                },
+            };
         },
         requiresConfirmation: true,
     };

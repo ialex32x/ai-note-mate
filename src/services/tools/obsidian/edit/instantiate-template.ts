@@ -13,7 +13,7 @@ import { runVaultMutation } from "../../../vault";
 // target path. This is the preferred way for the LLM to create notes
 // from templates — it completely eliminates the "LLM missed a variable"
 // / "LLM hallucinated extra content" failure modes that plague the
-// manual read-template → replace-in-head → create_file path.
+// manual read-template → replace-in-head → create_note path.
 //
 // Supported built-in variables (resolved deterministically):
 //   {{date}}              → current date in ISO format (YYYY-MM-DD)
@@ -172,7 +172,7 @@ const SCHEMA_DESCRIPTION =
     "`variables` map. " +
     "This is the PREFERRED way to create a note from a template — the variable " +
     "replacement is guaranteed correct and complete, whereas manually doing " +
-    "read_file + create_file risks missed or malformed substitutions.";
+    "read_file + create_note risks missed or malformed substitutions.";
 
 // ─────────────────────────────────────────────
 // Public factory

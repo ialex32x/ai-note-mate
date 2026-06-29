@@ -3,7 +3,7 @@
 // Each tool lives in its own file under this folder; group them here so
 // callers can keep using a single import path (`./edit`).
 
-export { vaultCreateFile } from "./create-file";
+export { vaultCreateNote } from "./create-note";
 export { vaultAppendFile } from "./append-file";
 export { vaultPrependFile } from "./prepend-file";
 export { vaultDeleteFiles } from "./delete-files";

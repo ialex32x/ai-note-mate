@@ -66,9 +66,9 @@ describe('createObsidianEditorTools — tool surface', () => {
         expect(names.has('delete_files')).toBe(false);
         expect(names.has('delete_folder')).toBe(false);
         expect(names.has('rename_or_move_file')).toBe(false);
-        expect(names.has('add_files_tags')).toBe(false);
-        expect(names.has('remove_files_tags')).toBe(false);
-        expect(names.has('set_files_tags')).toBe(false);
+        expect(names.has('batch_add_note_tags')).toBe(false);
+        expect(names.has('batch_remove_note_tags')).toBe(false);
+        expect(names.has('batch_set_note_tags')).toBe(false);
         expect(names.has('rename_tag')).toBe(false);
     });
 
