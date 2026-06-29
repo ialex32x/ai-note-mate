@@ -98,14 +98,20 @@ export function normaliseReplacement(
     }
     const r = raw as Record<string, unknown>;
 
-    // Fallback: many LLM coding agents use `old`/`new` by convention
-    // (e.g. CodeBuddy's replace_in_file). Silently remap to our canonical
-    // `pattern`/`replacement` so the call succeeds without retry overhead.
+    // Fallback: many LLM coding agents use `old`/`new` or `old_text`/`new_text`
+    // by convention (e.g. CodeBuddy's replace_in_file). Silently remap to our
+    // canonical `pattern`/`replacement` so the call succeeds without retry overhead.
     if (r["old"] !== undefined && r["pattern"] === undefined) {
         r["pattern"] = r["old"];
     }
+    if (r["old_text"] !== undefined && r["pattern"] === undefined) {
+        r["pattern"] = r["old_text"];
+    }
     if (r["new"] !== undefined && r["replacement"] === undefined) {
         r["replacement"] = r["new"];
+    }
+    if (r["new_text"] !== undefined && r["replacement"] === undefined) {
+        r["replacement"] = r["new_text"];
     }
 
     const replacement = r["replacement"];

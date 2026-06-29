@@ -433,13 +433,15 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
             const expectedPreEditMtime = args["expected_pre_edit_mtime"] as number | undefined;
 
             // Build a single entry from the flat args.
-            // Include `old`/`new` aliases so the normaliseReplacement
-            // fallback (many coding agents use old/new by convention) still
-            // works in single-entry mode.
+            // Include `old`/`new`/`old_text`/`new_text` aliases so the
+            // normaliseReplacement fallback (many coding agents use these
+            // by convention) still works in single-entry mode.
             const entry: Record<string, unknown> = {};
             if (args["pattern"] !== undefined) entry["pattern"] = args["pattern"];
             if (args["old"] !== undefined) entry["old"] = args["old"];
+            if (args["old_text"] !== undefined) entry["old_text"] = args["old_text"];
             if (args["new"] !== undefined) entry["new"] = args["new"];
+            if (args["new_text"] !== undefined) entry["new_text"] = args["new_text"];
             entry["replacement"] = args["replacement"];
             if (args["occurrence_offset"] !== undefined) entry["occurrence_offset"] = args["occurrence_offset"];
             if (args["max_replacements"] !== undefined) entry["max_replacements"] = args["max_replacements"];
