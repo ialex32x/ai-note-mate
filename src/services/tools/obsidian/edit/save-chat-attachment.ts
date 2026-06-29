@@ -1,8 +1,9 @@
-import { TAbstractFile, TFile, TFolder } from "obsidian";
+import { TFolder } from "obsidian";
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ChatMessage } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
 import { joinPath } from "../../../../utils/path-helper";
+import { resolveUniqueFilename } from "../../../../utils/attachment-utils";
 import { DEFAULT_SETTINGS } from "../../../../settings";
 import { runVaultMutation } from "../../../vault";
 
@@ -105,13 +106,14 @@ export function vaultSaveChatAttachment(plugin: NoteAssistantPlugin): Registered
                     }
 
                     const buf = await adapter.readBinary(att.cachePath);
-                    let targetPath = joinPath(saveDir, att.fileName);
 
-                    // If the target path already exists, append a numeric
-                    // suffix to avoid overwriting existing files.
-                    if (vault.getAbstractFileByPath(targetPath) instanceof TFile) {
-                        targetPath = await uniqueFilePath(vault, saveDir, att.fileName);
-                    }
+                    // Resolve a collision-free name in the target directory.
+                    const fileName = await resolveUniqueFilename(
+                        saveDir,
+                        att.fileName,
+                        async (p) => vault.getAbstractFileByPath(p) !== null,
+                    );
+                    const targetPath = joinPath(saveDir, fileName);
 
                     // Use runVaultMutation for proper locking / checkpoint
                     // integration.  The mutation kind is "create" even though
@@ -163,27 +165,4 @@ export function vaultSaveChatAttachment(plugin: NoteAssistantPlugin): Registered
             };
         },
     };
-}
-
-/**
- * Generate a unique file path by appending a numeric suffix before the
- * extension.  E.g. `photo.png` → `photo (1).png`, `photo (2).png`, …
- */
-async function uniqueFilePath(
-    vault: { getAbstractFileByPath: (path: string) => TAbstractFile | null },
-    dir: string,
-    fileName: string,
-): Promise<string> {
-    const dotIdx = fileName.lastIndexOf(".");
-    const baseName = dotIdx > 0 ? fileName.substring(0, dotIdx) : fileName;
-    const ext = dotIdx > 0 ? fileName.substring(dotIdx) : "";
-
-    let counter = 1;
-    let candidate: string;
-    do {
-        candidate = joinPath(dir, `${baseName} (${counter})${ext}`);
-        counter++;
-    } while (vault.getAbstractFileByPath(candidate) instanceof TFile);
-
-    return candidate;
 }
