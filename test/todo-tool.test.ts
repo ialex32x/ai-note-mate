@@ -536,7 +536,8 @@ describe('manage_todos: control plane', () => {
 describe('SessionManager — TODO state round-trip', () => {
     it('persists v5 and rehydrates todos through saveSession/loadFromCache', async () => {
         const { mgr, adapter } = makeManager();
-        const sessionId = mgr.activeSessionId;
+        // Constructor no longer auto-creates a session; explicitly prime one.
+        const sessionId = mgr.createSession();
 
         const todos: TodoState = {
             updatedAt: 12345,
@@ -717,7 +718,8 @@ describe('SessionManager — TODO state round-trip', () => {
 
     it('downgrades the schema version when todos are removed', async () => {
         const { mgr, adapter } = makeManager();
-        const sessionId = mgr.activeSessionId;
+        // Constructor no longer auto-creates a session; explicitly prime one.
+        const sessionId = mgr.createSession();
 
         // First save: with todos → v5.
         await mgr.saveSession(
@@ -758,7 +760,8 @@ describe('SessionManager — TODO state round-trip', () => {
 
     it('deleteSession clears the cached TODO state', async () => {
         const { mgr } = makeManager();
-        const sessionId = mgr.activeSessionId;
+        // Constructor no longer auto-creates a session; explicitly prime one.
+        const sessionId = mgr.createSession();
 
         mgr.setSessionTodos(sessionId, {
             updatedAt: 1,

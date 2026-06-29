@@ -76,7 +76,8 @@ function makeUserMessage(content: string, idSuffix = "u1"): ChatMessage {
 describe("SessionManager.createSession", () => {
     it("creates a fresh session in addition to the bootstrap one and makes it active", () => {
         const { mgr } = makeManager();
-        const bootstrapId = mgr.activeSessionId;
+        // Constructor no longer auto-creates a session; explicitly prime one.
+        const bootstrapId = mgr.createSession();
         const newId = mgr.createSession();
         expect(newId).not.toBe(bootstrapId);
         expect(mgr.activeSessionId).toBe(newId);
@@ -84,9 +85,9 @@ describe("SessionManager.createSession", () => {
     });
 
     it("does NOT touch any other session's cached messages or token usage", async () => {
-        // Set up: an active session "A" with real history.
+        // Set up: explicitly create an active session "A" with real history.
         const { mgr } = makeManager();
-        const sessionAId = mgr.activeSessionId;
+        const sessionAId = mgr.createSession();
 
         const messages: ChatMessage[] = [
             makeUserMessage("hello", "u1"),
@@ -125,7 +126,9 @@ describe("SessionManager.createSession", () => {
 
     it("after saveToCache, the previous session file on disk still contains its history", async () => {
         const { mgr, adapter } = makeManager();
-        const sessionAId = mgr.activeSessionId;
+        // Explicitly create the first session so saveSession / saveToCache
+        // have a valid activeSessionId to operate on.
+        const sessionAId = mgr.createSession();
 
         const messages: ChatMessage[] = [
             makeUserMessage("preserve me", "u1"),
@@ -158,7 +161,9 @@ describe("SessionManager.createSession", () => {
 describe("SessionManager.loadFromCache", () => {
     it("rehydrates a previously saved session's messages from disk", async () => {
         const { mgr, adapter } = makeManager();
-        const sessionAId = mgr.activeSessionId;
+        // Explicitly create the first session so saveToCache has a valid
+        // activeSessionId to persist.
+        const sessionAId = mgr.createSession();
         const messages: ChatMessage[] = [
             makeUserMessage("round-trip", "u1"),
         ];

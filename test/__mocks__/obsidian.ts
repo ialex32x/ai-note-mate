@@ -67,6 +67,31 @@ export const moment = {
     locale: (): string => '',
 };
 
+/** Minimal Modal stub — contentEl is a plain div so subclasses can build UI in onOpen. */
+export class Modal {
+    contentEl: HTMLElement;
+    titleEl: HTMLElement;
+    constructor(_app: unknown) {
+        this.contentEl = document.createElement('div');
+        this.titleEl = document.createElement('div');
+    }
+    open(): void { /* no-op */ }
+    close(): void { /* no-op */ }
+    onClose(): void { /* no-op */ }
+}
+
+/** Stub for PluginSettingTab so settings UI classes don't crash module load. */
+export class PluginSettingTab {
+    app: unknown;
+    containerEl: HTMLElement;
+    constructor(app: unknown, _plugin: unknown) {
+        this.app = app;
+        this.containerEl = document.createElement('div');
+    }
+    display(): void { /* no-op */ }
+    hide(): void { /* no-op */ }
+}
+
 /**
  * Provide a tolerant default export for any other Obsidian APIs the
  * codebase imports — vitest will fail on missing named exports if we
