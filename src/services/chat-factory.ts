@@ -5,7 +5,7 @@ import type { MediaAttachment } from './llm-provider';
 import type { GeneratedAsset } from './generated-asset-collection';
 import { AgentOrchestrator } from './agent-orchestrator';
 import { getActiveProfile, getSummarizerProfile, getInsightsProfile, getActiveEmbeddingConfig } from '../settings';
-import { resolveSubAgentProvider } from '../settings/helpers';
+import { resolveSubAgentProvider, resolveSubAgentModelName } from '../settings/helpers';
 import type { TextGenConfig } from '../settings/types';
 import {
     DEFAULT_TOOL_FILTER_TOP_K,
@@ -542,6 +542,14 @@ export function createChatAgent(
             // not configured.
             resolveSubAgentProvider: (profileId: string) =>
                 resolveSubAgentProvider(plugin.app, settings, profileId),
+            // Resolve the display model name for sub-agent messages.
+            // Uses the profile's model identifier so persisted messages
+            // reflect which model the sub-agent actually called.
+            // Returns undefined when the profile is inherited (empty
+            // id) so the orchestrator falls back to the main agent's
+            // modelName.
+            resolveSubAgentModelName: (profileId: string) =>
+                resolveSubAgentModelName(settings, profileId),
             onSubAgentMessageUpdate: (agentName, msg) => {
                 if (!callbacks.generationMatches()) return;
                 callbacks.onSubAgentMessageUpdate(agentName, msg);

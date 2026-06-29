@@ -106,6 +106,16 @@ export interface AgentOrchestratorConfig extends ChatStreamConfig {
      */
     resolveSubAgentProvider?: (profileId: string) => LLMProvider | undefined;
 
+    /**
+     * Optional callback that resolves a profile ID to a display model
+     * name (e.g. "claude-sonnet-4-6") for tagging sub-agent messages.
+     * When a sub-agent has a profile override, this is called to
+     * produce the correct {@link ChatMessage.modelName}; when omitted
+     * or returning `undefined`, the sub-agent inherits the main agent's
+     * model name (for backwards-compatibility).
+     */
+    resolveSubAgentModelName?: (profileId: string) => string | undefined;
+
     /** Called when a sub-agent starts executing a task */
     onSubAgentStart?: (agentName: string, task: string) => void;
     /** Called when a sub-agent finishes executing a task */
@@ -950,6 +960,15 @@ export class AgentOrchestrator implements IChatAgent {
                         ?? this._currentPromptOptions.provider)
                     : this._currentPromptOptions.provider;
 
+            // Resolve the display model name for this sub-agent's
+            // messages. When a profile override is active, resolve the
+            // actual model name from the profile so persisted messages
+            // reflect reality instead of showing the main agent's model.
+            const resolvedModelName =
+                (subAgent.profile
+                    && this._config.resolveSubAgentModelName?.(subAgent.profile))
+                ?? this._currentPromptOptions.modelName;
+
             const result = await subAgent.execute(task, {
                 provider: resolvedProvider,
                 thinkingLevel: this._currentPromptOptions.thinkingLevel,
@@ -957,7 +976,7 @@ export class AgentOrchestrator implements IChatAgent {
                 summarizer: this._currentPromptOptions.summarizer,
                 embedding: this._currentPromptOptions.embedding,
                 embeddingFilter: this._currentPromptOptions.embeddingFilter,
-                modelName: this._currentPromptOptions.modelName,
+                modelName: resolvedModelName,
                 context: taskContext,
                 parentToolCallId,
                 handoffStore,

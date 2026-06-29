@@ -257,3 +257,23 @@ export function resolveSubAgentProvider(
 		modalities: profile.modalities,
 	});
 }
+
+/**
+ * Resolve a profile ID to a display model name for sub-agent message
+ * tagging. Returns {@link TextGenConfig.model} — the same model
+ * identifier the provider was created with.
+ *
+ * Returns `undefined` when the profile ID is empty or the profile is
+ * not found — callers should fall back to the main agent's model name.
+ */
+export function resolveSubAgentModelName(
+	settings: NoteAssistantPluginSettings,
+	profileId: string,
+): string | undefined {
+	if (!profileId) return undefined;
+
+	const profile = settings.profiles.find(p => p.id === profileId);
+	if (!profile) return undefined;
+
+	return profile.model || undefined;
+}
