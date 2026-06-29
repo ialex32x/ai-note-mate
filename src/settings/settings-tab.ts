@@ -173,6 +173,20 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		const newTabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
 		if (newTabScroll) {
 			newTabScroll.scrollLeft = savedScrollLeft;
+
+			// Ensure the editing tab is fully visible — if the restored
+			// scrollLeft leaves it partially off-screen, adjust minimally.
+			const editingTab = newTabScroll.querySelector<HTMLElement>('.oap-profile-tab--active');
+			if (editingTab) {
+				const scrollRect = newTabScroll.getBoundingClientRect();
+				const tabRect = editingTab.getBoundingClientRect();
+				if (tabRect.right > scrollRect.right) {
+					newTabScroll.scrollLeft += tabRect.right - scrollRect.right;
+				}
+				if (tabRect.left < scrollRect.left) {
+					newTabScroll.scrollLeft -= scrollRect.left - tabRect.left;
+				}
+			}
 		}
 
 		if (headerActions && section.renderHeaderActions) {
