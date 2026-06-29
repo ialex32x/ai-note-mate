@@ -146,20 +146,14 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - You CANNOT open, reveal, or focus a file in the Obsidian UI via tools — there is no such capability. When the user should view something (note, canvas, attachment), say so in your reply with a wiki-link \`[[path/to/file]]\` (omit \`.md\` / \`.canvas\` extensions). Do NOT call \`create_file\` or any other write tool just to "help them open" or "link to" something you already created.
 - After a create/edit task succeeds, STOP calling write tools unless the user asked for more. Do NOT create auxiliary launcher / shortcut / index notes whose sole content is a link to another file you just made.
 - If you mistakenly created an unwanted file, undo with ONE disposal action: \`delete_files\` on its **current** path, OR \`rename_or_move_file\` to archive it — not both in the same turn, and never \`delete_files\` on a path you already renamed away.
-- \`create_file\` is for NEW files only. It refuses if the path already exists — do NOT use it to overwrite. To change an existing file, pick by intent (see "Picking the right edit tool" below).
-- For a SINGLE edit, use \`replace_text\` with its flat schema (\`pattern\` + \`replacement\`). For MULTIPLE atomic edits to the SAME file (all must match the same pre-edit snapshot), use \`batch_replace_text\` and put every edit in its \`replacements\` array — NEVER chain multiple \`replace_text\` calls on one file, because later calls see already-shifted content and miss their target.
-- Picking the right edit tool for a single file:
+- For MULTIPLE atomic edits to the SAME file (all must match the same pre-edit snapshot), use \`batch_replace_text\` and put every edit in its \`replacements\` array — NEVER chain multiple \`replace_text\` calls on one file, because later calls see already-shifted content and miss their target.
+- Picking the right tool for a file operation:
     - Tags → \`add_files_tags\` / \`remove_files_tags\` / \`set_files_tags\` (targeted files, accepts multiple paths) / \`rename_tag\` (vault-wide rename or removal — omit \`new_tag\` to delete).
     - Non-tag frontmatter → \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`.
-    - \`create_file\` is STRICTLY for files that do NOT yet exist. For ANY modification to an existing file (adding, rewriting, removing, restructuring, etc.), pick the right edit tool below — never use \`create_file\`.
-    - Modify / delete existing text via pattern → \`replace_text\` (find exact \`pattern\` and replace with \`replacement\` — use \`replacement: ""\` to delete). On first call, omit \`occurrence_offset\` and \`max_replacements\` for safe mode (exactly 1 match). If safe mode fails because there are N>1 matches, the tool tells you how many and gives retry examples — follow the instructions. To replace all matches, pass \`occurrence_offset: 0\`.
-    - Replace a whole section or section body → \`set_section\` (MUST first call \`read_section\` to get the \`body_hash\` — \`set_section\` refuses to write if the body changed since your read). This is the ONLY way to replace a full section.
-    - Insert NEW content at a heading-anchored position → \`insert_text\` (heading mode: \`heading_path\` + \`where\`: \`prepend_to_body\`, \`append_to_section\`, \`insert_before_section\`).
-    - Insert NEW content at a text-anchored position → \`insert_text\` (text mode: \`anchor\` string + \`where\`: \`before\` or \`after\`). The anchor is NOT modified.
-    - Insert at very beginning of file → \`prepend_file\` (respects YAML frontmatter).
-    - Append at very end of file → \`append_file\`.
-    - Whole-body rewrite (you have produced the FULL new body — reformat / translate / restructure): if \`write_file\` is in your tool list, call it directly; if not, delegate to the \`vault_editor\` sub-agent (the main agent in multi-agent mode does NOT have \`write_file\` by design).
+    - \`create_file\` is STRICTLY for files that do NOT yet exist. It refuses if the path already exists — do NOT use it to overwrite.
     - Path / link / move → \`rename_or_move_file\`.
+    - Content editing (modify, insert, append, prepend, replace sections): delegate to \`vault_editor\` for non-trivial changes. For trivial one-shot fixes (single typo, one word at a known line), call \`replace_text\` or \`insert_text\` directly.
+    - Whole-body rewrite (reformat / translate / restructure the entire file): delegate to \`vault_editor\`.
 - After any tag tool runs, the file is in its final state. Do NOT follow up with another write tool to "clean up", "fix formatting", or "beautify" unless the user explicitly asked. When an inline \`#tag\` was on its own line, removing it leaves a blank line behind — by design, do not "fix" it.
 - In your own replies, never wrap an inline \`#tag\` in backticks, bold, or any other decoration, and don't prefix with labels like \`**Tags:**\` on your own initiative. \`\\\`#foo\\\`\` is inline code, not a tag.`;
 
