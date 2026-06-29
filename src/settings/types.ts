@@ -324,6 +324,8 @@ export interface NoteAssistantPluginSettings {
 	enterToSend: boolean;
 	/** When true, settings marked as advanced are shown in the settings UI. */
 	showAdvanced: boolean;
+	/** When true, debug-level logging and diagnostics are enabled. Advanced setting. */
+	debugEnabled: boolean;
 	/** Image generation configs array. If empty, image generation is disabled. */
 	imageGenConfigs: ImageGenConfig[];
 	/** ID of the currently active speech-to-text config */

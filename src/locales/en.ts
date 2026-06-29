@@ -262,6 +262,9 @@ export const en: Record<string, string> = {
 	'settings.resetTipsDone': 'Usage tips restored.',
 	'settings.showAdvanced': 'Show advanced',
 	'settings.showAdvancedDesc': 'When enabled, shows advanced parameters that should only be changed if you understand their effect.',
+	'settings.debugMode': 'Debug mode',
+	'settings.debugModeDesc': 'Enables a small amount of extra logic for troubleshooting.',
+
 	'settings.builtinWebAgent': 'Built-in web agent',
 	'settings.builtinWebAgentDesc': 'Enable the built-in web agent, which provides web search, web page fetch, and RSS/Atom feed fetch tools to the assistant. The built-in web access has limited capability and reliability — for more stable and powerful results, consider using a dedicated MCP tool that provides web access.',
 	'settings.webFetchSoftLimit': 'Web fetch soft limit (per turn)',

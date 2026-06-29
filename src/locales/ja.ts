@@ -262,6 +262,9 @@ export const ja: Record<string, string> = {
 	'settings.resetTipsDone': '使い方のヒントを復元しました。',
 	'settings.showAdvanced': '上級設定を表示',
 	'settings.showAdvancedDesc': '有効にすると、効果を理解している場合にのみ変更すべき上級者向けパラメータが表示されます。',
+	'settings.debugMode': 'デバッグモード',
+	'settings.debugModeDesc': 'トラブルシューティング用の小規模な診断ロジックを有効にします。',
+
 	'settings.builtinWebAgent': '組み込みのウェブエージェント',
 	'settings.builtinWebAgentDesc': '組み込みのウェブエージェントを有効にし、アシスタントにウェブ検索、ウェブページ取得、RSS/Atom フィード取得のツールを提供します。組み込みのネットワークアクセスは機能・安定性ともに限定的です。より安定して強力なネットワークアクセスが必要な場合は、ネットワークアクセスを提供する専用の MCP ツールの利用を検討してください。',
 	'settings.webFetchSoftLimit': 'ウェブ取得のソフト上限（1 ターンあたり）',

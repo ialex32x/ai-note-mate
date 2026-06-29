@@ -189,6 +189,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	activeSpeechToTextId: '',
 	enterToSend: true,
 	showAdvanced: false,
+	debugEnabled: false,
 	toolConfirmMode: 'auto',
 	mcpServers: [],
 	skillSearchPaths: [],

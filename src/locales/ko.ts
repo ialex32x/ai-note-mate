@@ -262,6 +262,9 @@ export const ko: Record<string, string> = {
 	'settings.resetTipsDone': '사용 팁을 복원했습니다.',
 	'settings.showAdvanced': '고급 설정 표시',
 	'settings.showAdvancedDesc': '활성화하면 플러그인 동작을 이해한 경우에만 변경해야 하는 고급 매개변수가 표시됩니다.',
+	'settings.debugMode': '디버그 모드',
+	'settings.debugModeDesc': '문제 해결을 위한 소량의 진단 로직을 활성화합니다.',
+
 	'settings.builtinWebAgent': '내장 웹 에이전트',
 	'settings.builtinWebAgentDesc': '내장 웹 에이전트를 활성화하여 어시스턴트에 웹 검색, 웹 페이지 가져오기, RSS/Atom 피드 가져오기 도구를 제공합니다. 내장 네트워크 접근 기능과 안정성은 제한적입니다. 더 안정적이고 강력한 네트워크 접근이 필요하다면, 네트워크 접근을 제공하는 전용 MCP 도구의 사용을 고려해 보세요.',
 	'settings.webFetchSoftLimit': '웹 페이지 가져오기 소프트 제한(턴당)',

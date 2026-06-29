@@ -262,6 +262,9 @@ export const zhTW: Record<string, string> = {
 	'settings.resetTipsDone': '使用提示已恢復。',
 	'settings.showAdvanced': '顯示進階設定',
 	'settings.showAdvancedDesc': '開啟後顯示進階參數；若不確定用法，請勿隨意修改。',
+	'settings.debugMode': '除錯模式',
+	'settings.debugModeDesc': '啟用少量用於問題排查的邏輯。',
+
 	'settings.builtinWebAgent': '內建網路智慧體',
 	'settings.builtinWebAgentDesc': '啟用內建的網路智慧體，為助手提供網路搜尋、網頁擷取和 RSS/Atom 訂閱源擷取工具。內建網路存取能力與穩定性有限，如需更穩定、更強大的網路存取能力，建議使用專門提供網路存取的 MCP 工具。',
 	'settings.webFetchSoftLimit': '網頁擷取軟上限（每輪）',

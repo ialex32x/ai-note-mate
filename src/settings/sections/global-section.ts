@@ -42,6 +42,26 @@ export class GlobalSettingsSection implements SettingsSection {
 			},
 		});
 
+		// Debug mode (advanced setting)
+		{
+			const debugSetting = new Setting(container)
+				.setName(t('settings.debugMode'))
+				.setDesc(t('settings.debugModeDesc'))
+				.addToggle(toggle => {
+					toggle.setValue(plugin.settings.debugEnabled);
+					toggle.onChange(async (value) => {
+						plugin.settings.debugEnabled = value;
+						await plugin.saveSettings();
+					});
+				});
+
+			if (isAdvancedSettingsVisible()) {
+				markSettingAdvanced(debugSetting);
+			} else {
+				debugSetting.settingEl.addClass('oap-setting--advanced-collapsed');
+			}
+		}
+
 		// Enter to send toggle
 		createToggleField({
 			container,
