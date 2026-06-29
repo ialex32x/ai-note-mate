@@ -236,7 +236,7 @@ export class SessionStatusDisplay {
                         section,
                         t('statusLabel.systemPrompt'),
                         formatBreakdownTokens(spTotal),
-                        `${spTotal.toLocaleString()} (${formatBreakdownPercent(breakdownPercent(spTotal, total))}%)`,
+                        `${spTotal.toLocaleString()} (${formatBreakdownPercent(breakdownPercent(spTotal, total))})`,
                     );
                     if (sp.memory > 0) {
                         this.renderRow(
@@ -276,7 +276,7 @@ export class SessionStatusDisplay {
                         section,
                         t('statusLabel.conversation'),
                         formatBreakdownTokens(convTotal),
-                        `${convTotal.toLocaleString()} (${formatBreakdownPercent(breakdownPercent(convTotal, total))}%)`,
+                        `${convTotal.toLocaleString()} (${formatBreakdownPercent(breakdownPercent(convTotal, total))})`,
                     );
                 }
 

@@ -296,6 +296,7 @@ export class ChatStream implements IChatAgent {
         this._currentTurn = messages.reduce((max, m) => Math.max(max, m.turn ?? 0), 0);
         this._sessionTokenUsage = { ...tokenUsage };
         this._state = "idle";
+        this._contextBreakdown = undefined; // stale from previous session
         // Restore summaries if provided
         if (summaries && summaries.length > 0) {
             this._summaries = summaries.map(s => ({ ...s }));
@@ -557,21 +558,6 @@ export class ChatStream implements IChatAgent {
             // filtered to begin with, so stickiness would be a no-op.
             const stickyOndemandToolNames = new Set<string>();
 
-            // Compute conversation-history token breakdown (excludes the
-            // system message — that's already tracked via spBreakdown).
-            let conversationUser = 0;
-            let conversationAssistant = 0;
-            let conversationTool = 0;
-            for (const msg of rawMessages) {
-                if (msg.role === 'system') continue;
-                const tok = estimateTokens(
-                    typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
-                );
-                if (msg.role === 'user') conversationUser += tok;
-                else if (msg.role === 'assistant') conversationAssistant += tok;
-                else if (msg.role === 'tool_result') conversationTool += tok;
-            }
-
             // Tool-call loop: keep requesting until no more tool calls
             while (true) {
                 // Per-iteration abort guard. The downstream work in this
@@ -701,7 +687,22 @@ export class ChatStream implements IChatAgent {
                 // Compute context breakdown once per turn — the first
                 // tool-loop iteration stores it; `prompt()` resets the
                 // field to undefined at the top of each turn.
+                // Uses `messagesToSend` (post-compression) so the totals
+                // reflect what the LLM actually receives.
                 if (!this._contextBreakdown) {
+                    let convUser = 0;
+                    let convAssistant = 0;
+                    let convTool = 0;
+                    for (const msg of messagesToSend) {
+                        if (msg.role === 'system') continue;
+                        const tok = estimateTokens(
+                            typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+                        );
+                        if (msg.role === 'user') convUser += tok;
+                        else if (msg.role === 'assistant') convAssistant += tok;
+                        else if (msg.role === 'tool_result') convTool += tok;
+                    }
+
                     const toolSchemaTokens = toolSchemas.length > 0
                         ? estimateTokens(JSON.stringify(toolSchemas))
                         : 0;
@@ -712,9 +713,9 @@ export class ChatStream implements IChatAgent {
                     this._contextBreakdown = {
                         systemPrompt: spBreakdown,
                         conversation: {
-                            user: conversationUser,
-                            assistant: conversationAssistant,
-                            tool: conversationTool,
+                            user: convUser,
+                            assistant: convAssistant,
+                            tool: convTool,
                         },
                         summaries: summaryTokens,
                         toolSchemas: toolSchemaTokens,
