@@ -217,6 +217,12 @@ export function createChatAgent(
     const builtinSystemPrompt = buildBuiltinSystemPrompt({
         multiAgent: allSubAgentConfigs.length > 0,
         structuredFollowUps: settings.followUpSuggestionsEnabled && settings.followUpSuggestionsStructured,
+        // Only include TODO usage rules when manage_todos is wired
+        // (saves ~350 tokens on sessions without the tool).
+        includeTodoRules: !!callbacks.getTodoStateSource,
+        // Only include memory usage rules when memory is enabled
+        // (saves ~200 tokens on memory-free sessions).
+        includeMemoryRules: settings.memoryEnabled,
     });
 
     // Skills are intentionally NOT folded into the static `systemPrompt`

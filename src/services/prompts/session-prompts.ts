@@ -163,9 +163,11 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - After any tag tool runs, the file is in its final state. Do NOT follow up with another write tool to "clean up", "fix formatting", or "beautify" unless the user explicitly asked. When an inline \`#tag\` was on its own line, removing it leaves a blank line behind — by design, do not "fix" it.
 - In your own replies, never wrap an inline \`#tag\` in backticks, bold, or any other decoration, and don't prefix with labels like \`**Tags:**\` on your own initiative. \`\\\`#foo\\\`\` is inline code, not a tag.`;
 
-const SINGLE_AGENT_SYSTEM_PROMPT = `\
-You are a helpful assistant for Obsidian to help me manage/improve my notes in the Obsidian vault.
+const SINGLE_AGENT_INTRO = `\
+You are a helpful assistant for Obsidian to help me manage/improve my notes in the Obsidian vault.\
+`;
 
+const SINGLE_AGENT_HINTS = `\
 ## HINTS
 - Obsidian API is available as tool calls
 - "Note" typically refers to markdown files in the current vault, while "file" is a broader term that includes notes, attachments, and files of any format
@@ -174,15 +176,8 @@ You are a helpful assistant for Obsidian to help me manage/improve my notes in t
 - Tags cannot contain spaces. Use camelCase, kebab-case, or underscores instead (e.g., \`#projectA\` \`#my-tag\` \`#my_tag\`)
 - The user can use wiki-link syntax in their messages to reference specific files/folders. If needed, perform further operations on them via Obsidian tool calls based on the user's intent
 - Wiki-links that are short links (referencing by filename only, without a path) should be resolved by searching the entire vault for a matching file/folder. If a file and folder share the same name, the link is assumed to point to the file
-- When first exploring an unfamiliar vault, start with \`get_overview\`, then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately
-
-${VAULT_HARD_RULES}
-
-${TODO_USAGE_RULES}
-
-${MEMORY_USAGE_RULES}
-
-${COMMON_RULES}`;
+- When first exploring an unfamiliar vault, start with \`get_overview\`, then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately\
+`;
 
 /**
  * Description of a sub-agent for dynamic system prompt generation.
@@ -212,36 +207,39 @@ export interface BuildSystemPromptOptions {
      * is used.
      */
     multiAgent?: boolean;
+    /**
+     * When false, omit {@link TODO_USAGE_RULES} from the builtin prompt.
+     * Defaults to true (backward-compatible). Set to false when the
+     * `manage_todos` tool is not registered for the current session
+     * — saves ~350 tokens on every turn that doesn't use TODOs.
+     */
+    includeTodoRules?: boolean;
+    /**
+     * When false, omit {@link MEMORY_USAGE_RULES} from the builtin prompt.
+     * Defaults to true (backward-compatible). Set to false when memory
+     * is disabled in settings — saves ~200 tokens on memory-free sessions.
+     */
+    includeMemoryRules?: boolean;
 }
 
-/**
- * Multi-agent base prompt. Mirrors the single-agent shape but skips the
- * heavy DELEGATION block — that is emitted dynamically per turn (see
- * {@link buildDelegationSystemPrompt}) so it never costs tokens on
- * turns where no sub-agent is shortlisted. The intro and HINTS stay
- * delegation-aware (e.g. "start with get_overview (delegate to vault)"
- * hint) so the model has a continuous frame even when this turn's
- * dynamic block is empty.
- */
-const MULTI_AGENT_BASE_SYSTEM_PROMPT = `\
-You are a helpful assistant for Obsidian to help me manage/improve my notes in the Obsidian vault.
+const MULTI_AGENT_INTRO = `\
+You are a helpful assistant for Obsidian to help me manage/improve my notes in the Obsidian vault.\
+`;
 
-${VAULT_HARD_RULES}
-
-${TODO_USAGE_RULES}
-
-${MEMORY_USAGE_RULES}
-
+const MULTI_AGENT_HINTS = `\
 ## HINTS
 - "Note" typically refers to markdown files in the current vault, while "file" is a broader term
 - Tags cannot contain spaces. Use camelCase, kebab-case, or underscores instead (e.g., \`#projectA\` \`#my-tag\` \`#my_tag\`)
 - The user can use wiki-link syntax in their messages to reference specific files/folders
-- When first exploring an unfamiliar vault, start with \`get_overview\` (delegate to vault when available), then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately
-
-${COMMON_RULES}`;
+- When first exploring an unfamiliar vault, start with \`get_overview\` (delegate to vault when available), then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately\
+`;
 
 /**
- * Build the builtin system prompt.
+ * Build the builtin system prompt from composable parts.
+ *
+ * Rule blocks ({@link TODO_USAGE_RULES}, {@link MEMORY_USAGE_RULES}) are
+ * conditionally included based on `includeTodoRules` / `includeMemoryRules`
+ * so sessions without those tools don't pay the token cost.
  *
  * The DELEGATION block is no longer baked into the multi-agent variant
  * — it is now emitted dynamically per turn by
@@ -253,14 +251,32 @@ ${COMMON_RULES}`;
 export function buildBuiltinSystemPrompt(
     options: BuildSystemPromptOptions = {},
 ): string {
-    let out = options.multiAgent
-        ? MULTI_AGENT_BASE_SYSTEM_PROMPT
-        : SINGLE_AGENT_SYSTEM_PROMPT;
+    const includeTodo = options.includeTodoRules !== false;
+    const includeMemory = options.includeMemoryRules !== false;
+
+    const parts: string[] = [];
+
+    if (options.multiAgent) {
+        parts.push(MULTI_AGENT_INTRO);
+        parts.push(VAULT_HARD_RULES);
+        if (includeTodo) parts.push(TODO_USAGE_RULES);
+        if (includeMemory) parts.push(MEMORY_USAGE_RULES);
+        parts.push(MULTI_AGENT_HINTS);
+    } else {
+        parts.push(SINGLE_AGENT_INTRO);
+        parts.push(SINGLE_AGENT_HINTS);
+        parts.push(VAULT_HARD_RULES);
+        if (includeTodo) parts.push(TODO_USAGE_RULES);
+        if (includeMemory) parts.push(MEMORY_USAGE_RULES);
+    }
+
+    parts.push(COMMON_RULES);
 
     if (options.structuredFollowUps) {
-        out += STRUCTURED_SUGGESTIONS_PROMPT;
+        parts.push(STRUCTURED_SUGGESTIONS_PROMPT);
     }
-    return out;
+
+    return parts.join('\n\n');
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -280,70 +296,37 @@ export function buildBuiltinSystemPrompt(
 // ─────────────────────────────────────────────────────────────────
 
 const DELEGATION_VAULT_INSPECTOR_TIPS = `
-**Section / partial edits — locate first, then read the narrow range.** When the user asks to modify a *part* of a file (a heading section, a paragraph identified by a keyword, a code block, a specific list item), step 1 below is MANDATORY — you may NOT skip it, and you may NOT replace it with a "just read the whole file and return it" delegation. The default SOP is:
-1. Delegate a *locate* task: ask vault_inspector to \`grep_file\` against that file with the anchor string(s) targeting the section (e.g. the heading text, a distinctive keyword, several list items in one \`queries\` array) — return the matching line numbers. Use the \`heading_path\` parameter (an array of heading titles, outermost → innermost) to scope the grep to a single heading region when applicable.
-2. Delegate a *narrow read*: ask vault_inspector to \`read_file\` with \`start_line\`/\`end_line\` covering just that section (plus a few lines of context if needed for boundary detection).
-3. Apply the edit yourself with \`replace_text\` or \`insert_text\` using the exact text/narrow range from step 2.
+**Partial edits — locate first, then read the narrow range.** When modifying a *part* of a file (a heading section, a paragraph, a code block), the default SOP is:
+1. Delegate a *locate*: ask vault_inspector to \`grep_file\` with anchor string(s) targeting the section. Use \`heading_path\` (outermost → innermost) to scope the grep to a single heading region when applicable.
+2. Delegate a *narrow read*: ask vault_inspector to \`read_file\` with \`start_line\`/\`end_line\` covering just that section.
+3. Apply the edit yourself with \`replace_text\` or \`insert_text\`.
 
-**Phrase a locate task as a single goal, not a chain of actions.** When you delegate step 1, the \`task\` MUST describe ONE goal — finding line numbers — and put the file path and search terms under the \`handoff\` argument, NOT spliced into the prose. Refer to them in the task prose by their bare key name (e.g. "the \`path\` key", "the \`query\` key"); do NOT write \`handoff.path\` / \`inputs.path\` / any dotted prefix — sub-agents have empirically tried to use those literal strings as the \`read_handoff\` key and missed the actual entry. Do NOT chain verbs like "Read the file X. Search for Y." in the task: sub-agents follow such phrasing literally and read the whole file before grepping, defeating the entire purpose of locating first. Use locate-only verbs ("locate", "find", "grep", "search inside") and let \`grep_file\` decide how to access the file.
+**Task phrasing: single goal, handoff for data, bare key references.** The \`task\` MUST describe ONE goal (use locate-only verbs: "locate", "find", "grep"). Put file paths and search terms under \`handoff\` — refer to them by bare key name in backticks (e.g. "the \`path\` key"), never \`handoff.path\` / \`inputs.path\`. For multiple paths, use \`handoff: { source: ["A.md", "B.md"] }\` and refer to "the files in \`source\`".
+  ✅ \`delegate_task({ "agent": "vault_inspector", "task": "Locate \`query\` in the file at \`path\` and return line numbers under result.", "handoff": { "path": "Notes/Foo.md", "query": "{{date}}" } })\`
+  ❌ DO NOT chain verbs: "Read the file X. Search for Y." — the sub-agent reads the whole file before grepping.
+  ❌ DO NOT request a full-file dump when you only need to edit part of it — e.g. \`task: "Read the full content of \`path\` and return it under result"\`. If you catch yourself writing this, go back to step 1 (grep) + step 2 (narrow read).
 
-  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Locate every occurrence of \`query\` in the file at \`path\` using grep_file. Return the matching line numbers under result.", "handoff": { "path": "Notes/Foo.md", "query": "{{date}}" } })\`
-  ❌ Bad (chained verbs): \`delegate_task({ "agent": "vault_inspector", "task": "Read the file \\"Notes/Foo.md\\". Search for \\"{{date}}\\" and return the line numbers." })\` — the literal "Read the file" forces a wasteful full-file read; path and query also belong in \`handoff\`, not in the prose.
+**Full-file read exception — only when ALL of:** you already know exactly what to write AND need the verbatim pre-edit bytes to anchor a literal \`replace_text\` payload AND grep cannot give a usable anchor. Say so explicitly: "I need the exact pre-edit bytes; return the full content under result."
 
-**Keep paths out of the \`task\` prose; reference them by key name.** When the task involves a file whose path is in \`handoff\` (e.g. under \`path\` or \`source\`), refer to it abstractly — "the file at \`path\`" rather than spelling out the concrete filename. This avoids a second, potentially conflicting source of truth.
+Prefer content-anchored tools: \`replace_text\` (pattern search), \`insert_text\` (text anchor or heading boundary). These match by content, not line numbers, so unrelated edits don't shift positions.
 
-  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Read lines \`start_line\` through \`end_line\` from the file at \`path\` and return the exact text under result.", "handoff": { "path": "Path/To/SomeFile.md", "start_line": 33, "end_line": 43 } })\`
-  ❌ Avoid: \`delegate_task({ "agent": "vault_inspector", "task": "Read lines 33-43 from SomeFile.md ...", "handoff": { "path": "Path/To/SomeFile.md", ... } })\` — the filename in prose may be incomplete or conflict with the authoritative path in \`handoff\`.
+**Link relationship queries → delegate a link-index task, not a content read.** Use \`get_outgoing_links\` / \`get_backlinks\` — these answer directly from Obsidian's metadataCache, no file content needed.
+  ✅ \`delegate_task({ "agent": "vault_inspector", "task": "Check whether the file at \`source\` links to \`target\` using get_outgoing_links.", "handoff": { "source": "Topics/A.md", "target": "Topics/B.md" } })\`
+  ❌ DO NOT delegate "Read the content of A.md and check if it links to B.md" — the link index already has the answer.
 
-When you need to pass multiple paths, use a single key (typically \`source\`) with an array value — e.g. \`handoff: { source: ["Notes/A.md", "Topics/B.md"] }\` — and refer to "the files in \`source\`" in the task prose.
+**Per-note embedded attachment ranking → \`rank_notes_by_embedded_size\`.** One call over Obsidian's link index. Do NOT delegate a vault-wide grep/browse plan.
+  ✅ \`delegate_task({ "agent": "vault_inspector", "task": "Call rank_notes_by_embedded_size with limit 20. Return the ranked notes under result.", "handoff": { "limit": 20 } })\`
+  ❌ DO NOT delegate "Explore the vault: find attachment folders, list files, search all notes for ![[..."
 
-**Do NOT replace step 1 with a "read full content and return it verbatim" task.** When you find yourself about to write something like \`task: "Read the full content at \\\`path\\\` and return it verbatim under result"\` (or "return result.content", or "give me the bytes of X so I can find Y") — STOP. That is the locate step rewritten as a full-file dump, and it is even worse than the chained-verb anti-pattern: it skips grep entirely and pushes the whole file body through your context just so you can do the locate work yourself. Almost every "I need to see the file to modify part of it" is actually "I need a few line numbers + a narrow slice"; do step 1 (grep) and step 2 (narrow read) instead.
-
-  ❌ Bad (full-file dump masquerading as a read task): \`delegate_task({ "agent": "vault_inspector", "task": "Read the full content of the file at \`path\` and return it verbatim under result.content.", "handoff": { "path": "Notes/Foo.md" } })\` — if the user asked you to edit only a part of \`Foo.md\`, this dumps the entire file into your context to do work that \`grep_file\` should do at the source.
-
-The narrow exception — when a full-file read IS the right delegation — is all of:
-- you ALREADY know exactly what to write (no further locating needed), AND
-- you need the verbatim pre-edit bytes to construct a literal \`replace_text\` / \`insert_text\` payload that anchors on surrounding context, AND
-- the file is small or grep cannot give you a usable anchor.
-
-In that case say so explicitly in the \`task\`: e.g. "I am about to apply a literal edit and need the exact pre-edit bytes; return the full content under result." Anything short of that justification means you should be locating first, not dumping.
-
-When you need to modify a file, prefer content-anchored tools over line-number tools: use \`replace_text\` to find-and-replace by text content (pattern search); use \`insert_text\` to add new content before/after a text anchor or at a heading boundary. These tools match by content, not line numbers, so they are not affected by unrelated edits shifting positions. Only fall back to \`append_file\` (end of file) or \`prepend_file\` (beginning) when there is no content anchor to target.
-
-Reading a whole file just to edit a small section wastes tokens and risks copy-drift on the unchanged parts — and as the anti-patterns above show, the model's own pressure to "just read it and figure it out" is the single most common cause of context bloat in this tool. Trust the locate-first SOP.
-
-**Link relationship queries — delegate a metadata or graph task, not a content read.** When the user asks about link relationships between notes — "does A link to B?", "what notes does A reference?", "which notes link to A?", "how are A and B connected?" — do NOT delegate "read the file content of A" or "read A and check if it links to B". The sub-agent has structured link-index tools (\`get_outgoing_links\` returns resolved + unresolved with counts; \`get_backlinks\` returns incoming links) that answer these questions directly from Obsidian's metadataCache — no file content needed. Phrase the task as a link-query, not a content-read:
-
-  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Check whether the file at \`source\` links to the path in \`target\` using get_outgoing_links. Return the answer under result.", "handoff": { "source": "Topics/A.md", "target": "Topics/B.md" } })\`
-  ❌ Bad: \`delegate_task({ "agent": "vault_inspector", "task": "Read the content of Topics/A.md and check if it contains a link to Topics/B.md." })\` — this forces a wasteful full-file read when the link index already has the answer.
-
-If you also need the reverse direction (who links TO A), that's a separate \`get_backlinks\` call — do not ask the sub-agent to read other files to determine this.
-
-**Per-note embedded attachment ranking — delegate \`rank_notes_by_embedded_size\`, not a vault-wide grep/browse plan.** When the user asks which notes have the largest / heaviest embedded attachments, total linked attachment footprint per note, or "notes with attachments ranked by size" — the vault inspector has \`rank_notes_by_embedded_size\` (one call over Obsidian's link index; each attachment file counted once per note). Do NOT delegate exploratory scripts that make the sub-agent \`browse_folder\` every assets path, \`list_files_sorted\` every attachment directory, and \`search_content\` for \`![[\` across all notes — that duplicates the index and burns turns before the right tool appears. Name the tool in the \`task\`:
-
-  ✅ Good: \`delegate_task({ "agent": "vault_inspector", "task": "Call rank_notes_by_embedded_size with limit 20 and include_breakdown true. Return the ranked notes under result.", "handoff": { "limit": 20 } })\`
-  ❌ Bad: \`delegate_task({ "agent": "vault_inspector", "task": "Explore the vault: find attachment folders, list every file with sizes, search all notes for ![[ and ![](, return which notes reference which attachments." })\` — forces manual scanning; omit rank_notes_by_embedded_size even though it answers the per-note ranking directly.
-
-If the user ALSO wants orphan files in an \`assets/\` folder (never linked from any note), say so as a **second** focused sub-task (\`list_files_sorted\` with \`folder_prefix\` or \`find_orphan_files\`) — do not fold that into the ranking task as step 1.
-
-**Note analysis / comparison / summary — delegate a digest task, not a raw read.** Whenever the user asks for the *meaning* of one or more notes — "what does this note say about X", "summarize this note", "compare these three notes", "find the conflicts across these papers", "what's in A.md" — do NOT delegate "read the full content and return it". Delegate ONE digest task to vault_inspector with the path list, and let it return a structured digests array (one entry per path with \`summary\`, \`key_points\`, \`anchors\`). You consume \`result.digests\` directly; each \`digests[i].anchors[].heading_path\` is a precise pointer you can feed directly to \`insert_text\`'s heading mode for heading-anchored edits.
-
-  delegate_task({ "agent": "vault_inspector", "task": "Produce a digest of these notes against the user's question (provided under the \`user_focus\` key). Return digests[] under result.", "handoff": { "source": ["Topics/A.md"], "user_focus": "<the user's question, verbatim>" } })
-
-Phrase the \`task\` with the word "digest" (or "summarize and return the digest schema") so it is unambiguous — saying "read X and return it" would route the sub-agent to Mode A and dump the entire file body into your context. The digest format is bounded (per-file ≤ ~80-word summary, ≤ 6 key_points, ≤ 6 anchors) so 5–10 notes still fit your context easily — far cheaper than ingesting their full bodies. Trust \`digests[i].summary\` + \`key_points\` for synthesis; pull a specific section back via a narrow follow-up only when an anchor's \`why\` indicates you need exact wording.
-
-This applies to **single-note** digests too, not just multi-note comparisons. A 5,000-word note's full body in your context is almost always wasteful when the user only wants to know what it says — the digest's bounded \`summary\` + \`key_points\` is the high-signal answer, and you can still pull a specific section back via a narrow follow-up read if the user asks a follow-up that needs exact wording.
-
-Phrase the \`task\` with the word "digest" (or "summarize and return the digest schema") so it is unambiguous — saying "read X and return it" would route the sub-agent to Mode A and dump the entire file body into your context. The digest format is bounded (per-file ≤ ~80-word summary, ≤ 6 key_points, ≤ 6 anchors) so 5–10 notes still fit your context easily — far cheaper than ingesting their full bodies. Trust \`digests[i].summary\` + \`key_points\` for synthesis; pull a specific section back via a narrow follow-up only when an anchor's \`why\` indicates you need exact wording.
-
-The exception is when you genuinely need the verbatim bytes — e.g. you are about to apply a literal edit to the file and need to see the exact pre-edit text, or the user explicitly asked "show me the raw content of X". In those cases say so in the \`task\` (e.g. "Read the full content of X and return it under result; I need the exact bytes to apply an edit") and the sub-agent will return raw text via Mode A.
+**Note analysis / comparison / summary → delegate a digest task, not a raw read.** Delegate ONE digest task with the path list. The sub-agent returns \`result.digests\` (per-file: \`summary\`, \`key_points\`, \`anchors\`). Each \`digests[i].anchors[].heading_path\` is a heading-anchored edit target.
+  \`delegate_task({ "agent": "vault_inspector", "task": "Produce a digest of these notes against \`user_focus\`. Return digests[] under result.", "handoff": { "source": ["Topics/A.md"], "user_focus": "<verbatim user question>" } })\`
+Phrase the task with "digest" so it's unambiguous — "read X and return it" dumps the full body. The digest format is bounded (≤ ~80-word summary, ≤ 6 key_points, ≤ 6 anchors) so 5–10 notes fit easily. This applies to single-note digests too. Pull a specific section back via a narrow follow-up only when you need exact wording.
 
 ### Vault inspector delegation tips
-When delegating an inspection task to the **vault_inspector** sub-agent, prefer precise descriptions over "scan all" style instructions:
-- For vault-level statistics (size, file counts) or extremal queries (largest/smallest/oldest/newest **single file**), mention "vault overview" in the task — the vault inspector has a dedicated \`get_overview\` tool that computes these in one call
-- For **which notes have the largest embedded / linked attachments** (per-note totals), say "rank_notes_by_embedded_size" explicitly — NOT "search for ![[ in all notes"
-- For listing files by size, recency, or creation date inside a folder, mention "list_files_sorted" with \`folder_prefix\` — ranks individual files, not per-note embed totals
-- Avoid instructing the vault inspector to "scan all files" or "iterate through all notes" when aggregate or sorted queries exist`;
+- Vault-level stats / extremal queries → \`get_overview\`
+- Per-note embedded attachment totals → \`rank_notes_by_embedded_size\`
+- Files by size/recency inside a folder → \`list_files_sorted\` with \`folder_prefix\`
+- Avoid "scan all files" / "iterate through all notes" when aggregate or sorted queries exist`;
 
 const DELEGATION_VAULT_EDITOR_TIPS = `
 **Whole-file body rewrites — delegate to vault_editor, don't read + rewrite yourself.** When the user asks to **reformat / translate / restructure / normalize / rewrite / paraphrase the BODY of one specific file**, do NOT read the file and then produce the new body yourself — both the read (the full old body lands in your context) and the write (you have to emit the full new body as a tool argument) blow up your context budget and tokens. Instead, delegate ONE task per file to \`vault_editor\`. The sub-agent reads the file itself, produces the new body, writes it back, and returns a structured diff summary (\`sample_diff\` with short before/after excerpts) — the full body never rides through your context.
