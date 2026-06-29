@@ -207,15 +207,11 @@ export function createChatAgent(
         ? computeClaimedMcpTools(settings.agents, plugin.mcpManager.getRegisteredTools())
         : new Set<string>();
 
-    // The DELEGATION block is no longer baked into the static system
+    // The DELEGATION block is not baked into the static system
     // prompt — `AgentOrchestrator` injects it per-turn via
     // `systemPromptSuffix`, scoped to whichever sub-agents the
-    // sub-agent router shortlists for the current user query. We just
-    // tell the prompt builder whether to use the multi-agent
-    // intro/HINTS flavour (slimmer, delegation-aware) or the
-    // single-agent one (richer, direct-tool-use framing).
+    // sub-agent router shortlists for the current user query.
     const builtinSystemPrompt = buildBuiltinSystemPrompt({
-        multiAgent: allSubAgentConfigs.length > 0,
         structuredFollowUps: settings.followUpSuggestionsEnabled && settings.followUpSuggestionsStructured,
         // Only include TODO usage rules when manage_todos is wired
         // (saves ~350 tokens on sessions without the tool).

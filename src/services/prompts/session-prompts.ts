@@ -55,19 +55,14 @@ export const COMMON_RULES = `\
 `;
 
 /**
- * Vault routing & edit-tool selection rules. Promoted from the
- * multi-agent prompt so the single-agent prompt gets the same hard
- * guarantees, and individual tool descriptions (which previously
- * repeated each routing fact 2–3 times) can rely on a single source of
- * truth here. Tool-specific safety guards (e.g. \`replace_text\`'s
- * tag-shape \`force\` flag, \`batch_set_frontmatter\` / \`batch_unset_frontmatter\`'s tag-key refusal)
+ * Vault routing & edit-tool selection rules. Tool-specific safety
+ * guards (e.g. `replace_text`'s tag-shape `force` flag,
+ * `batch_set_frontmatter` / `batch_unset_frontmatter`'s tag-key refusal)
  * stay in their respective tool descriptions because they describe
  * runtime behaviour of one tool, not cross-tool routing.
  */
 /**
- * Usage rules for the `manage_todos` tool. Promoted into both the
- * single-agent and multi-agent system prompts so the model gets the
- * same "when to use / how to use" framing regardless of mode.
+ * Usage rules for the `manage_todos` tool.
  *
  * Goals:
  * - Make the tool the EXCEPTION, not the default. Calling it for
@@ -106,8 +101,7 @@ You have a session-scoped TODO list via the \`manage_todos\` tool. The list is p
 
 /**
  * Usage rules for the long-term Memory tools (`memory_store` /
- * `memory_delete`). Promoted into both the single-agent and
- * multi-agent system prompts.
+ * `memory_delete`).
  *
  * Why a rule block at all (the tool descriptions already cover most of
  * this):
@@ -157,22 +151,6 @@ export const VAULT_HARD_RULES = `## Vault hard rules
 - After any tag tool runs, the file is in its final state. Do NOT follow up with another write tool to "clean up", "fix formatting", or "beautify" unless the user explicitly asked. When an inline \`#tag\` was on its own line, removing it leaves a blank line behind — by design, do not "fix" it.
 - In your own replies, never wrap an inline \`#tag\` in backticks, bold, or any other decoration, and don't prefix with labels like \`**Tags:**\` on your own initiative. \`\\\`#foo\\\`\` is inline code, not a tag.`;
 
-const SINGLE_AGENT_INTRO = `\
-You are a helpful assistant for Obsidian to help me manage/improve my notes in the Obsidian vault.\
-`;
-
-const SINGLE_AGENT_HINTS = `\
-## HINTS
-- Obsidian API is available as tool calls
-- "Note" typically refers to markdown files in the current vault, while "file" is a broader term that includes notes, attachments, and files of any format
-- Never make assumptions about the state of the vault or its content; use the tool calls to inspect or manipulate data in the vault
-- If the user asks you to perform an action on vault data (read, create, edit, move, delete), perform it through tool calls. UI-only actions you cannot perform (opening a tab, switching views, clicking a link) — describe in your reply instead; do not simulate them with extra file creation
-- Tags cannot contain spaces. Use camelCase, kebab-case, or underscores instead (e.g., \`#projectA\` \`#my-tag\` \`#my_tag\`)
-- The user can use wiki-link syntax in their messages to reference specific files/folders. If needed, perform further operations on them via Obsidian tool calls based on the user's intent
-- Wiki-links that are short links (referencing by filename only, without a path) should be resolved by searching the entire vault for a matching file/folder. If a file and folder share the same name, the link is assumed to point to the file
-- When first exploring an unfamiliar vault, start with \`get_overview\`, then a SINGLE \`browse_folder\` call with \`max_depth: 2\` — avoid sequentially listing each top-level folder separately\
-`;
-
 /**
  * Description of a sub-agent for dynamic system prompt generation.
  */
@@ -187,20 +165,6 @@ export interface SubAgentDescriptor {
 export interface BuildSystemPromptOptions {
     /** When true, append instructions asking the model to emit a machine-readable follow-up suggestions block. */
     structuredFollowUps?: boolean;
-    /**
-     * When true, build the multi-agent flavour of the base prompt
-     * (slimmer HINTS, no "use tools directly" framing, neutral intro).
-     * The actual DELEGATION block is NOT included here — it is
-     * emitted dynamically per turn by {@link buildDelegationSystemPrompt}
-     * via the orchestrator's `systemPromptSuffix` callback, so that an
-     * empty filtered set on a given turn skips the block entirely and
-     * the model's prompt collapses to the base.
-     *
-     * Set false (or omit) for single-agent mode → the original
-     * single-agent prompt (with full HINTS and direct-tool-use framing)
-     * is used.
-     */
-    multiAgent?: boolean;
     /**
      * When false, omit {@link TODO_USAGE_RULES} from the builtin prompt.
      * Defaults to true (backward-compatible). Set to false when the
@@ -250,19 +214,11 @@ export function buildBuiltinSystemPrompt(
 
     const parts: string[] = [];
 
-    if (options.multiAgent) {
-        parts.push(MULTI_AGENT_INTRO);
-        parts.push(VAULT_HARD_RULES);
-        if (includeTodo) parts.push(TODO_USAGE_RULES);
-        if (includeMemory) parts.push(MEMORY_USAGE_RULES);
-        parts.push(MULTI_AGENT_HINTS);
-    } else {
-        parts.push(SINGLE_AGENT_INTRO);
-        parts.push(SINGLE_AGENT_HINTS);
-        parts.push(VAULT_HARD_RULES);
-        if (includeTodo) parts.push(TODO_USAGE_RULES);
-        if (includeMemory) parts.push(MEMORY_USAGE_RULES);
-    }
+    parts.push(MULTI_AGENT_INTRO);
+    parts.push(VAULT_HARD_RULES);
+    if (includeTodo) parts.push(TODO_USAGE_RULES);
+    if (includeMemory) parts.push(MEMORY_USAGE_RULES);
+    parts.push(MULTI_AGENT_HINTS);
 
     parts.push(COMMON_RULES);
 
