@@ -181,6 +181,14 @@ export function createSessionRuntime(
                 // nothing. Failures are swallowed internally — memory
                 // must NEVER block or alter the chat turn.
                 void maybeExtractMemoriesAfterFinish(plugin, runtime);
+                // Persist context breakdown once per turn (instead of
+                // on every LLM round inside a tool-call loop). Only
+                // active when debug mode is on; I/O errors are silently
+                // swallowed.
+                const breakdown = chat.contextBreakdown;
+                if (plugin.settings.debugEnabled && breakdown) {
+                    persistContextBreakdownCache(plugin, sessionId, breakdown);
+                }
             });
         },
         onAbort: (msg: ChatMessage) => {
@@ -196,11 +204,6 @@ export function createSessionRuntime(
         },
         onUsageUpdate: () => {
             runtime.emit({ type: 'usage-update' });
-            // Persist context breakdown to cache when debug mode is on.
-            const breakdown = chat.contextBreakdown;
-            if (plugin.settings.debugEnabled && breakdown) {
-                persistContextBreakdownCache(plugin, sessionId, breakdown);
-            }
         },
         onError: (err: Error) => {
             runtime.markIdle();
