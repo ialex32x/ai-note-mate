@@ -1039,7 +1039,6 @@ export class SessionView extends ItemView {
                 tabindex: '0',
             },
         });
-        setTooltip(sessionStatusMainEl, t('status.ariaLabel'));
         // Note: `session-dropdown-menu` MUST be the first class so that
         // DropdownManager derives the `--open` toggle class from it.
         const sessionStatusPanelEl = sessionStatusEl.createEl('div', {

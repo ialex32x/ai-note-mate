@@ -63,6 +63,7 @@ export class SessionStatusDisplay {
         const tooltipText = formatContextTooltip(chat, maxTokens);
 
         el.empty();
+        setTooltip(el, tooltipText || '');
 
         const container = el.createEl('div', { cls: 'session-status-display' });
 
@@ -83,9 +84,6 @@ export class SessionStatusDisplay {
         const dashOffset = circumference - (circumference * pct) / 100;
 
         const wrapper = container.createEl('span', { cls: 'session-context-ring' });
-        if (tooltipText) {
-            setTooltip(wrapper, tooltipText);
-        }
 
         const NS = 'http://www.w3.org/2000/svg';
         const doc = activeDocument;

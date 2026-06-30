@@ -19,17 +19,17 @@ export function computeContextPercent(
 
 /**
  * Build a tooltip/display string showing the context breakdown.
- * X uses exact locale format, Y uses compact K/M,
- * e.g. `"12,345 / 128.0K (10%)"`.
+ * Both X and Y use compact K/M format,
+ * e.g. `"12.3K / 128.0K (10%)"`.
  */
 export function formatContextTooltip(
     chat: IChatAgent,
     maxTokens: number,
 ): string {
     const lastCallTotal = chat.sessionTokenUsage.lastCallTotalTokens ?? 0;
-    if (maxTokens <= 0 || lastCallTotal <= 0) return '';
+    if (maxTokens <= 0) return '';
     const pct = Math.round((lastCallTotal / maxTokens) * 100);
-    return `${lastCallTotal.toLocaleString()} / ${formatCompact(maxTokens)} (${pct}%)`;
+    return `${formatCompact(lastCallTotal)} / ${formatCompact(maxTokens)} (${pct}%)`;
 }
 
 /**
