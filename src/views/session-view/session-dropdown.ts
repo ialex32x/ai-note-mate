@@ -161,11 +161,6 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
                 cls: 'session-dropdown__item-token',
                 text: `↓${completionStr}`,
             });
-            setTooltip(
-                tokensEl,
-                `${t('statusLabel.prompt')}: ${usage.promptTokens.toLocaleString()}\n` +
-                `${t('statusLabel.completion')}: ${usage.completionTokens.toLocaleString()}`,
-            );
         }
 
         // Session ID
