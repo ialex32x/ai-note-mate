@@ -718,10 +718,13 @@ export class SessionView extends ItemView {
         // Placed between the checkpoint row and the input row so the
         // user can see the pasted image before typing their message.
         this.attachmentRow = inputContainer.createEl('div', { cls: 'session-attachment-row session-attachment-row--hidden' });
+        // Wrapper that sizes to the actual thumbnail dimensions so the
+        // delete button always sits exactly on the image's top-right corner.
+        const thumbWrap = this.attachmentRow.createEl('span', { cls: 'session-attachment-thumb-wrap' });
         // Thumbnail image
-        this.attachmentThumb = this.attachmentRow.createEl('img', { cls: 'session-attachment-thumb' });
+        this.attachmentThumb = thumbWrap.createEl('img', { cls: 'session-attachment-thumb' });
         // Delete button (×) in the top-right corner of the thumbnail
-        this.attachmentDeleteBtn = this.attachmentRow.createEl('span', {
+        this.attachmentDeleteBtn = thumbWrap.createEl('span', {
             cls: 'session-attachment-delete',
             attr: { role: 'button', 'aria-label': t('view.removeAttachment') },
         });
