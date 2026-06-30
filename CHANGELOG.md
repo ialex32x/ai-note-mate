@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.6.1
+
+### What's new
+
+- **`create_note` replaces `create_file`** — The vault tool has been renamed and now accepts optional `frontmatter`, letting the model create structured notes with tags, aliases, and custom metadata in a single call.
+- **Save chat attachments** — The new `save_chat_attachment` tool lets the model save pasted images (and other attachments) from the current user message directly into the vault, making ephemeral paste content persistent without manual steps.
+- **Attachment export** — Session export now includes inline image references for pasted attachments, so exported Markdown fully captures the conversation's visual content.
+- **Debug mode** — A new toggle in **Settings → Note Mate → Advanced** enables debug features including a **context composition breakdown** that shows per-agent token consumption turn by turn; the breakdown is persisted and survives session reloads.
+- **`old_text` / `new_text` aliases** — The `replace_text` tool now accepts `old_text` and `new_text` as parameter aliases, matching the parameter names that models naturally produce.
+- **Handoff auto-dispatch** — `write_result` handlers now silently route scalar, array, and object values to the correct typed variant, eliminating failed tool calls when the model uses a mismatched write tool.
+- **Sub-agent model name in orchestration** — When delegation resolves a sub-agent's profile, the model name now appears in the orchestration bubble for clearer visibility into which provider handled each sub-task.
+
+### Refinements
+
+- **Leaner system prompts** — The agent system prompt has been condensed by roughly 20%, removing redundant phrasing and consolidating related rules for a tighter token footprint.
+- **Unified prompt paths** — Single-agent and multi-agent conversations now share a common prompt assembly path, reducing duplication and making prompt behaviour more predictable across setups.
+- **Conditional TODO & memory rules** — TODO and memory prompts are now injected only when the session has active TODO items or slots with memories, saving tokens on simple conversations.
+- **Short-query optimisation** — Prompt length and chat-stream schemas are trimmed for short queries, reducing overhead on quick back-and-forth exchanges.
+- **Structured follow-ups removed** — The structured follow-up suggestion variant has been retired; the simpler prompt-based follow-up path covers all use cases with less complexity.
+- **Settings tab scroll extracted** — The tab bar auto-scroll logic has been moved from the settings-components module into the settings-tab controller for cleaner separation.
+
+### Fixes
+
+- **Whitespace-only chunks filtered** — LLM responses that emit whitespace-only content chunks no longer appear as blank message units in the UI.
+- **Duplicate title input guard** — Rapid double-clicking the session title no longer creates duplicate or overlapping edit inputs.
+- **Context tooltip always visible** — The compact context usage tooltip now shows reliably in the session status area instead of sometimes being hidden.
+- **Token usage tooltip removed** — The token usage tooltip has been removed from the session switcher dropdown to avoid layout disruption.
+- **Session dropdown time layout** — The time label in the session switcher dropdown now uses flex layout, fixing alignment issues.
+- **Attachment delete button position** — The delete button on pasted attachment thumbnails is now correctly positioned relative to the thumbnail container.
+- **Post-compression token breakdown** — The context breakdown now uses token counts after compression, reflecting the actual context window usage.
+- **`custom_` prefix stripped from labels** — Sub-agent labels in bubbles no longer show a `custom_` prefix for custom agents, matching the clean display of built-in agents.
+- **Settings tab scroll behaviour** — Tab bar scrolling now correctly peeks at neighbouring tabs and responds smoothly to syncing changes.
+
+---
+
 ## 1.6.0
 
 ### What's new
