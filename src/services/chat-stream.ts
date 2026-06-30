@@ -1606,7 +1606,15 @@ export class ChatStream implements IChatAgent {
         };
         this._inFlightAssistantMessage = streamingMessage;
 
-        // Don't notify UI yet — wait until there is actual content to show
+        // Don't notify UI yet — wait until there is actual content to show.
+        // Tracks whether the streaming message has been committed to
+        // `_messages` via `_commitInFlightAssistantToHistory`.  We gate
+        // `onMessageUpdate` emits on this flag so that LLM-produced
+        // whitespace-only chunks (e.g. leading "\n\n" from some models)
+        // never leak into the message store — they would otherwise appear
+        // as blank bubbles when the session is replayed.  See
+        // `assistantHasPersistablePayload` for the gating predicate.
+        let committedToHistory = false;
 
         const toolCallsChunks: Map<
             number,
@@ -1655,32 +1663,37 @@ export class ChatStream implements IChatAgent {
 
             // Accumulate content and fire update callback
             if (chunk.content) {
-                const isFirstContent = streamingMessage.content === "";
+                const wasEmpty = streamingMessage.content === "";
                 streamingMessage.content += chunk.content;
                 // Mark thinking as complete when content output begins
-                if (isFirstContent && streamingMessage.thinkingContent) {
+                if (wasEmpty && streamingMessage.thinkingContent) {
                     streamingMessage.thinkingComplete = true;
                 }
-                if (isFirstContent) {
-                    this._commitInFlightAssistantToHistory(currentTurn);
-                }
-                // First content always emits — the bubble must appear
-                // immediately, otherwise the user sees nothing until
-                // the throttle window opens (typical TTFB perception
-                // problem). Subsequent emits are throttled.
-                //
-                // First-content emit passes the live `streamingMessage`
-                // reference (not a copy) on purpose: see the comment
-                // at the original emit site for the rationale.
-                const now = performance.now();
-                if (isFirstContent || now - lastEmitAt >= STREAM_EMIT_THROTTLE_MS) {
-                    this._config.onMessageUpdate?.(
-                        isFirstContent ? streamingMessage : { ...streamingMessage },
-                    );
-                    lastEmitAt = now;
-                    contentEmits++;
-                } else {
-                    contentSkips++;
+                // Only commit to history and emit when content has
+                // non-trivial payload.  Whitespace-only chunks (e.g.
+                // leading "\n\n" that some LLMs emit before tool calls
+                // or prose) are silently accumulated but never leak
+                // into `_messages` or `onMessageUpdate` — the next
+                // real chunk will commit and surface the full buffer.
+                if (assistantHasPersistablePayload(streamingMessage)) {
+                    if (!committedToHistory) {
+                        this._commitInFlightAssistantToHistory(currentTurn);
+                        committedToHistory = true;
+                    }
+                    // First real-content emit always fires so the
+                    // bubble appears immediately (TTFB perception).
+                    // Subsequent emits are throttled.
+                    const now = performance.now();
+                    const isFirstEmit = lastEmitAt === 0;
+                    if (isFirstEmit || now - lastEmitAt >= STREAM_EMIT_THROTTLE_MS) {
+                        this._config.onMessageUpdate?.(
+                            isFirstEmit ? streamingMessage : { ...streamingMessage },
+                        );
+                        lastEmitAt = now;
+                        contentEmits++;
+                    } else {
+                        contentSkips++;
+                    }
                 }
             }
 
@@ -1688,20 +1701,27 @@ export class ChatStream implements IChatAgent {
             if (chunk.reasoningContent) {
                 const isFirstThinking = !streamingMessage.thinkingContent;
                 streamingMessage.thinkingContent = (streamingMessage.thinkingContent ?? "") + chunk.reasoningContent;
-                if (isFirstThinking) {
+                // Commit on first thinking chunk only when it makes the
+                // message persistable and hasn't already been committed
+                // by the content branch (see `committedToHistory` gate).
+                if (isFirstThinking && !committedToHistory && assistantHasPersistablePayload(streamingMessage)) {
                     this._commitInFlightAssistantToHistory(currentTurn);
+                    committedToHistory = true;
                 }
                 // Shares the same throttle clock as content emits —
                 // see the streamStart/lastEmitAt comment above for why
                 // a content emit also "covers" thinking. The terminal
                 // emit after the loop will catch any pending state.
-                const now = performance.now();
-                if (now - lastEmitAt >= STREAM_EMIT_THROTTLE_MS) {
-                    this._config.onMessageUpdate?.({ ...streamingMessage });
-                    lastEmitAt = now;
-                    thinkingEmits++;
-                } else {
-                    thinkingSkips++;
+                // Only emit when the message is already committed.
+                if (committedToHistory) {
+                    const now = performance.now();
+                    if (now - lastEmitAt >= STREAM_EMIT_THROTTLE_MS) {
+                        this._config.onMessageUpdate?.({ ...streamingMessage });
+                        lastEmitAt = now;
+                        thinkingEmits++;
+                    } else {
+                        thinkingSkips++;
+                    }
                 }
             }
 
@@ -1736,7 +1756,9 @@ export class ChatStream implements IChatAgent {
         // until `_finalizeInFlightAssistantMessage` runs on the success /
         // abort / error epilogue so partial text is already in `_messages`
         // if the turn unwinds mid-stream.
-        if (streamingMessage.content || streamingMessage.thinkingContent) {
+        // Only flush when committed — otherwise the message was pure
+        // whitespace and should never surface as a visible bubble.
+        if (committedToHistory && (streamingMessage.content || streamingMessage.thinkingContent)) {
             this._config.onMessageUpdate?.({ ...streamingMessage });
         }
 

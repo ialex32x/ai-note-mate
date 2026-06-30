@@ -34,6 +34,20 @@ export function buildDisplayUnits(
             const children = getSub(tcId);
             const delegateAgent = msg.toolCallMeta.toolArgs?.['agent'] as string | undefined;
             for (const child of children) {
+                // Skip sub-agent assistant messages whose content is
+                // whitespace-only (e.g. "\n\n" that some LLMs emit as
+                // leading noise before tool calls or prose).  The
+                // streaming pipeline already prevents these from
+                // entering new sessions; this is a defence-in-depth
+                // guard for historical sessions that already contain
+                // such artefacts.
+                if (
+                    child.role === 'assistant'
+                    && child.content.trim() === ''
+                    && !(child.thinkingContent?.trim())
+                ) {
+                    continue;
+                }
                 const tagged = child.subAgent
                     ? child
                     : delegateAgent
