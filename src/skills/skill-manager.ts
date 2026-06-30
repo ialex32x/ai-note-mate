@@ -374,22 +374,16 @@ export class SkillManager {
 
     const activeNames = opts.activeNames;
     const parts: string[] = [
-      '## Available Skills (READ FIRST — STEP 0)',
+      '## Available Skills (READ FIRST)',
       '',
-      '**Before** invoking any other tool, answering, or delegating, scan',
-      'this catalogue. If any listed skill matches the user\'s intent — by',
-      'name, description, or `When to use` line — you MUST call',
-      '`load_skill` with that skill\'s name and follow the returned',
-      'procedure. Skills encode tested, opinionated procedures for this',
-      'vault; improvising when a skill exists wastes turns and produces',
-      'inconsistent results. Prefer skill execution over `delegate_task`',
-      'whenever both could apply.',
+      'Before invoking any other tool or answering, scan this catalogue. ' +
+      'If a skill matches the user\'s intent, call \`load_skill\` with its ' +
+      'name and follow the returned procedure. Prefer \`load_skill\` over ' +
+      '\`delegate_task\` whenever both could apply.',
       '',
-      'Each skill\'s full body is kept out of context to save tokens and',
-      'is fetched on demand via `load_skill`. Skills tagged `[loaded]`',
-      'below already have their body in your context from an earlier',
-      'turn — reuse those directly and do NOT call `load_skill` for them',
-      'again unless the user indicates the skill has been modified.',
+      'Each skill\'s full body is fetched on demand via \`load_skill\`. ' +
+      'Skills tagged \`[loaded]\` already have their body in context — ' +
+      'reuse directly; do NOT reload.',
       '',
     ];
 

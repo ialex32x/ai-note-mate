@@ -209,7 +209,7 @@ describe('buildDelegationSystemPrompt', () => {
         ]);
         expect(out).toContain('### Passing structured data');
         expect(out).toContain('### Reading delegate_task results');
-        expect(out).toContain('__kind');
+        expect(out).toContain('result.needs_main');
     });
 });
 
