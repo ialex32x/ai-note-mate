@@ -35,6 +35,8 @@ export interface TitleClickOptions {
     refreshDisplay: () => void;
 }
 
+const TITLE_INPUT_CLASS = 'session-toolbar__title-input';
+
 /**
  * Handle click on session title to enable inline renaming.
  */
@@ -43,6 +45,11 @@ export function handleTitleClick(opts: TitleClickOptions): void {
 
     // Don't allow renaming while streaming
     if (isStreaming()) return;
+
+    // Guard against double-click / re-entry: if an editing input already
+    // exists in the container (possibly orphaned from a previous rapid
+    // double-click), reject the attempt so we don't leak more elements.
+    if (container.querySelector(`.${TITLE_INPUT_CLASS}`)) return;
 
     // Get current full title
     const session = sessionManager.getActiveSessionSync();
@@ -53,7 +60,7 @@ export function handleTitleClick(opts: TitleClickOptions): void {
 
     // Create input element for editing
     const input = container.createEl('input', {
-        cls: 'session-toolbar__title-input',
+        cls: TITLE_INPUT_CLASS,
         attr: {
             type: 'text',
             value: currentTitle,
@@ -65,7 +72,11 @@ export function handleTitleClick(opts: TitleClickOptions): void {
     input.select();
 
     const cleanup = () => {
-        input.remove();
+        // Remove all title-input elements in the container defensively,
+        // so any orphaned inputs from prior race conditions are also
+        // cleaned up.
+        const allInputs = container.querySelectorAll(`.${TITLE_INPUT_CLASS}`);
+        allInputs.forEach(el => el.remove());
         sessionTitleEl.removeClass('is-hidden');
     };
 
