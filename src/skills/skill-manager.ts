@@ -377,12 +377,12 @@ export class SkillManager {
       '## Available Skills (READ FIRST)',
       '',
       'Before invoking any other tool or answering, scan this catalogue. ' +
-      'If a skill matches the user\'s intent, call \`load_skill\` with its ' +
-      'name and follow the returned procedure. Prefer \`load_skill\` over ' +
-      '\`delegate_task\` whenever both could apply.',
+      "If a skill matches the user's intent, call `load_skill` with its " +
+      "name and follow the returned procedure. Prefer `load_skill` over " +
+      "`delegate_task` whenever both could apply.",
       '',
-      'Each skill\'s full body is fetched on demand via \`load_skill\`. ' +
-      'Skills tagged \`[loaded]\` already have their body in context — ' +
+      "Each skill's full body is fetched on demand via `load_skill`. " +
+      "Skills tagged `[loaded]` already have their body in context — " +
       'reuse directly; do NOT reload.',
       '',
     ];
