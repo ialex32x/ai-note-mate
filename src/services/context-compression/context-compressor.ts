@@ -1,4 +1,4 @@
-import type { ChatMessageRole, MinimalModelConfig } from "../llm-provider";
+import type { MinimalModelConfig } from "../llm-provider";
 import type { ArtifactStore } from "../artifact-store";
 
 import {
@@ -179,13 +179,13 @@ export class ContextCompressor {
             // No new compression needed - send summaries + unsummarized messages
             // (skip the raw messages that are already covered by existing summaries)
             const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: s.content,
             }));
 
             // Build archive note if there are summaries (meaning some messages are archived)
             const archiveNoteMessages: HistoryMessage[] = existingSummaries.length > 0 ? [{
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
             }] : [];
 
@@ -216,7 +216,7 @@ export class ContextCompressor {
         if (existingSummaries.length >= maxSummaries) {
             // ── Level 2+: Summarize the existing summaries ─────────────────
             messagesToSummarize = existingSummaries.map(s => ({
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: s.content,
             }));
             newSummaryLevel = (existingSummaries[0]?.level ?? 1) + 1;
@@ -258,7 +258,7 @@ export class ContextCompressor {
             // console.log("ContextCompressor: All messages fit within sliding window, no compression needed");
             // Convert existingSummaries to message format for LLM
             const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: s.content,
             }));
             // All messages fit in window - but if there are existing summaries, context IS compressed.
@@ -343,11 +343,11 @@ export class ContextCompressor {
         if (summaryContent === null) {
             console.warn("[ContextCompressor] summarizeConversation returned null; degrading to no-compression for this turn");
             const fallbackSummaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: s.content,
             }));
             const fallbackArchiveNote: HistoryMessage[] = existingSummaries.length > 0 ? [{
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: `[Note: ${cutoffIndex} previous turns archived. Use \`retrieve_chat_history\` tool for details.]`,
             }] : [];
             const fallbackShrunk = ContextCompressor.shrinkLargeToolResults(unsummarizedMessages, artifactStore);
@@ -403,7 +403,7 @@ export class ContextCompressor {
         let keptRecentMessages: HistoryMessage[];
         if (newSummaryLevel === 1) {
             const summaryMessages: HistoryMessage[] = existingSummaries.map(s => ({
-                role: "assistant" as ChatMessageRole,
+                role: "assistant",
                 content: s.content,
             }));
             summaryBlock = [...summaryMessages, latestSummaryMessage];
@@ -415,7 +415,7 @@ export class ContextCompressor {
 
         // Build archive note: inform LLM about archived messages before summaries
         const archiveNoteMessage: HistoryMessage = {
-            role: "assistant" as ChatMessageRole,
+            role: "assistant",
             content: `[Note: previous turns are archived. Use \`retrieve_chat_history\` tool for details.]`,
         };
 
@@ -658,7 +658,7 @@ export class ContextCompressor {
                 content: after,
                 contentBudgetHint: after,
                 contentBudgetHintForLength: fullLen,
-            } as T;
+            };
             // Token delta: `estimateTokens` is cheap (linear in length
             // with a couple of branches) and counting only the changed
             // message keeps the worst case O(total content size)
@@ -852,7 +852,7 @@ export class ContextCompressor {
                         content: msg.contentBudgetHint!,
                         contentBudgetHint: msg.contentBudgetHint,
                         contentBudgetHintForLength: msg.contentBudgetHintForLength,
-                    } as T);
+                    });
                     continue;
                 }
                 const shrunk = shrinkToolResultContent(msg.content, msg.toolCallId, store ?? null);
@@ -862,7 +862,7 @@ export class ContextCompressor {
                         content: shrunk,
                         contentBudgetHint: shrunk,
                         contentBudgetHintForLength: msg.content.length,
-                    } as T);
+                    });
                     continue;
                 }
             }

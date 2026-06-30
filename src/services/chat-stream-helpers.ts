@@ -48,7 +48,7 @@ export function buildToolEmbeddingText(tool: RegisteredTool): string {
     const description = tool.embeddingDescription ?? fn.description ?? '';
     const properties = fn.parameters['properties'];
     const paramNames = (properties && typeof properties === 'object' && !Array.isArray(properties))
-        ? Object.keys(properties as Record<string, unknown>)
+        ? Object.keys(properties)
         : [];
     const paramLine = paramNames.length > 0 ? `Parameters: ${paramNames.join(', ')}` : '';
     const triggerLine = buildToolTriggerLine(fn.name);

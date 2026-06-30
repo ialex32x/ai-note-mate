@@ -1,4 +1,3 @@
-import type { ChatMessageRole } from "../llm-provider";
 import type { HistoryMessage } from "./types";
 import { collapseToolResult } from "./envelope-shrink";
 import { toolResultRunEnd } from "./tool-sequence";
@@ -71,7 +70,7 @@ export function collapseToolMessagesForSummary<T extends HistoryMessage>(message
             // Create a collapsed assistant message replacing the entire sequence
             const collapsedContent = collapsedParts.join('\n');
             const collapsedMsg = {
-                role: 'assistant' as ChatMessageRole,
+                role: 'assistant',
                 content: collapsedContent,
                 id: msg.id,
                 // Preserve thinkingContent so thinking-mode APIs receive

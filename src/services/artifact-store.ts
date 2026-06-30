@@ -233,7 +233,7 @@ export class ArtifactStore {
         // `live` is empty we have `liveBytes=0` and `0+size ≤ cap`. The
         // loop cannot exit with the cap still exceeded.
         while (this.liveBytes + size > this.totalBytesCap && this.live.size > 0) {
-            const oldestKey = this.live.keys().next().value as string | undefined;
+            const oldestKey: string | undefined = this.live.keys().next().value as string | undefined;
             if (oldestKey === undefined) break;
             const oldest = this.live.get(oldestKey)!;
             this.live.delete(oldestKey);
@@ -608,7 +608,7 @@ export class ArtifactStore {
 
         // LRU-evict until it fits.
         while (this.liveBytes + size > this.totalBytesCap && this.live.size > 0) {
-            const oldestKey = this.live.keys().next().value as string | undefined;
+            const oldestKey: string | undefined = this.live.keys().next().value as string | undefined;
             if (oldestKey === undefined) break;
             const oldest = this.live.get(oldestKey)!;
             this.live.delete(oldestKey);

@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { ContextCompressor, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-compression';
+import { ContextCompressor, HistoryMessage, tryParseDelegateEnvelope } from '../src/services/context-compression';
 import { buildDelegatePayload, DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION } from '../src/services/agent-orchestrator';
 
 // ─── Helpers ───────────────────────────────────────────────
 
 /** Shorthand to build a user message */
-function user(content: string, id?: string): HistroyMessage {
+function user(content: string, id?: string): HistoryMessage {
     return { role: 'user', content, id };
 }
 
 /** Shorthand to build a plain assistant message */
-function assistant(content: string, id?: string): HistroyMessage {
+function assistant(content: string, id?: string): HistoryMessage {
     return { role: 'assistant', content, id };
 }
 
@@ -19,7 +19,7 @@ function assistantWithToolCalls(
     content: string,
     toolCalls: { id: string; name: string; arguments: string }[],
     id?: string,
-): HistroyMessage {
+): HistoryMessage {
     return {
         role: 'assistant',
         content,
@@ -33,7 +33,7 @@ function assistantWithToolCalls(
 }
 
 /** Build a tool_result message */
-function toolResult(toolCallId: string, content: string, id?: string): HistroyMessage {
+function toolResult(toolCallId: string, content: string, id?: string): HistoryMessage {
     return { role: 'tool_result', content, id, toolCallId } as any;
 }
 
@@ -372,18 +372,18 @@ describe('tryParseDelegateEnvelope', () => {
 // up sitting AFTER that synthetic user message — and pre-sanitize
 // must still recognise its owner.
 
-function sanitize(messages: HistroyMessage[]): HistroyMessage[] {
+function sanitize(messages: HistoryMessage[]): HistoryMessage[] {
     return (ContextCompressor as any).validateAndSanitizeForLLM(messages);
 }
 
 /** A `user` message with a `media` field — the shape ChatStream injects after a media tool_result. */
-function userMedia(content: string): HistroyMessage {
+function userMedia(content: string): HistoryMessage {
     return { role: 'user', content, media: [{ kind: 'image', mimeType: 'image/png', base64: 'AAA' }] } as any;
 }
 
 describe('ContextCompressor.validateAndSanitizeForLLM (pre-sanitize)', () => {
     it('passes a clean text-only flow through unchanged', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('find X'),
             assistantWithToolCalls('let me search', [
                 { id: 'tc1', name: 'grep_file', arguments: '{}' },
@@ -402,7 +402,7 @@ describe('ContextCompressor.validateAndSanitizeForLLM (pre-sanitize)', () => {
     });
 
     it('keeps a multi-toolCall batch intact when no media is involved', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('do A and B'),
             assistantWithToolCalls('', [
                 { id: 'A', name: 'tool_a', arguments: '{}' },
@@ -443,7 +443,7 @@ describe('ContextCompressor.validateAndSanitizeForLLM (pre-sanitize)', () => {
      * intact, no placeholders are inserted.
      */
     it('does NOT drop sibling tool_results when a peer tool injects a user(media) message between them', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('describe the image and also list its bytes'),
             assistantWithToolCalls('', [
                 { id: 'A', name: 'read_file_image', arguments: '{}' },
@@ -484,7 +484,7 @@ describe('ContextCompressor.validateAndSanitizeForLLM (pre-sanitize)', () => {
     });
 
     it('drops a leading orphan tool_result with no preceding assistant', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             toolResult('orphan', 'no owner'),
             user('hi'),
         ];
@@ -493,7 +493,7 @@ describe('ContextCompressor.validateAndSanitizeForLLM (pre-sanitize)', () => {
     });
 
     it('drops a tool_result whose toolCallId does not match its assistant owner', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('do A'),
             assistantWithToolCalls('', [
                 { id: 'A', name: 'tool_a', arguments: '{}' },
@@ -523,13 +523,13 @@ describe('ContextCompressor.validateAndSanitizeForLLM (pre-sanitize)', () => {
 // (the user(media)), reported the siblings as "missing", and truncated the
 // whole turn — the model then re-ran the batch ("走两步就忘"). Same fix as
 // validateAndSanitizeForLLM, applied here too via the shared run-walk helper.
-function ensureIntegrity(messages: HistroyMessage[]): HistroyMessage[] {
+function ensureIntegrity(messages: HistoryMessage[]): HistoryMessage[] {
     return (ContextCompressor as any).ensureToolSequenceIntegrity(messages);
 }
 
 describe('ContextCompressor.ensureToolSequenceIntegrity (media interleave)', () => {
     it('does NOT truncate a tool batch when a user(media) message sits between siblings', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('describe the image and list its bytes'),
             assistantWithToolCalls('', [
                 { id: 'A', name: 'read_image', arguments: '{}' },
@@ -553,7 +553,7 @@ describe('ContextCompressor.ensureToolSequenceIntegrity (media interleave)', () 
     });
 
     it('still truncates a genuinely incomplete trailing tool batch (no media)', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('do A and B'),
             assistantWithToolCalls('', [
                 { id: 'A', name: 'tool_a', arguments: '{}' },
@@ -575,7 +575,7 @@ describe('ContextCompressor.ensureToolSequenceIntegrity (media interleave)', () 
 // ─────────────────────────────────────────────────────────────────────
 describe('ContextCompressor.collapseToolMessagesForSummary (media interleave)', () => {
     it('collapses tool results that follow an interleaved user(media) message', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('describe and inspect'),
             assistantWithToolCalls('', [
                 { id: 'A', name: 'read_image', arguments: '{}' },

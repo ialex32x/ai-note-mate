@@ -659,7 +659,7 @@ function isNonEmptyPlainObject(v: unknown): v is Record<string, unknown> {
     if (v === null || v === undefined) return false;
     if (typeof v !== 'object') return false;
     if (Array.isArray(v)) return false;
-    return Object.keys(v as Record<string, unknown>).length > 0;
+    return Object.keys(v).length > 0;
 }
 
 

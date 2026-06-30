@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { ContextCompressor, estimateTokens, isValidBudgetHint, HistroyMessage, tryParseDelegateEnvelope } from '../src/services/context-compression';
+import { ContextCompressor, estimateTokens, isValidBudgetHint, HistoryMessage, tryParseDelegateEnvelope } from '../src/services/context-compression';
 import { ArtifactStore } from '../src/services/artifact-store';
 import { DELEGATE_ENVELOPE_KIND, DELEGATE_ENVELOPE_VERSION, type DelegatePayload } from '../src/services/delegate-envelope-shape';
 
 // ─── Helpers ───────────────────────────────────────────────
 
-function user(content: string, id?: string): HistroyMessage {
+function user(content: string, id?: string): HistoryMessage {
     return { role: 'user', content, id };
 }
 
-function assistant(content: string, id?: string): HistroyMessage {
+function assistant(content: string, id?: string): HistoryMessage {
     return { role: 'assistant', content, id };
 }
 
@@ -17,7 +17,7 @@ function assistantWithToolCalls(
     content: string,
     toolCalls: { id: string; name: string; arguments: string }[],
     id?: string,
-): HistroyMessage {
+): HistoryMessage {
     return {
         role: 'assistant',
         content,
@@ -30,16 +30,16 @@ function assistantWithToolCalls(
     } as any;
 }
 
-function toolResult(toolCallId: string, content: string, id?: string): HistroyMessage {
+function toolResult(toolCallId: string, content: string, id?: string): HistoryMessage {
     return { role: 'tool_result', content, id, toolCallId } as any;
 }
 
 // `shrinkLargeToolResults` is private — invoke via `as any` for white-box
 // testing of the "skip last unconsumed tool_result chain" semantics.
 function shrink(
-    messages: HistroyMessage[],
+    messages: HistoryMessage[],
     store?: ArtifactStore,
-): HistroyMessage[] {
+): HistoryMessage[] {
     return (ContextCompressor as any).shrinkLargeToolResults(messages, store ?? null);
 }
 
@@ -100,7 +100,7 @@ function bigPayload(label: string): { items: Array<{ id: number; body: string }>
 describe('ContextCompressor budget hints', () => {
     it('records contentBudgetHint on shrink without dropping the full body from the source buffer', () => {
         const full = bigText();
-        const raw: HistroyMessage[] = [
+        const raw: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [{ id: 'r1', name: 'read_file', arguments: '{}' }]),
             toolResult('r1', full),
@@ -127,7 +127,7 @@ describe('ContextCompressor budget hints', () => {
 
     it('does not apply a stale budget hint when tool_result content changed', () => {
         const full = bigText();
-        const raw: HistroyMessage[] = [
+        const raw: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [{ id: 'r1', name: 'read_file', arguments: '{}' }]),
             toolResult('r1', full),
@@ -152,7 +152,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
 
     it('passes small tool_results through verbatim', () => {
         const small = 'Found 3 results';
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'search', arguments: '{}' },
@@ -167,7 +167,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
 
     it('shrinks a large tool_result that has already been digested by a later assistant', () => {
         const big = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'big_tool', arguments: '{}' },
@@ -189,7 +189,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
 
     it('exempts the last unconsumed tool_result chain (single tool_result)', () => {
         const big = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'big_tool', arguments: '{}' },
@@ -209,7 +209,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
     it('exempts the last unconsumed chain when the assistant emitted multiple parallel tool_calls', () => {
         const big1 = bigText();
         const big2 = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'big_tool_a', arguments: '{}' },
@@ -227,7 +227,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
     it('still shrinks earlier (already-consumed) chains in a multi-turn history', () => {
         const oldBig = bigText();
         const newBig = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             // Turn 1 — already digested by the trailing assistant text below.
             user('first question'),
             assistantWithToolCalls('', [
@@ -273,7 +273,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
         // the wild bug exhibits.
         const big1 = bigText();
         const big2 = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'big_tool', arguments: '{}' },
@@ -320,7 +320,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
      */
     it('preserves the tool_result inside an active read_file → write_handoff chain', () => {
         const fileBody = bigText(); // simulates a full file read
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             // Sub-agent task description.
             user('Read file X and store its content into the result key of the handoff.'),
             // iter 1 — pure tool-call: read_file
@@ -364,7 +364,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
         // shrink rule fires — exactly as it did pre-fix for the chain-
         // closing case.
         const fileBody = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'read1', name: 'read_file', arguments: '{}' },
@@ -391,7 +391,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
         // default — the alternative (shrink everything) would silently
         // lose payload that the model has never had a chance to read.
         const big = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             toolResult('tc1', big),
         ];
         const out = shrink(msgs);
@@ -401,7 +401,7 @@ describe('ContextCompressor.shrinkLargeToolResults', () => {
     it('preserves error tool_results regardless of position', () => {
         // Errors are short and meaningful — the shrinker has always kept
         // them verbatim. The exemption rule must not regress that.
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'big_tool', arguments: '{}' },
@@ -447,7 +447,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         const result = bigPayload('A');
         const env = envelopeContent({ text: 'done', result });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -498,7 +498,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
             },
         });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -547,7 +547,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
             artifacts: preExisting,
         });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -576,7 +576,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
             omitted: { huge_blob_omitted: true, huge_blob_size: 999_999 },
         });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -606,7 +606,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         const store = new ArtifactStore({ singleArtifactCap: 100 });
         const env = envelopeContent({ text: 'done', result: bigPayload('E') });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -634,7 +634,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         // which is exactly the pre-B-1 behaviour. Backward-compat clause.
         const env = envelopeContent({ text: 'done', result: bigPayload('F') });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -657,7 +657,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         const env = envelopeContent({ text: 'done', result: bigPayload('G') });
 
         // Manually construct the message without a toolCallId.
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -684,7 +684,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         const store = new ArtifactStore();
         const env = envelopeContent({ text: 'done', result: bigPayload('H') });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -712,7 +712,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         const store = new ArtifactStore();
         const env = envelopeContent({ text: 'done', result: bigPayload('I') });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -728,7 +728,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
         expect(firstParsed.artifacts?.result).toBeDefined();
 
         // Second pass: feed the already-shrunk envelope back in.
-        const replayMsgs: HistroyMessage[] = [
+        const replayMsgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -761,7 +761,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
             result: { ok: true }, // way under the 256-byte spill min
         });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'delegate_task', arguments: '{}' },
@@ -786,7 +786,7 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
             results: Array.from({ length: 50 }, (_, i) => ({ id: i, body: 'x'.repeat(100) })),
         });
 
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'search', arguments: '{}' },
@@ -839,14 +839,14 @@ describe('ContextCompressor.shrinkLargeToolResults — B-1 envelope spill', () =
 //      so `validateAndSanitizeForLLM` doesn't drop anything.
 
 function emergencyShrink(
-    messages: HistroyMessage[],
+    messages: HistoryMessage[],
     options: {
         accessoryTokens?: number;
         threshold: number;
         store?: ArtifactStore | null;
         modelContextWindow?: number;
     },
-): { messages: HistroyMessage[]; shrunk: boolean } {
+): { messages: HistoryMessage[]; shrunk: boolean } {
     return (ContextCompressor as any).emergencyShrink(
         messages,
         options.accessoryTokens ?? 0,
@@ -858,7 +858,7 @@ function emergencyShrink(
 
 describe('ContextCompressor.emergencyShrink', () => {
     it('returns the input unchanged when total is at or below the emergency line', () => {
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [
                 { id: 'tc1', name: 'small_tool', arguments: '{}' },
@@ -896,7 +896,7 @@ describe('ContextCompressor.emergencyShrink', () => {
         // 4 large reads in an active chain — no content-bearing assistant
         // anywhere, so primary shrink leaves them all intact and
         // emergencyShrink is the only knob.
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('Read several files for analysis.'),
             assistantWithToolCalls('', [{ id: 'r1', name: 'read_file', arguments: '{}' }]),
             toolResult('r1', big),
@@ -933,7 +933,7 @@ describe('ContextCompressor.emergencyShrink', () => {
     it('preserves all tool_results when shrinking just the earliest one is enough', () => {
         const big = bigText();
         // 3 large reads. Emergency line tuned so a single shrink suffices.
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [{ id: 'r1', name: 'read_file', arguments: '{}' }]),
             toolResult('r1', big),
@@ -963,7 +963,7 @@ describe('ContextCompressor.emergencyShrink', () => {
         // and the prompt's bulk lives in user/assistant prose. Emergency
         // shrink can't help here.
         const longUserMsg = 'x'.repeat(50_000); // ~12500 estimated tokens
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user(longUserMsg),
             assistantWithToolCalls('', [{ id: 'tc1', name: 'small_tool', arguments: '{}' }]),
             toolResult('tc1', 'tiny'),
@@ -975,7 +975,7 @@ describe('ContextCompressor.emergencyShrink', () => {
 
     it('preserves message ordering and structural pairing after incremental shrink', () => {
         const big = bigText();
-        const msgs: HistroyMessage[] = [
+        const msgs: HistoryMessage[] = [
             user('q'),
             assistantWithToolCalls('', [{ id: 'r1', name: 'tool', arguments: '{}' }]),
             toolResult('r1', big),

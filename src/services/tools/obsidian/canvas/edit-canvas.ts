@@ -768,7 +768,7 @@ export function vaultUpdateCanvasEdges(plugin: NoteAssistantPlugin): RegisteredT
                     if (missing.length > 0) {
                         return `Edge ids not found: ${missing.join(", ")}. Use list_canvas_edges to list ids.`;
                     }
-                    const result = updateEdgesInCanvas(data, patches as Parameters<typeof updateEdgesInCanvas>[1]);
+                    const result = updateEdgesInCanvas(data, patches);
                     updatedIds = result.updated_ids;
                     return result.data;
                 },

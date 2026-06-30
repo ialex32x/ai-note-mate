@@ -103,7 +103,7 @@ export function getFileFrontmatter(
     const cache = app.metadataCache.getFileCache(file);
     const fm = cache?.frontmatter;
     if (!fm || typeof fm !== "object") return null;
-    return fm as Record<string, unknown>;
+    return fm;
 }
 
 /**

@@ -18,16 +18,16 @@ vi.mock('../src/services/providers/gemini-provider', () => ({
     GeminiProvider: class {},
 }));
 
-import { ContextCompressor, HistroyMessage, ConversationSummary } from '../src/services/context-compression';
+import { ContextCompressor, HistoryMessage, ConversationSummary } from '../src/services/context-compression';
 import { createOpenAICompletion } from '../src/services/providers/openai-provider';
 
 // ─── Helpers ───────────────────────────────────────────────
 
-function user(content: string, id?: string): HistroyMessage {
+function user(content: string, id?: string): HistoryMessage {
     return { role: 'user', content, id };
 }
 
-function assistant(content: string, id?: string): HistroyMessage {
+function assistant(content: string, id?: string): HistoryMessage {
     return { role: 'assistant', content, id };
 }
 
@@ -62,7 +62,7 @@ beforeEach(() => {
 describe('ContextCompressor.compress — Level-2 merge', () => {
     it('keeps the current user turn and the recent raw window when Level-2 triggers', async () => {
         const summaries = makeLevel1Summaries(8); // == default maxSummaries → needsLevel2
-        const rawMessages: HistroyMessage[] = [
+        const rawMessages: HistoryMessage[] = [
             user('recent question 1', 'u1'),
             assistant('recent answer 1', 'a1'),
             user('CURRENT QUESTION', 'u2'),
@@ -96,7 +96,7 @@ describe('ContextCompressor.compress — Level-2 merge', () => {
 
     it('replaces old summaries with a single Level-2 summary (not append)', async () => {
         const summaries = makeLevel1Summaries(8);
-        const rawMessages: HistroyMessage[] = [user('CURRENT QUESTION', 'u1')];
+        const rawMessages: HistoryMessage[] = [user('CURRENT QUESTION', 'u1')];
 
         const result = await ContextCompressor.compress(
             MODEL_CONFIG,
@@ -130,7 +130,7 @@ describe('ContextCompressor.compress — Level-2 merge', () => {
 
     it('records coverage at the existing cutoff, not the array end (no recent-message loss)', async () => {
         const summaries = makeLevel1Summaries(8); // all lastMessageIndex 0 → cutoffIndex 0
-        const rawMessages: HistroyMessage[] = [
+        const rawMessages: HistoryMessage[] = [
             user('recent question', 'u1'),
             assistant('recent answer', 'a1'),
         ];
@@ -153,7 +153,7 @@ describe('ContextCompressor.compress — Level-2 merge', () => {
 
     it('converges: applying the replacement collapses the summary count and stops re-triggering Level-2', async () => {
         let summaries = makeLevel1Summaries(8);
-        const rawMessages: HistroyMessage[] = [user('CURRENT QUESTION', 'u1')];
+        const rawMessages: HistoryMessage[] = [user('CURRENT QUESTION', 'u1')];
 
         // Turn 1 — Level-2 triggers, merges 8 → 1.
         const r1 = await ContextCompressor.compress(

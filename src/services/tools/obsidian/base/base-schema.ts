@@ -165,7 +165,7 @@ function collectExpressionStrings(value: unknown, out: string[]): void {
 
 function getMappingKeys(value: unknown): string[] {
     if (value && typeof value === "object" && !Array.isArray(value)) {
-        return Object.keys(value as Record<string, unknown>);
+        return Object.keys(value);
     }
     return [];
 }
@@ -384,13 +384,13 @@ export function summarizeBase(data: Record<string, unknown>): BaseSummary {
     const formulas = data["formulas"];
     const formulaNames =
         formulas && typeof formulas === "object" && !Array.isArray(formulas)
-            ? Object.keys(formulas as Record<string, unknown>).sort()
+            ? Object.keys(formulas).sort()
             : [];
 
     const properties = data["properties"];
     const propertiesConfigured =
         properties && typeof properties === "object" && !Array.isArray(properties)
-            ? Object.keys(properties as Record<string, unknown>).sort()
+            ? Object.keys(properties).sort()
             : [];
 
     const hasGlobalFilters = data["filters"] !== undefined && data["filters"] !== null;

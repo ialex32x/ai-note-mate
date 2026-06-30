@@ -92,7 +92,7 @@ export function validateSerializable(value: unknown): string | null {
         if (t === "string" || t === "boolean") return null;
         if (t === "number") {
             // NaN / Infinity stringify to `null` and silently lose info.
-            if (!Number.isFinite(v as number)) {
+            if (!Number.isFinite(v)) {
                 return `non-finite number at ${path}`;
             }
             return null;
@@ -143,7 +143,7 @@ export function validateSerializable(value: unknown): string | null {
             return `non-plain object at ${path}`;
         }
 
-        for (const key of Object.keys(v as Record<string, unknown>)) {
+        for (const key of Object.keys(v)) {
             const reason = walk(
                 (v as Record<string, unknown>)[key],
                 path === "" ? key : `${path}.${key}`,
@@ -501,7 +501,7 @@ function execWriteScalar(store: HandoffStore, args: Record<string, unknown>): To
         return { success: true, type: "object", content: { ok: true, key: key.trim() } };
     }
     if (t === "number") {
-        if (!Number.isFinite(value as number)) {
+        if (!Number.isFinite(value)) {
             return errorResult("write_result does not accept NaN or Infinity.");
         }
         store.set(key.trim(), value);

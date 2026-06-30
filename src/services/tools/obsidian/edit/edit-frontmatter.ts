@@ -71,7 +71,7 @@ function isPlainJsonValue(value: unknown, seen = new WeakSet<object>()): boolean
     if (t === "string" || t === "number" || t === "boolean") {
         // Reject NaN / +/-Infinity — JSON cannot encode them and YAML
         // libraries differ on behaviour.
-        if (t === "number" && !Number.isFinite(value as number)) return false;
+        if (t === "number" && !Number.isFinite(value)) return false;
         return true;
     }
     if (t !== "object") return false;
@@ -150,7 +150,7 @@ async function execFrontmatterEdit(
                 content: "`properties` must be a non-null object mapping frontmatter key → value.",
             };
         }
-        const keys = Object.keys(props as Record<string, unknown>);
+        const keys = Object.keys(props);
         if (keys.length === 0) {
             return {
                 success: false,
@@ -299,7 +299,7 @@ async function execFrontmatterEdit(
             // frontmatter so we can report the expected impact
             // without mutating anything.
             const cache = plugin.app.metadataCache.getFileCache(file);
-            const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+            const fm = cache?.frontmatter;
             const fmClone: Record<string, unknown> = fm ? structuredCloneSafe(fm) : {};
             result = applyToFm(fmClone);
         } else {
@@ -506,7 +506,7 @@ function clonePlainValue(value: unknown): unknown {
         return arr.map((item) => clonePlainValue(item));
     }
     const out: Record<string, unknown> = {};
-    for (const k of Object.keys(value as Record<string, unknown>)) {
+    for (const k of Object.keys(value)) {
         out[k] = clonePlainValue((value as Record<string, unknown>)[k]);
     }
     return out;

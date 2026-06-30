@@ -225,7 +225,7 @@ async function executeTagsEdit(
                 if (fm) {
                     const fmClone: Record<string, unknown> = { ...fm };
                     for (const key of ["tags", "tag"]) {
-                        const v = (fm as Record<string, unknown>)[key];
+                        const v: unknown = fm[key];
                         if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                     }
                     frontmatterChanges = rewriteFrontmatterTags(fmClone, removeOp!);
@@ -272,11 +272,11 @@ async function executeTagsEdit(
             // Pre-compute count on clone (same for dry-run and write)
             {
                 const cache = plugin.app.metadataCache.getFileCache(file);
-                const fm = cache?.frontmatter as Record<string, unknown> | undefined;
+                const fm = cache?.frontmatter;
                 const fmClone: Record<string, unknown> = fm ? { ...fm } : {};
                 if (fm) {
                     for (const key of ["tags", "tag"]) {
-                        const v = fm[key];
+                        const v: unknown = fm[key];
                         if (Array.isArray(v)) fmClone[key] = [...(v as unknown[])];
                     }
                 }

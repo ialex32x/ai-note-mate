@@ -13,7 +13,6 @@ export type {
     PromptConfig,
     ContextCompressionOptions,
     HistoryMessage,
-    HistroyMessage,
     ConversationSummary,
     ContextCompressionResult,
 } from "./context-compression/index";

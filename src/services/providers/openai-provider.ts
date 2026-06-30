@@ -164,7 +164,7 @@ export class OpenAIProvider implements LLMProvider {
                 const skipped: string[] = [];
                 for (const att of m.media) {
                     const part = this.buildOpenAIMediaPart(att, skipped);
-                    if (part) parts.push(part as unknown as Record<string, unknown>);
+                    if (part) parts.push(part);
                 }
                 if (skipped.length > 0) {
                     parts[0] = {
@@ -240,9 +240,7 @@ export class OpenAIProvider implements LLMProvider {
 
         // Parse SSE stream and convert to StreamChunk
         for await (const chunk of parseOpenAISSEStream(response.body, signal)) {
-            const choice = (chunk.choices as Array<Record<string, unknown>>)?.[0] as
-                | Record<string, unknown>
-                | undefined;
+            const choice = (chunk.choices as Array<Record<string, unknown>>)?.[0];
             const delta = choice?.delta as Record<string, unknown> | undefined;
             const finishReason = (choice?.finish_reason as string) ?? null;
             const usageRaw = chunk.usage as
