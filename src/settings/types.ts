@@ -519,8 +519,6 @@ export interface NoteAssistantPluginSettings {
 	// ── Follow-up quick-pick suggestions ────────────────────────────────────
 	/** Master switch: render quick-pick buttons for next actions proposed at the end of an assistant reply. */
 	followUpSuggestionsEnabled: boolean;
-	/** When true, instruct the model (via system prompt) to emit a structured <!--suggestions--> block. */
-	followUpSuggestionsStructured: boolean;
 
 	// ── Conversation insight extraction (knowledge-nugget preview) ──────────
 	/**

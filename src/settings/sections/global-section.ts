@@ -147,17 +147,6 @@ export class GlobalSettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
-
-		createToggleField({
-			container,
-			name: t('settings.followUpSuggestionsStructured'),
-			desc: t('settings.followUpSuggestionsStructuredDesc'),
-			value: plugin.settings.followUpSuggestionsStructured,
-			onChange: async (value) => {
-				plugin.settings.followUpSuggestionsStructured = value;
-				await plugin.saveSettings();
-			},
-		});
 	}
 
 	private renderResetTipsRow(container: HTMLElement): void {

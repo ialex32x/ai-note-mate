@@ -31,12 +31,11 @@ export class FollowUpController {
     }
 
     /**
-     * Inspect the most recent assistant reply and, if it ends with a set of
-     * proposed next actions (either a structured <!--suggestions--> block or
-     * a plain-text follow-up list), render them as one-shot quick-pick buttons
-     * at the tail of the message list.
+     * Inspect the most recent assistant reply and, if it contains proposed
+     * next actions (a plain-text follow-up list), render them as one-shot
+     * quick-pick buttons at the tail of the message list.
      *
-     * This is the DETERMINISTIC (instant) path only. The LLM-backed fallback
+     * This is the heuristic (instant) path only. The LLM-backed fallback
      * runs in the runtime and arrives through the `suggestion-update` event →
      * {@link SessionRuntimeBinder.renderSuggestionFromRuntimeState}.
      */
@@ -67,9 +66,7 @@ export class FollowUpController {
             return;
         }
 
-        const actions = extractSuggestions(target.content, {
-            allowStructured: settings.followUpSuggestionsStructured === true,
-        });
+        const actions = extractSuggestions(target.content, {});
         if (actions.length === 0) {
             this.deps.followUpBar.hide();
             return;

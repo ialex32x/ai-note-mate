@@ -10,7 +10,7 @@ import {
     OR_CHOICE_SEPARATORS,
     SINGLE_QUESTION_HINTS,
 } from './triggers';
-import type { ExtractOptions, SuggestedAction, SuggestedClientAction } from './types';
+import type { ExtractOptions, SuggestedAction } from './types';
 import { stripMarkdownToPlainText } from '../../utils/markdown-sanitizer';
 import { truncate } from '../../utils/string-truncate';
 
@@ -64,160 +64,10 @@ export function extractSuggestions(
     const limit = opts.limit ?? DEFAULT_LIMIT;
     const labelMax = opts.labelMaxLength ?? DEFAULT_LABEL_MAX;
 
-    // 1) Structured block takes precedence when enabled.
-    if (opts.allowStructured) {
-        const structured = parseStructuredBlock(markdown);
-        if (structured.length > 0) {
-            return normalize(structured, limit, labelMax);
-        }
-    }
-
-    // 2) Heuristic fallback.
+    // Heuristic extraction only — structured <!--suggestions--> block path
+    // was removed (follow-up suggestions now handled by LLM fallback).
     const heuristic = parseHeuristic(markdown);
     return normalize(heuristic, limit, labelMax);
-}
-
-// ─── Structured parsing ────────────────────────────────────────────────
-
-function parseStructuredBlock(markdown: string): SuggestedAction[] {
-    const m = STRUCTURED_BLOCK_RE.exec(markdown);
-    if (!m) return [];
-    const body = m[1] ?? '';
-    const out: SuggestedAction[] = [];
-
-    // Internal accumulator. We collect raw `action` / `path` strings and
-    // only attempt to construct a `SuggestedClientAction` at flush time,
-    // so that ordering of the lines inside one entry doesn't matter.
-    interface Entry {
-        label?: string;
-        prompt?: string;
-        action?: string;
-        path?: string;
-    }
-
-    // Split into entries by lines that start with "- label:".
-    const lines = body.split(/\r?\n/);
-    let current: Entry | null = null;
-    /** Tracks which field of `current` was last set, so continuation lines
-     * (indented follow-up lines) can be appended to the right field. */
-    let lastField: 'prompt' | 'path' | null = null;
-
-    const flush = () => {
-        if (current && current.label && current.prompt) {
-            const label = current.label.trim();
-            const prompt = current.prompt.trim();
-            // Format-violation guard: in the structured block the prompt is
-            // contractually required to be a full, sendable instruction that
-            // differs from the short action label. When the model collapses
-            // both into the same string it almost always means it produced a
-            // descriptive sentence rather than an actionable suggestion, so we
-            // drop the entry entirely. This filter is intentionally limited to
-            // the structured path — the heuristic fallback legitimately reuses
-            // the same text for label and prompt and must not be affected.
-            if (label && prompt && !equalsIgnoreCaseAndSpace(label, prompt)) {
-                const clientAction = buildClientAction(current.action, current.path);
-                const entry: SuggestedAction = clientAction
-                    ? { label, prompt, action: clientAction }
-                    : { label, prompt };
-                out.push(entry);
-            }
-        }
-        current = null;
-        lastField = null;
-    };
-
-    for (const raw of lines) {
-        const line = raw.trimEnd();
-        const labelM = /^\s*-\s*label\s*:\s*(.+)$/i.exec(line);
-        if (labelM) {
-            flush();
-            current = { label: (labelM[1] ?? '').trim() };
-            lastField = null;
-            continue;
-        }
-        const promptM = /^\s*prompt\s*:\s*(.+)$/i.exec(line);
-        if (promptM && current) {
-            current.prompt = (promptM[1] ?? '').trim();
-            lastField = 'prompt';
-            continue;
-        }
-        const actionM = /^\s*action\s*:\s*(.+)$/i.exec(line);
-        if (actionM && current) {
-            current.action = (actionM[1] ?? '').trim();
-            // `action` is a single token (e.g. "open-note") — never spans
-            // multiple lines, so we don't track it for continuation.
-            lastField = null;
-            continue;
-        }
-        const pathM = /^\s*path\s*:\s*(.+)$/i.exec(line);
-        if (pathM && current) {
-            current.path = (pathM[1] ?? '').trim();
-            lastField = 'path';
-            continue;
-        }
-        // Allow continuation for prompt / path over multiple indented lines.
-        if (current && lastField && /^\s{2,}\S/.test(line)) {
-            const cont = line.trim();
-            if (lastField === 'prompt' && current.prompt !== undefined) {
-                current.prompt = `${current.prompt} ${cont}`;
-            } else if (lastField === 'path' && current.path !== undefined) {
-                // Paths shouldn't normally span multiple lines, but if the
-                // model wraps a long subfolder path we concatenate without
-                // inserting a space.
-                current.path = `${current.path}${cont}`;
-            }
-        }
-    }
-    flush();
-    return out;
-}
-
-/**
- * Translate the raw `action` / `path` strings parsed from the structured
- * block into a typed `SuggestedClientAction`. Unknown action kinds, or
- * entries missing the data the kind requires, return `undefined` — the
- * caller then falls back to a plain prompt-only suggestion.
- */
-function buildClientAction(
-    action: string | undefined,
-    path: string | undefined,
-): SuggestedClientAction | undefined {
-    if (!action) return undefined;
-    const kind = action.toLowerCase();
-    if (kind === 'open-note' || kind === 'open_note' || kind === 'opennote') {
-        const p = (path ?? '').trim();
-        if (!p) return undefined;
-        // Strip wrapping wiki-link / markdown-link decorations the model may
-        // accidentally add: [[Foo]], [[Foo|Bar]], "Foo", 'Foo', `Foo`.
-        const cleaned = stripPathDecorations(p);
-        if (!cleaned) return undefined;
-        return { kind: 'open-note', path: cleaned };
-    }
-    return undefined;
-}
-
-function stripPathDecorations(p: string): string {
-    let s = p.trim();
-    // Wiki-link form: [[Path|Display]], [[Path#heading]], [[Path^block]], or combinations
-    const wiki = /^\[\[([^\]]+)\]\]$/.exec(s);
-    if (wiki) {
-        const inner = wiki[1] ?? '';
-        // Drop alias after '|', then strip heading ref (#...) and block ref (^...).
-        s = inner.split('|')[0]?.trim() ?? '';
-        // Strip heading reference: everything from # onward (but only after the path)
-        const hashIdx = s.indexOf('#');
-        const caretIdx = s.indexOf('^');
-        const cutoff = Math.min(
-            hashIdx === -1 ? Infinity : hashIdx,
-            caretIdx === -1 ? Infinity : caretIdx
-        );
-        if (cutoff !== Infinity) {
-            s = s.slice(0, cutoff).trim();
-        }
-    }
-    // Strip surrounding quotes / backticks.
-    s = s.replace(/^['"`]+|['"`]+$/g, '').trim();
-    return s;
 }
 
 // ─── Heuristic parsing ─────────────────────────────────────────────────
@@ -633,12 +483,4 @@ function cleanupText(s: string): string {
         .trim();
 }
 
-/**
- * Compare two strings ignoring case and whitespace differences. Used by the
- * structured-block parser to detect entries where the model emitted the same
- * text for both `label` and `prompt`.
- */
-function equalsIgnoreCaseAndSpace(a: string, b: string): boolean {
-    const norm = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
-    return norm(a) === norm(b);
-}
+

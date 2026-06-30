@@ -212,7 +212,6 @@ export function createChatAgent(
     // `systemPromptSuffix`, scoped to whichever sub-agents the
     // sub-agent router shortlists for the current user query.
     const builtinSystemPrompt = buildBuiltinSystemPrompt({
-        structuredFollowUps: settings.followUpSuggestionsEnabled && settings.followUpSuggestionsStructured,
         // Only include TODO usage rules when manage_todos is wired
         // (saves ~350 tokens on sessions without the tool).
         includeTodoRules: !!callbacks.getTodoStateSource,

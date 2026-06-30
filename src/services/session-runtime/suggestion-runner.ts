@@ -5,9 +5,8 @@
  * runtimes (no view attached) still produce + persist suggestions.
  * Mirrors `insight-runner.ts` in structure and lifecycle.
  *
- * The view runs deterministic extraction (structured block + heuristic)
- * for instant feedback; this runner provides the LLM-backed fallback
- * that may arrive 1–3 s later.
+ * The view runs heuristic extraction for instant feedback; this runner
+ * provides the LLM-backed fallback that may arrive 1–3 s later.
  */
 
 import type NoteAssistantPlugin from 'main';
@@ -47,13 +46,11 @@ export async function maybeExtractSuggestionsAfterFinish(
     const replyText = assistantContent.trim();
     if (replyText.length < MIN_REPLY_CHARS) return;
 
-    // ── 1) Try deterministic extraction first ──────────────────────
-    const deterministic = extractSuggestions(assistantContent, {
-        allowStructured: settings.followUpSuggestionsStructured === true,
-    });
-    if (deterministic.length > 0) return; // view already has results
+    // ── Heuristic extraction ────────────────────────────────────────
+    const heuristic = extractSuggestions(assistantContent, {});
+    if (heuristic.length > 0) return; // view already has results
 
-    // ── 2) LLM fallback ────────────────────────────────────────────
+    // ── LLM fallback ────────────────────────────────────────────────
     const gen = runtime.beginSuggestionExtraction(assistant.id, 'auto');
 
     let suggestions: SuggestionCardState['suggestions'] = [];

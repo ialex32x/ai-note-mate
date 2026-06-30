@@ -3,8 +3,6 @@
  * Extracted from session-view.ts for maintainability.
  */
 
-import { STRUCTURED_SUGGESTIONS_PROMPT } from '../suggestions/structured-prompt';
-
 export const TITLE_SUMMARIZE_PROMPT = `\
 You name the TOPIC of a conversation — you do NOT summarize its content.
 
@@ -134,8 +132,6 @@ export interface SubAgentDescriptor {
  * Options controlling optional sections appended to the builtin system prompt.
  */
 export interface BuildSystemPromptOptions {
-    /** When true, append instructions asking the model to emit a machine-readable follow-up suggestions block. */
-    structuredFollowUps?: boolean;
     /**
      * When false, omit {@link TODO_USAGE_RULES} from the builtin prompt.
      * Defaults to true (backward-compatible). Set to false when the
@@ -191,10 +187,6 @@ export function buildBuiltinSystemPrompt(
     parts.push(MULTI_AGENT_HINTS);
 
     parts.push(COMMON_RULES);
-
-    if (options.structuredFollowUps) {
-        parts.push(STRUCTURED_SUGGESTIONS_PROMPT);
-    }
 
     return parts.join('\n\n');
 }

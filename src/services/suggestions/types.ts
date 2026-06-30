@@ -44,8 +44,6 @@ export interface SuggestedAction {
 
 /** Options passed to the extractor. */
 export interface ExtractOptions {
-    /** Whether to try parsing the structured `<!--suggestions ... -->` block. */
-    allowStructured: boolean;
     /** Max number of actions returned. */
     limit?: number;
     /** Max length of each label. */
