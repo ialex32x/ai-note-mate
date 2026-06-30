@@ -182,11 +182,10 @@ export function createSessionRuntime(
                 // must NEVER block or alter the chat turn.
                 void maybeExtractMemoriesAfterFinish(plugin, runtime);
                 // Persist context breakdown once per turn (instead of
-                // on every LLM round inside a tool-call loop). Only
-                // active when debug mode is on; I/O errors are silently
-                // swallowed.
+                // on every LLM round inside a tool-call loop).
+                // I/O errors are silently swallowed.
                 const breakdown = chat.contextBreakdown;
-                if (plugin.settings.debugEnabled && breakdown) {
+                if (breakdown) {
                     persistContextBreakdownCache(plugin, sessionId, breakdown);
                 }
             });
@@ -294,14 +293,14 @@ export function createSessionRuntime(
     return runtime;
 }
 
-// ── Context-breakdown cache persistence (debug mode) ──────────────────
+// ── Context-breakdown cache persistence ───────────────────────────────
 
 const BREAKDOWN_FILE = 'context-breakdown.json';
 
 /**
  * Persist a {@link ContextBreakdown} to
  * `{plugin paths sessions}/{sessionId}/context-breakdown.json`.
- * Only called when debug mode is on; I/O errors are silently swallowed.
+ * I/O errors are silently swallowed.
  */
 export function persistContextBreakdownCache(
     plugin: NoteAssistantPlugin,

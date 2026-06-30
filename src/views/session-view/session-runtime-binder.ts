@@ -626,8 +626,8 @@ export class SessionRuntimeBinder {
             runtime.restoreAssets(toolCallAssets);
         }
 
-        // Context breakdown cache (debug-mode only). Always safe to
-        // call — returns undefined when the file doesn't exist.
+        // Context breakdown cache. Always safe to call — returns
+        // undefined when the file doesn't exist.
         const ctxBreakdown = await loadContextBreakdownCache(
             this.deps.plugin, runtime.sessionId,
         );
