@@ -11,6 +11,7 @@ import { generateImageWithGemini } from "../image-gen/gemini-image";
 import { generateImageWithQwen } from "../image-gen/qwen-image";
 import { generateImageWithOpenAI } from "../image-gen/openai-image";
 import { generateImageWithSeedream } from "../image-gen/seedream-image";
+import { compressImage } from "../image-gen/compress-image";
 import { getMimeType, mimeTypeToExt } from "../../utils/mime-helper";
 import { recordIssue } from "../diagnostics/issue-tracer";
 import { isAbortError } from "../../utils/abortable-request";
@@ -449,10 +450,28 @@ async function handleImageGenResult(
         };
     }
 
+    // ── Optional compression ──
+    // When imageQuality < 100, re-encode the image as JPEG at the given
+    // quality to reduce file size before storing it in the vault.
+    let imageData = result.imageData;
+    let mimeType = result.mimeType || "image/png";
+    const quality = plugin.settings.imageQuality;
+    if (typeof quality === "number" && quality < 100) {
+        try {
+            const compressed = await compressImage(imageData, mimeType, quality);
+            imageData = compressed.base64;
+            mimeType = compressed.mimeType;
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            console.warn("[generate_image] Compression failed, saving original:", msg);
+            // Fall through — save the original image
+        }
+    }
+
     // Save the image to the vault
-    const ext = mimeTypeToExt(result.mimeType || "image/png");
-    const filename = await buildUniqueFilename(result.imageData, ext);
-    const savedPath = await saveImageToVault(plugin, filename, result.imageData);
+    const ext = mimeTypeToExt(mimeType || "image/png");
+    const filename = await buildUniqueFilename(imageData, ext);
+    const savedPath = await saveImageToVault(plugin, filename, imageData);
 
     if (!savedPath) {
         return {

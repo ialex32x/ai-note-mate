@@ -177,6 +177,8 @@ export const ja: Record<string, string> = {
 	'settings.inactive': '無効',
 	'settings.setAsActive': '有効にする',
 	'settings.imageGenEmpty': '画像生成が設定されていません。追加して画像生成を有効にしてください。',
+	'settings.imageQuality': '画像品質',
+	'settings.imageQualityDesc': '生成画像のJPEG品質。値を低くするとファイルサイズが小さくなりますが、画質が低下します。100% = オリジナル（圧縮なし）。',
 
 	// ── 音声テキスト化 ─────────────────────────────────
 	'settings.speechToTextSection': '音声テキスト化',

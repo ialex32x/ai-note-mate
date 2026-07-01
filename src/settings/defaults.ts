@@ -185,6 +185,7 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	allowedCapabilities: [...ALL_TOOL_CAPABILITIES],
 	imageGenConfigs: [],
 	activeImageGenId: '',
+	imageQuality: 100,
 	speechToTextConfigs: [],
 	activeSpeechToTextId: '',
 	enterToSend: true,

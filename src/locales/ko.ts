@@ -177,6 +177,8 @@ export const ko: Record<string, string> = {
 	'settings.inactive': '비활성',
 	'settings.setAsActive': '활성으로 설정',
 	'settings.imageGenEmpty': '이미지 생성이 설정되지 않았습니다. 추가하여 이미지 생성을 활성화하세요.',
+	'settings.imageQuality': '이미지 품질',
+	'settings.imageQualityDesc': '생성된 이미지의 JPEG 품질입니다. 낮은 값은 파일 크기를 줄이지만 화질이 저하됩니다. 100% = 원본 (압축 없음).',
 
 	// ── 음성 텍스트 변환 ────────────────────────────────
 	'settings.speechToTextSection': '음성 텍스트 변환',

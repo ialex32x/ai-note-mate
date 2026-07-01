@@ -260,6 +260,15 @@ export interface NoteAssistantPluginSettings {
 	insightsProfileId: string;
 	/** ID of the currently active image generation config */
 	activeImageGenId: string;
+
+	/**
+	 * Image quality percentage for generated images (10–100).
+	 * 100 = original quality (no compression).
+	 * Values below 100 compress the image to JPEG with the given quality
+	 * before saving to the vault, reducing file size at the cost of some
+	 * visual fidelity.
+	 */
+	imageQuality: number;
 	/** ID of the currently active embedding config */
 	activeEmbeddingId: string;
 

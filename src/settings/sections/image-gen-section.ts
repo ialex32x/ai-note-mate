@@ -7,6 +7,7 @@ import {
 	createApiKeyField,
 	createDropdownField,
 	createModelFieldWithSelector,
+	createSliderField,
 	createTabBar,
 	createTextField,
 } from "../../components/settings-components";
@@ -24,6 +25,21 @@ export class ImageGenSettingsSection implements SettingsSection {
 	render(container: HTMLElement): void {
 		const { plugin, refreshSection } = this.ctx;
 		const imageGenConfigs = plugin.settings.imageGenConfigs;
+
+		// ── Global image quality slider ──
+		createSliderField({
+			container,
+			name: t('settings.imageQuality'),
+			desc: t('settings.imageQualityDesc'),
+			value: plugin.settings.imageQuality,
+			min: 10,
+			max: 100,
+			step: 5,
+			onChange: async (value) => {
+				plugin.settings.imageQuality = value;
+				await plugin.saveSettings();
+			},
+		});
 
 		// ── Image Gen tab bar ──
 		if (imageGenConfigs.length > 0) {

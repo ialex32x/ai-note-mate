@@ -177,6 +177,8 @@ export const en: Record<string, string> = {
 	'settings.inactive': 'Inactive',
 	'settings.setAsActive': 'Set as active',
 	'settings.imageGenEmpty': 'No image generation configured. Add one to enable image generation.',
+	'settings.imageQuality': 'Image quality',
+	'settings.imageQualityDesc': 'JPEG quality for generated images. Lower values reduce file size at the cost of visual fidelity. 100% = original (no compression).',
 
 	// ── Speech-to-Text ───────────────────────────────────
 	'settings.speechToTextSection': 'Speech-to-Text',

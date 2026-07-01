@@ -177,6 +177,8 @@ export const zhCN: Record<string, string> = {
 	'settings.inactive': '未激活',
 	'settings.setAsActive': '设为当前',
 	'settings.imageGenEmpty': '尚未配置图片生成。添加一个以启用图片生成功能。',
+	'settings.imageQuality': '图片质量',
+	'settings.imageQualityDesc': '生成图片的 JPEG 质量。较低的值可减小文件体积，但会降低画质。100% = 原始质量（不压缩）。',
 
 	// ── 语音转文字 ─────────────────────────────────────
 	'settings.speechToTextSection': '语音转文字',

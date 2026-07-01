@@ -177,6 +177,8 @@ export const zhTW: Record<string, string> = {
 	'settings.inactive': '未啟用',
 	'settings.setAsActive': '設為目前',
 	'settings.imageGenEmpty': '尚未配置圖片生成。新增一個以啟用圖片生成功能。',
+	'settings.imageQuality': '圖片品質',
+	'settings.imageQualityDesc': '生成圖片的 JPEG 品質。較低的值可減小檔案體積，但會降低畫質。100% = 原始品質（不壓縮）。',
 
 	// ── 語音轉文字 ─────────────────────────────────────
 	'settings.speechToTextSection': '語音轉文字',

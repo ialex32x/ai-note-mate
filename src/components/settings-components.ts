@@ -699,6 +699,66 @@ export function createDropdownField(options: DropdownFieldOptions): Setting {
 	return setting;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Slider Field
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Options for creating a slider field */
+export interface SliderFieldOptions {
+	/** Container element to append the setting to */
+	container: HTMLElement;
+	/** Setting name */
+	name: string;
+	/** Setting description */
+	desc?: string;
+	/** Current value */
+	value: number;
+	/** Minimum value */
+	min: number;
+	/** Maximum value */
+	max: number;
+	/** Step size */
+	step: number;
+	/** Callback when value changes */
+	onChange: (value: number) => void | Promise<void>;
+	/** Whether this setting is an advanced parameter */
+	advanced?: boolean;
+}
+
+/**
+ * Creates a slider (range input) field with a numeric label showing the
+ * current value.
+ */
+export function createSliderField(options: SliderFieldOptions): Setting {
+	const { container, name, desc, value, min, max, step, onChange, advanced } = options;
+
+	const setting = new Setting(container)
+		.setName(name);
+
+	if (desc) {
+		setting.setDesc(desc);
+	}
+
+	setting.addSlider(slider => {
+		slider.setLimits(min, max, step);
+		slider.setValue(value);
+		slider.setDynamicTooltip();
+		slider.onChange(async (newValue) => {
+			await onChange(newValue);
+		});
+	});
+
+	if (advanced) {
+		if (advancedSettingsVisible) {
+			markSettingAdvanced(setting);
+		} else {
+			setting.settingEl.addClass('oap-setting--advanced-collapsed');
+		}
+	}
+
+	return setting;
+}
+
 /**
  * Creates a model input field with a "refresh + pick from list" button.
  *
