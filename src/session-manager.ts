@@ -20,7 +20,7 @@ export type { SessionMetadata, SessionSnapshot } from './session-manager-types';
 /**
  * Session manager with persistent storage and lazy loading.
  * - Metadata is stored in `sessions/list.json`
- * - Messages are stored in `sessions/${id}.json` (loaded on demand)
+ * - Messages are stored in `sessions/${id}/messages.json` (loaded on demand)
  */
 export class SessionManager {
     /** Session metadata map */
@@ -640,25 +640,31 @@ export class SessionManager {
         // Delete messages file (failure is non-critical)
         try {
             const adapter = this.app.vault.adapter;
-            const msgPath = `${this.sessionsDir}/${id}.json`;
+            // Remove new-format messages file
+            const msgPath = this.getMessagesFilePath(id);
             if (await adapter.exists(msgPath)) {
                 await adapter.remove(msgPath);
             }
-            // Also clean up the session's artifacts subdirectory (if any).
-            const artifactsDir = `${this.sessionsDir}/${id}`;
-            if (await adapter.exists(artifactsDir)) {
+            // Also clean up legacy flat file if present
+            const oldPath = this.getOldMessagesFilePath(id);
+            if (await adapter.exists(oldPath)) {
+                await adapter.remove(oldPath);
+            }
+            // Also clean up the session's subdirectory (if any).
+            const sessionDir = this.getSessionDirPath(id);
+            if (await adapter.exists(sessionDir)) {
                 // Delete individual files first, then rmdir.
                 try {
-                    const listing = await adapter.list(artifactsDir);
+                    const listing = await adapter.list(sessionDir);
                     for (const file of listing.files) {
-                        await adapter.remove(`${artifactsDir}/${file}`);
+                        await adapter.remove(`${sessionDir}/${file}`);
                     }
                     for (const folder of listing.folders) {
                         // Recursively clean up nested dirs (paranoid; shouldn't exist).
-                        try { await adapter.rmdir(`${artifactsDir}/${folder}`, true); } catch { /* ignore */ }
+                        try { await adapter.rmdir(`${sessionDir}/${folder}`, true); } catch { /* ignore */ }
                     }
                 } catch { /* best-effort listing; continue to rmdir anyway */ }
-                try { await adapter.rmdir(artifactsDir, false); } catch { /* may have been removed already */ }
+                try { await adapter.rmdir(sessionDir, false); } catch { /* may have been removed already */ }
             }
         } catch (error) {
             console.warn('[SessionManager] Failed to delete messages file:', error);
@@ -747,6 +753,21 @@ export class SessionManager {
         return sessions.map(({ lastInsights: _, lastSuggestions: __, draftInput: ___, ...rest }) => rest as SessionMetadata);
     }
 
+    /** Build the path for the per-session messages file (new directory-based format). */
+    private getMessagesFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/messages.json`;
+    }
+
+    /** Build the path for the legacy flat messages file (pre-migration format). */
+    private getOldMessagesFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}.json`;
+    }
+
+    /** Build the path for the per-session directory. */
+    private getSessionDirPath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}`;
+    }
+
     /** Build the path for the per-session insights file. */
     private getInsightsFilePath(sessionId: string): string {
         return `${this.sessionsDir}/${sessionId}/insights.json`;
@@ -764,7 +785,7 @@ export class SessionManager {
     private async savePerSessionInsights(sessionId: string, state: InsightCardState | undefined): Promise<void> {
         const adapter = this.app.vault.adapter;
         const filePath = this.getInsightsFilePath(sessionId);
-        const dirPath = `${this.sessionsDir}/${sessionId}`;
+        const dirPath = this.getSessionDirPath(sessionId);
 
         try {
             if (state) {
@@ -789,7 +810,7 @@ export class SessionManager {
     private async savePerSessionSuggestions(sessionId: string, state: SuggestionCardState | undefined): Promise<void> {
         const adapter = this.app.vault.adapter;
         const filePath = this.getSuggestionsFilePath(sessionId);
-        const dirPath = `${this.sessionsDir}/${sessionId}`;
+        const dirPath = this.getSessionDirPath(sessionId);
 
         try {
             if (state) {
@@ -819,7 +840,7 @@ export class SessionManager {
     private async savePerSessionUserInput(sessionId: string, draft: string): Promise<void> {
         const adapter = this.app.vault.adapter;
         const filePath = this.getUserInputFilePath(sessionId);
-        const dirPath = `${this.sessionsDir}/${sessionId}`;
+        const dirPath = this.getSessionDirPath(sessionId);
 
         try {
             if (draft) {
@@ -949,10 +970,31 @@ export class SessionManager {
 
         try {
             const adapter = this.app.vault.adapter;
-            const msgPath = `${this.sessionsDir}/${id}.json`;
+            const newPath = this.getMessagesFilePath(id);
+            const oldPath = this.getOldMessagesFilePath(id);
 
-            if (await adapter.exists(msgPath)) {
-                const content = await adapter.read(msgPath);
+            const newExists = await adapter.exists(newPath);
+            const oldExists = await adapter.exists(oldPath);
+
+            // Determine which path to read from and handle migration.
+            let readPath: string | null = null;
+
+            if (newExists && oldExists) {
+                // Both exist — delete the old flat file, read from new.
+                console.warn(`[SessionManager] Both old and new message files exist for ${id}, removing old format`);
+                try { await adapter.remove(oldPath); } catch { /* best-effort */ }
+                readPath = newPath;
+            } else if (newExists) {
+                // Only new exists — normal path.
+                readPath = newPath;
+            } else if (oldExists) {
+                // Only old exists — migrate to new location, then read.
+                readPath = await this._migrateMessagesFile(id, oldPath, newPath);
+            }
+            // else: neither exists → stay with readPath = null
+
+            if (readPath) {
+                const content = await adapter.read(readPath);
                 // Use a permissive type for version-gating — the real
                 // SessionMessagesFile type has version: 5|6|7 so TS would
                 // reject comparisons with 1–4 below.
@@ -962,7 +1004,7 @@ export class SessionManager {
                 // metadata so the session disappears from the list.
                 if (raw.version >= 1 && raw.version <= 4) {
                     console.warn(`[SessionManager] Session ${id} has deprecated cache version ${raw.version}, purging`);
-                    await adapter.remove(msgPath);
+                    await adapter.remove(readPath);
                     this.metadataMap.delete(id);
                     this.messagesCache.set(id, []);
                 } else if ((raw.version === 5 || raw.version === 6 || raw.version === 7) && raw.id === id) {
@@ -1035,6 +1077,36 @@ export class SessionManager {
         }
     }
 
+    /**
+     * Migrate a legacy flat messages file (`sessions/{id}.json`) to the
+     * new directory-based location (`sessions/{id}/messages.json`).
+     *
+     * Reads the old file, ensures the per-session directory exists,
+     * writes the content to the new path, then removes the old file.
+     * Returns the new path on success, or null on failure.
+     */
+    private async _migrateMessagesFile(
+        id: string,
+        oldPath: string,
+        newPath: string,
+    ): Promise<string | null> {
+        const adapter = this.app.vault.adapter;
+        try {
+            const content = await adapter.read(oldPath);
+            const sessionDir = this.getSessionDirPath(id);
+            if (!await adapter.exists(sessionDir)) {
+                await adapter.mkdir(sessionDir);
+            }
+            await adapter.write(newPath, content);
+            await adapter.remove(oldPath);
+            // Migration successful — informational, non-warning.
+            return newPath;
+        } catch (error) {
+            console.warn(`[SessionManager] Failed to migrate messages file for ${id}:`, error);
+            return null;
+        }
+    }
+
     /** Save messages for a specific session to file */
     private async saveMessages(id: string): Promise<void> {
         if (!this.loadedMessages.has(id)) return;
@@ -1048,6 +1120,12 @@ export class SessionManager {
             // Ensure sessions directory exists
             if (!await adapter.exists(this.sessionsDir)) {
                 await adapter.mkdir(this.sessionsDir);
+            }
+
+            // Ensure per-session directory exists
+            const sessionDir = this.getSessionDirPath(id);
+            if (!await adapter.exists(sessionDir)) {
+                await adapter.mkdir(sessionDir);
             }
 
             // Get summaries for this session (may be empty)
@@ -1092,8 +1170,15 @@ export class SessionManager {
                 quickAskTurns: hasQuickAskTurnsData ? quickAskTurns : undefined,
             };
 
-            const msgPath = `${this.sessionsDir}/${id}.json`;
+            const msgPath = this.getMessagesFilePath(id);
             await adapter.write(msgPath, JSON.stringify(data, null, 2));
+
+            // Clean up legacy flat file if it still exists (should have been
+            // migrated by loadMessages, but this is a safety net).
+            const oldPath = this.getOldMessagesFilePath(id);
+            if (await adapter.exists(oldPath)) {
+                try { await adapter.remove(oldPath); } catch { /* best-effort */ }
+            }
 
             // Mirror the message schema version into metadata so the
             // startup purge loop can skip reading the full file.
@@ -1192,14 +1277,18 @@ export class SessionManager {
         let purgedCount = 0;
         let metadataDirty = false;
         for (const [id, meta] of this.metadataMap) {
-            const msgPath = `${this.sessionsDir}/${id}.json`;
+            const newPath = this.getMessagesFilePath(id);
+            const oldPath = this.getOldMessagesFilePath(id);
 
             // Fast path: version already cached in metadata.
             if (typeof meta.messageVersion === 'number') {
                 if (meta.messageVersion >= 1 && meta.messageVersion <= 4) {
                     console.warn(`[SessionManager] Purging deprecated v${meta.messageVersion} session: ${id}`);
-                    if (await adapter.exists(msgPath)) {
-                        await adapter.remove(msgPath);
+                    if (await adapter.exists(newPath)) {
+                        await adapter.remove(newPath);
+                    }
+                    if (await adapter.exists(oldPath)) {
+                        await adapter.remove(oldPath);
                     }
                     this.metadataMap.delete(id);
                     purgedCount++;
@@ -1211,23 +1300,41 @@ export class SessionManager {
             // Slow path: metadata from an older plugin version lacks
             // messageVersion. Read the file once to discover the real
             // version, then backfill so subsequent startups skip this.
-            if (await adapter.exists(msgPath)) {
+            // Check new path first, then fall back to old path.
+            let readPath: string | null = null;
+            if (await adapter.exists(newPath)) {
+                readPath = newPath;
+            } else if (await adapter.exists(oldPath)) {
+                readPath = oldPath;
+            }
+
+            if (readPath) {
                 try {
-                    const msgContent = await adapter.read(msgPath);
+                    const msgContent = await adapter.read(readPath);
                     const sessionData = JSON.parse(msgContent) as { version: number };
                     // Backfill for future fast startups.
                     meta.messageVersion = sessionData.version;
                     metadataDirty = true;
                     if (sessionData.version >= 1 && sessionData.version <= 4) {
                         console.warn(`[SessionManager] Purging deprecated v${sessionData.version} session: ${id}`);
-                        await adapter.remove(msgPath);
+                        await adapter.remove(readPath);
+                        // Also clean up the other path if it exists
+                        const otherPath = readPath === newPath ? oldPath : newPath;
+                        if (await adapter.exists(otherPath)) {
+                            await adapter.remove(otherPath);
+                        }
                         this.metadataMap.delete(id);
                         purgedCount++;
                     }
                 } catch {
                     // Corrupt file — also purge
                     console.warn(`[SessionManager] Purging corrupt session file: ${id}`);
-                    await adapter.remove(msgPath);
+                    await adapter.remove(readPath);
+                    // Also clean up the other path if it exists
+                    const otherPath = readPath === newPath ? oldPath : newPath;
+                    if (await adapter.exists(otherPath)) {
+                        await adapter.remove(otherPath);
+                    }
                     this.metadataMap.delete(id);
                     purgedCount++;
                 }

@@ -24,7 +24,7 @@ export interface SessionMetadata {
     createdAt: number;
     updatedAt: number;
     /**
-     * Schema version of the session messages file (sessions/{id}.json).
+     * Schema version of the session messages file (sessions/{id}/messages.json).
      * Mirrors {@link SessionMessagesFile.version}. Stored in list.json so
      * the startup purge check does NOT need to read every session file
      * just to detect deprecated v1–v4 formats. Absent for metadata
@@ -55,7 +55,7 @@ export interface SessionMetadata {
     lastSuggestions?: SuggestionCardState;
 }
 
-/** Messages file content (stored in sessions/${id}.json) */
+/** Messages file content (stored in sessions/${id}/messages.json) */
 export interface SessionMessagesFile {
     /**
      * File schema version.

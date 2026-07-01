@@ -4,7 +4,7 @@
  * Built-in `manage_todos` tool that lets the main agent maintain a
  * per-session TODO list across a complex task. The list is stored on
  * the {@link SessionRuntime}, persisted by {@link SessionManager} into
- * `sessions/{id}.json` (schema v4), and surfaced to the user via the
+ * `sessions/{id}/messages.json` (schema v5+), and surfaced to the user via the
  * `TodoPanel` pinned at the top of the chat view. The model receives
  * the full current state in every tool result so it can keep
  * referring to subtasks even after context compression / reload.

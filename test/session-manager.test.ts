@@ -143,7 +143,7 @@ describe("SessionManager.createSession", () => {
         // Flush all loaded sessions to the in-memory adapter.
         await mgr.saveToCache();
 
-        const aOnDisk = JSON.parse(adapter.files.get(`sessions/${sessionAId}.json`) ?? "{}") as {
+        const aOnDisk = JSON.parse(adapter.files.get(`sessions/${sessionAId}/messages.json`) ?? "{}") as {
             messages?: ChatMessage[];
         };
         expect(aOnDisk.messages?.length).toBe(1);

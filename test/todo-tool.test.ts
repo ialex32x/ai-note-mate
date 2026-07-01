@@ -573,7 +573,7 @@ describe('SessionManager — TODO state round-trip', () => {
         await mgr.saveToCache();
 
         // The file on disk should carry version 5 + both brief and content.
-        const raw = adapter.files.get(`sessions/${sessionId}.json`);
+        const raw = adapter.files.get(`sessions/${sessionId}/messages.json`);
         expect(raw).toBeDefined();
         const parsed = JSON.parse(raw!) as { version: number; todos?: TodoState };
         expect(parsed.version).toBe(5);
@@ -624,7 +624,7 @@ describe('SessionManager — TODO state round-trip', () => {
                 updatedAt: now,
             }],
         }));
-        adapter.files.set(`sessions/${sessionId}.json`, JSON.stringify(sessionFile));
+        adapter.files.set(`sessions/${sessionId}/messages.json`, JSON.stringify(sessionFile));
         adapter.folders.add('sessions');
 
         const mgr = new SessionManager({ vault: { adapter } } as never, 'sessions');
@@ -667,7 +667,7 @@ describe('SessionManager — TODO state round-trip', () => {
         expect(mgr.getSessionTodos(sessionId)).toBeUndefined();
 
         // File should be deleted from disk.
-        expect(adapter.files.has(`sessions/${sessionId}.json`)).toBe(false);
+        expect(adapter.files.has(`sessions/${sessionId}/messages.json`)).toBe(false);
 
         // Metadata should be removed so the session no longer appears in lists.
         const snapshots = mgr.getAllSessions();
@@ -692,7 +692,7 @@ describe('SessionManager — TODO state round-trip', () => {
 
         // v4 files are purged — no migration fallback is attempted.
         expect(mgr.getSessionTodos(sessionId)).toBeUndefined();
-        expect(adapter.files.has(`sessions/${sessionId}.json`)).toBe(false);
+        expect(adapter.files.has(`sessions/${sessionId}/messages.json`)).toBe(false);
     });
 
     it('purges v1/v2/v3 files on load and removes from metadata', async () => {
@@ -710,7 +710,7 @@ describe('SessionManager — TODO state round-trip', () => {
         // v2 files are purged — TODO state should be undefined (no cache entry).
         expect(mgr.getSessionTodos(sessionId)).toBeUndefined();
         // File should be deleted from disk.
-        expect(adapter.files.has(`sessions/${sessionId}.json`)).toBe(false);
+        expect(adapter.files.has(`sessions/${sessionId}/messages.json`)).toBe(false);
         // Metadata should be removed.
         const snapshots = mgr.getAllSessions();
         expect(snapshots.find(s => s.id === sessionId)).toBeUndefined();
@@ -742,7 +742,7 @@ describe('SessionManager — TODO state round-trip', () => {
             },
         );
         await mgr.saveToCache();
-        let parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}.json`)!) as { version: number };
+        let parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}/messages.json`)!) as { version: number };
         expect(parsed.version).toBe(5);
 
         // Second save: clear todos → falls back to v5 (minimum writable version).
@@ -753,7 +753,7 @@ describe('SessionManager — TODO state round-trip', () => {
             { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
         );
         await mgr.saveToCache();
-        parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}.json`)!) as { version: number; todos?: unknown };
+        parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}/messages.json`)!) as { version: number; todos?: unknown };
         expect(parsed.version).toBe(5);
         expect(parsed.todos).toBeUndefined();
     });
