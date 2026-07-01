@@ -107,7 +107,7 @@ export class SessionSwitchController {
             await this.deps.sessionManager.loadFromCache();
             await this.deps.draftController.flush();
             this.deps.runtimeBinder.detachFromCurrentRuntime();
-            // Just update list.json's activeSessionId. The old runtime's
+            // Just update active.json's activeSessionId. The old runtime's
             // own persistence layer is responsible for its session file.
             await this.deps.sessionManager.switchTo(targetId);
             await this.deps.sessionManager.ensureMessagesLoaded(targetId);

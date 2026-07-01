@@ -72,6 +72,7 @@ export class SessionManager {
     private sessionsDir: string;
     private listFilePath: string;
     private statisticsFilePath: string;
+    private activeFilePath: string;
     private cacheLoaded = false;
     /** In-flight load promise so concurrent await calls do not race. */
     private _loadPromise: Promise<void> | null = null;
@@ -87,6 +88,7 @@ export class SessionManager {
         this.sessionsDir = sessionsDir;
         this.listFilePath = `${this.sessionsDir}/list.json`;
         this.statisticsFilePath = `${this.sessionsDir}/statistics.json`;
+        this.activeFilePath = `${this.sessionsDir}/active.json`;
         this._activeSessionId = '';
     }
 
@@ -187,6 +189,9 @@ export class SessionManager {
         this.messagesCache.set(id, []);
         this.loadedMessages.add(id);
         this._activeSessionId = id;
+        // Persist active session ID to active.json so the new session
+        // survives a plugin reload before any other persistence happens.
+        void this.saveActiveFile();
         return id;
     }
 
@@ -568,9 +573,9 @@ export class SessionManager {
     async switchTo(targetId: string): Promise<boolean> {
         if (this.metadataMap.has(targetId) && targetId !== this._activeSessionId) {
             this._activeSessionId = targetId;
-            // Persist activeSessionId change to list.json — must go through
-            // the write chain so concurrent background saves do not race.
-            await this.saveMetadata();
+            // Persist activeSessionId change to active.json only — no need
+            // to rewrite the entire list.json for a session switch.
+            await this.saveActiveFile();
             return true;
         }
         return false;
@@ -622,17 +627,14 @@ export class SessionManager {
         // Save list.json after successful memory deletion — must go through
         // the write chain so concurrent background saves do not race.
         //
-        // IMPORTANT: saveMetadata() runs BEFORE clearing _activeSessionId
-        // so the on-disk list.json never contains activeSessionId: "".
-        // When wasActive is true the stored id points to a now-absent
-        // session; loadFromCache() handles this gracefully via its
-        // metadataMap.has() guard and falls back to the constructor-
-        // created default. The caller MUST re-establish a valid active
-        // session (via switchTo() or createSession()) after this call.
+        // Persist updated session list (metadata removed).  The active
+        // session ID is persisted separately below so that loadFromCache
+        // can detect a stale activeSessionId and fall back gracefully.
         await this.saveMetadata();
 
         if (wasActive) {
             this._activeSessionId = '';
+            void this.saveActiveFile();
         }
 
         // Delete messages file (failure is non-critical)
@@ -890,6 +892,28 @@ export class SessionManager {
         }
     }
 
+    /**
+     * Persist the active session ID to `sessions/active.json`.
+     *
+     * Goes through {@link writeChain} so concurrent `mkdir`/`write` calls
+     * (from `saveListFile`, `_doSaveToCache`, etc.) are serialized.  The
+     * work lambda reads `_activeSessionId` at execution time, after every
+     * preceding chain entry has completed.
+     */
+    private saveActiveFile(): Promise<void> {
+        return this.enqueueWrite(async () => {
+            try {
+                const adapter = this.app.vault.adapter;
+                if (!await adapter.exists(this.sessionsDir)) {
+                    await adapter.mkdir(this.sessionsDir);
+                }
+                await adapter.write(this.activeFilePath, JSON.stringify({ activeSessionId: this._activeSessionId }, null, 2));
+            } catch (error) {
+                console.warn('[SessionManager] Failed to save active file:', error);
+            }
+        });
+    }
+
     /** Save only the list.json file (session metadata) */
     private async saveListFile(): Promise<void> {
         if (!this._activeSessionId) return;
@@ -904,7 +928,6 @@ export class SessionManager {
 
             const listData: SessionListFile = {
                 version: 1,
-                activeSessionId: this._activeSessionId,
                 nextId: this._nextId,
                 sessions: this.stripPerSessionFields(Array.from(this.metadataMap.values())),
             };
@@ -1217,16 +1240,28 @@ export class SessionManager {
             this._nextId = data.nextId;
         }
 
-        // Restore active session ID if valid; otherwise pick the
-        // most-recently-updated session as a fallback, or create a fresh
-        // empty session when the vault has no sessions yet.
-        if (data.activeSessionId && this.metadataMap.has(data.activeSessionId)) {
-            this._activeSessionId = data.activeSessionId;
+        // Restore active session ID from active.json.  If the file is
+        // absent or the stored ID no longer maps to a surviving session,
+        // fall back to the most-recently-updated session (or create a
+        // fresh one when the vault has no sessions).
+        let candidateId: string | undefined;
+        try {
+            if (await adapter.exists(this.activeFilePath)) {
+                const activeContent = await adapter.read(this.activeFilePath);
+                const activeData = JSON.parse(activeContent) as { activeSessionId?: string };
+                if (activeData && typeof activeData.activeSessionId === 'string') {
+                    candidateId = activeData.activeSessionId;
+                }
+            }
+        } catch (error) {
+            // active.json absent or corrupt — fall through.
+            console.warn('[SessionManager] Failed to read active file:', error);
+        }
+
+        if (candidateId && this.metadataMap.has(candidateId)) {
+            this._activeSessionId = candidateId;
         } else if (this.metadataMap.size > 0) {
-            // Fallback: the saved active session is gone (purged,
-            // corrupted, or absent).  Pick the most recent surviving
-            // session — getAllSessions() is already sorted descending
-            // by updatedAt.
+            // Fallback: pick the most recent surviving session.
             this._activeSessionId = this.getAllSessions()[0]!.id;
         } else {
             this.createSession();
@@ -1316,7 +1351,6 @@ export class SessionManager {
             // Save metadata list (excluding per-session fields stored in their own files)
             const listData: SessionListFile = {
                 version: 1,
-                activeSessionId: this._activeSessionId,
                 nextId: this._nextId,
                 sessions: this.stripPerSessionFields(Array.from(this.metadataMap.values())),
             };

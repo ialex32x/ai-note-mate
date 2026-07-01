@@ -108,7 +108,6 @@ export interface SessionMessagesFile {
 /** List file content (stored in sessions/list.json) */
 export interface SessionListFile {
     version: 1;
-    activeSessionId: string;
     nextId: number;
     sessions: SessionMetadata[];
 }
