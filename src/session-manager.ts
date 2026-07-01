@@ -214,12 +214,20 @@ export class SessionManager {
         return meta?.draftInput ?? '';
     }
 
-    /** Set the draft input for the active session */
-    setDraftInput(draft: string): void {
-        const meta = this.metadataMap.get(this._activeSessionId);
+    /**
+     * Set the draft input for a session. Defaults to the active session.
+     * Accepts an explicit `sessionId` for callers like {@link branchSession}
+     * that need to seed a non-active session's draft.
+     *
+     * Persists to `sessions/{id}/user-input.json` (fire-and-forget).
+     */
+    setDraftInput(draft: string, sessionId?: string): void {
+        const id = sessionId ?? this._activeSessionId;
+        const meta = this.metadataMap.get(id);
         if (meta) {
             meta.draftInput = draft;
         }
+        void this.savePerSessionUserInput(id, draft);
     }
 
     /**
@@ -542,7 +550,7 @@ export class SessionManager {
         // Seed the new session with the prefix and the draft.
         const newMeta = this.metadataMap.get(newId);
         if (newMeta) {
-            newMeta.draftInput = anchor.content;
+            this.setDraftInput(anchor.content, newId);
             if (prefix.length > 0) {
                 const firstUserMsg = prefix.find(m => m.role === 'user');
                 if (firstUserMsg) {
@@ -734,7 +742,7 @@ export class SessionManager {
 
     /** Strip per-session fields that live in their own files, not in list.json. */
     private stripPerSessionFields(sessions: SessionMetadata[]): SessionMetadata[] {
-        return sessions.map(({ lastInsights: _, lastSuggestions: __, ...rest }) => rest as SessionMetadata);
+        return sessions.map(({ lastInsights: _, lastSuggestions: __, draftInput: ___, ...rest }) => rest as SessionMetadata);
     }
 
     /** Build the path for the per-session insights file. */
@@ -797,9 +805,40 @@ export class SessionManager {
         }
     }
 
+    /** Build the path for the per-session user-input file. */
+    private getUserInputFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/user-input.json`;
+    }
+
     /**
-     * Try to load per-session insights.json and suggestions.json for a
-     * given session and populate the corresponding metadata fields.
+     * Persist (or delete) the per-session user-input.json file.
+     * Called automatically by {@link setDraftInput}.
+     */
+    private async savePerSessionUserInput(sessionId: string, draft: string): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getUserInputFilePath(sessionId);
+        const dirPath = `${this.sessionsDir}/${sessionId}`;
+
+        try {
+            if (draft) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify({ draft }, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save user-input file:', error);
+        }
+    }
+
+    /**
+     * Try to load per-session insights.json, suggestions.json, and
+     * user-input.json for a given session and populate the
+     * corresponding metadata fields.
      * Best-effort: silently ignores missing or corrupt files.
      */
     private async loadPerSessionFiles(sessionId: string): Promise<void> {
@@ -830,6 +869,20 @@ export class SessionManager {
                 const state = JSON.parse(content) as SuggestionCardState;
                 if (state && state.phase !== 'loading') {
                     meta.lastSuggestions = state;
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load draft input
+        try {
+            const userInputPath = this.getUserInputFilePath(sessionId);
+            if (await adapter.exists(userInputPath)) {
+                const content = await adapter.read(userInputPath);
+                const data = JSON.parse(content) as { draft?: string };
+                if (data && typeof data.draft === 'string') {
+                    meta.draftInput = data.draft;
                 }
             }
         } catch {

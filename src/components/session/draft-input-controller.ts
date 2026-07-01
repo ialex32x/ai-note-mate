@@ -8,7 +8,7 @@ export class DraftInputController {
     private timer: number | null = null;
     private lastSavedDraft: string = '';
 
-    private static readonly DEFAULT_DELAY = 2000;
+    private static readonly DEFAULT_DELAY = 1250;
 
     constructor(
         private sessionManager: SessionManager,
