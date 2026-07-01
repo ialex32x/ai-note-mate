@@ -19,7 +19,7 @@
 		"gemini",
 		"assistant"
 	],
-	"license": "0-BSD",
+	"license": "MIT",
 	"devDependencies": {
 		"@codemirror/autocomplete": "^6.20.1",
 		"@codemirror/commands": "^6.10.3",
