@@ -238,9 +238,8 @@ export class SessionManager {
      * are ignored on purpose — loading is a transient runtime-only
      * state that should never round-trip through disk.
      *
-     * Only mutates in-memory metadata; callers should follow up with
-     * {@link saveMetadata} (or rely on the next {@link saveToCache})
-     * to flush to disk.
+     * Mutates in-memory metadata and immediately persists the state to
+     * the per-session `insights.json` file (fire-and-forget).
      */
     setSessionLastInsights(sessionId: string, state: InsightCardState | undefined): void {
         const meta = this.metadataMap.get(sessionId);
@@ -251,6 +250,8 @@ export class SessionManager {
         } else {
             delete meta.lastInsights;
         }
+        // Persist to per-session file (fire-and-forget; errors are logged internally).
+        void this.savePerSessionInsights(sessionId, state);
     }
 
     /** Convenience: clear the insight card state for a specific session. */
@@ -272,8 +273,8 @@ export class SessionManager {
      * Pass `undefined` to clear. Calls with `state.phase === 'loading'`
      * are ignored — loading is a transient runtime-only state.
      *
-     * Only mutates in-memory metadata; callers should follow up with
-     * {@link saveMetadata} to flush to disk.
+     * Mutates in-memory metadata and immediately persists the state to
+     * the per-session `suggestions.json` file (fire-and-forget).
      */
     setSessionLastSuggestions(sessionId: string, state: SuggestionCardState | undefined): void {
         const meta = this.metadataMap.get(sessionId);
@@ -284,6 +285,8 @@ export class SessionManager {
         } else {
             delete meta.lastSuggestions;
         }
+        // Persist to per-session file (fire-and-forget; errors are logged internally).
+        void this.savePerSessionSuggestions(sessionId, state);
     }
 
     /** Convenience: clear the suggestion bar state for a specific session. */
@@ -729,6 +732,111 @@ export class SessionManager {
         if (this._loadPromise) await this._loadPromise;
     }
 
+    /** Strip per-session fields that live in their own files, not in list.json. */
+    private stripPerSessionFields(sessions: SessionMetadata[]): SessionMetadata[] {
+        return sessions.map(({ lastInsights: _, lastSuggestions: __, ...rest }) => rest as SessionMetadata);
+    }
+
+    /** Build the path for the per-session insights file. */
+    private getInsightsFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/insights.json`;
+    }
+
+    /** Build the path for the per-session suggestions file. */
+    private getSuggestionsFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/suggestions.json`;
+    }
+
+    /**
+     * Persist (or delete) the per-session insights.json file for a given session.
+     * Called automatically by {@link setSessionLastInsights}.
+     */
+    private async savePerSessionInsights(sessionId: string, state: InsightCardState | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getInsightsFilePath(sessionId);
+        const dirPath = `${this.sessionsDir}/${sessionId}`;
+
+        try {
+            if (state) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save insights file:', error);
+        }
+    }
+
+    /**
+     * Persist (or delete) the per-session suggestions.json file for a given session.
+     * Called automatically by {@link setSessionLastSuggestions}.
+     */
+    private async savePerSessionSuggestions(sessionId: string, state: SuggestionCardState | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getSuggestionsFilePath(sessionId);
+        const dirPath = `${this.sessionsDir}/${sessionId}`;
+
+        try {
+            if (state) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save suggestions file:', error);
+        }
+    }
+
+    /**
+     * Try to load per-session insights.json and suggestions.json for a
+     * given session and populate the corresponding metadata fields.
+     * Best-effort: silently ignores missing or corrupt files.
+     */
+    private async loadPerSessionFiles(sessionId: string): Promise<void> {
+        const meta = this.metadataMap.get(sessionId);
+        if (!meta) return;
+
+        const adapter = this.app.vault.adapter;
+
+        // Load insights
+        try {
+            const insightsPath = this.getInsightsFilePath(sessionId);
+            if (await adapter.exists(insightsPath)) {
+                const content = await adapter.read(insightsPath);
+                const state = JSON.parse(content) as InsightCardState;
+                if (state && state.phase !== 'loading') {
+                    meta.lastInsights = state;
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load suggestions
+        try {
+            const suggestionsPath = this.getSuggestionsFilePath(sessionId);
+            if (await adapter.exists(suggestionsPath)) {
+                const content = await adapter.read(suggestionsPath);
+                const state = JSON.parse(content) as SuggestionCardState;
+                if (state && state.phase !== 'loading') {
+                    meta.lastSuggestions = state;
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+    }
+
     /** Save only the list.json file (session metadata) */
     private async saveListFile(): Promise<void> {
         if (!this._activeSessionId) return;
@@ -745,7 +853,7 @@ export class SessionManager {
                 version: 1,
                 activeSessionId: this._activeSessionId,
                 nextId: this._nextId,
-                sessions: Array.from(this.metadataMap.values()),
+                sessions: this.stripPerSessionFields(Array.from(this.metadataMap.values())),
             };
 
             await adapter.write(this.listFilePath, JSON.stringify(listData, null, 2));
@@ -841,10 +949,13 @@ export class SessionManager {
             }
 
             this.loadedMessages.add(id);
+            // Lazy-load per-session insights/suggestions alongside messages.
+            await this.loadPerSessionFiles(id);
         } catch (error) {
             console.warn('[SessionManager] Failed to load messages:', error);
             this.messagesCache.set(id, []);
             this.loadedMessages.add(id);
+            await this.loadPerSessionFiles(id);
         }
     }
 
@@ -1075,7 +1186,8 @@ export class SessionManager {
             await this.enqueueWrite(() => this.saveListFile());
         }
 
-        // Pre-load active session messages
+        // Pre-load active session messages (this also triggers lazy
+        // loading of per-session insights.json / suggestions.json)
         await this.loadMessages(this._activeSessionId);
 
         // Load global token statistics after sessions are restored (so
@@ -1148,12 +1260,12 @@ export class SessionManager {
                 await adapter.mkdir(this.sessionsDir);
             }
 
-            // Save metadata list
+            // Save metadata list (excluding per-session fields stored in their own files)
             const listData: SessionListFile = {
                 version: 1,
                 activeSessionId: this._activeSessionId,
                 nextId: this._nextId,
-                sessions: Array.from(this.metadataMap.values()),
+                sessions: this.stripPerSessionFields(Array.from(this.metadataMap.values())),
             };
 
             await adapter.write(this.listFilePath, JSON.stringify(listData, null, 2));
