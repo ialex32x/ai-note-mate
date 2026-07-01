@@ -129,6 +129,9 @@ describe('inferModelContextWindow', () => {
         it.each([
             // Qwen.
             ['qwen3-coder', 128_000],
+            ['qwen3.7-max', 128_000],
+            ['qwen3.7-plus', 128_000],
+            ['qwen3.6-flash', 1_000_000],
             ['qwen2.5-72b-instruct', 128_000],
             ['qwen-turbo', 1_000_000],
             ['qwen-plus', 128_000],
@@ -137,7 +140,13 @@ describe('inferModelContextWindow', () => {
             ['moonshot-v1-128k', 128_000],
             ['moonshot-v1-32k', 32_000],
             ['moonshot-v1-8k', 8_000],
-            ['kimi-k2-0905-preview', 128_000],
+            // Kimi K2.x (2026) — 256k.
+            ['kimi-k2.7-code', 256_000],
+            ['kimi-k2.7-code-highspeed', 256_000],
+            ['kimi-k2.6', 256_000],
+            ['kimi-k2.5', 256_000],
+            // Retired K2 previews — still route via kimi-?k2 → 256k.
+            ['kimi-k2-0905-preview', 256_000],
             // Zhipu GLM.
             ['glm-4-plus', 128_000],
             ['glm-4-long', 1_000_000],
@@ -157,6 +166,8 @@ describe('inferModelContextWindow', () => {
             expect(inferModelContextWindow('Claude-Opus-4-5')).toBe(200_000);
             expect(inferModelContextWindow('DeepSeek-Chat')).toBe(128_000);
             expect(inferModelContextWindow('GLM-5.2')).toBe(1_000_000);
+            expect(inferModelContextWindow('Kimi-K2.6')).toBe(256_000);
+            expect(inferModelContextWindow('QWEN3.6-FLASH')).toBe(1_000_000);
         });
 
         it('trims surrounding whitespace', () => {
@@ -196,6 +207,20 @@ describe('inferModelContextWindow', () => {
         it('matches moonshot-v1-128k before generic moonshot', () => {
             expect(inferModelContextWindow('moonshot-v1-128k')).toBe(128_000);
             expect(inferModelContextWindow('moonshot-v1-8k')).toBe(8_000);
+        });
+
+        it('matches specific kimi-k2.6 before generic kimi-k2 and kimi', () => {
+            expect(inferModelContextWindow('kimi-k2.6')).toBe(256_000);
+            expect(inferModelContextWindow('kimi-k2.5')).toBe(256_000);
+            expect(inferModelContextWindow('kimi-k2-0905-preview')).toBe(256_000);
+            // Generic kimi (non-K2) still defaults to 128k.
+            expect(inferModelContextWindow('kimi-latest')).toBe(128_000);
+        });
+
+        it('matches qwen3.6-flash (1M) before generic qwen3 (128k)', () => {
+            expect(inferModelContextWindow('qwen3.6-flash')).toBe(1_000_000);
+            expect(inferModelContextWindow('qwen3.7-max')).toBe(128_000);
+            expect(inferModelContextWindow('qwen3-coder')).toBe(128_000);
         });
     });
 });

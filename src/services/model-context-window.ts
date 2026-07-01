@@ -141,6 +141,11 @@ const MODEL_WINDOW_HINTS: ReadonlyArray<readonly [RegExp, number]> = [
     [/^deepseek/i, 128_000],
 
     // ── Qwen ────────────────────────────────────────────────────
+    // Qwen3.6-flash — 1M (flash variant with ultra-long context).
+    // Must be before the generic `qwen3` rule.
+    [/^qwen3\.6-flash/i, 1_000_000],
+    // Qwen3.7 series — 128k.
+    [/^qwen3\.7/i, 128_000],
     // Qwen3-coder ships with 256k; we leave it under the 128k bucket
     // anyway because over-shooting is the worse failure mode.
     [/^qwen3/i, 128_000],
@@ -153,10 +158,21 @@ const MODEL_WINDOW_HINTS: ReadonlyArray<readonly [RegExp, number]> = [
     [/^qwen/i, 32_000],
 
     // ── Moonshot / Kimi ─────────────────────────────────────────
+    // Moonshot v1 (legacy, retiree).
     [/^moonshot-v1-128k/i, 128_000],
     [/^moonshot-v1-32k/i, 32_000],
     [/^moonshot-v1-8k/i, 8_000],
-    [/^kimi-?k2/i, 128_000],
+    // Kimi K2.7-code — 256k (latest coding-focused model, 2026).
+    [/^kimi-k2\.7-code/i, 256_000],
+    // Kimi K2.7 — 256k.
+    [/^kimi-k2\.7/i, 256_000],
+    // Kimi K2.6 — 256k (latest general flagship, replaces K2 previews).
+    [/^kimi-k2\.6/i, 256_000],
+    // Kimi K2.5 — 256k.
+    [/^kimi-k2\.5/i, 256_000],
+    // Kimi K2 family (generic) — 256k.
+    [/^kimi-?k2/i, 256_000],
+    // Kimi (generic) — 128k.
     [/^kimi/i, 128_000],
     [/^moonshot/i, 128_000],
 
