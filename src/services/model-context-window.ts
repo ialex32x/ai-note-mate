@@ -54,7 +54,8 @@
  * - When in doubt, **prefer the smaller window** in the table —
  *   under-estimation triggers (harmless) emergency shrink, but
  *   over-estimation can lead to a 400.
- * - Last reviewed: 2026-05 (added DeepSeek V4 1M family). Roughly
+ * - Last reviewed: 2026-07 (added GPT-5 family, Claude Fable/Mythos/Sonnet-5/
+ *   Opus 4.8/Haiku 4.5 overrides, and GLM-5.2). Roughly
  *   once a year: walk through the top-N families on each major
  *   provider's pricing page, update if anything has materially
  *   shifted.
@@ -88,8 +89,26 @@ const MODEL_WINDOW_HINTS: ReadonlyArray<readonly [RegExp, number]> = [
     [/^o3/i, 200_000],
     [/^o4/i, 200_000],
 
+    // GPT-5 family — 1M token window (per OpenAI documentation 2026).
+    // GPT-5.4-mini has 400k; all other GPT-5 models have 1M.
+    [/^gpt-5\.4-mini/i, 400_000],
+    [/^gpt-5\.5/i, 1_000_000],
+    [/^gpt-5\.4/i, 1_000_000],
+    [/^gpt-5/i, 1_000_000],
+
     // ── Anthropic ────────────────────────────────────────────────
-    // Claude 4.x family — 200k regardless of opus/sonnet/haiku tier.
+    // Claude Opus 4.8 — 1M (upgraded from the generic 200k of 4.x).
+    [/^claude-opus-4-8/i, 1_000_000],
+    // Claude Haiku 4.5 — 200k.
+    [/^claude-haiku-4-5/i, 200_000],
+    // Claude 5.x family (Fable, Mythos, Sonnet) — 1M.
+    // Matches "claude-{tier}-5" to avoid conflating with Claude 4.x
+    // minor versions (e.g. "claude-opus-4-5" is Claude 4.5, not 5.x).
+    [/^claude-fable-5/i, 1_000_000],
+    [/^claude-mythos-5/i, 1_000_000],
+    [/^claude-sonnet-5/i, 1_000_000],
+    [/^claude-[a-z]+-5/i, 1_000_000],
+    // Claude 4.x family (generic) — 200k.
     [/^claude.*-4/i, 200_000],
     // Claude 3.x family — 200k.
     [/^claude.*-3/i, 200_000],
@@ -145,6 +164,9 @@ const MODEL_WINDOW_HINTS: ReadonlyArray<readonly [RegExp, number]> = [
     [/^glm-4-long/i, 1_000_000],
     [/^glm-4\.5/i, 128_000],
     [/^glm-4/i, 128_000],
+    // GLM-5.2 — 1M context window (latest flagship, 2026).
+    [/^glm-5\.2/i, 1_000_000],
+    [/^glm-5/i, 1_000_000],
 
     // ── Mistral ────────────────────────────────────────────────
     [/^mistral-large/i, 128_000],

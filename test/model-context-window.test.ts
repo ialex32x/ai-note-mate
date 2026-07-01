@@ -47,6 +47,12 @@ describe('inferModelContextWindow', () => {
             ['o1-mini', 128_000],
             ['o3', 200_000],
             ['o3-mini', 200_000],
+            ['o4', 200_000],
+            // GPT-5 family (2026).
+            ['gpt-5.4-mini', 400_000],
+            ['gpt-5.5', 1_000_000],
+            ['gpt-5.4', 1_000_000],
+            ['gpt-5.4-2026-01-01', 1_000_000],
         ])('%s → %i', (model, expected) => {
             expect(inferModelContextWindow(model)).toBe(expected);
         });
@@ -54,7 +60,18 @@ describe('inferModelContextWindow', () => {
 
     describe('Anthropic Claude family', () => {
         it.each([
-            // New name format (family-then-number).
+            // Claude 5.x — Fable, Mythos, Sonnet — 1M.
+            ['claude-fable-5', 1_000_000],
+            ['claude-fable-5-20260609', 1_000_000],
+            ['claude-mythos-5', 1_000_000],
+            ['claude-sonnet-5', 1_000_000],
+            ['claude-sonnet-5-20260609', 1_000_000],
+            // Claude Opus 4.8 — 1M (upgraded from generic 4.x).
+            ['claude-opus-4-8', 1_000_000],
+            ['claude-opus-4-8-20260101', 1_000_000],
+            // Claude Haiku 4.5 — 200k.
+            ['claude-haiku-4-5', 200_000],
+            // Generic Claude 4.x — 200k.
             ['claude-opus-4-5', 200_000],
             ['claude-sonnet-4-5-20250929', 200_000],
             ['claude-haiku-4', 200_000],
@@ -125,6 +142,8 @@ describe('inferModelContextWindow', () => {
             ['glm-4-plus', 128_000],
             ['glm-4-long', 1_000_000],
             ['glm-4.5', 128_000],
+            // GLM-5.2 — 1M (latest flagship, 2026).
+            ['glm-5.2', 1_000_000],
         ])('%s → %i', (model, expected) => {
             expect(inferModelContextWindow(model)).toBe(expected);
         });
@@ -133,8 +152,11 @@ describe('inferModelContextWindow', () => {
     describe('case-insensitivity', () => {
         it('handles upper / mixed case identifiers', () => {
             expect(inferModelContextWindow('GPT-4o')).toBe(128_000);
+            expect(inferModelContextWindow('GPT-5.4-MINI')).toBe(400_000);
+            expect(inferModelContextWindow('Claude-Fable-5')).toBe(1_000_000);
             expect(inferModelContextWindow('Claude-Opus-4-5')).toBe(200_000);
             expect(inferModelContextWindow('DeepSeek-Chat')).toBe(128_000);
+            expect(inferModelContextWindow('GLM-5.2')).toBe(1_000_000);
         });
 
         it('trims surrounding whitespace', () => {
@@ -154,12 +176,21 @@ describe('inferModelContextWindow', () => {
             expect(inferModelContextWindow('o1')).toBe(200_000);
         });
 
-        it('matches Claude 4.x before Claude 3.x for new-style names', () => {
+        it('matches gpt-5.4-mini (400k) before generic gpt-5 (1M)', () => {
+            expect(inferModelContextWindow('gpt-5.4-mini')).toBe(400_000);
+            expect(inferModelContextWindow('gpt-5.4')).toBe(1_000_000);
+            expect(inferModelContextWindow('gpt-5')).toBe(1_000_000);
+        });
+
+        it('matches specific Claude version overrides before generic 4.x', () => {
+            // Opus 4.8 overrides the generic 4.x 200k with 1M.
+            expect(inferModelContextWindow('claude-opus-4-8')).toBe(1_000_000);
+            // Generic 4.x still returns 200k.
             expect(inferModelContextWindow('claude-opus-4-5')).toBe(200_000);
-            expect(inferModelContextWindow('claude-3-opus')).toBe(200_000);
-            // Both families happen to be 200k, but the test exercises
-            // the ordering so a future per-family divergence wouldn't
-            // silently regress.
+            // Claude 5.x before generic 4.x.
+            expect(inferModelContextWindow('claude-fable-5')).toBe(1_000_000);
+            expect(inferModelContextWindow('claude-mythos-5')).toBe(1_000_000);
+            expect(inferModelContextWindow('claude-sonnet-5')).toBe(1_000_000);
         });
 
         it('matches moonshot-v1-128k before generic moonshot', () => {
