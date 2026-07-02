@@ -72,7 +72,7 @@ export class PreviewOverlay {
 	private pinchStartDistance = 0;
 	/** Scale value when pinch started. */
 	private pinchStartScale = 1;
-	/** Midpoint (viewport coords) of the two touch points when pinch started. */
+	/** Visual center of the content wrapper (viewport coords) at pinch start. */
 	private pinchCenterX = 0;
 	private pinchCenterY = 0;
 	/** Translate offsets when pinch started. */
@@ -174,8 +174,11 @@ export class PreviewOverlay {
 	show(content: PreviewContent): void {
 		if (!this.el || !this.contentWrapper) return;
 
-		// Reset transform.
+		// Reset transform and gesture state.
 		this.transform = { scale: 1, tx: 0, ty: 0 };
+		this.dragging = false;
+		this.pinching = false;
+		this.capturedPointerId = -1;
 
 		// Clear previous content.
 		this.contentWrapper.empty();
@@ -206,6 +209,12 @@ export class PreviewOverlay {
 
 	hide(): void {
 		if (!this.el) return;
+		// Reset gesture state in case hide() was called mid-gesture
+		// (e.g. Escape key while pinching).
+		this.dragging = false;
+		this.pinching = false;
+		this.capturedPointerId = -1;
+		this.contentWrapper?.removeClass('is-dragging');
 		this.el.addClass('session-preview-overlay--hidden');
 		this.el.setAttribute('aria-hidden', 'true');
 	}
@@ -366,10 +375,12 @@ export class PreviewOverlay {
 		this.pinchStartTx = this.transform.tx;
 		this.pinchStartTy = this.transform.ty;
 
-		// Zoom center = midpoint between the two fingers, relative to
-		// the untransformed layout origin.
-		this.pinchCenterX = (t0.clientX + t1.clientX) / 2;
-		this.pinchCenterY = (t0.clientY + t1.clientY) / 2;
+		// Zoom center = visual center of the content (image / diagram),
+		// so zoom always originates from the image center regardless of
+		// where the fingers are placed.
+		const rect = this.contentWrapper!.getBoundingClientRect();
+		this.pinchCenterX = rect.left + rect.width / 2;
+		this.pinchCenterY = rect.top + rect.height / 2;
 	};
 
 	/**
@@ -402,7 +413,7 @@ export class PreviewOverlay {
 			this.pinchStartScale * (currentDistance / this.pinchStartDistance),
 		);
 
-		// Zoom centered on the initial pinch midpoint:
+		// Zoom centered on the visual center of the content:
 		// new_tx = centerX - (centerX - old_tx) * (newScale / oldScale)
 		const scaleRatio = newScale / this.pinchStartScale;
 		this.transform.tx = this.pinchCenterX
