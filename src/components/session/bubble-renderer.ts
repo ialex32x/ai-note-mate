@@ -137,6 +137,12 @@ export class BubbleRenderer extends Component {
          * is rebuilt lazily by the host so it stays current.
          */
         private getQuickAskMessageIds?: () => Set<string>,
+        /**
+         * Optional callback fired when the user clicks an attachment
+         * image in a user message bubble. The host should open a
+         * full-screen preview overlay for the image.
+         */
+        private onPreviewImage?: (src: string, fileName: string) => void,
     ) {
         super();
         this.ctx = {
@@ -199,6 +205,7 @@ export class BubbleRenderer extends Component {
             canJumpToNextUser: this.canJumpToNextUser,
             onQuickAsk: this.onQuickAsk,
             hasQuickAskData: overrides.hasQuickAskData ?? false,
+            onPreviewImage: this.onPreviewImage,
         };
     }
 

@@ -61,6 +61,8 @@ export interface ChatBubbleOptions {
     onQuickAsk?: (msg: ChatMessage) => void;
     /** Whether this assistant message already has QuickAsk data (to show active state). */
     hasQuickAskData?: boolean;
+    /** Host callback for previewing an attachment image in a full-screen overlay. */
+    onPreviewImage?: (src: string, fileName: string) => void;
 }
 
 // ── Role label lookup ─────────────────────────────────────────────────
@@ -213,6 +215,7 @@ export class ChatBubble {
             hasQuickAskData,
             canJumpToPrevUser,
             canJumpToNextUser,
+            onPreviewImage,
         } = opts;
 
         // ── System message (special layout: no body wrapper) ──────────
@@ -278,7 +281,7 @@ export class ChatBubble {
                 // inside `contentEl`, because `renderUserContent` may call
                 // `setText()` which replaces all child nodes.
                 if (msg.attachments && msg.attachments.length > 0) {
-                    ChatBubble.renderAttachments(ctx, bodyEl, msg.attachments, contentEl);
+                    ChatBubble.renderAttachments(ctx, bodyEl, msg.attachments, contentEl, onPreviewImage);
                 }
                 renderUserContent(ctx, contentEl, msg.content);
                 break;
@@ -324,6 +327,7 @@ export class ChatBubble {
         container: HTMLElement,
         attachments: ChatAttachment[],
         beforeChild?: HTMLElement,
+        onPreviewImage?: (src: string, fileName: string) => void,
     ): void {
         const wrapper = activeDocument.createElement('div');
         wrapper.className = 'session-bubble__attachments';
@@ -342,6 +346,17 @@ export class ChatBubble {
                     title: att.fileName,
                 },
             });
+
+            // Click handler: open the preview overlay when available.
+            if (onPreviewImage) {
+                img.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const src = img.src;
+                    if (src) {
+                        onPreviewImage(src, att.fileName);
+                    }
+                });
+            }
 
             // Load the image asynchronously from the cache.
             this.loadAttachmentThumbnail(ctx, att.cachePath, att.mimeType)

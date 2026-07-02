@@ -29,6 +29,8 @@ import {
     SessionLoadingOverlay,
     showInitializationError,
     AssetPanelButton,
+    PreviewOverlay,
+    type ImagePreviewContent,
 } from '../../components/session';
 import {
     buildInsightDeepenPrompt,
@@ -90,6 +92,8 @@ export class SessionView extends ItemView {
     private sessionNavigator!: SessionNavigator;
     /** Generated-asset gallery button (left of session status in toolbar). */
     private assetPanelBtn!: AssetPanelButton;
+    /** Full-viewport preview overlay for zoom/pan of images, mermaid, etc. */
+    private previewOverlay!: PreviewOverlay;
     // ── Session runtime ──────────────────────────────────────────────────────
     /**
      * Owns the binding lifecycle between this view and the
@@ -533,6 +537,10 @@ export class SessionView extends ItemView {
      * `this.scroller`.
      */
     private buildMessageArea(root: HTMLElement): void {
+        // ── Preview overlay (covers entire session view, above all content) ──
+        this.previewOverlay = new PreviewOverlay(root);
+        this.previewOverlay.mount();
+
         const messagesWrapper = root.createEl('div', { cls: 'session-messages-wrapper' });
         this.messagesEl = messagesWrapper.createEl('div', { cls: 'session-messages' });
 
@@ -564,6 +572,8 @@ export class SessionView extends ItemView {
             (msg) => this.historyLoader.canJumpToNextUser(msg),
             (msg) => { void this.handleQuickAskRequest(msg); },
             () => new Set((this.runtime?.quickAskTurns ?? []).map(t => t.parentMessageId)),
+            // Preview overlay callback: open when user clicks an attachment image.
+            (src, fileName) => this.handlePreviewImage(src, fileName),
         );
         this.addChild(this.bubbleRenderer);
 
@@ -1126,6 +1136,7 @@ export class SessionView extends ItemView {
         this.scroller?.setNearTopCallback(null);
         this.promptPin?.detach();
         this.historyLoadingOverlay?.dispose();
+        this.previewOverlay?.dispose();
     }
 
     /**
@@ -1210,6 +1221,20 @@ export class SessionView extends ItemView {
 
     private forceScrollToBottom() {
         this.scroller.forceScrollToBottom();
+    }
+
+    // ── Preview overlay ───────────────────────────────────────────────────
+
+    /**
+     * Open the preview overlay for an attachment image.
+     */
+    private handlePreviewImage(src: string, fileName: string): void {
+        const content: ImagePreviewContent = {
+            kind: 'image',
+            src,
+            alt: fileName,
+        };
+        this.previewOverlay.show(content);
     }
 
     // ── Conversation insights ────────────────────────────────────────────

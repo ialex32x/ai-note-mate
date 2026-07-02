@@ -760,4 +760,7 @@ export const ko: Record<string, string> = {
 	'prompt.insightDeepen.coveragePitfalls': '- 흔한 함정이나 주의할 점',
 	'prompt.insightDeepen.coverageReferences': '- 참고한 자료 / 출처(있다면)',
 	'prompt.insightDeepen.outro': '대화의 나머지 부분과 동일한 언어로 답변해 주세요. 짧은 후속 답변이 아니라, 그대로 노트로 저장할 수 있을 만큼 완성도 있는 한 편의 글을 목표로 하세요.',
+
+	// ── 미리보기 오버레이 ──────────────────────────────────
+	'preview.close': '닫기',
 };

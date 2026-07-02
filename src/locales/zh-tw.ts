@@ -767,4 +767,7 @@ export const zhTW: Record<string, string> = {
 	'prompt.insightDeepen.coveragePitfalls': '- 常見的陷阱或需要留意的注意事項',
 	'prompt.insightDeepen.coverageReferences': '- 參考資料 / 資訊來源（如有引用）',
 	'prompt.insightDeepen.outro': '請使用與本次對話其餘部分相同的語言回覆。目標是產出一段成形的、可直接存為筆記的完整內容，而非簡短的後續回答。',
+
+	// ── 預覽層 ─────────────────────────────────────────────
+	'preview.close': '關閉',
 };

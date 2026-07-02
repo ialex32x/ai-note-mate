@@ -766,4 +766,7 @@ export const zhCN: Record<string, string> = {
 	'prompt.insightDeepen.coveragePitfalls': '- 常见的陷阱或需要留意的注意事项',
 	'prompt.insightDeepen.coverageReferences': '- 参考资料 / 信息来源（如有引用）',
 	'prompt.insightDeepen.outro': '请使用与本次对话其余部分相同的语言回复。目标是产出一段成形的、可直接存为笔记的完整内容，而不是简短的跟进回答。',
+
+	// ── 预览层 ─────────────────────────────────────────────
+	'preview.close': '关闭',
 };

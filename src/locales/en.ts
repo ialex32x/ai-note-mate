@@ -767,4 +767,7 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'prompt.insightDeepen.coveragePitfalls': '- Common pitfalls or caveats to watch out for',
 	'prompt.insightDeepen.coverageReferences': '- References / sources you consulted (if any)',
 	'prompt.insightDeepen.outro': 'Reply in the same language as the rest of this conversation. Aim for a polished, note-ready piece — not a brief follow-up answer.',
+
+	// ── Preview overlay ────────────────────────────────────
+	'preview.close': 'Close',
 };

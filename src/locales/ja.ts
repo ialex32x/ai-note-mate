@@ -760,4 +760,7 @@ export const ja: Record<string, string> = {
 	'prompt.insightDeepen.coveragePitfalls': '- よくある落とし穴や注意すべき点',
 	'prompt.insightDeepen.coverageReferences': '- 参照した資料・出典（あれば）',
 	'prompt.insightDeepen.outro': 'この会話の他の部分と同じ言語で返答してください。短いフォローアップではなく、そのままノートとして残せる完成度の高いまとまりを目指してください。',
+
+	// ── プレビューオーバーレイ ─────────────────────────────
+	'preview.close': '閉じる',
 };
