@@ -483,6 +483,11 @@ export class ScrollController {
     restoreAnchorScroll(anchor: HTMLElement, anchorScrollOffset: number): void {
         this.programmaticScrollGuard++;
         this.messagesEl.scrollTop = anchor.offsetTop - anchorScrollOffset;
+        // Move the direction baseline — same rationale as
+        // programmaticScrollToBottom and jumpScrollTo: without this,
+        // the next user scroll event would compare against a stale
+        // pre-prepend scrollTop and misread the scroll direction.
+        this.lastScrollTop = this.messagesEl.scrollTop;
         window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
             this.programmaticScrollGuard = Math.max(0, this.programmaticScrollGuard - 1);
         }));
@@ -491,6 +496,11 @@ export class ScrollController {
     /** Register a callback invoked when the user scrolls near the top. */
     setNearTopCallback(cb: (() => void) | null): void {
         this.nearTopCallback = cb;
+    }
+
+    /** Current `scrollTop` of the messages container. */
+    getScrollTop(): number {
+        return this.messagesEl.scrollTop;
     }
 
     // ── Internals ──────────────────────────────────────────────────────────

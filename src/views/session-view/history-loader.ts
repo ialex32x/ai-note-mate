@@ -124,6 +124,15 @@ export class HistoryLoader {
         }
 
         this.deps.messageWindow.setLoadingOlder(true);
+
+        // Capture whether the user was near the top BEFORE the load so we
+        // can chain subsequent batches.  After restoreAnchorScroll pushes
+        // scrollTop above the auto-load threshold the plain scroll-driven
+        // nearTopCallback would stay silent — but if the user was at the
+        // top before this batch they clearly want more history without
+        // having to generate another scroll event.
+        const wasNearTop = this.deps.scroller.getScrollTop() < HISTORY_LOADING.autoLoadThresholdPx;
+
         try {
             await this.runHistoryMutation(async () => {
                 // Re-check after acquiring the lock: an interleaved
@@ -169,6 +178,17 @@ export class HistoryLoader {
             });
         } finally {
             this.deps.messageWindow.setLoadingOlder(false);
+        }
+
+        // Chain the next batch when the user was scrolling near the top
+        // and there are still more unrendered messages.  Using RAF ensures
+        // loadingOlder has been cleared (by the finally block above) before
+        // the recursive call reaches the guard, and gives the browser a
+        // frame to render the newly prepended content.
+        if (wasNearTop && this.deps.messageWindow.hasOlderUnrendered()) {
+            window.requestAnimationFrame(() => {
+                void this.loadOlderMessages();
+            });
         }
     }
 
