@@ -1,4 +1,4 @@
-import { setIcon } from 'obsidian';
+import { setIcon, TFile } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { prettifyIfJson } from '../../utils/json-format';
@@ -6,6 +6,9 @@ import { createCopyButton } from '../../utils/copy-button';
 import { createCollapsible, COLLAPSIBLE_CLASSES } from '../../utils/collapsible';
 import type { BubbleContext } from './bubble-context';
 import { openAnchoredDropdown, type AnchoredDropdownHandle } from './anchored-dropdown';
+
+/** Regex to parse markdown image syntax: ![alt](path) */
+const MARKDOWN_IMAGE_RE = /!\[([^\]]*)\]\(([^)]+)\)/g;
 
 /**
  * Render the body of a tool-call bubble.
@@ -37,17 +40,24 @@ export function renderToolCallContent(
     msg: ChatMessage,
     wasToolDetailExpanded: boolean,
     pendingConfirmations: Map<string, (approved: boolean) => void>,
+    onPreviewImage?: (src: string, fileName: string) => void,
 ): void {
     const hasDetail = !!(msg.toolCallMeta || msg.toolCallResult);
     const labelText = msg.streaming ? `${msg.content}  …` : msg.content;
 
     if (!hasDetail) {
-        // Header without a body — mimic the collapsible header layout but
-        // without the arrow / click handler so the user isn't invited to
-        // expand an empty detail.
         renderToolHeaderStatic(contentEl, msg, labelText);
     } else {
         renderToolDetail(contentEl, msg, labelText, wasToolDetailExpanded);
+    }
+
+    // Render generated image thumbnails on the bubble surface so the user
+    // can see them without expanding the detail section.
+    const isImageGenSuccess =
+        msg.toolCallMeta?.toolName === 'generate_image' &&
+        msg.toolCallResult?.status === 'success';
+    if (isImageGenSuccess) {
+        renderGeneratedImages(contentEl, msg, ctx, onPreviewImage);
     }
 
     if (msg.confirmationState === 'pending' && msg.streaming) {
@@ -96,22 +106,14 @@ function renderToolDetail(
         summary: labelText,
         initiallyExpanded: wasToolDetailExpanded,
         ariaLabel: 'Toggle tool call detail',
-        // Use a tool-specific summary class so the label isn't italicised
-        // (the default `collapsible-block__summary` is italic; tool names
-        // need to read as code-like identifiers).
         summaryClass: 'collapsible-block--tool__label',
     });
 
-    // Tool-call collapsible carries its own header / body styling overrides
-    // (regular weight + status-icon slot, separator above the body).
     collapsible.wrapper.addClass('collapsible-block--tool');
     collapsible.wrapper.addClass('collapsible-block--code');
 
-    // Append status icon to the header (after the summary slot).
     appendToolStatusIcon(collapsible.header, msg);
 
-    // Lazy populate: only build args/result DOM the first time the user
-    // expands the detail, and reuse it on subsequent toggles.
     let bodyPopulated = false;
     const ensureBody = () => {
         if (bodyPopulated) return;
@@ -184,6 +186,48 @@ function renderToolDetailSection(
     codePre.setText(getDisplayText());
     const copyBtn = createCopyButton(copyTooltip, getCopyText, COLLAPSIBLE_CLASSES.COPY_BTN);
     codeWrap.appendChild(copyBtn);
+}
+
+/**
+ * Render generated image thumbnails inline on the tool-call bubble surface.
+ * Each image is a small clickable thumbnail that opens the preview overlay.
+ */
+function renderGeneratedImages(
+    container: HTMLElement,
+    msg: ChatMessage,
+    ctx: BubbleContext,
+    onPreviewImage?: (src: string, fileName: string) => void,
+): void {
+    const resultText = msg.toolCallResult?.result ?? '';
+    const matches = Array.from(resultText.matchAll(MARKDOWN_IMAGE_RE));
+    if (matches.length === 0) return;
+
+    const imagesRow = container.createEl('div', { cls: 'session-bubble__attachments' });
+
+    for (const match of matches) {
+        const [, altText, vaultPath] = match;
+        const file = ctx.app.vault.getAbstractFileByPath(vaultPath ?? '');
+        if (!(file instanceof TFile)) continue;
+
+        const src = ctx.app.vault.getResourcePath(file);
+        const fileName = file.name;
+
+        const img = imagesRow.createEl('img', {
+            cls: 'session-bubble__attachment-img',
+            attr: {
+                src,
+                alt: altText ?? fileName,
+                title: fileName,
+            },
+        });
+
+        if (onPreviewImage) {
+            img.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onPreviewImage(src, fileName);
+            });
+        }
+    }
 }
 
 function renderToolConfirmPending(

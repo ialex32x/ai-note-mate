@@ -62,8 +62,6 @@ export class PreviewOverlay {
 	private dragStartY = 0;
 	private dragStartTx = 0;
 	private dragStartTy = 0;
-	/** Whether the overlay is currently visible. */
-	private visible = false;
 
 	constructor(private readonly host: HTMLElement) {}
 
@@ -178,14 +176,12 @@ export class PreviewOverlay {
 		this.el.removeClass('session-preview-overlay--hidden');
 		this.el.setAttribute('aria-hidden', 'false');
 		this.el.focus();
-		this.visible = true;
 	}
 
 	hide(): void {
 		if (!this.el) return;
 		this.el.addClass('session-preview-overlay--hidden');
 		this.el.setAttribute('aria-hidden', 'true');
-		this.visible = false;
 	}
 
 	// ── Content renderers ───────────────────────────────────────────────
@@ -203,7 +199,17 @@ export class PreviewOverlay {
 	private renderMermaid(content: MermaidPreviewContent): HTMLElement {
 		const wrapper = activeDocument.createElement('div');
 		wrapper.className = 'session-preview__mermaid';
-		wrapper.innerHTML = content.svg;
+		// Parse SVG string via DOMParser to avoid innerHTML.
+		try {
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(content.svg, 'image/svg+xml');
+			const svgEl = doc.documentElement;
+			if (svgEl.instanceOf(SVGElement)) {
+				wrapper.appendChild(svgEl);
+			}
+		} catch {
+			// Fallback: if parsing fails, leave the wrapper empty.
+		}
 		return wrapper;
 	}
 

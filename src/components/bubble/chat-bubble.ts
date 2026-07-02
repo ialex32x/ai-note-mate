@@ -267,7 +267,7 @@ export class ChatBubble {
                 if (msg.toolCallMeta?.toolName === 'delegate_task') {
                     renderDelegateTaskContent(contentEl, msg);
                 } else {
-                    renderToolCallContent(ctx, contentEl, msg, wasToolDetailExpanded, pendingConfirmations);
+                    renderToolCallContent(ctx, contentEl, msg, wasToolDetailExpanded, pendingConfirmations, onPreviewImage);
                 }
                 break;
             case 'assistant':
