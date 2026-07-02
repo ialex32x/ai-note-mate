@@ -31,6 +31,7 @@ import {
     AssetPanelButton,
     PreviewOverlay,
     type ImagePreviewContent,
+    type MermaidPreviewContent,
 } from '../../components/session';
 import {
     buildInsightDeepenPrompt,
@@ -574,6 +575,8 @@ export class SessionView extends ItemView {
             () => new Set((this.runtime?.quickAskTurns ?? []).map(t => t.parentMessageId)),
             // Preview overlay callback: open when user clicks an attachment image.
             (src, fileName) => this.handlePreviewImage(src, fileName),
+            // Preview overlay callback: open when user clicks a mermaid diagram.
+            (svg, code) => this.handlePreviewMermaid(svg, code),
         );
         this.addChild(this.bubbleRenderer);
 
@@ -1233,6 +1236,15 @@ export class SessionView extends ItemView {
             kind: 'image',
             src,
             alt: fileName,
+        };
+        this.previewOverlay.show(content);
+    }
+
+    private handlePreviewMermaid(svg: string, code?: string): void {
+        const content: MermaidPreviewContent = {
+            kind: 'mermaid',
+            svg,
+            code,
         };
         this.previewOverlay.show(content);
     }

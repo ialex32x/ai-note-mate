@@ -352,6 +352,15 @@
             height: auto;
         }
     }
+
+    .session-mermaid-clickable {
+        cursor: pointer;
+        transition: opacity @duration-normal;
+
+        &:hover {
+            opacity: 0.85;
+        }
+    }
     
     // Code block copy button.
     // Scoped under .session-bubble__content (0,2,0) to beat Obsidian's .copy-code-button (0,1,0).

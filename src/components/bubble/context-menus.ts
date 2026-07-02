@@ -211,3 +211,49 @@ export function attachLinkContextMenu(
     });
 }
 
+/**
+ * Attach click handlers to every `.mermaid` container inside `container`
+ * so the user can open a zoomable / pannable preview overlay.
+ *
+ * - Extracts the rendered SVG via XMLSerializer.
+ * - Optionally extracts the original mermaid source from a neighbouring
+ *   `<code class="language-mermaid">` element.
+ * - Adds `session-mermaid-clickable` CSS class for cursor styling.
+ */
+export function attachMermaidPreviewHandler(
+    container: HTMLElement,
+    onPreview?: (svg: string, code?: string) => void,
+): void {
+    if (!onPreview) return;
+
+    const mermaidContainers = container.querySelectorAll('.mermaid');
+    mermaidContainers.forEach((wrapper) => {
+        const svgEl = wrapper.querySelector('svg');
+        if (!svgEl) return;
+
+        // Prevent attaching handler multiple times (idempotent).
+        if (wrapper.hasClass('session-mermaid-clickable')) return;
+
+        // Extract the original mermaid source code from a sibling code block.
+        let sourceCode: string | undefined;
+        const parent = wrapper.parentElement;
+        if (parent) {
+            const codeBlock = parent.querySelector('code.language-mermaid');
+            if (codeBlock) {
+                sourceCode = codeBlock.textContent ?? undefined;
+            }
+        }
+
+        // Capture the SVG string via the safe XMLSerializer.
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(svgEl);
+
+        wrapper.addEventListener('click', (e) => {
+            e.stopPropagation();
+            onPreview(svgString, sourceCode);
+        });
+
+        wrapper.addClass('session-mermaid-clickable');
+    });
+}
+

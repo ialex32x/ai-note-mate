@@ -17,6 +17,7 @@ import { renderThinkingSection as renderThinkingSectionImpl } from '../bubble/th
 import {
     attachImageContextMenu,
     attachLinkContextMenu,
+    attachMermaidPreviewHandler,
 } from '../bubble/context-menus';
 import { SpeechController } from '../bubble/speech-controller';
 import { ChatBubble, type ChatBubbleOptions } from '../bubble/chat-bubble';
@@ -143,6 +144,12 @@ export class BubbleRenderer extends Component {
          * full-screen preview overlay for the image.
          */
         private onPreviewImage?: (src: string, fileName: string) => void,
+        /**
+         * Optional callback fired when the user clicks a mermaid diagram
+         * in an assistant message. The host should open a full-screen
+         * preview overlay for the diagram.
+         */
+        private onPreviewMermaid?: (svg: string, code?: string) => void,
     ) {
         super();
         this.ctx = {
@@ -416,6 +423,7 @@ export class BubbleRenderer extends Component {
             controller.setAfterRenderCallback((el) => {
                 attachImageContextMenu(this.ctx, el);
                 attachLinkContextMenu(this.ctx, el);
+                attachMermaidPreviewHandler(el, this.onPreviewMermaid);
                 // The streaming renderer runs asynchronously (markdown render
                 // is async + throttled ~100ms), so the DOM mutation that
                 // grows the bubble happens LATER than the synchronous
@@ -496,6 +504,7 @@ export class BubbleRenderer extends Component {
             afterRender: (el) => {
                 attachImageContextMenu(this.ctx, el);
                 attachLinkContextMenu(this.ctx, el);
+                attachMermaidPreviewHandler(el, this.onPreviewMermaid);
             },
         });
     }
