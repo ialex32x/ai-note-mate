@@ -62,6 +62,22 @@ export class PreviewOverlay {
 	private dragStartY = 0;
 	private dragStartTx = 0;
 	private dragStartTy = 0;
+	/** Pointer ID captured during drag, used to release capture on pinch. */
+	private capturedPointerId = -1;
+
+	// ── Pinch-to-zoom state (mobile multi-touch) ─────────────────────
+	/** Whether a two-finger pinch gesture is in progress. */
+	private pinching = false;
+	/** Distance (px) between the two touch points when pinch started. */
+	private pinchStartDistance = 0;
+	/** Scale value when pinch started. */
+	private pinchStartScale = 1;
+	/** Midpoint (viewport coords) of the two touch points when pinch started. */
+	private pinchCenterX = 0;
+	private pinchCenterY = 0;
+	/** Translate offsets when pinch started. */
+	private pinchStartTx = 0;
+	private pinchStartTy = 0;
 
 	constructor(private readonly host: HTMLElement) {}
 
@@ -120,6 +136,12 @@ export class PreviewOverlay {
 		this.el.addEventListener('pointercancel', this.handlePointerUp);
 		// Prevent default drag behaviors (image drag, text selection).
 		this.el.addEventListener('dragstart', (e) => e.preventDefault());
+
+		// ── Pinch-to-zoom (mobile multi-touch) ─────────────────────────
+		this.el.addEventListener('touchstart', this.handleTouchStart, { passive: false });
+		this.el.addEventListener('touchmove', this.handleTouchMove, { passive: false });
+		this.el.addEventListener('touchend', this.handleTouchEnd);
+		this.el.addEventListener('touchcancel', this.handleTouchEnd);
 	}
 
 	dispose(): void {
@@ -132,6 +154,10 @@ export class PreviewOverlay {
 			this.el.removeEventListener('pointermove', this.handlePointerMove);
 			this.el.removeEventListener('pointerup', this.handlePointerUp);
 			this.el.removeEventListener('pointercancel', this.handlePointerUp);
+			this.el.removeEventListener('touchstart', this.handleTouchStart);
+			this.el.removeEventListener('touchmove', this.handleTouchMove);
+			this.el.removeEventListener('touchend', this.handleTouchEnd);
+			this.el.removeEventListener('touchcancel', this.handleTouchEnd);
 		}
 		this.hide();
 		this.el.remove();
@@ -262,12 +288,15 @@ export class PreviewOverlay {
 	// ── Pan (pointer drag) ──────────────────────────────────────────────
 
 	private handlePointerDown = (e: PointerEvent): void => {
-		// Only respond to left button.
+		// Only respond to left button (or touch).
 		if (e.button !== 0) return;
 		// Don't capture if the target is inside the control bar.
 		if (this.controlBar && this.controlBar.contains(e.target as Node)) return;
+		// Don't start a new drag if a pinch is already in progress.
+		if (this.pinching) return;
 
 		this.dragging = true;
+		this.capturedPointerId = e.pointerId;
 		this.contentWrapper?.addClass('is-dragging');
 		this.dragStartX = e.clientX;
 		this.dragStartY = e.clientY;
@@ -290,11 +319,109 @@ export class PreviewOverlay {
 	private handlePointerUp = (e: PointerEvent): void => {
 		if (!this.dragging) return;
 		this.dragging = false;
+		this.capturedPointerId = -1;
 		this.contentWrapper?.removeClass('is-dragging');
 		try {
 			this.contentWrapper?.releasePointerCapture(e.pointerId);
 		} catch {
 			// Pointer may already be released.
+		}
+	};
+
+	// ── Pinch-to-zoom (mobile multi-touch) ──────────────────────────────
+
+	/**
+	 * When a second finger touches the screen, cancel any ongoing drag
+	 * and initialize a pinch-to-zoom gesture.
+	 */
+	private handleTouchStart = (e: TouchEvent): void => {
+		const touches = e.touches;
+		if (touches.length < 2) return;
+
+		const t0 = touches[0];
+		const t1 = touches[1];
+		if (!t0 || !t1) return;
+
+		// Cancel any ongoing single-finger drag.
+		if (this.dragging) {
+			this.dragging = false;
+			this.contentWrapper?.removeClass('is-dragging');
+			// Release pointer capture so the second pointer won't be
+			// intercepted.
+			if (this.capturedPointerId !== -1 && this.contentWrapper) {
+				try {
+					this.contentWrapper.releasePointerCapture(this.capturedPointerId);
+				} catch { /* already released */ }
+			}
+			this.capturedPointerId = -1;
+		}
+
+		this.pinching = true;
+
+		this.pinchStartDistance = Math.hypot(
+			t1.clientX - t0.clientX,
+			t1.clientY - t0.clientY,
+		);
+		this.pinchStartScale = this.transform.scale;
+		this.pinchStartTx = this.transform.tx;
+		this.pinchStartTy = this.transform.ty;
+
+		// Zoom center = midpoint between the two fingers, relative to
+		// the untransformed layout origin.
+		this.pinchCenterX = (t0.clientX + t1.clientX) / 2;
+		this.pinchCenterY = (t0.clientY + t1.clientY) / 2;
+	};
+
+	/**
+	 * During an active pinch gesture, compute the new scale from the
+	 * distance ratio and adjust translate so the midpoint stays fixed.
+	 */
+	private handleTouchMove = (e: TouchEvent): void => {
+		const touches = e.touches;
+		if (touches.length === 1) {
+			// Single-finger move → prevent page scroll while overlay is open.
+			e.preventDefault();
+			return;
+		}
+		if (touches.length < 2 || !this.pinching) return;
+
+		const t0 = touches[0];
+		const t1 = touches[1];
+		if (!t0 || !t1) return;
+
+		e.preventDefault();
+
+		const currentDistance = Math.hypot(
+			t1.clientX - t0.clientX,
+			t1.clientY - t0.clientY,
+		);
+
+		if (this.pinchStartDistance === 0) return;
+
+		const newScale = this.clampScale(
+			this.pinchStartScale * (currentDistance / this.pinchStartDistance),
+		);
+
+		// Zoom centered on the initial pinch midpoint:
+		// new_tx = centerX - (centerX - old_tx) * (newScale / oldScale)
+		const scaleRatio = newScale / this.pinchStartScale;
+		this.transform.tx = this.pinchCenterX
+			- (this.pinchCenterX - this.pinchStartTx) * scaleRatio;
+		this.transform.ty = this.pinchCenterY
+			- (this.pinchCenterY - this.pinchStartTy) * scaleRatio;
+		this.transform.scale = newScale;
+
+		this.applyTransform();
+	};
+
+	/**
+	 * When fingers are lifted, end the pinch gesture.
+	 * If exactly one finger remains, the user may continue with a
+	 * single-finger drag (handled by pointer events).
+	 */
+	private handleTouchEnd = (e: TouchEvent): void => {
+		if (e.touches.length < 2) {
+			this.pinching = false;
 		}
 	};
 }

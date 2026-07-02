@@ -14,6 +14,10 @@
     justify-content: center;
     overflow: hidden;
     outline: none; // focusable for Escape key
+    // Prevent browser from intercepting touch gestures (pan/zoom)
+    // so our own JS handlers can manage single-finger drag and
+    // two-finger pinch-to-zoom.
+    touch-action: none;
 
     &--hidden {
         display: none;
