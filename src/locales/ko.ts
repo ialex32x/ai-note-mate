@@ -733,6 +733,7 @@ export const ko: Record<string, string> = {
 	'tool.triggers.grep_file':      '파일 내 검색, 정규식, 패턴 검색, 줄 검색, 파일에서 찾기, 파일 안에서 검색',
 	'tool.triggers.read_file':      '읽기, 파일 열기, 파일 내용, 읽어오기, 파일 보기, 파일 표시',
 	'tool.triggers.read_section':   '섹션 읽기, 제목 읽기, 챕터 읽기, 부분 읽기, 섹션 내용, 제목 내용',
+	'tool.triggers.rename_or_move_file': '파일 이름 변경, 파일 이동, 이름 바꾸기, 파일명 변경, 노트 이동, 파일 옮기기, 이름 변경, 파일명 바꾸기',
 	'tool.triggers.write_file':     '쓰기, 파일 생성, 저장, 덮어쓰기, 새 노트, 새 파일, 파일 저장',
 	'tool.triggers.insert_text':  '텍스트 삽입, 내용 삽입, 추가, 문단 삽입, 앞에 삽입, 뒤에 삽입',
 	'tool.triggers.replace_text':   '바꾸기, 텍스트 바꾸기, 찾아 바꾸기, 텍스트 교체, 일괄 바꾸기',

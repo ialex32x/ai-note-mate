@@ -740,6 +740,7 @@ export const zhTW: Record<string, string> = {
 	'tool.triggers.grep_file':      '檔案內搜尋, 行內搜尋, 正則搜尋, 模式比對, 在檔案中查找, 檔案中搜尋, 檔案內查找',
 	'tool.triggers.read_file':      '讀取, 讀檔案, 開啟檔案, 查看檔案, 檔案內容, 閱讀, 載入檔案, 顯示檔案',
 	'tool.triggers.read_section':   '讀取小節, 讀取章節, 讀取段落, 讀取標題, 章節內容, 標題下內容, 部分讀取',
+	'tool.triggers.rename_or_move_file': '重新命名檔案, 移動檔案, 檔案改名, 改名, 重新命名, 移動筆記, 檔案移動, 改檔名, 檔案重新命名',
 	'tool.triggers.write_file':     '寫入, 寫檔案, 建立檔案, 儲存, 覆寫, 新建筆記, 新建檔案, 新筆記, 儲存檔案',
 	'tool.triggers.insert_text':  '插入文字, 插入內容, 新增文字, 新增內容, 插入段落, 前面插入, 後面插入, 在...前插入, 在...後插入',
 	'tool.triggers.replace_text':   '取代, 取代文字, 查找取代, 替換文字, 文字取代, 批次取代',

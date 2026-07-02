@@ -733,6 +733,7 @@ export const ja: Record<string, string> = {
 	'tool.triggers.grep_file':      'ファイル内検索, 正規表現, パターン検索, 行検索, ファイル内で探す, ファイル内マッチ',
 	'tool.triggers.read_file':      '読み取り, ファイルを開く, ファイル内容, 読み込む, 中身を見る, ファイルを表示',
 	'tool.triggers.read_section':   'セクション読み取り, 見出し読み取り, 章を読む, 節を読む, 部分読み取り, 見出し内容',
+	'tool.triggers.rename_or_move_file': 'ファイル名変更, リネーム, ファイル移動, 名前変更, ファイル名を変える, 移動, 名称変更, ファイルリネーム, ノート移動',
 	'tool.triggers.write_file':     '書き込み, ファイル作成, 保存, 上書き, 新規ノート, 新規ファイル, ファイル保存',
 	'tool.triggers.insert_text':  'テキスト挿入, 内容を挿入, 追加, 段落挿入, 前に挿入, 後ろに挿入',
 	'tool.triggers.replace_text':   '置換, 文字置換, 検索置換, テキスト置換, 一括置換',

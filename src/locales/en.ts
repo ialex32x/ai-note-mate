@@ -740,6 +740,7 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tool.triggers.grep_file':      'grep, regex search, in file search, line search, pattern match, search inside file',
 	'tool.triggers.read_file':      'read file, open file, view file, file contents, show file, load file',
 	'tool.triggers.read_section':   'read section, read heading, read chapter, partial read, section content, heading content',
+	'tool.triggers.rename_or_move_file': 'rename file, move file, move folder, rename folder, rename note, move note, file rename, file move, change name, relocate file',
 	'tool.triggers.write_file':     'write file, create note, save file, overwrite file, new note, new file',
 	'tool.triggers.insert_text':  'insert text, insert content, add text, add content, insert paragraph, insert before, insert after',
 	'tool.triggers.replace_text':   'replace text, find and replace, substitute text, swap text, search and replace',
