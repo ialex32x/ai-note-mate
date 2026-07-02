@@ -354,12 +354,47 @@
     }
 
     .session-mermaid-clickable {
+        position: relative;
         cursor: pointer;
-        transition: opacity @duration-normal;
+
+        &:hover svg {
+            opacity: 0.85;
+            transition: opacity @duration-normal;
+        }
+    }
+
+    // Copy button for mermaid code blocks — same UX as regular .copy-code-button.
+    .session-mermaid-copy-btn {
+        position: absolute;
+        top: @spacing-sm;
+        right: @spacing-sm;
+        width: 20px;
+        height: 20px;
+        padding: 0;
+        border-radius: @radius-sm;
+        background: transparent;
+        color: @text-secondary;
+        opacity: 0;
+        visibility: hidden;
+        transition: background @duration-normal, color @duration-normal, opacity @duration-slow ease;
+        z-index: 1;
 
         &:hover {
-            opacity: 0.85;
+            background: @bg-modifier-hover;
+            color: @text-primary;
         }
+
+        svg {
+            width: 12px;
+            height: 12px;
+            stroke: currentColor;
+            fill: none;
+        }
+    }
+
+    .session-mermaid-clickable:hover .session-mermaid-copy-btn {
+        opacity: 1;
+        visibility: visible;
     }
     
     // Code block copy button.

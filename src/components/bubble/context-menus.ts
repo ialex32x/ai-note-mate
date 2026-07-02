@@ -1,4 +1,4 @@
-import { Menu, TFile } from 'obsidian';
+import { Menu, TFile, setIcon, setTooltip } from 'obsidian';
 import { t } from '../../i18n';
 import { resolveAppUrlToVaultPath } from '../../utils/path-helper';
 import { copyToClipboard } from '../../utils/clipboard';
@@ -212,46 +212,70 @@ export function attachLinkContextMenu(
 }
 
 /**
- * Attach click handlers to every `.mermaid` container inside `container`
- * so the user can open a zoomable / pannable preview overlay.
+ * Attach click handlers + copy buttons to every `.mermaid` container inside
+ * `container`.
  *
- * - Extracts the rendered SVG via XMLSerializer.
- * - Optionally extracts the original mermaid source from a neighbouring
- *   `<code class="language-mermaid">` element.
- * - Adds `session-mermaid-clickable` CSS class for cursor styling.
+ * - Adds a copy button (top-right, hover-revealed) that copies the original
+ *   mermaid source code — same UX as regular code blocks.
+ * - If `onPreview` is provided, clicking the diagram opens the zoomable /
+ *   pannable preview overlay.
+ * - Idempotent: safe to call multiple times per container.
+ *
+ * @param mermaidSources  Source strings extracted from the original markdown,
+ *   matched to `.mermaid` containers by DOM order. Obsidian's
+ *   MarkdownRenderer does not preserve mermaid sources in the rendered DOM,
+ *   so they must be supplied externally.
  */
 export function attachMermaidPreviewHandler(
     container: HTMLElement,
     onPreview?: (svg: string, code?: string) => void,
+    mermaidSources?: string[],
 ): void {
-    if (!onPreview) return;
-
     const mermaidContainers = container.querySelectorAll('.mermaid');
+    let sourceIndex = 0;
     mermaidContainers.forEach((wrapper) => {
-        const svgEl = wrapper.querySelector('svg');
-        if (!svgEl) return;
-
         // Prevent attaching handler multiple times (idempotent).
         if (wrapper.hasClass('session-mermaid-clickable')) return;
 
-        // Extract the original mermaid source code from a sibling code block.
-        let sourceCode: string | undefined;
-        const parent = wrapper.parentElement;
-        if (parent) {
-            const codeBlock = parent.querySelector('code.language-mermaid');
-            if (codeBlock) {
-                sourceCode = codeBlock.textContent ?? undefined;
-            }
+        const svgEl = wrapper.querySelector('svg');
+        if (!svgEl) return;
+
+        // Source code matched by DOM order.
+        const sourceCode = mermaidSources?.[sourceIndex++];
+
+        // ── Copy button (hover-revealed, top-right) ───────────────────
+        if (sourceCode) {
+            const copyBtn = activeDocument.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'session-mermaid-copy-btn';
+            copyBtn.setAttribute('aria-label', t('common.copy'));
+            setIcon(copyBtn, 'copy');
+            setTooltip(copyBtn, t('common.copy'));
+
+            const handleCopy = async () => {
+                const ok = await copyToClipboard(sourceCode, { showNotice: false });
+                if (!ok) return;
+                setIcon(copyBtn, 'check');
+                window.setTimeout(() => setIcon(copyBtn, 'copy'), 1500);
+            };
+            copyBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                void handleCopy();
+            });
+            wrapper.appendChild(copyBtn);
         }
 
-        // Capture the SVG string via the safe XMLSerializer.
-        const serializer = new XMLSerializer();
-        const svgString = serializer.serializeToString(svgEl);
+        // ── Preview click handler ─────────────────────────────────────
+        if (onPreview) {
+            const serializer = new XMLSerializer();
+            const svgString = serializer.serializeToString(svgEl);
 
-        wrapper.addEventListener('click', (e) => {
-            e.stopPropagation();
-            onPreview(svgString, sourceCode);
-        });
+            wrapper.addEventListener('click', (e) => {
+                e.stopPropagation();
+                onPreview(svgString, sourceCode);
+            });
+        }
 
         wrapper.addClass('session-mermaid-clickable');
     });

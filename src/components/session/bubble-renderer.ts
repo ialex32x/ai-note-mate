@@ -8,6 +8,17 @@ import {
     StreamingMarkdownController,
     renderFinalMarkdown,
 } from './streaming-markdown-controller';
+
+/** Extract mermaid code block contents from raw markdown. */
+function extractMermaidSources(markdown: string): string[] {
+    const sources: string[] = [];
+    const re = /```mermaid\s*\n([\s\S]*?)```/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(markdown)) !== null) {
+        sources.push(match[1]!.trim());
+    }
+    return sources;
+}
 import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from '../bubble/bubble-context';
 import {
@@ -499,12 +510,13 @@ export class BubbleRenderer extends Component {
      * so streaming and non-streaming bubbles end up with identical DOM.
      */
     private renderFinalContent(contentEl: HTMLElement, markdown: string): Promise<void> {
+        const mermaidSources = extractMermaidSources(markdown);
         return renderFinalMarkdown(this.app, this, contentEl, markdown, {
             preprocess: stripStructuredBlock,
             afterRender: (el) => {
                 attachImageContextMenu(this.ctx, el);
                 attachLinkContextMenu(this.ctx, el);
-                attachMermaidPreviewHandler(el, this.onPreviewMermaid);
+                attachMermaidPreviewHandler(el, this.onPreviewMermaid, mermaidSources);
             },
         });
     }
