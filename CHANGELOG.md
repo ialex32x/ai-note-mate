@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.6.2
+
+### What's new
+
+- **Image preview overlay** — Click on any generated image to open a full-screen preview with pinch-to-zoom and pan gestures. Zoom is centered on your finger midpoint for a natural mobile experience, and the gesture state resets cleanly when reopening an image.
+- **Mermaid diagram preview & copy** — Mermaid diagrams now open in a full-screen preview overlay, making complex diagrams easier to inspect. A copy button on each diagram lets you grab the source syntax with one click.
+- **Generated image thumbnails** — Image generation results now render inline thumbnails in the chat bubble, giving you an immediate visual of what was produced without opening the preview.
+- **Per-session persistence** — Session data is now organized into per-session directory files:
+  - Messages are stored individually per session, reducing monolithic file writes and improving data integrity.
+  - The active session ID is persisted in its own file for faster session resume on restart.
+  - Draft input is saved per-session, so un-sent prompts survive across plugin reloads.
+  - Insights and follow-up suggestions are persisted per-session, keeping your conversation context intact across restarts.
+- **Image quality compression setting** — A new slider under **Settings → Note Mate → Image** lets you control JPEG output quality for generated images, balancing visual fidelity against file size.
+- **Vector provider logos** — OpenAI and Claude now display crisp vector logos in the profile selector, matching the visual polish of other provider icons.
+- **New model context windows** — Context window definitions have been added for Qwen3.6-Flash, Qwen3.7, Kimi K2.x, and 2026 model variants, ensuring accurate token budgeting for the latest models.
+
+### Refinements
+
+- **Localized rename triggers** — `rename_or_move_file` tool descriptions now have locale-specific triggers across all supported languages, improving the model's ability to use the tool in non-English conversations.
+- **Code cleanup** — Removed unnecessary type casts and fixed a typo in internal helpers.
+
+### Fixes
+
+- **History loading near top** — When scrolling near the top of a conversation to load older messages, history chaining now correctly continues instead of stalling at the first batch.
+- **License corrected** — The plugin license has been corrected from 0-BSD to MIT.
+
+---
+
 ## 1.6.1
 
 ### What's new
