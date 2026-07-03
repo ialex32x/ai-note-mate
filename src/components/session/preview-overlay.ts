@@ -68,16 +68,11 @@ export class PreviewOverlay {
 	// ── Pinch-to-zoom state (mobile multi-touch) ─────────────────────
 	/** Whether a two-finger pinch gesture is in progress. */
 	private pinching = false;
-	/** Distance (px) between the two touch points when pinch started. */
-	private pinchStartDistance = 0;
-	/** Scale value when pinch started. */
-	private pinchStartScale = 1;
-	/** Visual center of the content wrapper (viewport coords) at pinch start. */
-	private pinchCenterX = 0;
-	private pinchCenterY = 0;
-	/** Translate offsets when pinch started. */
-	private pinchStartTx = 0;
-	private pinchStartTy = 0;
+	/** Distance (px) between the two touch points in the previous frame. */
+	private prevPinchDistance = 0;
+	/** Midpoint (viewport coords) of the two fingers in the previous frame. */
+	private prevPinchCenterX = 0;
+	private prevPinchCenterY = 0;
 
 	constructor(private readonly host: HTMLElement) {}
 
@@ -347,6 +342,12 @@ export class PreviewOverlay {
 		const touches = e.touches;
 		if (touches.length < 2) return;
 
+		// Prevent browser defaults and stop propagation so Obsidian's
+		// built-in swipe gestures (e.g. side-drawer) are never triggered
+		// while a pinch gesture is in progress.
+		e.preventDefault();
+		e.stopPropagation();
+
 		const t0 = touches[0];
 		const t1 = touches[1];
 		if (!t0 || !t1) return;
@@ -366,32 +367,25 @@ export class PreviewOverlay {
 		}
 
 		this.pinching = true;
-
-		this.pinchStartDistance = Math.hypot(
+		this.prevPinchDistance = Math.hypot(
 			t1.clientX - t0.clientX,
 			t1.clientY - t0.clientY,
 		);
-		this.pinchStartScale = this.transform.scale;
-		this.pinchStartTx = this.transform.tx;
-		this.pinchStartTy = this.transform.ty;
-
-		// Zoom center = visual center of the content (image / diagram),
-		// so zoom always originates from the image center regardless of
-		// where the fingers are placed.
-		const rect = this.contentWrapper!.getBoundingClientRect();
-		this.pinchCenterX = rect.left + rect.width / 2;
-		this.pinchCenterY = rect.top + rect.height / 2;
+		this.prevPinchCenterX = (t0.clientX + t1.clientX) / 2;
+		this.prevPinchCenterY = (t0.clientY + t1.clientY) / 2;
 	};
 
 	/**
-	 * During an active pinch gesture, compute the new scale from the
-	 * distance ratio and adjust translate so the midpoint stays fixed.
+	 * During an active pinch gesture, apply a per-frame incremental zoom
+	 * centered on the current two-finger midpoint — so the zoom center
+	 * follows the fingers as they move.
 	 */
 	private handleTouchMove = (e: TouchEvent): void => {
 		const touches = e.touches;
 		if (touches.length === 1) {
 			// Single-finger move → prevent page scroll while overlay is open.
 			e.preventDefault();
+			e.stopPropagation();
 			return;
 		}
 		if (touches.length < 2 || !this.pinching) return;
@@ -401,26 +395,56 @@ export class PreviewOverlay {
 		if (!t0 || !t1) return;
 
 		e.preventDefault();
+		e.stopPropagation();
 
 		const currentDistance = Math.hypot(
 			t1.clientX - t0.clientX,
 			t1.clientY - t0.clientY,
 		);
 
-		if (this.pinchStartDistance === 0) return;
+		if (this.prevPinchDistance === 0) {
+			this.prevPinchDistance = currentDistance;
+			return;
+		}
 
-		const newScale = this.clampScale(
-			this.pinchStartScale * (currentDistance / this.pinchStartDistance),
-		);
+		// Snapshot state BEFORE any changes this frame.
+		const oldTx = this.transform.tx;
+		const oldTy = this.transform.ty;
+		const oldScale = this.transform.scale;
 
-		// Zoom centered on the visual center of the content:
-		// new_tx = centerX - (centerX - old_tx) * (newScale / oldScale)
-		const scaleRatio = newScale / this.pinchStartScale;
-		this.transform.tx = this.pinchCenterX
-			- (this.pinchCenterX - this.pinchStartTx) * scaleRatio;
-		this.transform.ty = this.pinchCenterY
-			- (this.pinchCenterY - this.pinchStartTy) * scaleRatio;
+		// Content wrapper's untransformed layout origin in viewport.
+		// Because of flex centering this is NOT (0, 0); we recover it
+		// from the current bounding rect and translate.
+		const rect = this.contentWrapper!.getBoundingClientRect();
+		const layoutLeft = rect.left - oldTx;
+		const layoutTop = rect.top - oldTy;
+
+		// Current finger midpoint in viewport.
+		const cx = (t0.clientX + t1.clientX) / 2;
+		const cy = (t0.clientY + t1.clientY) / 2;
+
+		// ── 1. Two-finger pan: move by the midpoint delta ──────────────
+		this.transform.tx = oldTx + (cx - this.prevPinchCenterX);
+		this.transform.ty = oldTy + (cy - this.prevPinchCenterY);
+
+		// ── 2. Pinch zoom centered on current midpoint ─────────────────
+		const scaleRatio = currentDistance / this.prevPinchDistance;
+		const newScale = this.clampScale(oldScale * scaleRatio);
+		const effectiveRatio = newScale / oldScale;
+
+		// visual_x = layoutLeft + local_x * scale + tx
+		// Keep the viewport point (cx, cy) fixed during zoom:
+		// newTx = cx - layoutLeft - (cx - layoutLeft - tx) * (newScale/oldScale)
+		this.transform.tx = cx - layoutLeft
+			- (cx - layoutLeft - this.transform.tx) * effectiveRatio;
+		this.transform.ty = cy - layoutTop
+			- (cy - layoutTop - this.transform.ty) * effectiveRatio;
 		this.transform.scale = newScale;
+
+		// Store for the next frame.
+		this.prevPinchDistance = currentDistance;
+		this.prevPinchCenterX = cx;
+		this.prevPinchCenterY = cy;
 
 		this.applyTransform();
 	};
