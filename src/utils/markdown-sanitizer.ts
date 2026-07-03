@@ -43,139 +43,85 @@ function isInsideFencedCodeBlock(content: string): boolean {
     return insideCodeBlock;
 }
 
-// ── Mermaid block detection ────────────────────────────────────────────────
+// ── P1: Deferred-language block deferral ───────────────────────────────────
 
 /**
- * Check whether the content ends inside an unclosed mermaid fenced code block.
- * Only counts ```mermaid openers; other language fences are ignored.
+ * Languages whose fenced code blocks should be deferred during streaming.
+ *
+ * These blocks are stripped from the streaming output until their closing
+ * ``` arrives, preventing the associated Obsidian plugin from reacting to
+ * incomplete content:
+ *
+ * - **mermaid**: Incomplete syntax would trigger transient Mermaid render
+ *   errors.
+ * - **dataview / dataviewjs**: Incomplete queries would be evaluated by
+ *   the Dataview plugin, producing empty results, error messages, or
+ *   unexpected output that flickers as more content arrives.
+ *
+ * To add a new deferred language, simply add its name to this array.
  */
-function isInsideMermaidBlock(content: string): boolean {
+const DEFERRED_LANGUAGES: readonly string[] = ['mermaid', 'dataview'];
+
+/**
+ * Check whether the content ends inside an unclosed fenced code block
+ * for the given language.
+ *
+ * Only counts ```<language> openers (with optional space after fence);
+ * other language fences and generic ``` fences are ignored.
+ */
+function isInsideLanguageBlock(content: string, language: string): boolean {
+    const openerRe = new RegExp(`^\`\`\`\\s*${language}`);
     const lines = content.split('\n');
-    let insideMermaid = false;
+    let inside = false;
     for (const line of lines) {
         const trimmed = line.trimStart();
-        // Match ```mermaid and ``` mermaid (CommonMark allows space after fence)
-        if (/^```\s*mermaid/.test(trimmed)) {
-            insideMermaid = true;
-        } else if (insideMermaid && /^```\s*$/.test(trimmed)) {
-            insideMermaid = false;
+        if (openerRe.test(trimmed)) {
+            inside = true;
+        } else if (inside && /^```\s*$/.test(trimmed)) {
+            inside = false;
         }
     }
-    return insideMermaid;
+    return inside;
 }
 
-// ── P1: Trailing mermaid block deferral ────────────────────────────────────
-
 /**
- * Defer trailing mermaid code blocks to prevent syntax-error flicker
- * during streaming.
+ * Strip a trailing unclosed fenced code block for the given language.
  *
- * While a mermaid block is still receiving content (the closing ``` has not
- * arrived yet), Obsidian's Mermaid renderer sees incomplete syntax and
- * displays a transient error.  We defer the **entire** mermaid block —
- * from the ```mermaid opener to the end of content — until the closing
- * ``` is received.  At that point the block is no longer unclosed and
- * will be rendered in one piece with valid syntax.
+ * While the block is still receiving content (the closing ``` has not
+ * arrived yet), the entire block — from the ```<language> opener to the
+ * end of content — is stripped.  Once the closing ``` is received the
+ * block is rendered in one piece.
  *
- * Unlike the general {@link closeFencedCodeBlock} sanitizer (which appends
- * a closing fence to any open code block), this function *strips* the
- * pending mermaid block entirely.  Appending a closing fence would trigger
- * the Mermaid renderer on partial syntax, causing the exact flash of
- * error messages we want to avoid.
+ * Unlike {@link closeFencedCodeBlock} (which appends a closing fence),
+ * this function *strips* the pending block entirely because appending a
+ * closing fence would trigger the associated plugin on incomplete content.
  *
- * Must run BEFORE {@link closeFencedCodeBlock} in the pipeline — once the
- * mermaid block is stripped, {@link closeFencedCodeBlock} no longer sees
- * an open fence and will not append its own closing ```.
+ * Must run BEFORE {@link closeFencedCodeBlock} — once the block is
+ * stripped, {@link closeFencedCodeBlock} no longer sees an open fence
+ * and will not append its own closing ```.
  */
-function deferTrailingMermaidBlock(content: string): string {
-    if (!isInsideMermaidBlock(content)) return content;
+function deferTrailingLanguageBlock(content: string, language: string): string {
+    if (!isInsideLanguageBlock(content, language)) return content;
 
-    // Find the last unclosed ```mermaid opener and strip from there
+    // Find the last unclosed ```<language> opener and strip from there
+    const openerRe = new RegExp(`^\`\`\`\\s*${language}`);
     const lines = content.split('\n');
-    let insideMermaid = false;
-    let mermaidStartIdx = -1;
+    let inside = false;
+    let startIdx = -1;
 
     for (let i = 0; i < lines.length; i++) {
         const trimmed = lines[i]!.trimStart();
-        if (/^```\s*mermaid/.test(trimmed)) {
-            insideMermaid = true;
-            mermaidStartIdx = i;
-        } else if (insideMermaid && /^```\s*$/.test(trimmed)) {
-            insideMermaid = false;
-            mermaidStartIdx = -1;
+        if (openerRe.test(trimmed)) {
+            inside = true;
+            startIdx = i;
+        } else if (inside && /^```\s*$/.test(trimmed)) {
+            inside = false;
+            startIdx = -1;
         }
     }
 
-    if (insideMermaid && mermaidStartIdx >= 0) {
-        // Strip everything from the opening ```mermaid to end
-        return lines.slice(0, mermaidStartIdx).join('\n');
-    }
-
-    return content;
-}
-
-// ── Dataview block detection ───────────────────────────────────────────────
-
-/**
- * Check whether the content ends inside an unclosed dataview fenced code block.
- * Only counts ```dataview openers; other language fences are ignored.
- */
-function isInsideDataviewBlock(content: string): boolean {
-    const lines = content.split('\n');
-    let insideDataview = false;
-    for (const line of lines) {
-        const trimmed = line.trimStart();
-        // Match ```dataview and ``` dataview (CommonMark allows space after fence)
-        if (/^```\s*dataview/.test(trimmed)) {
-            insideDataview = true;
-        } else if (insideDataview && /^```\s*$/.test(trimmed)) {
-            insideDataview = false;
-        }
-    }
-    return insideDataview;
-}
-
-// ── P1: Trailing dataview block deferral ───────────────────────────────────
-
-/**
- * Defer trailing dataview code blocks to prevent rendering incomplete queries
- * during streaming.
- *
- * Dataview code blocks are executed by Obsidian's Dataview plugin. During
- * streaming, an incomplete dataview query would be evaluated — potentially
- * producing empty results, error messages, or unexpected output that then
- * gets replaced as more content arrives, causing visual flicker.
- *
- * The same strategy as mermaid blocks: strip the entire unclosed dataview
- * block from the ```dataview opener to the end of content until the closing
- * ``` arrives, at which point the block is rendered in one piece.
- *
- * Must run BEFORE {@link closeFencedCodeBlock} in the pipeline — once the
- * dataview block is stripped, {@link closeFencedCodeBlock} no longer sees
- * an open fence and will not append its own closing ```.
- */
-function deferTrailingDataviewBlock(content: string): string {
-    if (!isInsideDataviewBlock(content)) return content;
-
-    // Find the last unclosed ```dataview opener and strip from there
-    const lines = content.split('\n');
-    let insideDataview = false;
-    let dataviewStartIdx = -1;
-
-    for (let i = 0; i < lines.length; i++) {
-        const trimmed = lines[i]!.trimStart();
-        if (/^```\s*dataview/.test(trimmed)) {
-            insideDataview = true;
-            dataviewStartIdx = i;
-        } else if (insideDataview && /^```\s*$/.test(trimmed)) {
-            insideDataview = false;
-            dataviewStartIdx = -1;
-        }
-    }
-
-    if (insideDataview && dataviewStartIdx >= 0) {
-        // Strip everything from the opening ```dataview to end
-        return lines.slice(0, dataviewStartIdx).join('\n');
+    if (inside && startIdx >= 0) {
+        return lines.slice(0, startIdx).join('\n');
     }
 
     return content;
@@ -489,13 +435,11 @@ export function sanitizeStreamingMarkdown(content: string): string {
 
     let result = content;
 
-    // P1: Mermaid block (must be before closeFencedCodeBlock — a trailing
-    // unclosed mermaid block should be stripped, not closed with ```)
-    result = deferTrailingMermaidBlock(result);
-
-    // P1: Dataview block (same strategy as mermaid — defer unclosed dataview
-    // blocks to prevent rendering incomplete queries during streaming)
-    result = deferTrailingDataviewBlock(result);
+    // P1: Deferred-language blocks (must be before closeFencedCodeBlock —
+    // trailing unclosed blocks should be stripped, not closed with ```)
+    for (const language of DEFERRED_LANGUAGES) {
+        result = deferTrailingLanguageBlock(result, language);
+    }
 
     // P0: Fenced code block (must be first — affects all subsequent checks)
     result = closeFencedCodeBlock(result);
