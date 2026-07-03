@@ -258,7 +258,7 @@ export class SdkMCPClient implements IMCPClient {
         this._apiKey = options?.apiKey;
 
         if (options?.useRequestUrl) {
-            this._fetch = createRequestUrlFetch() as unknown as typeof fetch;
+            this._fetch = createRequestUrlFetch();
         }
 
         try {

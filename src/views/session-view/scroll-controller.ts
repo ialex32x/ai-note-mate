@@ -302,9 +302,9 @@ export class ScrollController {
         handler: (e: HTMLElementEventMap[K]) => void,
         options?: AddEventListenerOptions,
     ): void {
-        target.addEventListener(type, handler as EventListener, options);
+        target.addEventListener(type, handler, options);
         this.listenerCleanups.push(
-            () => target.removeEventListener(type, handler as EventListener, options),
+            () => target.removeEventListener(type, handler, options),
         );
     }
 
