@@ -148,6 +148,14 @@ export interface TokenUsage {
     completionTokens: number;
     totalTokens: number;
     /**
+     * Number of prompt tokens that were served from the provider's
+     * prompt-caching mechanism (cache hit). These tokens are NOT
+     * billed or are billed at a discounted rate, depending on the
+     * provider's pricing model. Zero when the provider does not
+     * support caching or the cache was not hit for this request.
+     */
+    cachedPromptTokens: number;
+    /**
      * Per-call totalTokens from the most recent LLM API response
      * (NOT cumulative). Used by the UI to compute context-window
      * usage percentage. `undefined` before the first API call.

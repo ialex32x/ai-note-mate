@@ -30,7 +30,7 @@ function createSuccessProvider(response: string = 'follow-up ok'): LLMProvider {
                 reasoningContent: null,
                 toolCallDeltas: null,
                 finishReason: 'stop',
-                usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+                usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cachedPromptTokens: 0 },
             };
         },
         listModels: async () => ['mock-model'],
@@ -115,7 +115,7 @@ describe('ChatStream interrupted assistant persistence', () => {
                         reasoningContent: null,
                         toolCallDeltas: null,
                         finishReason: 'stop',
-                        usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+                        usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cachedPromptTokens: 0 },
                     };
                 }),
                 listModels: async () => ['mock-model'],

@@ -15,7 +15,7 @@ function createMockProvider(response: string = 'Mock response') {
                 reasoningContent: null,
                 toolCallDeltas: null,
                 finishReason: 'stop',
-                usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+                usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cachedPromptTokens: 0 },
             };
         },
         listModels: async () => ['mock-model'],
@@ -187,7 +187,7 @@ function createToolCallProvider(toolName: string, toolArgs: object) {
                         },
                     ],
                     finishReason: 'tool_calls',
-                    usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+                    usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cachedPromptTokens: 0 },
                 };
                 return;
             }
@@ -199,7 +199,7 @@ function createToolCallProvider(toolName: string, toolArgs: object) {
                 reasoningContent: null,
                 toolCallDeltas: null,
                 finishReason: 'stop',
-                usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+                usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cachedPromptTokens: 0 },
             };
         },
         listModels: async () => ['mock-model'],
@@ -537,7 +537,7 @@ describe('SubAgent — normal tool_call lifecycle', () => {
                         reasoningContent: null,
                         toolCallDeltas: null,
                         finishReason: 'stop',
-                        usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+                        usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cachedPromptTokens: 0 },
                     };
                 },
                 listModels: async () => ['mock-model'],
@@ -665,7 +665,7 @@ describe('SubAgent — normal tool_call lifecycle', () => {
                                         function: { name: 'filtered_out_tool', arguments: '{}' },
                                     }],
                                     finishReason: 'tool_calls',
-                                    usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+                                    usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cachedPromptTokens: 0 },
                                 };
                                 return;
                             }
@@ -674,7 +674,7 @@ describe('SubAgent — normal tool_call lifecycle', () => {
                                 reasoningContent: null,
                                 toolCallDeltas: null,
                                 finishReason: 'stop',
-                                usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8 },
+                                usage: { promptTokens: 5, completionTokens: 3, totalTokens: 8, cachedPromptTokens: 0 },
                             };
                         }
                         return gen();

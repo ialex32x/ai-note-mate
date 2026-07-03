@@ -244,13 +244,20 @@ export class OpenAIProvider implements LLMProvider {
             const delta = choice?.delta as Record<string, unknown> | undefined;
             const finishReason = (choice?.finish_reason as string) ?? null;
             const usageRaw = chunk.usage as
-                | { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+                | {
+                      prompt_tokens?: number;
+                      completion_tokens?: number;
+                      total_tokens?: number;
+                      prompt_tokens_details?: { cached_tokens?: number };
+                  }
                 | undefined;
             const usage = usageRaw
                 ? {
                       promptTokens: usageRaw.prompt_tokens ?? 0,
                       completionTokens: usageRaw.completion_tokens ?? 0,
                       totalTokens: usageRaw.total_tokens ?? 0,
+                      cachedPromptTokens:
+                          usageRaw.prompt_tokens_details?.cached_tokens ?? 0,
                   }
                 : null;
 

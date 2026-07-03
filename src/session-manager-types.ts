@@ -118,6 +118,7 @@ export interface GlobalTokenStatisticsFile {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
+    cachedPromptTokens: number;
 }
 
 /** Snapshot of a session (full data for backward compatibility with public API) */

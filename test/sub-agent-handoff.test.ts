@@ -54,7 +54,7 @@ function createProbingProvider(
                 reasoningContent: null,
                 toolCallDeltas: null,
                 finishReason: 'stop',
-                usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+                usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cachedPromptTokens: 0 },
             };
         },
         listModels: async () => ['mock-model'],

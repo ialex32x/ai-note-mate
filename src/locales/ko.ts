@@ -560,6 +560,7 @@ export const ko: Record<string, string> = {
 	'statusLabel.prompt': '프롬프트',
 	'statusLabel.completion': '완성',
 	'statusLabel.total': '합계',
+	'statusLabel.cachedPrompt': '캐시된 프롬프트 토큰',
 	'statusLabel.context': 'Context',
 	'statusLabel.messages': '메시지',
 	'statusLabel.summaries': '요약',

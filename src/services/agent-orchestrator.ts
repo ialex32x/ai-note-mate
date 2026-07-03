@@ -168,7 +168,7 @@ export class AgentOrchestrator implements IChatAgent {
     private _subAgentLogs: SubAgentExecutionLog[] = [];
 
     /** Aggregated token usage across all sub-agents combined (kept for backward-compat) */
-    private _totalSubAgentTokenUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    private _totalSubAgentTokenUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
 
     /**
      * Per-sub-agent cumulative token usage, keyed by sub-agent name.
@@ -497,6 +497,8 @@ export class AgentOrchestrator implements IChatAgent {
             promptTokens: main.promptTokens + this._totalSubAgentTokenUsage.promptTokens,
             completionTokens: main.completionTokens + this._totalSubAgentTokenUsage.completionTokens,
             totalTokens: main.totalTokens + this._totalSubAgentTokenUsage.totalTokens,
+            cachedPromptTokens:
+                main.cachedPromptTokens + this._totalSubAgentTokenUsage.cachedPromptTokens,
             lastCallTotalTokens: main.lastCallTotalTokens,
         };
     }
@@ -556,17 +558,19 @@ export class AgentOrchestrator implements IChatAgent {
 
         // Rebuild per-agent map and aggregate total from scratch.
         this._subAgentTokenUsagePerAgent.clear();
-        let aggPrompt = 0, aggCompletion = 0, aggTotal = 0;
+        let aggPrompt = 0, aggCompletion = 0, aggTotal = 0, aggCached = 0;
         for (const [name, usage] of Object.entries(breakdown.subAgents)) {
             this._subAgentTokenUsagePerAgent.set(name, { ...usage });
             aggPrompt += usage.promptTokens;
             aggCompletion += usage.completionTokens;
             aggTotal += usage.totalTokens;
+            aggCached += usage.cachedPromptTokens;
         }
         this._totalSubAgentTokenUsage = {
             promptTokens: aggPrompt,
             completionTokens: aggCompletion,
             totalTokens: aggTotal,
+            cachedPromptTokens: aggCached,
         };
     }
 
@@ -576,7 +580,7 @@ export class AgentOrchestrator implements IChatAgent {
         this._subAgentLogs = [];
         this._subAgentMessages.clear();
         this._quickAskTurns = [];
-        this._totalSubAgentTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+        this._totalSubAgentTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
         this._subAgentTokenUsagePerAgent.clear();
         // Reset the per-turn router caches and the sticky-on-history
         // set so a cleared conversation starts with a clean routing
@@ -1013,12 +1017,14 @@ export class AgentOrchestrator implements IChatAgent {
             this._totalSubAgentTokenUsage.promptTokens += result.tokenUsage.promptTokens;
             this._totalSubAgentTokenUsage.completionTokens += result.tokenUsage.completionTokens;
             this._totalSubAgentTokenUsage.totalTokens += result.tokenUsage.totalTokens;
+            this._totalSubAgentTokenUsage.cachedPromptTokens += result.tokenUsage.cachedPromptTokens;
 
             const perAgent = this._subAgentTokenUsagePerAgent.get(agentName)
-                ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+                ?? { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
             perAgent.promptTokens += result.tokenUsage.promptTokens;
             perAgent.completionTokens += result.tokenUsage.completionTokens;
             perAgent.totalTokens += result.tokenUsage.totalTokens;
+            perAgent.cachedPromptTokens += result.tokenUsage.cachedPromptTokens;
             this._subAgentTokenUsagePerAgent.set(agentName, perAgent);
 
             // Store execution log

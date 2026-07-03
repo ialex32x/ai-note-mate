@@ -139,7 +139,7 @@ export class ChatStream implements IChatAgent {
     private _state: ChatSessionState = "idle";
     private _tools: RegisteredTool[] = [];
     private _abortController: AbortController | null = null;
-    private _sessionTokenUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    private _sessionTokenUsage: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
     private _currentTurn: number = 0;
     /** Separate storage for conversation summaries (kept out of original messages for clean UI) */
     private _summaries: ConversationSummary[] = [];
@@ -273,7 +273,7 @@ export class ChatStream implements IChatAgent {
         this._quickAskTurns = [];
         this._state = "idle";
         this._abortController = null;
-        this._sessionTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+        this._sessionTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
         this._currentTurn = 0;
         this._contextBreakdown = undefined;
         this._inFlightAssistantMessage = null;
@@ -759,6 +759,7 @@ export class ChatStream implements IChatAgent {
                     this._sessionTokenUsage.promptTokens += result.usage.promptTokens;
                     this._sessionTokenUsage.completionTokens += result.usage.completionTokens;
                     this._sessionTokenUsage.totalTokens += result.usage.totalTokens;
+                    this._sessionTokenUsage.cachedPromptTokens += result.usage.cachedPromptTokens;
                     // Capture per-call total (NOT cumulative) for context-window
                     // usage percentage calculation in the UI.
                     this._sessionTokenUsage.lastCallTotalTokens = result.usage.totalTokens;
@@ -1621,7 +1622,7 @@ export class ChatStream implements IChatAgent {
             { id: string; type: "function"; function: { name: string; arguments: string } }
         > = new Map();
         let finishReason: string | null = null;
-        let usageData: { promptTokens: number; completionTokens: number; totalTokens: number } | null = null;
+        let usageData: TokenUsage | null = null;
         const thoughtSignatures: string[] = [];
 
         // ── Per-chunk emit throttle (see STREAM_EMIT_THROTTLE_MS) ──

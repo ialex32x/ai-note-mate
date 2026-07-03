@@ -560,6 +560,7 @@ export const zhTW: Record<string, string> = {
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '完成',
 	'statusLabel.total': '總計',
+	'statusLabel.cachedPrompt': '已快取提示 token',
 	'statusLabel.context': 'Context',
 	'statusLabel.messages': '訊息',
 	'statusLabel.summaries': '摘要',

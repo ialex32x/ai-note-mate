@@ -216,6 +216,19 @@ export class SessionStatusDisplay {
                     `0 / ${maxTokens > 0 ? formatCompact(maxTokens) : '—'} (0%)`,
                 );
             }
+
+            // Cached prompt tokens (prompt-cache hit, discounted/free)
+            if (usage.cachedPromptTokens > 0) {
+                const pct = usage.promptTokens > 0
+                    ? Math.round((usage.cachedPromptTokens / usage.promptTokens) * 100)
+                    : 0;
+                this.renderRow(
+                    section,
+                    t('statusLabel.cachedPrompt'),
+                    formatCompact(usage.cachedPromptTokens),
+                    `${usage.cachedPromptTokens.toLocaleString()} (${pct}%)`,
+                );
+            }
         });
 
         // ── Context Composition section ────────────────────────────────────

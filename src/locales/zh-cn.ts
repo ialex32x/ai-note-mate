@@ -560,6 +560,7 @@ export const zhCN: Record<string, string> = {
 	'statusLabel.prompt': '提示',
 	'statusLabel.completion': '补全',
 	'statusLabel.total': '总计',
+	'statusLabel.cachedPrompt': '已缓存提示 token',
 	'statusLabel.context': 'Context',
 	'statusLabel.messages': '消息',
 	'statusLabel.summaries': '摘要',

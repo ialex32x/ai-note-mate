@@ -114,6 +114,7 @@ export class MessageEditHandler {
             promptTokens: 0,
             completionTokens: 0,
             totalTokens: 0,
+            cachedPromptTokens: 0,
         };
 
         // Restore the chat agent to the truncated state

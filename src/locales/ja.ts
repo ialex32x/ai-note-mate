@@ -560,6 +560,7 @@ export const ja: Record<string, string> = {
 	'statusLabel.prompt': 'プロンプト',
 	'statusLabel.completion': '補完',
 	'statusLabel.total': '合計',
+	'statusLabel.cachedPrompt': 'キャッシュされたプロンプト token',
 	'statusLabel.context': 'Context',
 	'statusLabel.messages': 'メッセージ',
 	'statusLabel.summaries': '要約',

@@ -47,7 +47,7 @@ export class SessionManager {
     private loadedMessages: Set<string> = new Set();
 
     /** Global cumulative token usage across all sessions, persisted in statistics.json */
-    private _globalTokenStats: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    private _globalTokenStats: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
 
     /**
      * Sequential write chain to prevent concurrent file writes (list.json + session files).
@@ -181,7 +181,7 @@ export class SessionManager {
             id,
             title: '',
             firstUserMessage: '',
-            tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
             createdAt: now,
             updatedAt: now,
         };
@@ -473,6 +473,7 @@ export class SessionManager {
         this._globalTokenStats.promptTokens += Math.max(0, currentTokenUsage.promptTokens - prev.promptTokens);
         this._globalTokenStats.completionTokens += Math.max(0, currentTokenUsage.completionTokens - prev.completionTokens);
         this._globalTokenStats.totalTokens += Math.max(0, currentTokenUsage.totalTokens - prev.totalTokens);
+        this._globalTokenStats.cachedPromptTokens += Math.max(0, currentTokenUsage.cachedPromptTokens - prev.cachedPromptTokens);
 
         meta.tokenUsage = { ...currentTokenUsage };
         meta.updatedAt = Date.now();
@@ -605,6 +606,8 @@ export class SessionManager {
             this._globalTokenStats.completionTokens - meta.tokenUsage.completionTokens);
         this._globalTokenStats.totalTokens = Math.max(0,
             this._globalTokenStats.totalTokens - meta.tokenUsage.totalTokens);
+        this._globalTokenStats.cachedPromptTokens = Math.max(0,
+            this._globalTokenStats.cachedPromptTokens - meta.tokenUsage.cachedPromptTokens);
 
         this.metadataMap.delete(id);
 
@@ -1410,6 +1413,10 @@ export class SessionManager {
                         promptTokens: stats.promptTokens,
                         completionTokens: stats.completionTokens,
                         totalTokens: stats.totalTokens,
+                        cachedPromptTokens:
+                            typeof stats.cachedPromptTokens === 'number'
+                                ? stats.cachedPromptTokens
+                                : 0,
                     };
                     return;
                 }
@@ -1419,13 +1426,14 @@ export class SessionManager {
         }
 
         // Fallback: recompute from all session metadata (first-run migration).
-        let p = 0, c = 0, t = 0;
+        let p = 0, c = 0, t = 0, cp = 0;
         for (const meta of this.metadataMap.values()) {
             p += meta.tokenUsage.promptTokens;
             c += meta.tokenUsage.completionTokens;
             t += meta.tokenUsage.totalTokens;
+            cp += meta.tokenUsage.cachedPromptTokens;
         }
-        this._globalTokenStats = { promptTokens: p, completionTokens: c, totalTokens: t };
+        this._globalTokenStats = { promptTokens: p, completionTokens: c, totalTokens: t, cachedPromptTokens: cp };
     }
 
     /**
@@ -1470,6 +1478,7 @@ export class SessionManager {
                 promptTokens: this._globalTokenStats.promptTokens,
                 completionTokens: this._globalTokenStats.completionTokens,
                 totalTokens: this._globalTokenStats.totalTokens,
+                cachedPromptTokens: this._globalTokenStats.cachedPromptTokens,
             };
             await adapter.write(this.statisticsFilePath, JSON.stringify(statsData, null, 2));
 

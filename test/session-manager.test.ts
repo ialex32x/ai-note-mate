@@ -100,7 +100,7 @@ describe("SessionManager.createSession", () => {
                 turn: 1,
             },
         ];
-        const tokenUsage = { promptTokens: 100, completionTokens: 50, totalTokens: 150 };
+        const tokenUsage = { promptTokens: 100, completionTokens: 50, totalTokens: 150, cachedPromptTokens: 0 };
         await mgr.saveSession(sessionAId, messages, tokenUsage);
 
         // Sanity: A's snapshot reflects the saved history.
@@ -133,7 +133,7 @@ describe("SessionManager.createSession", () => {
         const messages: ChatMessage[] = [
             makeUserMessage("preserve me", "u1"),
         ];
-        const tokenUsage = { promptTokens: 7, completionTokens: 3, totalTokens: 10 };
+        const tokenUsage = { promptTokens: 7, completionTokens: 3, totalTokens: 10, cachedPromptTokens: 0 };
         await mgr.saveSession(sessionAId, messages, tokenUsage);
 
         // Simulate the new-chat flow used by SessionView.startNewSession.
@@ -167,7 +167,7 @@ describe("SessionManager.loadFromCache", () => {
         const messages: ChatMessage[] = [
             makeUserMessage("round-trip", "u1"),
         ];
-        await mgr.saveSession(sessionAId, messages, { promptTokens: 1, completionTokens: 1, totalTokens: 2 });
+        await mgr.saveSession(sessionAId, messages, { promptTokens: 1, completionTokens: 1, totalTokens: 2, cachedPromptTokens: 0 });
         await mgr.saveToCache();
 
         // Build a fresh manager pointed at the same adapter.

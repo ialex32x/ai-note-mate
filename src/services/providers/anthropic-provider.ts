@@ -89,7 +89,12 @@ interface SSEEventPayload {
         type: string;
         role: string;
         model: string;
-        usage: { input_tokens: number; output_tokens: number };
+        usage: {
+            input_tokens: number;
+            output_tokens: number;
+            cache_read_input_tokens?: number | null;
+            cache_creation_input_tokens?: number | null;
+        };
     };
     index?: number;
     content_block?: {
@@ -428,6 +433,7 @@ export async function* parseAnthropicSSEStream(
     signal?: AbortSignal,
 ): AsyncIterable<StreamChunk> {
     let promptTokens = 0;
+    let cachedPromptTokens = 0;
 
     for await (const frame of parseSSEFrames(body, signal)) {
         const payload = parseSSEFrame(frame);
@@ -435,12 +441,15 @@ export async function* parseAnthropicSSEStream(
 
         // message_start carries the prompt-token count the trailing
         // message_delta needs; capture it before emitting so the
-        // total is accurate regardless of event ordering.
+        // total is accurate regardless of event ordering. Also
+        // capture cache-read tokens for the cached-prompt stat.
         if (payload.type === "message_start" && payload.message) {
             promptTokens = payload.message.usage.input_tokens;
+            cachedPromptTokens =
+                payload.message.usage.cache_read_input_tokens ?? 0;
         }
 
-        const chunk = processSSEPayload(payload, promptTokens);
+        const chunk = processSSEPayload(payload, promptTokens, cachedPromptTokens);
         if (chunk) yield chunk;
     }
 }
@@ -485,10 +494,13 @@ export function parseSSEFrame(frame: string): SSEEventPayload | null {
  *
  * @param promptTokens Input-token count captured from `message_start`,
  *   used only to compute the total in the trailing `message_delta`.
+ * @param cachedPromptTokens Prompt tokens read from cache (Anthropic
+ *   `cache_read_input_tokens`), captured from `message_start`.
  */
 export function processSSEPayload(
     payload: SSEEventPayload,
     promptTokens: number,
+    cachedPromptTokens: number,
 ): StreamChunk | null {
     const type = payload.type;
 
@@ -503,6 +515,7 @@ export function processSSEPayload(
                 promptTokens: payload.message.usage.input_tokens,
                 completionTokens: 0,
                 totalTokens: payload.message.usage.input_tokens,
+                cachedPromptTokens,
             },
         };
     }
@@ -613,6 +626,7 @@ export function processSSEPayload(
                 promptTokens,
                 completionTokens: payload.usage.output_tokens,
                 totalTokens: promptTokens + payload.usage.output_tokens,
+                cachedPromptTokens,
             },
         };
     }

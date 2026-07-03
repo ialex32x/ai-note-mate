@@ -301,13 +301,19 @@ export class GeminiProvider implements LLMProvider {
 
             // Gemini reports usage at the end of the stream in usageMetadata
             const um = chunk.usageMetadata as
-                | { promptTokenCount?: number; candidatesTokenCount?: number; totalTokenCount?: number }
+                | {
+                      promptTokenCount?: number;
+                      candidatesTokenCount?: number;
+                      totalTokenCount?: number;
+                      cachedContentTokenCount?: number;
+                  }
                 | undefined;
             const usage = um
                 ? {
                       promptTokens: um.promptTokenCount ?? 0,
                       completionTokens: um.candidatesTokenCount ?? 0,
                       totalTokens: um.totalTokenCount ?? 0,
+                      cachedPromptTokens: um.cachedContentTokenCount ?? 0,
                   }
                 : null;
 

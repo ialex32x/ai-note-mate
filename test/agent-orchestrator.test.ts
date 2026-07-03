@@ -16,7 +16,7 @@ function createMockProvider(response: string = 'Mock response') {
                 reasoningContent: null,
                 toolCallDeltas: null,
                 finishReason: 'stop',
-                usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+                usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15, cachedPromptTokens: 0 },
             };
         },
         listModels: async () => ['mock-model'],
@@ -110,7 +110,7 @@ describe('AgentOrchestrator', () => {
             },
         ];
 
-        const tokenUsage = { promptTokens: 100, completionTokens: 50, totalTokens: 150 };
+        const tokenUsage = { promptTokens: 100, completionTokens: 50, totalTokens: 150, cachedPromptTokens: 0 };
 
         orchestrator.restoreState(messages, tokenUsage);
 
@@ -209,7 +209,7 @@ describe('AgentOrchestrator sticky-on-history', () => {
             },
         ];
 
-        orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+        orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 });
 
         const sticky: string[] = (orch as any)._usedSubAgentNames;
         expect(sticky.includes('vault_inspector')).toBe(true);
@@ -231,7 +231,7 @@ describe('AgentOrchestrator sticky-on-history', () => {
             },
         ];
 
-        orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0 });
+        orch.restoreState(messages, { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 });
         const sticky: string[] = (orch as any)._usedSubAgentNames;
         expect(sticky.length).toBe(0);
     });

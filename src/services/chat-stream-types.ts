@@ -654,7 +654,7 @@ export interface StreamResultInternal {
     reasoningContent: string;
     toolCalls: CompleteToolCall[] | null;
     finishReason: string | null;
-    usage: { promptTokens: number; completionTokens: number; totalTokens: number } | null;
+    usage: TokenUsage | null;
     /** Thought signatures from the provider (e.g., Gemini thinking models) */
     thoughtSignatures?: string[];
 }

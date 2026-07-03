@@ -564,7 +564,7 @@ describe('SessionManager — TODO state round-trip', () => {
         await mgr.saveSession(
             sessionId,
             [],
-            { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
             undefined,
             undefined,
             undefined,
@@ -619,7 +619,7 @@ describe('SessionManager — TODO state round-trip', () => {
                 id: sessionId,
                 title: '',
                 firstUserMessage: '',
-                tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+                tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
                 createdAt: now,
                 updatedAt: now,
             }],
@@ -725,7 +725,7 @@ describe('SessionManager — TODO state round-trip', () => {
         await mgr.saveSession(
             sessionId,
             [],
-            { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
             undefined,
             undefined,
             undefined,
@@ -750,7 +750,7 @@ describe('SessionManager — TODO state round-trip', () => {
         await mgr.saveSession(
             sessionId,
             [],
-            { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+            { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
         );
         await mgr.saveToCache();
         parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}/messages.json`)!) as { version: number; todos?: unknown };

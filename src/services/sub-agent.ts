@@ -353,6 +353,8 @@ export class SubAgent {
                 promptTokens: tokenAfter.promptTokens - tokenBefore.promptTokens,
                 completionTokens: tokenAfter.completionTokens - tokenBefore.completionTokens,
                 totalTokens: tokenAfter.totalTokens - tokenBefore.totalTokens,
+                cachedPromptTokens:
+                    tokenAfter.cachedPromptTokens - tokenBefore.cachedPromptTokens,
             };
 
             // Extract the final assistant message content
