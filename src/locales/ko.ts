@@ -547,6 +547,7 @@ export const ko: Record<string, string> = {
 
 	// ── Session status ────────────────────────────────────
 	'status.tokenSection': '토큰 사용량',
+	'status.contextCompositionSection': '컨텍스트 구성',
 	'status.sessionSection': '세션',
 	'status.agentsSection': '에이전트',
 	'status.mcpSection': 'MCP 서버',
@@ -563,6 +564,12 @@ export const ko: Record<string, string> = {
 	'statusLabel.messages': '메시지',
 	'statusLabel.summaries': '요약',
 	'statusLabel.embedding': '임베딩',
+	'statusLabel.systemPrompt': '시스템 프롬프트',
+	'statusLabel.memory': '메모리',
+	'statusLabel.skills': '스킬',
+	'statusLabel.suffix': '접미사',
+	'statusLabel.conversation': '대화 기록',
+	'statusLabel.toolSchemas': '도구 정의',
 	'statusLabel.artifactsLive': '활성',
 	'statusLabel.artifactsBytes': '크기',
 	'statusLabel.artifactsTombstones': '툼스톤',

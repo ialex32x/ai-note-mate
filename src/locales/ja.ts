@@ -547,6 +547,7 @@ export const ja: Record<string, string> = {
 
 	// ── Session status ────────────────────────────────────
 	'status.tokenSection': 'トークン使用量',
+	'status.contextCompositionSection': 'コンテキスト構成',
 	'status.sessionSection': 'セッション',
 	'status.agentsSection': 'エージェント',
 	'status.mcpSection': 'MCP サーバー',
@@ -563,6 +564,12 @@ export const ja: Record<string, string> = {
 	'statusLabel.messages': 'メッセージ',
 	'statusLabel.summaries': '要約',
 	'statusLabel.embedding': '埋め込み',
+	'statusLabel.systemPrompt': 'システムプロンプト',
+	'statusLabel.memory': 'メモリ',
+	'statusLabel.skills': 'スキル',
+	'statusLabel.suffix': 'サフィックス',
+	'statusLabel.conversation': '会話履歴',
+	'statusLabel.toolSchemas': 'ツール定義',
 	'statusLabel.artifactsLive': '保持中',
 	'statusLabel.artifactsBytes': 'サイズ',
 	'statusLabel.artifactsTombstones': 'トゥームストーン',

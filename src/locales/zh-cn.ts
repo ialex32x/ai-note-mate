@@ -267,7 +267,8 @@ export const zhCN: Record<string, string> = {
 	'settings.showAdvanced': '显示进阶设置',
 	'settings.showAdvancedDesc': '开启后显示进阶参数；如不确定用法，请勿随意修改',
 	'settings.debugMode': '调试模式',
-	'settings.debugModeDesc': '启用少量用于问题排查的逻辑',
+    'settings.debugModeDesc': '启用少量用于问题排查的逻辑',
+    
 	'settings.builtinWebAgent': '内置网络智能体',
 	'settings.builtinWebAgentDesc': '启用内置的网络智能体，为助手提供网络搜索、网页抓取和 RSS/Atom 订阅源抓取工具。内置网络访问能力和稳定性有限，如需更稳定、更强大的网络访问能力，建议使用专门提供网络访问的 MCP 工具',
 	'settings.webFetchSoftLimit': '网页抓取软上限（每轮）',
