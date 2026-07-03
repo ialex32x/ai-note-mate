@@ -8,6 +8,7 @@ import {
     setTooltip,
     Platform,
     Menu,
+    arrayBufferToBase64,
 } from 'obsidian';
 import { ChatMessage, IChatAgent } from '../../services/chat-stream';
 import { exportSessionToVault } from '../../services/session-exporter';
@@ -746,6 +747,13 @@ export class SessionView extends ItemView {
             void this.removeAttachment();
         });
 
+        // Click on the thumbnail opens the preview overlay with the
+        // full-resolution image from the session cache.
+        this.attachmentThumb.addEventListener('click', (e) => {
+            e.stopPropagation();
+            void this.previewAttachment();
+        });
+
         // ── Paste handler ──────────────────────────────────────────────────
         // Listen on the entire input container so paste events reach us
         // even when the CodeMirror editor doesn't have focus.
@@ -1476,6 +1484,30 @@ export class SessionView extends ItemView {
         this.currentAttachment = null;
         this.attachmentRow.addClass('session-attachment-row--hidden');
         this.attachmentThumb.src = '';
+    }
+
+    /**
+     * Read the full-resolution attachment image from cache and open it
+     * in the preview overlay with zoom/pan support.
+     */
+    private async previewAttachment(): Promise<void> {
+        const att = this.currentAttachment;
+        if (!att) return;
+
+        try {
+            const adapter = this.app.vault.adapter;
+            if (!(await adapter.exists(att.cachePath))) {
+                new Notice(t('view.attachmentNotFound'));
+                return;
+            }
+            const buf = await adapter.readBinary(att.cachePath);
+            const base64 = arrayBufferToBase64(buf);
+            const dataUrl = `data:${att.mimeType};base64,${base64}`;
+            this.handlePreviewImage(dataUrl, att.fileName);
+        } catch (err) {
+            console.error('[SessionView] Failed to preview attachment:', err);
+            new Notice(t('view.attachmentPreviewFailed'));
+        }
     }
 
     /** Delete a single attachment cache file (fire-and-forget). */

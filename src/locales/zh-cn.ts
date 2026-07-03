@@ -65,6 +65,8 @@ export const zhCN: Record<string, string> = {
 	'view.removeAttachment': '移除图片',
 	'view.attachmentNoSession': '无法粘贴图片：会话尚未就绪。',
 	'view.attachmentPasteFailed': '图片粘贴失败，请重试。',
+	'view.attachmentNotFound': '附件图片不存在，可能已被删除。',
+	'view.attachmentPreviewFailed': '图片预览失败，请重试。',
 	'view.copyToolArgs': '复制参数',
 	'view.copyToolResult': '复制结果',
 	'view.copyHandoffArgs': '复制参数',

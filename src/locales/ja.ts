@@ -65,6 +65,8 @@ export const ja: Record<string, string> = {
 	'view.removeAttachment': '画像を削除',
 	'view.attachmentNoSession': '画像を貼り付けできません：セッションの準備ができていません。',
 	'view.attachmentPasteFailed': '画像の貼り付けに失敗しました。再試行してください。',
+	'view.attachmentNotFound': '添付画像が見つかりません。削除された可能性があります。',
+	'view.attachmentPreviewFailed': '画像プレビューに失敗しました。再試行してください。',
 	'view.copyToolArgs': '引数をコピー',
 	'view.copyToolResult': '結果をコピー',
 	'view.copyHandoffArgs': '引数をコピー',

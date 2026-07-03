@@ -65,6 +65,8 @@ export const en: Record<string, string> = {
 	'view.removeAttachment': 'Remove image',
 	'view.attachmentNoSession': 'Cannot paste image: session not ready.',
 	'view.attachmentPasteFailed': 'Image paste failed, please try again.',
+	'view.attachmentNotFound': 'Attachment image not found, it may have been deleted.',
+	'view.attachmentPreviewFailed': 'Image preview failed, please try again.',
 	'view.copyToolArgs': 'Copy arguments',
 	'view.copyToolResult': 'Copy result',
 	'view.copyHandoffArgs': 'Copy arguments',

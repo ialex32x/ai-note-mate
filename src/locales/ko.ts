@@ -65,6 +65,8 @@ export const ko: Record<string, string> = {
 	'view.removeAttachment': '이미지 제거',
 	'view.attachmentNoSession': '이미지를 붙여넣을 수 없습니다: 세션이 준비되지 않았습니다.',
 	'view.attachmentPasteFailed': '이미지 붙여넣기에 실패했습니다. 다시 시도해 주세요.',
+	'view.attachmentNotFound': '첨부 이미지를 찾을 수 없습니다. 삭제되었을 수 있습니다.',
+	'view.attachmentPreviewFailed': '이미지 미리보기에 실패했습니다. 다시 시도해 주세요.',
 	'view.copyToolArgs': '인자 복사',
 	'view.copyToolResult': '결과 복사',
 	'view.copyHandoffArgs': '인자 복사',

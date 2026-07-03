@@ -65,6 +65,8 @@ export const zhTW: Record<string, string> = {
 	'view.removeAttachment': '移除圖片',
 	'view.attachmentNoSession': '無法貼上圖片：會話尚未就緒。',
 	'view.attachmentPasteFailed': '圖片貼上失敗，請重試。',
+	'view.attachmentNotFound': '附件圖片不存在，可能已被刪除。',
+	'view.attachmentPreviewFailed': '圖片預覽失敗，請重試。',
 	'view.copyToolArgs': '複製參數',
 	'view.copyToolResult': '複製結果',
 	'view.copyHandoffArgs': '複製參數',
