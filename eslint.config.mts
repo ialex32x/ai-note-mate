@@ -48,6 +48,8 @@ export default tseslint.config(
 		"**/*.json",
 		// stylelint config is not part of the plugin bundle
 		".stylelintrc.js",
+		// Utility scripts are plain Node.js, not part of the plugin bundle
+		"scripts",
 		// Ignore all dot-directories at root (e.g. .github, etc.)
 		".*",
 	]),
