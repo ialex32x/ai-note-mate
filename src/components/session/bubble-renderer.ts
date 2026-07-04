@@ -4,21 +4,11 @@ import {
 } from 'obsidian';
 import type { ChatMessage } from '../../services/chat-stream';
 import { t } from '../../i18n';
+import { extractMermaidSources } from '../../utils/markdown-sanitizer';
 import {
     StreamingMarkdownController,
     renderFinalMarkdown,
 } from './streaming-markdown-controller';
-
-/** Extract mermaid code block contents from raw markdown. */
-function extractMermaidSources(markdown: string): string[] {
-    const sources: string[] = [];
-    const re = /```mermaid\s*\n([\s\S]*?)```/g;
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(markdown)) !== null) {
-        sources.push(match[1]!.trim());
-    }
-    return sources;
-}
 import { stripStructuredBlock } from '../../services/suggestions';
 import type { BubbleContext } from '../bubble/bubble-context';
 import {

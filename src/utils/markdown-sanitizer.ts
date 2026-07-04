@@ -463,6 +463,30 @@ export function sanitizeStreamingMarkdown(content: string): string {
     return result;
 }
 
+// ── Mermaid source extraction ─────────────────────────────────────────────
+
+/**
+ * Extract the source code of every closed ```mermaid fenced code block
+ * from raw (un-sanitized) markdown.
+ *
+ * Only returns sources for blocks that have a matching closing fence —
+ * unclosed blocks are silently skipped.  This is safe to call on streaming
+ * content; it will return an empty array until the closing ``` arrives.
+ *
+ * @param markdown - Raw markdown content (NOT sanitized streaming output)
+ * @returns Array of mermaid source strings, one per closed block, in
+ *   document order.
+ */
+export function extractMermaidSources(markdown: string): string[] {
+    const sources: string[] = [];
+    const re = /```mermaid\s*\n([\s\S]*?)```/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(markdown)) !== null) {
+        sources.push(match[1]!.trim());
+    }
+    return sources;
+}
+
 // ── Final normalizer: blank lines around tables ────────────────────────────
 
 /**

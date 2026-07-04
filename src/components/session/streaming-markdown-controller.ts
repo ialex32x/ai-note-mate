@@ -1,5 +1,9 @@
 import { MarkdownRenderer, App, Component } from 'obsidian';
-import { sanitizeStreamingMarkdown, normalizeMarkdownForObsidian } from '../../utils/markdown-sanitizer';
+import {
+    sanitizeStreamingMarkdown,
+    normalizeMarkdownForObsidian,
+    extractMermaidSources,
+} from '../../utils/markdown-sanitizer';
 
 /**
  * Default minimum interval (ms) between two consecutive renders.
@@ -39,6 +43,70 @@ const LARGE_CONTENT_INTERVAL = 400;
  * that on every tick the UI will start to feel sluggish.
  */
 const DORENDER_SLOW_LOG_THRESHOLD_MS = 50;
+
+// ── Mermaid SVG preservation ───────────────────────────────────────────────
+
+/**
+ * A preserved mermaid SVG snapshot — the source code and a deep-cloned
+ * copy of the rendered SVG DOM.  Used to transplant unchanged mermaid
+ * diagrams across streaming render passes so their SVGs aren't torn down
+ * and rebuilt on every tick (which causes visible flicker).
+ */
+interface PreservedMermaid {
+    source: string;
+    svgEl: SVGElement;
+}
+
+/**
+ * Snapshot every closed mermaid block's rendered SVG from the live DOM.
+ *
+ * Uses `rawMarkdown` (the *previous* render's unsanitized content) to
+ * extract source code for positional matching.  Only blocks that have a
+ * closing fence and an actual rendered `<svg>` child are captured.
+ */
+function snapshotMermaidSvgs(container: HTMLElement, rawMarkdown: string): PreservedMermaid[] {
+    const sources = extractMermaidSources(rawMarkdown);
+    const mermaidEls = container.querySelectorAll('.mermaid');
+    const result: PreservedMermaid[] = [];
+    for (let i = 0; i < sources.length && i < mermaidEls.length; i++) {
+        const svg = mermaidEls[i]!.querySelector('svg');
+        if (svg) {
+            result.push({
+                source: sources[i]!,
+                svgEl: svg.cloneNode(true) as SVGElement,
+            });
+        }
+    }
+    return result;
+}
+
+/**
+ * Transplant unchanged mermaid SVGs from a previous render pass into the
+ * freshly-rendered DOM.
+ *
+ * For each preserved entry, the new DOM must contain a mermaid block at
+ * the same position with **identical source code**.  When matched, the
+ * newly-rendered (expensive) SVG is replaced with the preserved one via
+ * {@link ChildNode.replaceWith}.
+ *
+ * Blocks whose source changed (LLM edited them mid-stream) are left
+ * alone so the renderer's fresh output is kept.
+ */
+function restoreMermaidSvgs(
+    container: HTMLElement,
+    rawMarkdown: string,
+    preserved: PreservedMermaid[],
+): void {
+    const newSources = extractMermaidSources(rawMarkdown);
+    const newMermaidEls = container.querySelectorAll('.mermaid');
+    for (let i = 0; i < preserved.length && i < newSources.length && i < newMermaidEls.length; i++) {
+        const entry = preserved[i]!;
+        if (entry.source !== newSources[i]) continue;
+        const newSvg = newMermaidEls[i]!.querySelector('svg');
+        if (!newSvg) continue;
+        newSvg.replaceWith(entry.svgEl.cloneNode(true));
+    }
+}
 
 /**
  * Optional preprocessor applied to the raw content right before the
@@ -302,6 +370,13 @@ export class StreamingMarkdownController {
                 return;
             }
 
+            // Snapshot mermaid SVGs from the live DOM *before* we blow it
+            // away with replaceChildren.  These are keyed by the previous
+            // render's raw content so we can later check source equality.
+            const preservedMermaids = this.lastRenderedContent
+                ? snapshotMermaidSvgs(this.contentEl, this.lastRenderedContent)
+                : [];
+
             // Double-buffer: render into an off-screen element first, then
             // swap children in one go to avoid the empty-state layout flash
             // that would occur with contentEl.empty() + async render().
@@ -320,6 +395,15 @@ export class StreamingMarkdownController {
             // empty state that would trigger a layout reflow.
             if (!this.disposed && this.contentEl) {
                 this.contentEl.replaceChildren(...Array.from(buffer.childNodes));
+
+                // Transplant unchanged mermaid SVGs from the previous pass
+                // so their expensive SVG render isn't repeated every tick.
+                // This eliminates the flicker caused by tearing down and
+                // rebuilding mermaid diagrams on each streaming update.
+                if (preservedMermaids.length > 0) {
+                    restoreMermaidSvgs(this.contentEl, contentToRender, preservedMermaids);
+                }
+
                 this.onAfterRender?.(this.contentEl);
             }
 
