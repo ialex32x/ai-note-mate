@@ -3,7 +3,7 @@ import type { ChatMessage, ConversationSummary, AgentTokenBreakdown, QuickAskTur
 import type { TokenUsage } from './services/llm-provider';
 import type { InsightCardState } from './services/insights';
 import type { SuggestionCardState } from './services/suggestions';
-import type { TodoState } from './services/tools/todo-state';
+import type { TodoState, TodoItem } from './services/tools/todo-state';
 import type { GeneratedAsset } from './services/generated-asset-collection';
 import type {
     ReadonlyChatMessages,
@@ -20,7 +20,7 @@ export type { SessionMetadata, SessionSnapshot } from './session-manager-types';
 /**
  * Session manager with persistent storage and lazy loading.
  * - Metadata is stored in `sessions/list.json`
- * - Messages are stored in `sessions/${id}/messages.json` (loaded on demand)
+ * - Messages are stored in `sessions/${id}/messages.jsonl` (JSONL, loaded on demand)
  */
 export class SessionManager {
     /** Session metadata map */
@@ -45,6 +45,9 @@ export class SessionManager {
     private toolCallAssetsCache: Map<string, GeneratedAsset[]> = new Map();
     /** Set of session IDs whose messages have been loaded */
     private loadedMessages: Set<string> = new Set();
+    /** Tracks how many messages have been persisted for each session
+     *  (used for append-only JSONL writes). */
+    private persistedMessageCounts: Map<string, number> = new Map();
 
     /** Global cumulative token usage across all sessions, persisted in statistics.json */
     private _globalTokenStats: TokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 };
@@ -321,21 +324,25 @@ export class SessionManager {
      * Record the TODO state for a specific session. Pass `undefined`
      * or a state with an empty `items` array to clear the entry.
      *
-     * Only mutates in-memory caches; the next {@link saveToCache}
-     * (or `runtime.persist`) flushes to disk.
+     * Mutates in-memory caches and immediately persists the state to
+     * the per-session `todos.json` file (fire-and-forget).
      */
     setSessionTodos(sessionId: string, state: TodoState | undefined): void {
         if (!this.metadataMap.has(sessionId)) return;
         if (!state || state.items.length === 0) {
             this.todosCache.delete(sessionId);
+            void this.savePerSessionTodos(sessionId, undefined);
             return;
         }
         // Defensive clone so callers can't accidentally mutate the
         // cached snapshot after handing it off.
-        this.todosCache.set(sessionId, {
+        const cloned: TodoState = {
             items: state.items.map(item => ({ ...item })),
             updatedAt: state.updatedAt,
-        });
+        };
+        this.todosCache.set(sessionId, cloned);
+        // Persist to per-session file (fire-and-forget; errors are logged internally).
+        void this.savePerSessionTodos(sessionId, cloned);
     }
 
     /** Convenience: clear the TODO state for a specific session. */
@@ -396,9 +403,11 @@ export class SessionManager {
         this.messagesCache.set(sessionId, [...currentMessages]);
         this.loadedMessages.add(sessionId);
 
-        // Update summaries cache
+        // Update summaries cache (undefined means "no change")
         if (summaries && summaries.length > 0) {
-            this.summariesCache.set(sessionId, summaries.map(s => ({ ...s })));
+            const cloned = summaries.map(s => ({ ...s }));
+            this.summariesCache.set(sessionId, cloned);
+            void this.savePerSessionSummaries(sessionId, cloned);
         }
 
         // Update sub-agent messages cache (undefined means "no change";
@@ -406,8 +415,11 @@ export class SessionManager {
         if (subAgentMessages !== undefined) {
             if (Object.keys(subAgentMessages).length > 0) {
                 this.subAgentMessagesCache.set(sessionId, subAgentMessages);
+                // Persist to individual files (fire-and-forget).
+                void this.savePerSessionSubAgentMessages(sessionId, subAgentMessages);
             } else {
                 this.subAgentMessagesCache.delete(sessionId);
+                void this.savePerSessionSubAgentMessages(sessionId, undefined);
             }
         }
 
@@ -418,14 +430,18 @@ export class SessionManager {
             const hasAny = Object.keys(agentTokenBreakdown.subAgents).length > 0
                 || agentTokenBreakdown.main.totalTokens > 0;
             if (hasAny) {
-                this.agentTokenBreakdownCache.set(sessionId, {
+                const cloned: AgentTokenBreakdown = {
                     main: { ...agentTokenBreakdown.main },
                     subAgents: Object.fromEntries(
                         Object.entries(agentTokenBreakdown.subAgents).map(([k, v]) => [k, { ...v }]),
                     ),
-                });
+                };
+                this.agentTokenBreakdownCache.set(sessionId, cloned);
+                // Persist to per-session file (fire-and-forget).
+                void this.savePerSessionAgentTokenBreakdown(sessionId, cloned);
             } else {
                 this.agentTokenBreakdownCache.delete(sessionId);
+                void this.savePerSessionAgentTokenBreakdown(sessionId, undefined);
             }
         }
 
@@ -441,9 +457,12 @@ export class SessionManager {
         // pass an empty array to explicitly clear).
         if (quickAskTurns !== undefined) {
             if (quickAskTurns.length > 0) {
-                this.quickAskTurnsCache.set(sessionId, quickAskTurns.map(t => ({ ...t })));
+                const cloned = quickAskTurns.map(t => ({ ...t }));
+                this.quickAskTurnsCache.set(sessionId, cloned);
+                void this.savePerSessionQuickAskTurns(sessionId, cloned);
             } else {
                 this.quickAskTurnsCache.delete(sessionId);
+                void this.savePerSessionQuickAskTurns(sessionId, undefined);
             }
         }
 
@@ -451,9 +470,12 @@ export class SessionManager {
         // change"; pass an empty array to explicitly clear).
         if (toolCallAssets !== undefined) {
             if (toolCallAssets.length > 0) {
-                this.toolCallAssetsCache.set(sessionId, [...toolCallAssets]);
+                const cloned = [...toolCallAssets];
+                this.toolCallAssetsCache.set(sessionId, cloned);
+                void this.savePerSessionToolCallAssets(sessionId, cloned);
             } else {
                 this.toolCallAssetsCache.delete(sessionId);
+                void this.savePerSessionToolCallAssets(sessionId, undefined);
             }
         }
 
@@ -614,6 +636,7 @@ export class SessionManager {
         // Clean up messages cache
         this.messagesCache.delete(id);
         this.loadedMessages.delete(id);
+        this.persistedMessageCounts.delete(id);
         // Clean up summaries cache
         this.summariesCache.delete(id);
         // Clean up sub-agent messages cache
@@ -756,9 +779,9 @@ export class SessionManager {
         return sessions.map(({ lastInsights: _, lastSuggestions: __, draftInput: ___, ...rest }) => rest as SessionMetadata);
     }
 
-    /** Build the path for the per-session messages file (new directory-based format). */
+    /** Build the path for the per-session messages file (JSONL format). */
     private getMessagesFilePath(sessionId: string): string {
-        return `${this.sessionsDir}/${sessionId}/messages.json`;
+        return `${this.sessionsDir}/${sessionId}/messages.jsonl`;
     }
 
     /** Build the path for the legacy flat messages file (pre-migration format). */
@@ -779,6 +802,41 @@ export class SessionManager {
     /** Build the path for the per-session suggestions file. */
     private getSuggestionsFilePath(sessionId: string): string {
         return `${this.sessionsDir}/${sessionId}/suggestions.json`;
+    }
+
+    /** Build the path for the per-session todos file. */
+    private getTodosFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/todos.json`;
+    }
+
+    /** Build the path for the per-session agent-token-breakdown file. */
+    private getAgentTokenBreakdownFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/agent-token-breakdown.json`;
+    }
+
+    /** Build the path for the per-session summaries file. */
+    private getSummariesFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/summaries.json`;
+    }
+
+    /** Build the path for the per-session quick-ask-turns file. */
+    private getQuickAskTurnsFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/quick-ask-turns.json`;
+    }
+
+    /** Build the path for the per-session tool-call-assets file. */
+    private getToolCallAssetsFilePath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/tool-call-assets.json`;
+    }
+
+    /** Build the path for the per-session subagent messages directory. */
+    private getSubAgentMessagesDirPath(sessionId: string): string {
+        return `${this.sessionsDir}/${sessionId}/subagent`;
+    }
+
+    /** Build the path for a single sub-agent message file. */
+    private getSubAgentMessageFilePath(sessionId: string, toolCallId: string): string {
+        return `${this.sessionsDir}/${sessionId}/subagent/${toolCallId}.json`;
     }
 
     /**
@@ -831,6 +889,185 @@ export class SessionManager {
         }
     }
 
+    /**
+     * Persist (or delete) the per-session todos.json file for a given session.
+     * Called automatically by {@link setSessionTodos}.
+     */
+    private async savePerSessionTodos(sessionId: string, state: TodoState | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getTodosFilePath(sessionId);
+        const dirPath = this.getSessionDirPath(sessionId);
+
+        try {
+            if (state && state.items.length > 0) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save todos file:', error);
+        }
+    }
+
+    /**
+     * Persist (or delete) the per-session agent-token-breakdown.json file
+     * for a given session. Called automatically when the cache is mutated
+     * in {@link saveSession}.
+     */
+    private async savePerSessionAgentTokenBreakdown(sessionId: string, state: AgentTokenBreakdown | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getAgentTokenBreakdownFilePath(sessionId);
+        const dirPath = this.getSessionDirPath(sessionId);
+
+        try {
+            if (state) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save agent-token-breakdown file:', error);
+        }
+    }
+
+    /**
+     * Persist sub-agent messages to individual files under
+     * `sessions/{id}/subagent/{toolCallId}.json`.
+     *
+     * Deletes the entire subagent directory when `messages` is
+     * `undefined` or empty, and cleans up orphaned files when
+     * switching from one set of tool-call IDs to another.
+     */
+    private async savePerSessionSubAgentMessages(
+        sessionId: string,
+        messages: Record<string, ChatMessage[]> | undefined,
+    ): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const dirPath = this.getSubAgentMessagesDirPath(sessionId);
+        const sessionDir = this.getSessionDirPath(sessionId);
+
+        try {
+            if (!messages || Object.keys(messages).length === 0) {
+                // Clear everything
+                if (await adapter.exists(dirPath)) {
+                    try { await adapter.rmdir(dirPath, true); } catch { /* best-effort */ }
+                }
+                return;
+            }
+
+            // Ensure directories exist
+            if (!await adapter.exists(sessionDir)) {
+                await adapter.mkdir(sessionDir);
+            }
+            if (!await adapter.exists(dirPath)) {
+                await adapter.mkdir(dirPath);
+            }
+
+            // Write current toolCallId files
+            const writtenIds = new Set<string>();
+            for (const [toolCallId, msgs] of Object.entries(messages)) {
+                const filePath = this.getSubAgentMessageFilePath(sessionId, toolCallId);
+                await adapter.write(filePath, JSON.stringify(msgs, null, 2));
+                writtenIds.add(toolCallId);
+            }
+
+            // Clean up orphaned files from previous writes
+            try {
+                const listing = await adapter.list(dirPath);
+                for (const file of listing.files) {
+                    const toolCallId = file.replace(/\.json$/, '');
+                    if (!writtenIds.has(toolCallId)) {
+                        await adapter.remove(`${dirPath}/${file}`);
+                    }
+                }
+            } catch { /* best-effort cleanup */ }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save sub-agent messages:', error);
+        }
+    }
+
+    /**
+     * Persist (or delete) the per-session summaries.json file for a given session.
+     */
+    private async savePerSessionSummaries(sessionId: string, state: ConversationSummary[] | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getSummariesFilePath(sessionId);
+        const dirPath = this.getSessionDirPath(sessionId);
+
+        try {
+            if (state && state.length > 0) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save summaries file:', error);
+        }
+    }
+
+    /**
+     * Persist (or delete) the per-session quick-ask-turns.json file for a given session.
+     */
+    private async savePerSessionQuickAskTurns(sessionId: string, state: QuickAskTurn[] | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getQuickAskTurnsFilePath(sessionId);
+        const dirPath = this.getSessionDirPath(sessionId);
+
+        try {
+            if (state && state.length > 0) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save quick-ask-turns file:', error);
+        }
+    }
+
+    /**
+     * Persist (or delete) the per-session tool-call-assets.json file for a given session.
+     */
+    private async savePerSessionToolCallAssets(sessionId: string, state: GeneratedAsset[] | undefined): Promise<void> {
+        const adapter = this.app.vault.adapter;
+        const filePath = this.getToolCallAssetsFilePath(sessionId);
+        const dirPath = this.getSessionDirPath(sessionId);
+
+        try {
+            if (state && state.length > 0) {
+                if (!await adapter.exists(dirPath)) {
+                    await adapter.mkdir(dirPath);
+                }
+                await adapter.write(filePath, JSON.stringify(state, null, 2));
+            } else {
+                if (await adapter.exists(filePath)) {
+                    await adapter.remove(filePath);
+                }
+            }
+        } catch (error) {
+            console.warn('[SessionManager] Failed to save tool-call-assets file:', error);
+        }
+    }
+
     /** Build the path for the per-session user-input file. */
     private getUserInputFilePath(sessionId: string): string {
         return `${this.sessionsDir}/${sessionId}/user-input.json`;
@@ -862,9 +1099,9 @@ export class SessionManager {
     }
 
     /**
-     * Try to load per-session insights.json, suggestions.json, and
-     * user-input.json for a given session and populate the
-     * corresponding metadata fields.
+     * Try to load per-session files (insights, suggestions, user-input,
+     * todos, agent-token-breakdown, sub-agent messages) for a given
+     * session and populate the corresponding metadata fields / caches.
      * Best-effort: silently ignores missing or corrupt files.
      */
     private async loadPerSessionFiles(sessionId: string): Promise<void> {
@@ -914,6 +1151,118 @@ export class SessionManager {
         } catch {
             // File absent or corrupt — silently ignore.
         }
+
+        // Load todos
+        try {
+            const todosPath = this.getTodosFilePath(sessionId);
+            if (await adapter.exists(todosPath)) {
+                const content = await adapter.read(todosPath);
+                const data = JSON.parse(content) as TodoState;
+                if (data
+                    && typeof data === 'object'
+                    && Array.isArray(data.items)
+                    && data.items.length > 0) {
+                    this.todosCache.set(sessionId, {
+                        items: data.items.map((item: TodoItem) => ({
+                            id: String(item.id ?? ''),
+                            brief: typeof item.brief === 'string' ? item.brief : '',
+                            content: typeof item.content === 'string' ? item.content : '',
+                            status: item.status ?? 'pending',
+                            createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+                            updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
+                        })),
+                        updatedAt: typeof data.updatedAt === 'number'
+                            ? data.updatedAt
+                            : Date.now(),
+                    });
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load agent token breakdown
+        try {
+            const breakdownPath = this.getAgentTokenBreakdownFilePath(sessionId);
+            if (await adapter.exists(breakdownPath)) {
+                const content = await adapter.read(breakdownPath);
+                const data = JSON.parse(content) as AgentTokenBreakdown;
+                if (data
+                    && typeof data === 'object'
+                    && data.main && data.subAgents) {
+                    this.agentTokenBreakdownCache.set(sessionId, data);
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load summaries
+        try {
+            const summariesPath = this.getSummariesFilePath(sessionId);
+            if (await adapter.exists(summariesPath)) {
+                const content = await adapter.read(summariesPath);
+                const data = JSON.parse(content) as ConversationSummary[];
+                if (Array.isArray(data) && data.length > 0) {
+                    this.summariesCache.set(sessionId, data);
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load quick-ask-turns
+        try {
+            const qaPath = this.getQuickAskTurnsFilePath(sessionId);
+            if (await adapter.exists(qaPath)) {
+                const content = await adapter.read(qaPath);
+                const data = JSON.parse(content) as QuickAskTurn[];
+                if (Array.isArray(data) && data.length > 0) {
+                    this.quickAskTurnsCache.set(sessionId, data);
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load tool-call-assets
+        try {
+            const assetsPath = this.getToolCallAssetsFilePath(sessionId);
+            if (await adapter.exists(assetsPath)) {
+                const content = await adapter.read(assetsPath);
+                const data = JSON.parse(content) as GeneratedAsset[];
+                if (Array.isArray(data) && data.length > 0) {
+                    this.toolCallAssetsCache.set(sessionId, data);
+                }
+            }
+        } catch {
+            // File absent or corrupt — silently ignore.
+        }
+
+        // Load sub-agent messages from individual files
+        try {
+            const subDir = this.getSubAgentMessagesDirPath(sessionId);
+            if (await adapter.exists(subDir)) {
+                const listing = await adapter.list(subDir);
+                const messages: Record<string, ChatMessage[]> = {};
+                for (const file of listing.files) {
+                    if (!file.endsWith('.json')) continue;
+                    const toolCallId = file.replace(/\.json$/, '');
+                    try {
+                        const content = await adapter.read(`${subDir}/${file}`);
+                        const msgs = JSON.parse(content) as ChatMessage[];
+                        if (Array.isArray(msgs) && msgs.length > 0) {
+                            messages[toolCallId] = msgs;
+                        }
+                    } catch { /* skip corrupt files */ }
+                }
+                if (Object.keys(messages).length > 0) {
+                    this.subAgentMessagesCache.set(sessionId, messages);
+                }
+            }
+        } catch {
+            // Directory absent or listing failed — silently ignore.
+        }
     }
 
     /**
@@ -962,7 +1311,7 @@ export class SessionManager {
         }
     }
 
-    /** Load messages for a specific session (lazy load) */
+    /** Load messages for a specific session (lazy load, JSONL format). */
     private async loadMessages(id: string): Promise<void> {
         if (!id) return;
 
@@ -973,104 +1322,80 @@ export class SessionManager {
 
         try {
             const adapter = this.app.vault.adapter;
-            const newPath = this.getMessagesFilePath(id);
+            const jsonlPath = this.getMessagesFilePath(id);
+            const jsonPath = `${this.sessionsDir}/${id}/messages.json`;
             const oldPath = this.getOldMessagesFilePath(id);
 
-            const newExists = await adapter.exists(newPath);
+            const jsonlExists = await adapter.exists(jsonlPath);
+            const jsonExists = await adapter.exists(jsonPath);
             const oldExists = await adapter.exists(oldPath);
 
-            // Determine which path to read from and handle migration.
-            let readPath: string | null = null;
+            if (jsonlExists) {
+                // JSONL format — parse line by line
+                const content = await adapter.read(jsonlPath);
+                const messages = content
+                    .trim()
+                    .split('\n')
+                    .filter(line => line.length > 0)
+                    .map(line => JSON.parse(line) as ChatMessage);
+                this.messagesCache.set(id, messages);
+                this.persistedMessageCounts.set(id, messages.length);
 
-            if (newExists && oldExists) {
-                // Both exist — delete the old flat file, read from new.
-                console.warn(`[SessionManager] Both old and new message files exist for ${id}, removing old format`);
-                try { await adapter.remove(oldPath); } catch { /* best-effort */ }
-                readPath = newPath;
-            } else if (newExists) {
-                // Only new exists — normal path.
-                readPath = newPath;
-            } else if (oldExists) {
-                // Only old exists — migrate to new location, then read.
-                readPath = await this._migrateMessagesFile(id, oldPath, newPath);
-            }
-            // else: neither exists → stay with readPath = null
-
-            if (readPath) {
-                const content = await adapter.read(readPath);
-                // Use a permissive type for version-gating — the real
-                // SessionMessagesFile type has version: 5|6|7 so TS would
-                // reject comparisons with 1–4 below.
+                // Clean up legacy files
+                if (jsonExists) try { await adapter.remove(jsonPath); } catch { /* best-effort */ }
+                if (oldExists) try { await adapter.remove(oldPath); } catch { /* best-effort */ }
+            } else if (jsonExists) {
+                // Old directory-based JSON format — migrate to JSONL
+                const content = await adapter.read(jsonPath);
                 const raw = JSON.parse(content) as { version: number; id: string } & Record<string, unknown>;
 
-                // Reject v1–v4 sessions: purge the stale file and remove
-                // metadata so the session disappears from the list.
                 if (raw.version >= 1 && raw.version <= 4) {
                     console.warn(`[SessionManager] Session ${id} has deprecated cache version ${raw.version}, purging`);
-                    await adapter.remove(readPath);
+                    await adapter.remove(jsonPath);
                     this.metadataMap.delete(id);
                     this.messagesCache.set(id, []);
                 } else if ((raw.version === 5 || raw.version === 6 || raw.version === 7) && raw.id === id) {
                     const data = raw as unknown as SessionMessagesFile;
-                    this.messagesCache.set(id, data.messages);
-                    // Load summaries if present (for context compression)
-                    if (data.summaries && Array.isArray(data.summaries)) {
-                        this.summariesCache.set(id, data.summaries);
-                    }
-                    // Load sub-agent messages (v5+ only)
-                    if (data.subAgentMessages && typeof data.subAgentMessages === 'object') {
-                        this.subAgentMessagesCache.set(id, data.subAgentMessages);
-                    }
-                    // Load per-agent token usage breakdown (v5+ only)
-                    if (data.agentTokenBreakdown && typeof data.agentTokenBreakdown === 'object'
-                        && data.agentTokenBreakdown.main && data.agentTokenBreakdown.subAgents) {
-                        this.agentTokenBreakdownCache.set(id, data.agentTokenBreakdown);
-                    }
-                    // Load TODO state (v5+ only). Validate shape defensively
-                    // so a corrupt or partial file can't poison the runtime.
-                    if (data.todos
-                        && typeof data.todos === 'object'
-                        && Array.isArray(data.todos.items)
-                        && data.todos.items.length > 0) {
-                        this.todosCache.set(id, {
-                            items: data.todos.items.map((item) => ({
-                                id: String(item.id ?? ''),
-                                brief: typeof item.brief === 'string' ? item.brief : '',
-                                content: typeof item.content === 'string' ? item.content : '',
-                                status: item.status ?? 'pending',
-                                createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
-                                updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
-                            })),
-                            updatedAt: typeof data.todos.updatedAt === 'number'
-                                ? data.todos.updatedAt
-                                : Date.now(),
-                        });
-                    }
-                    // Load QuickAsk side-turns (v6+ only). Validate shape
-                    // defensively so a corrupt or partial file can't poison
-                    // the UI.
-                    if (data.quickAskTurns
-                        && Array.isArray(data.quickAskTurns)
-                        && data.quickAskTurns.length > 0) {
-                        this.quickAskTurnsCache.set(id, data.quickAskTurns.map(t => ({ ...t })));
-                    }
-                    // Load generated-asset records (v7+ only). Validate
-                    // shape defensively.
-                    if (data.toolCallAssets
-                        && Array.isArray(data.toolCallAssets)
-                        && data.toolCallAssets.length > 0) {
-                        this.toolCallAssetsCache.set(id, [...data.toolCallAssets]);
-                    }
+                    const messages = data.messages;
+                    this.messagesCache.set(id, messages);
+                    // Migrate legacy inlined fields and convert to JSONL
+                    await this._migratePerSessionFields(id, raw);
+                    await this._writeJsonl(id, messages);
+                    await adapter.remove(jsonPath);
+                    this.persistedMessageCounts.set(id, messages.length);
+                } else {
+                    console.warn('[SessionManager] Invalid messages file format:', id);
+                    this.messagesCache.set(id, []);
+                }
+                if (oldExists) try { await adapter.remove(oldPath); } catch { /* best-effort */ }
+            } else if (oldExists) {
+                // Old flat-file format — migrate to JSONL
+                const content = await adapter.read(oldPath);
+                const raw = JSON.parse(content) as { version: number; id: string } & Record<string, unknown>;
+
+                if (raw.version >= 1 && raw.version <= 4) {
+                    console.warn(`[SessionManager] Session ${id} has deprecated cache version ${raw.version}, purging`);
+                    await adapter.remove(oldPath);
+                    this.metadataMap.delete(id);
+                    this.messagesCache.set(id, []);
+                } else if ((raw.version === 5 || raw.version === 6 || raw.version === 7) && raw.id === id) {
+                    const data = raw as unknown as SessionMessagesFile;
+                    const messages = data.messages;
+                    this.messagesCache.set(id, messages);
+                    await this._migratePerSessionFields(id, raw);
+                    await this._writeJsonl(id, messages);
+                    await adapter.remove(oldPath);
+                    this.persistedMessageCounts.set(id, messages.length);
                 } else {
                     console.warn('[SessionManager] Invalid messages file format:', id);
                     this.messagesCache.set(id, []);
                 }
             } else {
+                // No file exists — fresh session
                 this.messagesCache.set(id, []);
             }
 
             this.loadedMessages.add(id);
-            // Lazy-load per-session insights/suggestions alongside messages.
             await this.loadPerSessionFiles(id);
         } catch (error) {
             console.warn('[SessionManager] Failed to load messages:', error);
@@ -1081,113 +1406,181 @@ export class SessionManager {
     }
 
     /**
-     * Migrate a legacy flat messages file (`sessions/{id}.json`) to the
-     * new directory-based location (`sessions/{id}/messages.json`).
-     *
-     * Reads the old file, ensures the per-session directory exists,
-     * writes the content to the new path, then removes the old file.
-     * Returns the new path on success, or null on failure.
+     * Write messages to a JSONL file (full rewrite — used for migration
+     * and for branch/clear scenarios).
      */
-    private async _migrateMessagesFile(
-        id: string,
-        oldPath: string,
-        newPath: string,
-    ): Promise<string | null> {
+    private async _writeJsonl(id: string, messages: ChatMessage[]): Promise<void> {
         const adapter = this.app.vault.adapter;
-        try {
-            const content = await adapter.read(oldPath);
-            const sessionDir = this.getSessionDirPath(id);
-            if (!await adapter.exists(sessionDir)) {
-                await adapter.mkdir(sessionDir);
-            }
-            await adapter.write(newPath, content);
-            await adapter.remove(oldPath);
-            // Migration successful — informational, non-warning.
-            return newPath;
-        } catch (error) {
-            console.warn(`[SessionManager] Failed to migrate messages file for ${id}:`, error);
-            return null;
+        const jsonlPath = this.getMessagesFilePath(id);
+        const sessionDir = this.getSessionDirPath(id);
+        if (!await adapter.exists(sessionDir)) {
+            await adapter.mkdir(sessionDir);
         }
+        const lines = messages.map(m => JSON.stringify(m));
+        await adapter.write(jsonlPath, lines.join('\n') + '\n');
+        this.persistedMessageCounts.set(id, messages.length);
     }
 
-    /** Save messages for a specific session to file */
+    /**
+     * Migrate legacy inlined fields (todos, agentTokenBreakdown,
+     * subAgentMessages) from the old messages.json format to their
+     * own per-session files.
+     *
+     * Called during `loadMessages()` on every v5+ file so that
+     * existing data is split out transparently.  Populates in-memory
+     * caches AND persists the new files before returning — this
+     * guarantees that `loadPerSessionFiles()` (which reads from the
+     * new paths) sees the migrated data on first load.
+     */
+    private async _migratePerSessionFields(
+        id: string,
+        raw: Record<string, unknown>,
+    ): Promise<void> {
+        // --- todos ---
+        try {
+            const rawTodos = raw.todos;
+            if (rawTodos
+                && typeof rawTodos === 'object'
+                && Array.isArray((rawTodos as Record<string, unknown>).items)
+                && ((rawTodos as Record<string, unknown>).items as unknown[]).length > 0) {
+                const todos = rawTodos as TodoState;
+                // Defensive clone + normalize
+                const normalized: TodoState = {
+                    items: todos.items.map((item: TodoItem) => ({
+                        id: String(item.id ?? ''),
+                        brief: typeof item.brief === 'string' ? item.brief : '',
+                        content: typeof item.content === 'string' ? item.content : '',
+                        status: item.status ?? 'pending',
+                        createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+                        updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : Date.now(),
+                    })),
+                    updatedAt: typeof todos.updatedAt === 'number' ? todos.updatedAt : Date.now(),
+                };
+                // Populate cache + persist before loadPerSessionFiles runs
+                this.todosCache.set(id, normalized);
+                await this.savePerSessionTodos(id, normalized);
+            }
+        } catch { /* best-effort migration */ }
+
+        // --- agentTokenBreakdown ---
+        try {
+            const rawBreakdown = raw.agentTokenBreakdown;
+            if (rawBreakdown
+                && typeof rawBreakdown === 'object'
+                && (rawBreakdown as Record<string, unknown>).main
+                && (rawBreakdown as Record<string, unknown>).subAgents) {
+                const breakdown = rawBreakdown as AgentTokenBreakdown;
+                this.agentTokenBreakdownCache.set(id, breakdown);
+                await this.savePerSessionAgentTokenBreakdown(id, breakdown);
+            }
+        } catch { /* best-effort migration */ }
+
+        // --- summaries ---
+        try {
+            const rawSummaries = raw.summaries;
+            if (rawSummaries
+                && Array.isArray(rawSummaries)
+                && rawSummaries.length > 0) {
+                const summaries = rawSummaries as ConversationSummary[];
+                this.summariesCache.set(id, summaries);
+                await this.savePerSessionSummaries(id, summaries);
+            }
+        } catch { /* best-effort migration */ }
+
+        // --- quickAskTurns ---
+        try {
+            const rawQuickAsk = raw.quickAskTurns;
+            if (rawQuickAsk
+                && Array.isArray(rawQuickAsk)
+                && rawQuickAsk.length > 0) {
+                const quickAskTurns = rawQuickAsk as QuickAskTurn[];
+                this.quickAskTurnsCache.set(id, quickAskTurns);
+                await this.savePerSessionQuickAskTurns(id, quickAskTurns);
+            }
+        } catch { /* best-effort migration */ }
+
+        // --- toolCallAssets ---
+        try {
+            const rawAssets = raw.toolCallAssets;
+            if (rawAssets
+                && Array.isArray(rawAssets)
+                && rawAssets.length > 0) {
+                const toolCallAssets = rawAssets as GeneratedAsset[];
+                this.toolCallAssetsCache.set(id, toolCallAssets);
+                await this.savePerSessionToolCallAssets(id, toolCallAssets);
+            }
+        } catch { /* best-effort migration */ }
+
+        // --- subAgentMessages ---
+        try {
+            const rawSub = raw.subAgentMessages;
+            if (rawSub && typeof rawSub === 'object') {
+                const sub = rawSub as Record<string, ChatMessage[]>;
+                if (Object.keys(sub).length > 0) {
+                    this.subAgentMessagesCache.set(id, sub);
+                    await this.savePerSessionSubAgentMessages(id, sub);
+                }
+            }
+        } catch { /* best-effort migration */ }
+    }
+
+    /** Save messages for a specific session to file (JSONL append-based). */
     private async saveMessages(id: string): Promise<void> {
         if (!this.loadedMessages.has(id)) return;
 
         const messages = this.messagesCache.get(id);
         if (messages === undefined) return;
 
+        const persisted = this.persistedMessageCounts.get(id) ?? 0;
+
         try {
             const adapter = this.app.vault.adapter;
-
-            // Ensure sessions directory exists
-            if (!await adapter.exists(this.sessionsDir)) {
-                await adapter.mkdir(this.sessionsDir);
-            }
-
-            // Ensure per-session directory exists
+            const jsonlPath = this.getMessagesFilePath(id);
             const sessionDir = this.getSessionDirPath(id);
+
+            // Ensure directory exists
             if (!await adapter.exists(sessionDir)) {
                 await adapter.mkdir(sessionDir);
             }
 
-            // Get summaries for this session (may be empty)
-            const summaries = this.summariesCache.get(id);
-            // Get sub-agent messages for this session (may be absent)
-            const subAgentMessages = this.subAgentMessagesCache.get(id);
-            const hasSubAgentData = subAgentMessages && Object.keys(subAgentMessages).length > 0;
-            // Get per-agent token usage breakdown for this session (may be absent)
-            const agentTokenBreakdown = this.agentTokenBreakdownCache.get(id);
-            const hasBreakdownData = !!agentTokenBreakdown
-                && (Object.keys(agentTokenBreakdown.subAgents).length > 0
-                    || agentTokenBreakdown.main.totalTokens > 0);
-            // Get TODO state for this session (may be absent / empty)
-            const todos = this.todosCache.get(id);
-            const hasTodoData = !!todos && todos.items.length > 0;
-            // Get QuickAsk side-turns for this session (v6+)
-            const quickAskTurns = this.quickAskTurnsCache.get(id);
-            const hasQuickAskTurnsData = !!quickAskTurns && quickAskTurns.length > 0;
-            // Get generated-asset records for this session (v7+)
-            const toolCallAssets = this.toolCallAssetsCache.get(id);
-            const hasToolCallAssetsData = !!toolCallAssets && toolCallAssets.length > 0;
+            if (messages.length === 0) {
+                // Empty → delete file, reset count
+                if (await adapter.exists(jsonlPath)) {
+                    await adapter.remove(jsonlPath);
+                }
+                this.persistedMessageCounts.set(id, 0);
+            } else if (messages.length < persisted) {
+                // Shrunk (branch, clear) → full rewrite
+                const lines = messages.map(m => JSON.stringify(m));
+                await adapter.write(jsonlPath, lines.join('\n') + '\n');
+                this.persistedMessageCounts.set(id, messages.length);
+            } else if (messages.length > persisted) {
+                // Grew (normal turn-end) → read existing content, append new lines
+                const newMessages = messages.slice(persisted);
+                const newLines = newMessages.map(m => JSON.stringify(m));
+                const existingContent = await adapter.exists(jsonlPath)
+                    ? await adapter.read(jsonlPath)
+                    : '';
+                const fullContent = existingContent + newLines.join('\n') + '\n';
+                await adapter.write(jsonlPath, fullContent);
+                this.persistedMessageCounts.set(id, messages.length);
+            }
+            // else: same count, nothing to do
 
-            // Pick the minimal schema version that encodes all present
-            // fields. Newer fields force the version up so older builds
-            // refuse to overwrite a file they don't understand.
-            // v1–v4 are deprecated; the minimum writable version is v5.
-            const version: 5 | 6 | 7 = hasToolCallAssetsData
-                ? 7
-                : hasQuickAskTurnsData
-                    ? 6
-                    : 5;
-
-            const data: SessionMessagesFile = {
-                version,
-                id,
-                messages,
-                toolCallAssets: hasToolCallAssetsData ? toolCallAssets : undefined,
-                summaries: summaries && summaries.length > 0 ? summaries : undefined,
-                subAgentMessages: hasSubAgentData ? subAgentMessages : undefined,
-                agentTokenBreakdown: hasBreakdownData ? agentTokenBreakdown : undefined,
-                todos: hasTodoData ? todos : undefined,
-                quickAskTurns: hasQuickAskTurnsData ? quickAskTurns : undefined,
-            };
-
-            const msgPath = this.getMessagesFilePath(id);
-            await adapter.write(msgPath, JSON.stringify(data, null, 2));
-
-            // Clean up legacy flat file if it still exists (should have been
-            // migrated by loadMessages, but this is a safety net).
+            // Clean up legacy formats
+            const jsonPath = `${this.sessionsDir}/${id}/messages.json`;
+            if (await adapter.exists(jsonPath)) {
+                try { await adapter.remove(jsonPath); } catch { /* best-effort */ }
+            }
             const oldPath = this.getOldMessagesFilePath(id);
             if (await adapter.exists(oldPath)) {
                 try { await adapter.remove(oldPath); } catch { /* best-effort */ }
             }
 
-            // Mirror the message schema version into metadata so the
-            // startup purge loop can skip reading the full file.
+            // Mirror the message schema version into metadata
             const meta = this.metadataMap.get(id);
             if (meta) {
-                meta.messageVersion = version;
+                meta.messageVersion = 5;
             }
         } catch (error) {
             console.warn('[SessionManager] Failed to save messages:', error);
