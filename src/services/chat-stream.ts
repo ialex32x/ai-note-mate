@@ -1183,17 +1183,25 @@ export class ChatStream implements IChatAgent {
         let toolArgs: Record<string, unknown>;
         let argParseError: string | null = null;
 
-        try {
-            toolArgs = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
-        } catch {
-            // Surface the parse failure as a tool_result error rather than
-            // throwing — otherwise a single malformed tool_call (often caused
-            // by an over-long / truncated arguments string from the model)
-            // would abort the entire conversation. Returning an error result
-            // lets the LLM observe the failure and self-correct (retry with
-            // smaller / properly escaped arguments).
+        // Empty/blank arguments are common when the LLM calls a tool with no
+        // required params (e.g. get_active_file). Treat them as {} directly
+        // rather than letting JSON.parse("") throw a spurious SyntaxError.
+        const rawArgs = toolCall.function.arguments.trim();
+        if (rawArgs === "") {
             toolArgs = {};
-            argParseError = `Failed to parse arguments for tool "${toolName}": ${toolCall.function.arguments}`;
+        } else {
+            try {
+                toolArgs = JSON.parse(rawArgs) as Record<string, unknown>;
+            } catch {
+                // Surface the parse failure as a tool_result error rather than
+                // throwing — otherwise a single malformed tool_call (often caused
+                // by an over-long / truncated arguments string from the model)
+                // would abort the entire conversation. Returning an error result
+                // lets the LLM observe the failure and self-correct (retry with
+                // smaller / properly escaped arguments).
+                toolArgs = {};
+                argParseError = `Failed to parse arguments for tool "${toolName}": ${rawArgs}`;
+            }
         }
 
         // Add a tool_call message to UI-facing history
