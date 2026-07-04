@@ -1,7 +1,7 @@
 import type NoteAssistantPlugin from "../../../../main";
 import type { RegisteredTool, ToolCallResult } from "../../../chat-stream";
 import type { ToolCapability } from "../../../llm-provider";
-import { checkRegexSafety, isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "../_shared";
+import { checkRegexSafety, coerceStringArrayArg, isFailure, isMediaFile, isNonMediaBinaryFile, requireFile } from "../_shared";
 import {
     formatFindSectionError,
     normalizeHeadingPathArg,
@@ -167,31 +167,32 @@ export function vaultGrepFile(plugin: NoteAssistantPlugin): RegisteredTool {
             const maxMatches = Math.max(1, (args["max_matches"] as number) ?? DEFAULT_MAX_MATCHES);
 
             // ── Validate queries ────────────────────────────────────────────
-            if (!Array.isArray(rawQueries) || rawQueries.length === 0) {
+            const queries = coerceStringArrayArg(rawQueries);
+            if (!queries || queries.length === 0) {
                 return {
                     success: false,
                     type: "text",
                     content: "queries must be a non-empty array of strings.",
                 };
             }
-            if (rawQueries.length > QUERY_HARD_LIMIT) {
+            if (queries.length > QUERY_HARD_LIMIT) {
                 return {
                     success: false,
                     type: "text",
-                    content: `Too many queries (${rawQueries.length}); maximum is ${QUERY_HARD_LIMIT}. Split into multiple calls or narrow the search.`,
+                    content: `Too many queries (${queries.length}); maximum is ${QUERY_HARD_LIMIT}. Split into multiple calls or narrow the search.`,
                 };
             }
-            const queries: string[] = [];
-            for (let i = 0; i < rawQueries.length; i++) {
-                const q: unknown = rawQueries[i];
-                if (typeof q !== "string" || q.length === 0) {
+            // Verify each query is a non-empty string (coerceStringArrayArg
+            // already filters out non-string elements, but we still check length)
+            for (let i = 0; i < queries.length; i++) {
+                const q = queries[i]!;
+                if (q.length === 0) {
                     return {
                         success: false,
                         type: "text",
                         content: `queries[${i}] must be a non-empty string.`,
                     };
                 }
-                queries.push(q);
             }
 
             // ── Validate heading_path (when provided) ───────────────────────

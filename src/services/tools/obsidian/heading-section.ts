@@ -1,3 +1,5 @@
+import { coerceStringArrayArg } from "./_shared";
+
 /**
  * Heading-path → section line range resolution.
  *
@@ -110,11 +112,14 @@ export function normalizeHeadingPathArg(
         return { ok: true, value: null };
     }
 
-    let items: unknown[];
+    // Single string → wrap as one-element array (common when model targets
+    // one leaf heading). JSON-encoded arrays (e.g. string "[\"a\",\"b\"]") are
+    // also handled via coerceStringArrayArg.
+    let items: string[] | null;
     if (typeof raw === "string") {
-        items = [raw];
+        items = coerceStringArrayArg(raw) ?? [raw];
     } else if (Array.isArray(raw)) {
-        items = raw;
+        items = coerceStringArrayArg(raw);
     } else {
         const hint = usedAlias ? ` Parameter name is \`${label}\` (not \`heading\`).` : "";
         return {
@@ -123,7 +128,7 @@ export function normalizeHeadingPathArg(
         };
     }
 
-    if (items.length === 0) {
+    if (!items || items.length === 0) {
         const hint = usedAlias ? ` Use parameter name \`${label}\`.` : "";
         return {
             ok: false,
@@ -133,13 +138,7 @@ export function normalizeHeadingPathArg(
 
     const value: string[] = [];
     for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        if (typeof item !== "string") {
-            return {
-                ok: false,
-                message: `${label}[${i}] must be a string.`,
-            };
-        }
+        const item = items[i]!;
         value.push(item);
     }
 

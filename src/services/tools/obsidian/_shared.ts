@@ -254,6 +254,44 @@ export function normalizeVaultPathsArg(args: Record<string, unknown>): string[] 
     return raw as string[];
 }
 
+// ─────────────────────────────────────────────
+// LLM argument coercion
+// ─────────────────────────────────────────────
+
+/**
+ * Attempt to coerce a tool-call argument that should be a `string[]` into a
+ * usable array. Some LLM implementations serialize array parameters as
+ * JSON-encoded strings (e.g. `"[\"\\d+\"]"`) instead of native arrays.
+ *
+ * Returns the coerced array on success, or `null` when coercion fails
+ * (caller decides the appropriate error response).
+ */
+export function coerceStringArrayArg(arg: unknown): string[] | null {
+    if (Array.isArray(arg)) {
+        // Already an array — validate each element is a string
+        return arg.every((v) => typeof v === "string") ? arg : null;
+    }
+    // Common LLM pitfall: array serialized as JSON string
+    if (typeof arg === "string") {
+        const trimmed = arg.trim();
+        if (trimmed.startsWith("[")) {
+            try {
+                const parsed: unknown = JSON.parse(trimmed);
+                if (Array.isArray(parsed) && parsed.every((v: unknown) => typeof v === "string")) {
+                    return parsed;
+                }
+            } catch {
+                /* ignore — not valid JSON */
+            }
+        }
+    }
+    return null;
+}
+
+// ─────────────────────────────────────────────
+// Line range validation
+// ─────────────────────────────────────────────
+
 /**
  * Validate a line range. By default expects 1-based inclusive `[startLine, endLine]`.
  *
