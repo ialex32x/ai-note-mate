@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.6.3
+
+### What's new
+
+- **Cached prompt token tracking** — The context usage display now surfaces cached prompt tokens alongside regular usage, giving you accurate visibility into provider-side cost savings when repeated prompts hit the cache. Works across OpenAI, Anthropic, and Gemini providers.
+- **Dataview block deferral during streaming** — Trailing Dataview blocks in LLM responses are now deferred until the stream completes, preventing rendering flicker and incomplete-block artifacts during live markdown rendering.
+
+### Refinements
+
+- **Streaming markdown controller** — The deferred language-block logic in the streaming markdown renderer has been generalised, making it easier to extend deferral behaviour to additional block types in the future.
+
+### Fixes
+
+- **Attachments restored on edit and branch** — Pasting an image, editing the message, or branching the conversation now correctly preserves attachment references instead of dropping them.
+- **Mermaid diagram flicker eliminated** — Diagram rendering no longer flashes or re-renders repeatedly during streaming output.
+- **Empty tool call arguments handled** — LLM responses that emit tool calls with missing or empty arguments no longer cause runtime errors; they are now safely skipped.
+- **Stringified array coercion** — When an LLM passes string-encoded arrays (e.g. `"[1, 2]"`) as tool arguments, the plugin now correctly coerces them into native arrays before handing them to Obsidian APIs.
+
+---
+
 ## 1.6.2
 
 ### What's new
