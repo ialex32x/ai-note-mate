@@ -199,14 +199,21 @@ function renderGeneratedImages(
     onPreviewImage?: (src: string, fileName: string) => void,
 ): void {
     const resultText = msg.toolCallResult?.result ?? '';
-    const matches = Array.from(resultText.matchAll(MARKDOWN_IMAGE_RE));
+    // Use exec() loop instead of matchAll() for ES2019 lib compatibility
+    const re = new RegExp(MARKDOWN_IMAGE_RE.source, MARKDOWN_IMAGE_RE.flags);
+    const matches: RegExpExecArray[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(resultText)) !== null) {
+        matches.push(match);
+    }
     if (matches.length === 0) return;
 
     const imagesRow = container.createEl('div', { cls: 'session-bubble__attachments' });
 
     for (const match of matches) {
-        const [, altText, vaultPath] = match;
-        const file = ctx.app.vault.getAbstractFileByPath(vaultPath ?? '');
+        const altText: string = match[1] ?? '';
+        const vaultPath: string = match[2] ?? '';
+        const file = ctx.app.vault.getAbstractFileByPath(vaultPath);
         if (!(file instanceof TFile)) continue;
 
         const src = ctx.app.vault.getResourcePath(file);
@@ -216,7 +223,7 @@ function renderGeneratedImages(
             cls: 'session-bubble__attachment-img',
             attr: {
                 src,
-                alt: altText ?? fileName,
+                alt: altText || fileName,
                 title: fileName,
             },
         });
