@@ -1,6 +1,6 @@
 import { App, Notice } from 'obsidian';
 import { t } from '../../i18n';
-import { ChatMessage } from '../../services/chat-stream';
+import { ChatMessage, type ChatAttachment } from '../../services/chat-stream';
 import { SessionManager } from '../../session-manager';
 import { CheckpointActionConfirmModal } from '../../modals/checkpoint-action-confirm-modal';
 import type { TokenUsage } from '../../services/llm-provider';
@@ -17,6 +17,8 @@ export interface MessageEditHandlerDeps {
     promptOptimizer: SessionPromptOptimizer;
     draftController: DraftInputController;
     cmInput: CMInput;
+    /** Restore attachment thumbnails to the input area when editing a message. */
+    restoreAttachment: (attachments: ChatAttachment[]) => Promise<void>;
     getRuntime: () => SessionRuntime | undefined;
     waitForChatIdle: (timeoutMs?: number) => Promise<boolean>;
     guardSwitchSession: () => boolean;
@@ -137,6 +139,11 @@ export class MessageEditHandler {
         this.deps.cmInput.setContent(msg.content);
         this.deps.cmInput.focus();
         this.deps.draftController?.scheduleSave();
+
+        // ── Restore attachments (images) to the input area ──────────
+        if (msg.attachments && msg.attachments.length > 0) {
+            await this.deps.restoreAttachment(msg.attachments);
+        }
 
         new Notice(t('view.messageEdited'));
     }

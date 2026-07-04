@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 import NoteAssistantPlugin from 'main';
 import { t } from '../../i18n';
-import { ChatMessage } from '../../services/chat-stream';
+import { ChatMessage, type ChatAttachment } from '../../services/chat-stream';
 import { SessionManager } from '../../session-manager';
 import { SessionSearchResult } from '../../modals/session-search-modal';
 import { DraftInputController } from '../../components/session';
@@ -16,6 +16,8 @@ export interface SessionSwitchControllerDeps {
     cmInput: CMInput;
     /** Scroll to a message by id (from P6 HistoryLoader; late-bound). */
     scrollToMessage: (id: string) => Promise<void>;
+    /** Restore attachment thumbnails to the input area when branching a message. */
+    restoreAttachment: (attachments: ChatAttachment[]) => Promise<void>;
 }
 
 /**
@@ -166,6 +168,11 @@ export class SessionSwitchController {
             this.deps.cmInput.setContent(result.draftInput);
             this.deps.cmInput.focus();
             this.deps.draftController?.scheduleSave();
+
+            // ── Restore attachments (images) to the input area ──────────
+            if (msg.attachments && msg.attachments.length > 0) {
+                await this.deps.restoreAttachment(msg.attachments);
+            }
 
             new Notice(t('view.sessionBranched'));
         } finally {

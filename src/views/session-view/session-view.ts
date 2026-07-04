@@ -895,6 +895,7 @@ export class SessionView extends ItemView {
             draftController: this.draftController,
             cmInput: this.cmInput,
             scrollToMessage: (id) => this.historyLoader.scrollToMessage(id),
+            restoreAttachment: (attachments) => this.restoreAttachmentFromMessage(attachments),
         });
 
         // ── Follow-up suggestion controller (P3) ────────────────────────
@@ -917,6 +918,7 @@ export class SessionView extends ItemView {
             promptOptimizer: this.promptOptimizer,
             draftController: this.draftController,
             cmInput: this.cmInput,
+            restoreAttachment: (attachments) => this.restoreAttachmentFromMessage(attachments),
             getRuntime: () => this.runtime,
             waitForChatIdle: (timeoutMs) => this.sendHandler.waitForChatIdle(timeoutMs),
             guardSwitchSession: () => this.switchController.guardSwitchSession(),
@@ -1484,6 +1486,77 @@ export class SessionView extends ItemView {
         this.currentAttachment = null;
         this.attachmentRow.addClass('session-attachment-row--hidden');
         this.attachmentThumb.src = '';
+    }
+
+    /**
+     * Restore an attachment from a ChatMessage when the user clicks the
+     * edit or branch button on a message bubble. Reads the cached image
+     * file, generates a thumbnail, and shows it in the input area.
+     *
+     * For branch operations, the attachment file is copied into the new
+     * session's refs/ directory so that deleting the original session
+     * does not break the branched session's image reference.
+     */
+    async restoreAttachmentFromMessage(
+        attachments: { cachePath: string; mimeType: string; fileName: string }[],
+    ): Promise<void> {
+        const att = attachments[0];
+        if (!att) return;
+
+        try {
+            const adapter = this.app.vault.adapter;
+            const currentSessionId = this.runtime?.sessionId;
+            const sessionsDir = this.plugin.paths.sessions();
+
+            // Determine the target cache path: if the attachment belongs
+            // to a different session (e.g. from a branch), copy it into
+            // the current session's refs/ directory.
+            let cachePath = att.cachePath;
+            if (currentSessionId) {
+                const currentRefsPrefix = `${sessionsDir}/${currentSessionId}/refs/`;
+                if (!cachePath.startsWith(currentRefsPrefix)) {
+                    // Attachment is from another session — copy it.
+                    if (!(await adapter.exists(att.cachePath))) {
+                        console.warn('[SessionView] Source attachment file not found for copy:', att.cachePath);
+                        return;
+                    }
+                    const refsDir = `${sessionsDir}/${currentSessionId}/refs`;
+                    if (!(await adapter.exists(refsDir))) {
+                        await adapter.mkdir(refsDir);
+                    }
+                    const ext = att.fileName.includes('.') ? att.fileName.split('.').pop() : 'png';
+                    const newPath = `${refsDir}/img_${Date.now()}.${ext}`;
+                    await adapter.copy(att.cachePath, newPath);
+                    cachePath = newPath;
+                }
+            }
+
+            if (!(await adapter.exists(cachePath))) {
+                console.warn('[SessionView] Attachment file not found for edit restore:', cachePath);
+                return;
+            }
+
+            // Clear any existing attachment first
+            if (this.currentAttachment) {
+                await this.removeAttachmentFile(this.currentAttachment.cachePath);
+            }
+
+            // Read binary and create thumbnail
+            const buf = await adapter.readBinary(cachePath);
+            const thumbnailDataUrl = await this.createThumbnailDataUrl(buf, att.mimeType, 128);
+
+            this.currentAttachment = {
+                cachePath,
+                mimeType: att.mimeType,
+                fileName: att.fileName,
+                thumbnailDataUrl,
+            };
+            this.attachmentThumb.src = thumbnailDataUrl;
+            this.attachmentThumb.alt = att.fileName;
+            this.attachmentRow.removeClass('session-attachment-row--hidden');
+        } catch (err) {
+            console.error('[SessionView] Failed to restore attachment from message:', err);
+        }
     }
 
     /**
