@@ -572,14 +572,13 @@ describe('SessionManager — TODO state round-trip', () => {
         );
         await mgr.saveToCache();
 
-        // The file on disk should carry version 5 + both brief and content.
-        const raw = adapter.files.get(`sessions/${sessionId}/messages.json`);
-        expect(raw).toBeDefined();
-        const parsed = JSON.parse(raw!) as { version: number; todos?: TodoState };
-        expect(parsed.version).toBe(5);
-        expect(parsed.todos?.items).toHaveLength(2);
-        expect(parsed.todos?.items[1]?.brief).toBe('第二步');
-        expect(parsed.todos?.items[1]?.content).toMatch(/在 src\/bar\.ts/);
+        // Todos are stored in their own per-session file (todos.json).
+        const todosRaw = adapter.files.get(`sessions/${sessionId}/todos.json`);
+        expect(todosRaw).toBeDefined();
+        const todosState = JSON.parse(todosRaw!) as TodoState;
+        expect(todosState.items).toHaveLength(2);
+        expect(todosState.items[1]?.brief).toBe('第二步');
+        expect(todosState.items[1]?.content).toMatch(/在 src\/bar\.ts/);
 
         // A fresh manager pointed at the same adapter should rehydrate.
         const mgr2 = new SessionManager({ vault: { adapter } } as never, 'sessions');
@@ -716,12 +715,12 @@ describe('SessionManager — TODO state round-trip', () => {
         expect(snapshots.find(s => s.id === sessionId)).toBeUndefined();
     });
 
-    it('downgrades the schema version when todos are removed', async () => {
+    it('deletes todos.json when todos are cleared and re-saved', async () => {
         const { mgr, adapter } = makeManager();
         // Constructor no longer auto-creates a session; explicitly prime one.
         const sessionId = mgr.createSession();
 
-        // First save: with todos → v5.
+        // First save: with todos → todos.json is created.
         await mgr.saveSession(
             sessionId,
             [],
@@ -742,10 +741,11 @@ describe('SessionManager — TODO state round-trip', () => {
             },
         );
         await mgr.saveToCache();
-        let parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}/messages.json`)!) as { version: number };
-        expect(parsed.version).toBe(5);
 
-        // Second save: clear todos → falls back to v5 (minimum writable version).
+        // todos.json should exist on disk after save with todos.
+        expect(adapter.files.get(`sessions/${sessionId}/todos.json`)).toBeDefined();
+
+        // Clear todos and re-save without them → todos.json is deleted.
         mgr.clearSessionTodos(sessionId);
         await mgr.saveSession(
             sessionId,
@@ -753,9 +753,7 @@ describe('SessionManager — TODO state round-trip', () => {
             { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
         );
         await mgr.saveToCache();
-        parsed = JSON.parse(adapter.files.get(`sessions/${sessionId}/messages.json`)!) as { version: number; todos?: unknown };
-        expect(parsed.version).toBe(5);
-        expect(parsed.todos).toBeUndefined();
+        expect(adapter.files.get(`sessions/${sessionId}/todos.json`)).toBeUndefined();
     });
 
     it('deleteSession clears the cached TODO state', async () => {

@@ -143,11 +143,13 @@ describe("SessionManager.createSession", () => {
         // Flush all loaded sessions to the in-memory adapter.
         await mgr.saveToCache();
 
-        const aOnDisk = JSON.parse(adapter.files.get(`sessions/${sessionAId}/messages.json`) ?? "{}") as {
-            messages?: ChatMessage[];
-        };
-        expect(aOnDisk.messages?.length).toBe(1);
-        expect(aOnDisk.messages?.[0]?.content).toBe("preserve me");
+        // Messages are stored in JSONL format under the session directory.
+        const jsonl = adapter.files.get(`sessions/${sessionAId}/messages.jsonl`);
+        expect(jsonl).toBeDefined();
+        const lines = jsonl!.trim().split('\n');
+        expect(lines.length).toBe(1);
+        const msg = JSON.parse(lines[0]!) as ChatMessage;
+        expect(msg.content).toBe("preserve me");
 
         // And the list.json must still record A's token usage.
         const list = JSON.parse(adapter.files.get("sessions/list.json") ?? "{}") as {
