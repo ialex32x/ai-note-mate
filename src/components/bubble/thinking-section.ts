@@ -44,8 +44,8 @@ export function renderThinkingSection(
 
     if (thinkingContent) {
         // Wrap content in the same code-wrap pattern for hover-reveal copy button
-        const contentWrap = collapsible.body.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
-        contentWrap.createEl('div', { cls: COLLAPSIBLE_CLASSES.TEXT_CONTENT, text: thinkingContent });
+        const contentWrap = collapsible.body.createDiv({ cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+        contentWrap.createDiv({ cls: COLLAPSIBLE_CLASSES.TEXT_CONTENT, text: thinkingContent });
 
         const copyBtn = createCopyButton(
             t('common.copy'),

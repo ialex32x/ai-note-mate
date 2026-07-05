@@ -212,10 +212,10 @@ export class MemorySettingsSection implements SettingsSection {
 		// bare `<div>` sat slightly off the row gridline). The inner
 		// `.oap-settings-status` keeps its original font/color so only
 		// the alignment changes.
-		const rowEl = container.createEl('div', {
+		const rowEl = container.createDiv({
 			cls: 'setting-item oap-settings-memory-status-row',
 		});
-		const statusEl = rowEl.createEl('div', {
+		const statusEl = rowEl.createDiv({
 			cls: 'oap-settings-status oap-settings-memory-status',
 		});
 

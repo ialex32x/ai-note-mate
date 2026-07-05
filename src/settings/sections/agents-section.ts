@@ -289,12 +289,12 @@ export class AgentsSettingsSection implements SettingsSection {
 		value: string,
 		rows: number,
 	): void {
-		const heading = container.createEl("div", { cls: "setting-item" });
-		const info = heading.createEl("div", { cls: "setting-item-info" });
-		info.createEl("div", { cls: "setting-item-name", text: name });
-		info.createEl("div", { cls: "setting-item-description", text: desc });
+		const heading = container.createDiv({ cls: "setting-item" });
+		const info = heading.createDiv({ cls: "setting-item-info" });
+		info.createDiv({ cls: "setting-item-name", text: name });
+		info.createDiv({ cls: "setting-item-description", text: desc });
 
-		const wrapper = container.createEl("div", { cls: "oap-agent-desc-wrapper" });
+		const wrapper = container.createDiv({ cls: "oap-agent-desc-wrapper" });
 		const textarea = wrapper.createEl("textarea", {
 			cls: "oap-agent-desc-textarea oap-agent-desc-textarea--readonly",
 			attr: { rows: String(rows), readonly: "true" },
@@ -321,14 +321,14 @@ export class AgentsSettingsSection implements SettingsSection {
 			.setName(t("settings.agentToolsPreview"))
 			.setDesc(t("settings.agentBuiltinToolsCount", { count: toolNames.length }));
 
-		const chipList = previewSetting.descEl.createEl("div", {
+		const chipList = previewSetting.descEl.createDiv({
 			cls: "oap-settings-chip-list",
 		});
 		for (const name of toolNames) {
-			const chip = chipList.createEl("div", {
+			const chip = chipList.createDiv({
 				cls: "oap-agent-tool-chip",
 			});
-			chip.createEl("span", {
+			chip.createSpan({
 				cls: "oap-agent-tool-chip-label",
 				text: name,
 			});
@@ -438,21 +438,21 @@ export class AgentsSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 
 		// Heading row (mimics Setting name + desc).
-		const heading = container.createEl("div", {
+		const heading = container.createDiv({
 			cls: "setting-item",
 		});
-		const info = heading.createEl("div", { cls: "setting-item-info" });
-		info.createEl("div", {
+		const info = heading.createDiv({ cls: "setting-item-info" });
+		info.createDiv({
 			cls: "setting-item-name",
 			text: t("settings.agentDescription"),
 		});
-		info.createEl("div", {
+		info.createDiv({
 			cls: "setting-item-description",
 			text: t("settings.agentDescriptionDesc"),
 		});
 
 		// Wrapper for textarea + hover button.
-		const wrapper = container.createEl("div", {
+		const wrapper = container.createDiv({
 			cls: "oap-agent-desc-wrapper",
 		});
 
@@ -521,18 +521,18 @@ export class AgentsSettingsSection implements SettingsSection {
 		const { plugin } = this.ctx;
 
 		// Heading row.
-		const heading = container.createEl("div", { cls: "setting-item" });
-		const info = heading.createEl("div", { cls: "setting-item-info" });
-		info.createEl("div", {
+		const heading = container.createDiv({ cls: "setting-item" });
+		const info = heading.createDiv({ cls: "setting-item-info" });
+		info.createDiv({
 			cls: "setting-item-name",
 			text: t("settings.agentSystemPrompt"),
 		});
-		info.createEl("div", {
+		info.createDiv({
 			cls: "setting-item-description",
 			text: t("settings.agentSystemPromptDesc"),
 		});
 
-		const wrapper = container.createEl("div", { cls: "oap-agent-desc-wrapper" });
+		const wrapper = container.createDiv({ cls: "oap-agent-desc-wrapper" });
 		const textarea = wrapper.createEl("textarea", {
 			cls: "oap-agent-desc-textarea",
 			attr: { rows: "8" },
@@ -748,14 +748,14 @@ export class AgentsSettingsSection implements SettingsSection {
 			.setName(t("settings.agentToolsPreview"))
 			.setDesc(t("settings.agentToolsPreviewCount", { count: matched.length }));
 
-		const chipList = previewSetting.descEl.createEl("div", {
+		const chipList = previewSetting.descEl.createDiv({
 			cls: "oap-settings-chip-list",
 		});
 		for (const name of matched) {
-			const chip = chipList.createEl("div", {
+			const chip = chipList.createDiv({
 				cls: "oap-agent-tool-chip",
 			});
-			chip.createEl("span", {
+			chip.createSpan({
 				cls: "oap-agent-tool-chip-label",
 				text: name,
 			});

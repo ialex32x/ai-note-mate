@@ -61,7 +61,7 @@ export class TodoPanel {
 
         this.currentState = state;
         if (!this.el) {
-            this.el = this.parent.createEl('div', { cls: 'session-todo-panel' });
+            this.el = this.parent.createDiv({ cls: 'session-todo-panel' });
         }
         this.render();
     }
@@ -103,7 +103,7 @@ export class TodoPanel {
         // true single-line minimum height with no leftover padding
         // from an empty scroll viewport.
         if (!this.collapsed) {
-            const list = block.createEl('div', { cls: 'session-todo-panel__list' });
+            const list = block.createDiv({ cls: 'session-todo-panel__list' });
             for (const item of state.items) {
                 this.renderItem(list, item);
             }
@@ -116,7 +116,7 @@ export class TodoPanel {
         // The whole header is the toggle — bigger hit target than a
         // tiny chevron button, and matches the "click anywhere on
         // the bar to collapse" pattern used by other Obsidian panels.
-        const header = parent.createEl('div', {
+        const header = parent.createDiv({
             cls: 'session-todo-panel__header',
             attr: {
                 role: 'button',
@@ -130,15 +130,15 @@ export class TodoPanel {
         setTooltip(header, tip);
         header.setAttr('aria-label', tip);
 
-        const titleWrap = header.createEl('div', { cls: 'session-todo-panel__title' });
-        const titleIcon = titleWrap.createEl('span', { cls: 'session-todo-panel__title-icon' });
+        const titleWrap = header.createDiv({ cls: 'session-todo-panel__title' });
+        const titleIcon = titleWrap.createSpan({ cls: 'session-todo-panel__title-icon' });
         setIcon(titleIcon, 'list-checks');
-        titleWrap.createEl('span', {
+        titleWrap.createSpan({
             cls: 'session-todo-panel__title-label',
             text: t('view.todoPanelTitle'),
         });
 
-        header.createEl('span', {
+        header.createSpan({
             cls: 'session-todo-panel__count',
             text: `${done}/${total}`,
         });
@@ -148,7 +148,7 @@ export class TodoPanel {
         // convention: an upward chevron when collapsed (meaning
         // "click to expand upward"), downward when expanded
         // (meaning "click to fold back down toward the input").
-        const chevron = header.createEl('span', {
+        const chevron = header.createSpan({
             cls: 'session-todo-panel__chevron',
         });
         setIcon(chevron, this.collapsed ? 'chevron-up' : 'chevron-down');
@@ -167,11 +167,11 @@ export class TodoPanel {
     }
 
     private renderItem(parent: HTMLElement, item: TodoItem): void {
-        const row = parent.createEl('div', {
+        const row = parent.createDiv({
             cls: `session-todo-panel__item session-todo-panel__item--${item.status}`,
         });
 
-        const statusIcon = row.createEl('span', {
+        const statusIcon = row.createSpan({
             cls: 'session-todo-panel__status',
         });
         setIcon(statusIcon, TodoPanel.iconForStatus(item.status));
@@ -183,7 +183,7 @@ export class TodoPanel {
         // pinned list. The model is contractually required to write
         // `brief`, and the SessionManager loader synthesises one for
         // legacy v4 items, so this never silently shows nothing.
-        row.createEl('span', {
+        row.createSpan({
             cls: 'session-todo-panel__text',
             text: item.brief,
         });

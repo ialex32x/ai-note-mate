@@ -80,11 +80,11 @@ function renderToolHeaderStatic(
     msg: ChatMessage,
     labelText: string,
 ): void {
-    const wrapper = contentEl.createEl('div', {
+    const wrapper = contentEl.createDiv({
         cls: 'collapsible-block collapsible-block--tool collapsible-block--tool-static',
     });
-    const header = wrapper.createEl('span', { cls: 'collapsible-block__header' });
-    header.createEl('span', {
+    const header = wrapper.createSpan({ cls: 'collapsible-block__header' });
+    header.createSpan({
         cls: 'collapsible-block--tool__label',
         text: labelText,
     });
@@ -136,7 +136,7 @@ function appendToolStatusIcon(headerEl: HTMLElement, msg: ChatMessage): void {
         msg.toolCallResult.status === 'error' ? '✕' :
         msg.toolCallResult.status === 'warning' ? '⚠' :
         '✓';
-    headerEl.createEl('span', {
+    headerEl.createSpan({
         cls: `collapsible-block--tool__status collapsible-block--tool__status--${msg.toolCallResult.status}`,
         text: statusIcon,
     });
@@ -176,12 +176,12 @@ function renderToolDetailSection(
     copyTooltip: string,
     getCopyText: () => string,
 ): void {
-    const wrapper = detailBody.createEl('div', { cls: 'collapsible-block__section' });
-    wrapper.createEl('span', {
+    const wrapper = detailBody.createDiv({ cls: 'collapsible-block__section' });
+    wrapper.createSpan({
         cls: 'collapsible-block__section-label',
         text: label,
     });
-    const codeWrap = wrapper.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+    const codeWrap = wrapper.createDiv({ cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
     const codePre = codeWrap.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE });
     codePre.setText(getDisplayText());
     const copyBtn = createCopyButton(copyTooltip, getCopyText, COLLAPSIBLE_CLASSES.COPY_BTN);
@@ -208,7 +208,7 @@ function renderGeneratedImages(
     }
     if (matches.length === 0) return;
 
-    const imagesRow = container.createEl('div', { cls: 'session-bubble__attachments' });
+    const imagesRow = container.createDiv({ cls: 'session-bubble__attachments' });
 
     for (const match of matches) {
         const altText: string = match[1] ?? '';
@@ -243,7 +243,7 @@ function renderToolConfirmPending(
     messageId: string,
     pendingConfirmations: Map<string, (approved: boolean) => void>,
 ): void {
-    const confirmRow = container.createEl('div', { cls: 'session-bubble__tool-confirm' });
+    const confirmRow = container.createDiv({ cls: 'session-bubble__tool-confirm' });
 
     const allowBtn = confirmRow.createEl('button', {
         cls: 'session-bubble__tool-confirm-btn',
@@ -251,7 +251,7 @@ function renderToolConfirmPending(
         attr: { type: 'button' },
     });
 
-    const arrowWrap = confirmRow.createEl('span', { cls: 'session-bubble__tool-confirm-arrow-wrap' });
+    const arrowWrap = confirmRow.createSpan({ cls: 'session-bubble__tool-confirm-arrow-wrap' });
     const arrowBtn = arrowWrap.createEl('button', {
         cls: 'session-bubble__tool-confirm-btn session-bubble__tool-confirm-arrow',
         attr: { type: 'button', 'aria-label': 'More options' },
@@ -293,7 +293,7 @@ function renderToolConfirmPending(
             insideRegions: [arrowWrap],
             onClose: () => { dropdown = null; },
             build: (menu, close) => {
-                const rejectItem = menu.createEl('div', {
+                const rejectItem = menu.createDiv({
                     cls: 'session-dropdown-item session-bubble__tool-confirm-dropdown-item',
                     text: t('view.toolConfirmReject'),
                 });
@@ -308,7 +308,7 @@ function renderToolConfirmPending(
 }
 
 function renderToolConfirmBadge(container: HTMLElement, state: 'allowed' | 'rejected'): void {
-    const confirmRow = container.createEl('div', { cls: 'session-bubble__tool-confirm' });
+    const confirmRow = container.createDiv({ cls: 'session-bubble__tool-confirm' });
     renderToolConfirmResult(confirmRow, state);
 }
 
@@ -320,16 +320,16 @@ function renderToolConfirmBadge(container: HTMLElement, state: 'allowed' | 'reje
  */
 function renderToolConfirmResult(confirmRow: HTMLElement, state: 'allowed' | 'rejected'): void {
     if (state === 'allowed') {
-        confirmRow.createEl('span', {
+        confirmRow.createSpan({
             cls: 'session-bubble__tool-confirm-btn session-bubble__tool-confirm-btn--result session-bubble__tool-confirm-btn--allowed',
             text: t('view.toolConfirmAllowed'),
         });
     } else {
-        const badge = confirmRow.createEl('span', {
+        const badge = confirmRow.createSpan({
             cls: 'session-bubble__tool-confirm-btn session-bubble__tool-confirm-btn--result session-bubble__tool-confirm-btn--rejected',
         });
-        const icon = badge.createEl('span', { cls: 'session-bubble__tool-confirm-reject-icon' });
+        const icon = badge.createSpan({ cls: 'session-bubble__tool-confirm-reject-icon' });
         setIcon(icon, 'alert-triangle');
-        badge.createEl('span', { text: t('view.toolConfirmRejected') });
+        badge.createSpan({ text: t('view.toolConfirmRejected') });
     }
 }

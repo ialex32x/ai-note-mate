@@ -111,16 +111,16 @@ export class PromptPinController {
     // ── Internals ──────────────────────────────────────────────────────
 
     private createPinElement(): void {
-        this.pinEl = this.messagesWrapper.createEl('div', {
+        this.pinEl = this.messagesWrapper.createDiv({
             cls: 'session-prompt-pin session-prompt-pin--hidden',
         });
 
         // Icon
-        const iconEl = this.pinEl.createEl('span', { cls: 'session-prompt-pin__icon' });
+        const iconEl = this.pinEl.createSpan({ cls: 'session-prompt-pin__icon' });
         setIcon(iconEl, 'message-square');
 
         // Text (truncated user prompt)
-        this.pinTextEl = this.pinEl.createEl('span', { cls: 'session-prompt-pin__text' });
+        this.pinTextEl = this.pinEl.createSpan({ cls: 'session-prompt-pin__text' });
 
         // Click → scroll to original message
         this.pinEl.addEventListener('click', () => {

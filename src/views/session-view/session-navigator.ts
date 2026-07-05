@@ -114,10 +114,10 @@ export class SessionNavigator {
      * Mirrors the exact markup the view used to create inline.
      */
     mount(parent: HTMLElement): void {
-        const sessionWrapper = parent.createEl('span', {
+        const sessionWrapper = parent.createSpan({
             cls: 'session-selector session-session-selector',
         });
-        const sessionBtnGroup = sessionWrapper.createEl('span', {
+        const sessionBtnGroup = sessionWrapper.createSpan({
             cls: 'session-toolbar__btn-group',
         });
 
@@ -131,12 +131,12 @@ export class SessionNavigator {
 
         // Badge for sessions with pending vault checkpoints.
         // Mirrors the issue-tracer badge style.
-        const pendingBadge = sessionBtn.createEl('span', {
+        const pendingBadge = sessionBtn.createSpan({
             cls: 'session-session-selector__badge',
         });
         this.pendingBadge = pendingBadge;
 
-        const dropdownEl = sessionWrapper.createEl('div', {
+        const dropdownEl = sessionWrapper.createDiv({
             cls: 'session-dropdown',
         });
         this.dropdownEl = dropdownEl;
@@ -156,19 +156,19 @@ export class SessionNavigator {
         setIcon(moreActionsBtn, 'chevron-down');
         this.moreActionsBtn = moreActionsBtn;
 
-        const moreActionsDropdown = sessionBtnGroup.createEl('div', {
+        const moreActionsDropdown = sessionBtnGroup.createDiv({
             cls: 'session-dropdown-menu session-dropdown-menu--toolbar',
         });
 
         // Accept all pending checkpoints across all sessions
-        const acceptCheckpointsItem = moreActionsDropdown.createEl('div', {
+        const acceptCheckpointsItem = moreActionsDropdown.createDiv({
             cls: 'session-dropdown-item',
         });
-        const acceptIcon = acceptCheckpointsItem.createEl('span', {
+        const acceptIcon = acceptCheckpointsItem.createSpan({
             cls: 'session-dropdown-item__icon',
         });
         setIcon(acceptIcon, 'check-check');
-        acceptCheckpointsItem.createEl('span', { text: t('view.acceptAllPendingCheckpoints') });
+        acceptCheckpointsItem.createSpan({ text: t('view.acceptAllPendingCheckpoints') });
         acceptCheckpointsItem.addEventListener('click', () => {
             this.deps.dropdownManager.closeActive();
             void this.deps.onAcceptAllPendingCheckpoints();
@@ -179,14 +179,14 @@ export class SessionNavigator {
             cls: 'session-dropdown-menu__divider',
         });
 
-        const deleteHistoryItem = moreActionsDropdown.createEl('div', {
+        const deleteHistoryItem = moreActionsDropdown.createDiv({
             cls: 'session-dropdown-item',
         });
-        const deleteIcon = deleteHistoryItem.createEl('span', {
+        const deleteIcon = deleteHistoryItem.createSpan({
             cls: 'session-dropdown-item__icon',
         });
         setIcon(deleteIcon, 'trash-2');
-        deleteHistoryItem.createEl('span', { text: t('view.deleteHistorySessions') });
+        deleteHistoryItem.createSpan({ text: t('view.deleteHistorySessions') });
         deleteHistoryItem.addEventListener('click', () => {
             this.deps.dropdownManager.closeActive();
             void this.handleDeleteHistorySessions();
@@ -320,7 +320,7 @@ export class SessionNavigator {
                 this.dropdownEl &&
                 this.dropdownEl.querySelectorAll('.session-dropdown__item').length === 0
             ) {
-                this.dropdownEl.createEl('div', {
+                this.dropdownEl.createDiv({
                     cls: 'session-dropdown__empty',
                     text: t('view.noSessions'),
                 });

@@ -194,7 +194,7 @@ export class CMInput {
                     addToOptions: [
                         {
                             render: (completion) => {
-                                const el = activeDocument.createElement('span');
+                                const el = createSpan();
                                 el.className = 'cm-completion-icon';
                                 const iconName = completion.type === 'note' ? 'file-text'
                                     : completion.type === 'folder' ? 'folder'

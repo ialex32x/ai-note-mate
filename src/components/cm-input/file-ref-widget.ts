@@ -44,7 +44,7 @@ export class FileRefWidget extends WidgetType {
     }
 
     toDOM(): HTMLElement {
-        const container = activeDocument.createElement('span');
+        const container = createSpan();
         const exists = this.fileExists();
         const displayPath = this.getDisplayPath();
         container.className = exists ? 'cm-file-ref' : 'cm-file-ref cm-file-ref--missing';
@@ -55,7 +55,7 @@ export class FileRefWidget extends WidgetType {
         const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() : '';
 
         // Add icon based on resolved type or extension
-        const iconEl = container.createEl('span', { cls: 'cm-file-ref__icon' });
+        const iconEl = container.createSpan({ cls: 'cm-file-ref__icon' });
         if (this.resolvedRef?.isFolder) {
             setIcon(iconEl, 'folder');
         } else if (ext) {
@@ -67,7 +67,7 @@ export class FileRefWidget extends WidgetType {
         }
 
         // Add name
-        container.createEl('span', { cls: 'cm-file-ref__name', text: name });
+        container.createSpan({ cls: 'cm-file-ref__name', text: name });
 
         // Add delete button.
         // NOTE: We intentionally use <span role="button"> rather than a real
@@ -75,7 +75,7 @@ export class FileRefWidget extends WidgetType {
         // for <button> (min-width / padding / appearance) that override our
         // 14x14 sizing and squash the round chip into an oval.
         if (this.onDelete) {
-            const deleteBtn = container.createEl('span', {
+            const deleteBtn = container.createSpan({
                 cls: 'cm-file-ref__delete',
                 attr: { role: 'button', 'aria-label': 'Remove', tabindex: '-1' },
             });

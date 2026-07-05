@@ -41,25 +41,25 @@ export class FollowUpBar {
         if (actions.length === 0) return;
 
         this.ownerMessageId = messageId;
-        const bar = this.parent.createEl('div', { cls: 'session-followup-bar' });
+        const bar = this.parent.createDiv({ cls: 'session-followup-bar' });
 
-        const title = bar.createEl('div', {
+        const title = bar.createDiv({
             cls: 'session-followup-bar__title',
             text: t('view.suggestionBarTitle'),
         });
-        const titleIcon = title.createEl('span', { cls: 'session-followup-bar__title-icon' });
+        const titleIcon = title.createSpan({ cls: 'session-followup-bar__title-icon' });
         setIcon(titleIcon, 'sparkles');
 
-        const list = bar.createEl('div', { cls: 'session-followup-bar__list' });
+        const list = bar.createDiv({ cls: 'session-followup-bar__list' });
 
         for (const action of actions) {
             const btn = list.createEl('button', {
                 cls: 'session-followup-bar__btn',
                 attr: { type: 'button' },
             });
-            const iconEl = btn.createEl('span', { cls: 'session-followup-bar__btn-icon' });
+            const iconEl = btn.createSpan({ cls: 'session-followup-bar__btn-icon' });
             setIcon(iconEl, 'arrow-right');
-            btn.createEl('span', {
+            btn.createSpan({
                 cls: 'session-followup-bar__btn-label',
                 text: action.label,
             });

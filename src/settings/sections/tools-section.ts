@@ -373,7 +373,7 @@ export class ToolsSettingsSection implements SettingsSection {
 		for (const server of mcpServers) {
 			const tabEl = tabBarResult.tabElMap.get(server.id);
 			if (!tabEl) continue;
-			const dot = tabEl.doc.createElement('span');
+			const dot = createSpan();
 			dot.addClass('oap-mcp-tab-dot');
 			tabEl.prepend(dot);
 			applyStatusToTabDot(dot, plugin.mcpManager?.getServerState(server.id));
@@ -382,7 +382,7 @@ export class ToolsSettingsSection implements SettingsSection {
 
 		// ── Empty state / editor ──
 		if (!editingServer) {
-			container.createEl('div', {
+			container.createDiv({
 				cls: 'oap-settings-empty',
 				text: t('settings.mcpEmpty'),
 			});

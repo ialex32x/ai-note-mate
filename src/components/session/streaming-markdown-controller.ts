@@ -380,7 +380,7 @@ export class StreamingMarkdownController {
             // Double-buffer: render into an off-screen element first, then
             // swap children in one go to avoid the empty-state layout flash
             // that would occur with contentEl.empty() + async render().
-            const buffer = createEl('div');
+            const buffer = createDiv();
             const renderStart = performance.now();
             await MarkdownRenderer.render(
                 this.app,

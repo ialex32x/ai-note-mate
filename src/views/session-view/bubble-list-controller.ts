@@ -183,7 +183,7 @@ export class BubbleListController {
         // re-render, so the same compute* function is used for both
         // initial creation and subsequent updates.
         const cls = computeBubbleClasses(msg);
-        const bubble = this.deps.messagesEl.createEl('div', { cls });
+        const bubble = this.deps.messagesEl.createDiv({ cls });
 
         this.deps.bubbleRenderer.renderInto(bubble, msg, {
             abortedMessageIds: this.abortedMessageIds,

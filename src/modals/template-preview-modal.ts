@@ -23,7 +23,7 @@ export class TemplatePreviewModal extends Modal {
 			text: t('settings.customizeTemplatePreviewDesc'),
 		});
 
-		const wrap = contentEl.createEl('div', {
+		const wrap = contentEl.createDiv({
 			cls: 'oap-customize-template-preview',
 		});
 		wrap.createEl('pre', {

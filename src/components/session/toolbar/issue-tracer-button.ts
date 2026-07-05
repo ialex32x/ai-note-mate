@@ -31,7 +31,7 @@ export function createIssueTracerButton(
     parent: HTMLElement,
     app: App,
 ): IssueTracerButtonHandle {
-    const wrapper = parent.createEl('span', {
+    const wrapper = parent.createSpan({
         cls: 'session-selector session-issue-tracer',
     });
 
@@ -42,7 +42,7 @@ export function createIssueTracerButton(
     setIcon(button, 'bug');
     setTooltip(button, 'Open issue tracer (in-memory diagnostic clues)');
 
-    const badge = button.createEl('span', {
+    const badge = button.createSpan({
         cls: 'session-issue-tracer__badge',
     });
 

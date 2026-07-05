@@ -32,18 +32,18 @@ export class AssetPanelButton {
 	 * toggle with {@link DropdownManager} and wire `onOpen` → `renderPanel`.
 	 */
 	mount(container: HTMLElement): { button: HTMLElement; dropdown: HTMLElement } {
-		const wrapper = container.createEl('div', { cls: 'session-toolbar__status session-asset-wrapper' });
+		const wrapper = container.createDiv({ cls: 'session-toolbar__status session-asset-wrapper' });
 
-		this.buttonEl = wrapper.createEl('div', {
+		this.buttonEl = wrapper.createDiv({
 			cls: 'session-toolbar__status-main asset-panel-btn',
 			attr: { role: 'button', tabindex: '0' },
 		});
 		setTooltip(this.buttonEl, t('assetPanel.title'));
 
-		const iconEl = this.buttonEl.createEl('span', { cls: 'asset-panel-btn__icon' });
+		const iconEl = this.buttonEl.createSpan({ cls: 'asset-panel-btn__icon' });
 		setIcon(iconEl, 'image');
 
-		this.panelEl = wrapper.createEl('div', {
+		this.panelEl = wrapper.createDiv({
 			cls: 'session-dropdown-menu session-dropdown-menu--toolbar-up-right session-status-panel asset-panel',
 		});
 
@@ -74,27 +74,27 @@ export class AssetPanelButton {
 		const count = assets.length;
 
 		// Header
-		const header = this.panelEl.createEl('div', { cls: 'asset-panel__header' });
-		header.createEl('span', { cls: 'asset-panel__title', text: t('assetPanel.title') });
-		header.createEl('span', { cls: 'asset-panel__count', text: `(${count})` });
+		const header = this.panelEl.createDiv({ cls: 'asset-panel__header' });
+		header.createSpan({ cls: 'asset-panel__title', text: t('assetPanel.title') });
+		header.createSpan({ cls: 'asset-panel__count', text: `(${count})` });
 
 		if (count === 0) {
-			const empty = this.panelEl.createEl('div', { cls: 'asset-panel__empty' });
+			const empty = this.panelEl.createDiv({ cls: 'asset-panel__empty' });
 			empty.setText(t('assetPanel.empty'));
 			return;
 		}
 
 		// List layout — one row per asset, newest at bottom
-		const list = this.panelEl.createEl('div', { cls: 'asset-panel__list' });
+		const list = this.panelEl.createDiv({ cls: 'asset-panel__list' });
 
 		for (const asset of assets) {
-			const row = list.createEl('div', { cls: 'asset-panel__row' });
+			const row = list.createDiv({ cls: 'asset-panel__row' });
 
 			// Thumbnail
-			const thumb = row.createEl('div', { cls: 'asset-panel__thumb' });
+			const thumb = row.createDiv({ cls: 'asset-panel__thumb' });
 
 			// Info area (2 lines)
-			const info = row.createEl('div', { cls: 'asset-panel__info' });
+			const info = row.createDiv({ cls: 'asset-panel__info' });
 
 			let file: TFile | null = null;
 			try {
@@ -113,16 +113,16 @@ export class AssetPanelButton {
 				});
 
 				// Line 1: file path
-				info.createEl('div', { cls: 'asset-panel__info-path', text: asset.path });
+				info.createDiv({ cls: 'asset-panel__info-path', text: asset.path });
 
 				// Line 2: file size + creation time
-				const metaEl = info.createEl('div', { cls: 'asset-panel__info-meta' });
+				const metaEl = info.createDiv({ cls: 'asset-panel__info-meta' });
 				const stat = file.stat;
 				metaEl.setText(`${this.formatFileSize(stat.size)} · ${new Date(stat.ctime).toLocaleString()}`);
 			} else {
 				this.renderBrokenIcon(thumb);
-				info.createEl('div', { cls: 'asset-panel__info-path', text: asset.path });
-				info.createEl('div', { cls: 'asset-panel__info-meta', text: '' });
+				info.createDiv({ cls: 'asset-panel__info-path', text: asset.path });
+				info.createDiv({ cls: 'asset-panel__info-meta', text: '' });
 			}
 
 			// Click to open the asset in Obsidian
@@ -153,7 +153,7 @@ export class AssetPanelButton {
 	}
 
 	private renderBrokenIcon(container: HTMLElement): void {
-		container.createEl('span', {
+		container.createSpan({
 			cls: 'asset-panel__broken',
 			text: '?',
 		});

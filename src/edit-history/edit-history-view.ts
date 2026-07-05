@@ -42,17 +42,17 @@ export class EditHistoryView extends ItemView {
         root.empty();
         root.addClass("ai-edit-history-view");
 
-        const header = root.createEl("div", { cls: "ai-edit-history-header" });
-        const left = header.createEl("div", { cls: "ai-edit-history-header-left" });
-        left.createEl("div", { cls: "ai-edit-history-title", text: t("editHistory.title") });
+        const header = root.createDiv({ cls: "ai-edit-history-header" });
+        const left = header.createDiv({ cls: "ai-edit-history-header-left" });
+        left.createDiv({ cls: "ai-edit-history-title", text: t("editHistory.title") });
 
-        const actions = header.createEl("div", { cls: "ai-edit-history-header-actions" });
+        const actions = header.createDiv({ cls: "ai-edit-history-header-actions" });
         const clearBtn = actions.createEl("button", { cls: "clickable-icon" });
         setIcon(clearBtn, "trash-2");
         setTooltip(clearBtn, t("editHistory.fileChanges.clearAll"));
         clearBtn.addEventListener("click", () => this.logStore.clear());
 
-        this.listEl = root.createEl("div", {
+        this.listEl = root.createDiv({
             cls: "ai-edit-history-list ai-edit-history-list--file-changes",
         });
 
@@ -76,7 +76,7 @@ export class EditHistoryView extends ItemView {
 
         const entries = this.logStore.entries;
         if (entries.length === 0) {
-            this.listEl.createEl("div", {
+            this.listEl.createDiv({
                 cls: "ai-edit-history-empty",
                 text: t("editHistory.fileChanges.empty"),
             });
@@ -100,13 +100,13 @@ export class EditHistoryView extends ItemView {
                 const metaLine = this.plugin.sessionManager.getSessionMetadataDisplayLine(sid);
                 const tooltipText =
                     metaLine !== undefined && metaLine.length > 0 ? metaLine : sid;
-                const header = this.listEl.createEl("div", {
+                const header = this.listEl.createDiv({
                     cls: "ai-edit-history-group-title",
                     text: sid,
                 });
                 setTooltip(header, tooltipText);
             } else {
-                this.listEl.createEl("div", {
+                this.listEl.createDiv({
                     cls: "ai-edit-history-group-title",
                     text: t("editHistory.fileChanges.sessionUnknown"),
                 });
@@ -119,14 +119,14 @@ export class EditHistoryView extends ItemView {
     }
 
     private renderFileChangeItem(entry: VaultEditLogEntry): HTMLElement {
-        const el = createEl("div", {
+        const el = createDiv({
             cls: `ai-edit-history-item ai-edit-history-item--log ai-edit-history-item--log-${entry.kind}`,
         });
         el.dataset.entryId = entry.id;
 
-        const head = el.createEl("div", { cls: "ai-edit-history-item-head" });
+        const head = el.createDiv({ cls: "ai-edit-history-item-head" });
 
-        const kindIcon = head.createEl("span", { cls: "ai-edit-history-action-icon" });
+        const kindIcon = head.createSpan({ cls: "ai-edit-history-action-icon" });
         setIcon(kindIcon, KIND_ICONS[entry.kind]);
         const kindLabelKey =
             entry.kind === "delete"
@@ -151,7 +151,7 @@ export class EditHistoryView extends ItemView {
             setTooltip(fileEl, t("editHistory.fileChanges.deletedHint"));
         }
 
-        const meta = el.createEl("div", { cls: "ai-edit-history-preview-line" });
+        const meta = el.createDiv({ cls: "ai-edit-history-preview-line" });
         const ts = new Date(entry.createdAt).toLocaleString();
         const parts: string[] = [entry.toolName, ts];
         if (entry.kind === "rename" && entry.previousPath) {

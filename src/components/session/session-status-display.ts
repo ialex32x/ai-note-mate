@@ -65,7 +65,7 @@ export class SessionStatusDisplay {
         el.empty();
         setTooltip(el, tooltipText || '');
 
-        const container = el.createEl('div', { cls: 'session-status-display' });
+        const container = el.createDiv({ cls: 'session-status-display' });
 
         // Colour tiers: ≤50 green, ≤80 amber, >80 red; faint when empty
         let colourVar: string;
@@ -83,7 +83,7 @@ export class SessionStatusDisplay {
         const circumference = 99.9;
         const dashOffset = circumference - (circumference * pct) / 100;
 
-        const wrapper = container.createEl('span', { cls: 'session-context-ring' });
+        const wrapper = container.createSpan({ cls: 'session-context-ring' });
 
         const NS = 'http://www.w3.org/2000/svg';
         const doc = activeDocument;
@@ -537,8 +537,8 @@ export class SessionStatusDisplay {
         title: string,
         body: (section: HTMLElement) => void,
     ): void {
-        const section = parent.createEl('div', { cls: 'session-status-panel__section' });
-        section.createEl('div', { cls: 'session-status-panel__title', text: title });
+        const section = parent.createDiv({ cls: 'session-status-panel__section' });
+        section.createDiv({ cls: 'session-status-panel__title', text: title });
         body(section);
     }
 
@@ -555,9 +555,9 @@ export class SessionStatusDisplay {
         value: string,
         tooltip?: string,
     ): void {
-        const row = parent.createEl('div', { cls: 'session-status-panel__row' });
-        row.createEl('span', { cls: 'session-status-panel__label', text: label });
-        const valueEl = row.createEl('span', { cls: 'session-status-panel__value', text: value });
+        const row = parent.createDiv({ cls: 'session-status-panel__row' });
+        row.createSpan({ cls: 'session-status-panel__label', text: label });
+        const valueEl = row.createSpan({ cls: 'session-status-panel__value', text: value });
         if (tooltip) {
             setTooltip(valueEl, tooltip);
         }
@@ -576,9 +576,9 @@ export class SessionStatusDisplay {
         iconId: string,
         tooltip?: string,
     ): void {
-        const row = parent.createEl('div', { cls: 'session-status-panel__row' });
-        row.createEl('span', { cls: 'session-status-panel__label', text: label });
-        const valueEl = row.createEl('span', {
+        const row = parent.createDiv({ cls: 'session-status-panel__row' });
+        row.createSpan({ cls: 'session-status-panel__label', text: label });
+        const valueEl = row.createSpan({
             cls: 'session-status-panel__value session-status-panel__value--icon',
         });
         setIcon(valueEl, iconId);

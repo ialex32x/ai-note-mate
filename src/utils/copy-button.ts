@@ -19,7 +19,7 @@ export function createCopyButton(
     getText: () => string,
     cssClass?: string,
 ): HTMLButtonElement {
-    const btn = activeDocument.createElement('button');
+    const btn = createEl('button');
     btn.type = 'button';
     btn.setAttribute('aria-label', label);
     if (cssClass) {

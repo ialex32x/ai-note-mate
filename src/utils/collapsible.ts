@@ -108,9 +108,9 @@ export function createCollapsible(
 
     // ── DOM ─────────────────────────────────────────────
 
-    const wrapper = parent.createEl('div', { cls: CLASS_WRAPPER });
+    const wrapper = parent.createDiv({ cls: CLASS_WRAPPER });
 
-    const header = wrapper.createEl('span', {
+    const header = wrapper.createSpan({
         cls: CLASS_HEADER,
         attr: {
             role: 'button',
@@ -119,14 +119,14 @@ export function createCollapsible(
         },
     });
 
-    const arrowEl = header.createEl('span', {
+    const arrowEl = header.createSpan({
         cls: CLASS_ARROW,
         text: startExpanded ? '▾' : '▸',
     });
     header.appendText(' ');
-    header.createEl('span', { cls: summaryClass, text: summary });
+    header.createSpan({ cls: summaryClass, text: summary });
 
-    const body = wrapper.createEl('div', {
+    const body = wrapper.createDiv({
         cls: startExpanded
             ? `${CLASS_BODY} ${CLASS_BODY_EXPANDED}`
             : CLASS_BODY,

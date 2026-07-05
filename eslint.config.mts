@@ -1,21 +1,12 @@
-import tseslint from 'typescript-eslint';
 import obsidianmd from "eslint-plugin-obsidianmd";
 import globals from "globals";
-import { globalIgnores } from "eslint/config";
+import { defineConfig, globalIgnores } from "eslint/config";
 
-export default tseslint.config(
+export default defineConfig(
 	{
 		languageOptions: {
 			globals: {
 				...globals.browser,
-				// Obsidian-injected DOM helpers (augmented on HTMLElement/Document/global)
-				createEl: "readonly",
-				createDiv: "readonly",
-				createSpan: "readonly",
-				createFragment: "readonly",
-				// TS lib built-ins not in older "browser" globals set
-				AsyncIterable: "readonly",
-				AsyncIterableIterator: "readonly",
 			},
 			parserOptions: {
 				projectService: {
@@ -30,6 +21,12 @@ export default tseslint.config(
 		},
 	},
 	...obsidianmd.configs.recommended,
+	{
+		rules: {
+			// SettingDefinition type only available in obsidian >= 1.13
+			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
+		},
+	},
 	globalIgnores([
 		"node_modules",
 		"dist",

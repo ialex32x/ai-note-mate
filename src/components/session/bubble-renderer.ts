@@ -175,7 +175,7 @@ export class BubbleRenderer extends Component {
      */
     private getFloatingLayer(): HTMLElement {
         if (!this.floatingLayer || !this.floatingLayer.isConnected) {
-            this.floatingLayer = this.dropdownHost.createEl('div', {
+            this.floatingLayer = this.dropdownHost.createDiv({
                 cls: 'session-floating-layer',
             });
             // Make sure the layer is removed when the renderer unloads, even
@@ -359,7 +359,7 @@ export class BubbleRenderer extends Component {
                 const wasExpanded = options.wasThinkingExpanded ?? false;
                 const thinkingComplete = msg.thinkingComplete === true || msg.streaming === false;
                 // Create a temporary container, render thinking into it, then insert
-                const tempDiv = createEl('div');
+                const tempDiv = createDiv();
                 this.renderThinkingSection(tempDiv, msg.thinkingContent, thinkingComplete, wasExpanded);
                 const newThinking = tempDiv.firstElementChild;
                 if (newThinking) {

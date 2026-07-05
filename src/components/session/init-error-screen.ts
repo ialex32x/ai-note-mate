@@ -16,14 +16,14 @@ export function showInitializationError(
     contentEl.empty();
     contentEl.addClass('session-view');
 
-    const errorContainer = contentEl.createEl('div', { cls: 'session-error-container' });
+    const errorContainer = contentEl.createDiv({ cls: 'session-error-container' });
 
-    errorContainer.createEl('div', {
+    errorContainer.createDiv({
         cls: 'session-error-title',
         text: 'Session view initialization error',
     });
 
-    const errorMessage = errorContainer.createEl('div', { cls: 'session-error-message' });
+    const errorMessage = errorContainer.createDiv({ cls: 'session-error-message' });
     const errorText = error instanceof Error
         ? `${error.name}: ${error.message}\n\nStack trace:\n${error.stack}`
         : String(error);

@@ -100,7 +100,7 @@ export function addIconAction(
  * selector working uniformly.
  */
 export function createActionsContainer(bubble: HTMLElement): HTMLElement {
-    return bubble.createEl('div', { cls: 'session-bubble__actions' });
+    return bubble.createDiv({ cls: 'session-bubble__actions' });
 }
 
 /** Class shared by all default icon-action buttons; exported for callers

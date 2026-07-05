@@ -80,19 +80,19 @@ export function appendErrorBubble(
         ? safeSliceHead(fullText, ERROR_DISPLAY_MAX_CHARS) + '…'
         : fullText;
 
-    const bubble = opts.messagesEl.createEl('div', {
+    const bubble = opts.messagesEl.createDiv({
         cls: `${BUBBLE_BASE_CLS} ${BUBBLE_BASE_CLS}--error`,
     });
 
     // Role label — same position as "AI" / "You" labels, but with an icon
-    const role = bubble.createEl('div', { cls: BUBBLE_ROLE_CLS });
-    const roleIcon = role.createEl('span', { cls: 'session-bubble__error-icon' });
+    const role = bubble.createDiv({ cls: BUBBLE_ROLE_CLS });
+    const roleIcon = role.createSpan({ cls: 'session-bubble__error-icon' });
     setIcon(roleIcon, 'alert-triangle');
-    role.createEl('span', { text: t('view.roleError') });
+    role.createSpan({ text: t('view.roleError') });
 
     // Body wrapper — same pattern as regular bubbles (background box)
-    const bodyEl = bubble.createEl('div', { cls: 'session-bubble__body' });
-    const content = bodyEl.createEl('div', { cls: BUBBLE_CONTENT_CLS });
+    const bodyEl = bubble.createDiv({ cls: 'session-bubble__body' });
+    const content = bodyEl.createDiv({ cls: BUBBLE_CONTENT_CLS });
     content.createEl('pre', {
         cls: 'session-bubble__error-text',
         text: displayText,

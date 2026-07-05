@@ -58,7 +58,7 @@ function renderInlineFileRef(
     const isFolder = resolved?.isFolder ?? false;
     const resolvedPath = resolved?.path ?? path;
 
-    const chip = container.createEl('span', {
+    const chip = container.createSpan({
         cls: exists
             ? 'bubble-file-ref'
             : 'bubble-file-ref bubble-file-ref--missing',
@@ -73,11 +73,11 @@ function renderInlineFileRef(
         : resolvedPath;
     setTooltip(chip, tooltipPath, { placement: 'top' });
 
-    const iconEl = chip.createEl('span', { cls: 'bubble-file-ref__icon' });
+    const iconEl = chip.createSpan({ cls: 'bubble-file-ref__icon' });
     setIcon(iconEl, isFolder ? 'folder' : 'file');
 
     const name = displayName ?? resolvedPath.split('/').pop() ?? resolvedPath;
-    chip.createEl('span', { cls: 'bubble-file-ref__name', text: name });
+    chip.createSpan({ cls: 'bubble-file-ref__name', text: name });
 
     // Hover preview (files only; folders have no preview surface).
     if (exists && !isFolder) {

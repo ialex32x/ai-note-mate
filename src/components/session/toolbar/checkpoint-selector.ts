@@ -148,26 +148,26 @@ export function createCheckpointSelector(
     dropdownManager: DropdownManager,
     options: CheckpointSelectorOptions,
 ): CheckpointSelectorHandle {
-    const wrapper = parent.createEl('span', {
+    const wrapper = parent.createSpan({
         cls: 'session-selector session-checkpoint-selector session-checkpoint-selector--empty',
     });
 
-    const bar = wrapper.createEl('div', { cls: 'session-checkpoint-bar' });
+    const bar = wrapper.createDiv({ cls: 'session-checkpoint-bar' });
     const openBtn = bar.createEl('button', {
         type: 'button',
         cls: 'session-dropdown-btn session-checkpoint-bar__open',
         attr: { 'aria-label': t('view.checkpointsAriaLabel') },
     });
-    const openIcon = openBtn.createEl('span', { cls: 'session-dropdown-btn-icon' });
+    const openIcon = openBtn.createSpan({ cls: 'session-dropdown-btn-icon' });
     setIcon(openIcon, 'list-checks');
-    const labelEl = openBtn.createEl('span', {
+    const labelEl = openBtn.createSpan({
         cls: 'session-dropdown-btn-text',
     });
-    const openArrow = openBtn.createEl('span', { cls: 'session-dropdown-btn-arrow' });
+    const openArrow = openBtn.createSpan({ cls: 'session-dropdown-btn-arrow' });
     setIcon(openArrow, 'chevron-up');
     setTooltip(openBtn, t('view.checkpointsAriaLabel'));
 
-    const bulk = bar.createEl('div', { cls: 'session-checkpoint-bar__bulk' });
+    const bulk = bar.createDiv({ cls: 'session-checkpoint-bar__bulk' });
     const acceptAllBtn = bulk.createEl('button', {
         type: 'button',
         cls: 'session-checkpoint-bar__bulk-btn session-checkpoint-bar__bulk-btn--accept',
@@ -185,7 +185,7 @@ export function createCheckpointSelector(
 
     // First token must be `session-dropdown` so DropdownManager's
     // `--open` class matches `.session-dropdown--open` (same as session list).
-    const dropdownEl = wrapper.createEl('div', {
+    const dropdownEl = wrapper.createDiv({
         cls: 'session-dropdown session-checkpoint-dropdown',
     });
 
@@ -245,20 +245,20 @@ export function createCheckpointSelector(
     };
 
     const renderFileEntry = (host: HTMLElement, entry: CheckpointFileEntry): void => {
-        const row = host.createEl('div', { cls: 'checkpoint-file' });
-        const iconEl = row.createEl('span', { cls: 'checkpoint-file__icon' });
+        const row = host.createDiv({ cls: 'checkpoint-file' });
+        const iconEl = row.createSpan({ cls: 'checkpoint-file__icon' });
         setIcon(iconEl, entry.kind === 'delete' ? 'trash-2'
             : entry.kind === 'rename' ? 'arrow-right'
             : entry.kind === 'create' ? 'file-plus'
             : 'file-edit');
-        const pathEl = row.createEl('span', { cls: 'checkpoint-file__path' });
+        const pathEl = row.createSpan({ cls: 'checkpoint-file__path' });
         if (entry.kind === 'rename' && entry.previousPath) {
             pathEl.setText(`${entry.previousPath} → ${entry.path}`);
         } else {
             pathEl.setText(entry.path);
         }
         setTooltip(pathEl, entry.path);
-        const kindEl = row.createEl('span', { cls: 'checkpoint-file__kind', text: entry.kind });
+        const kindEl = row.createSpan({ cls: 'checkpoint-file__kind', text: entry.kind });
         if (!entry.snapshotId && entry.kind === 'modify') {
             // The pre-edit content couldn't be captured; flag so users
             // know discard won't fully roll back this file.
@@ -287,7 +287,7 @@ export function createCheckpointSelector(
         // Icon in a child span (not on the <button>) so Obsidian mobile
         // touch-target inflation on native buttons does not squash Lucide
         // glyphs — same pattern as session-tips-popover nav buttons.
-        const iconEl = btn.createEl('span', { cls: 'checkpoint-section__action-icon' });
+        const iconEl = btn.createSpan({ cls: 'checkpoint-section__action-icon' });
         setIcon(iconEl, icon);
         setTooltip(btn, t(tooltipKey));
         btn.disabled = !enabled;
@@ -301,33 +301,33 @@ export function createCheckpointSelector(
 
     const renderCheckpoint = (host: HTMLElement, cp: Checkpoint): void => {
         const isExpanded = expandedCheckpointId === cp.id;
-        const section = host.createEl('div', {
+        const section = host.createDiv({
             cls: `session-dropdown-section checkpoint-section checkpoint-section--${cp.status}${
                 isExpanded ? '' : ' checkpoint-section--collapsed'
             }`,
         });
 
         // Header row: status badge + expand chevron + title + icon actions, all on one line.
-        const header = section.createEl('div', { cls: 'checkpoint-section__header' });
-        const statusBadge = header.createEl('span', {
+        const header = section.createDiv({ cls: 'checkpoint-section__header' });
+        const statusBadge = header.createSpan({
             cls: `checkpoint-section__status checkpoint-section__status--${cp.status}`,
         });
         setIcon(statusBadge, STATUS_ICON[cp.status]);
         setTooltip(statusBadge, t(STATUS_LABEL_KEY[cp.status]));
 
-        const title = header.createEl('span', { cls: 'checkpoint-section__title' });
+        const title = header.createSpan({ cls: 'checkpoint-section__title' });
         title.setText(formatCheckpointTitle(cp));
 
         // File count badge (e.g. "3 files").
-        const fileCountEl = header.createEl('span', { cls: 'checkpoint-section__file-count' });
+        const fileCountEl = header.createSpan({ cls: 'checkpoint-section__file-count' });
         const fc = cp.files.size;
         fileCountEl.setText(fc === 1 ? t('view.checkpointOneFile') : t('view.checkpointFileCount', { count: fc }));
 
         // Expand/collapse chevron — rotates based on expanded state.
-        const chevron = header.createEl('span', { cls: 'checkpoint-section__chevron' });
+        const chevron = header.createSpan({ cls: 'checkpoint-section__chevron' });
         setIcon(chevron, isExpanded ? 'chevron-down' : 'chevron-right');
 
-        const actions = header.createEl('span', { cls: 'checkpoint-section__actions' });
+        const actions = header.createSpan({ cls: 'checkpoint-section__actions' });
 
         // Goto is always available — even on terminal checkpoints —
         // because users still want to be able to scroll back to the
@@ -371,9 +371,9 @@ export function createCheckpointSelector(
         );
 
         // File list.
-        const fileList = section.createEl('div', { cls: 'checkpoint-section__files' });
+        const fileList = section.createDiv({ cls: 'checkpoint-section__files' });
         if (cp.files.size === 0) {
-            fileList.createEl('div', {
+            fileList.createDiv({
                 cls: 'checkpoint-section__empty',
                 text: t('view.checkpointEmptyFiles'),
             });
@@ -406,7 +406,7 @@ export function createCheckpointSelector(
         dropdownEl.empty();
         const cps = runtime?.checkpointStore.checkpoints ?? [];
         if (cps.length === 0) {
-            dropdownEl.createEl('div', {
+            dropdownEl.createDiv({
                 cls: 'session-dropdown__empty',
                 text: t('view.checkpointEmpty'),
             });

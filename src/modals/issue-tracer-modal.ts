@@ -42,23 +42,23 @@ export class IssueTracerModal extends Modal {
 
         this.setTitle('Issue tracer');
 
-        const intro = contentEl.createEl('div', { cls: 'issue-tracer-modal__intro' });
+        const intro = contentEl.createDiv({ cls: 'issue-tracer-modal__intro' });
         intro.setText(
             'In-memory diagnostic clues captured from code paths the plugin knows are unexpected. ' +
             'Nothing is written to disk; restarting Obsidian clears everything.',
         );
 
-        const header = contentEl.createEl('div', { cls: 'issue-tracer-modal__header' });
-        this.headerCountEl = header.createEl('div', { cls: 'issue-tracer-modal__count' });
+        const header = contentEl.createDiv({ cls: 'issue-tracer-modal__header' });
+        this.headerCountEl = header.createDiv({ cls: 'issue-tracer-modal__count' });
 
-        const actions = header.createEl('div', { cls: 'issue-tracer-modal__actions' });
+        const actions = header.createDiv({ cls: 'issue-tracer-modal__actions' });
 
         const copyBtn = actions.createEl('button', {
             cls: 'issue-tracer-modal__btn',
             attr: { type: 'button', 'aria-label': 'Copy all records' },
         });
         setIcon(copyBtn, 'copy');
-        copyBtn.createEl('span', { text: 'Copy all' });
+        copyBtn.createSpan({ text: 'Copy all' });
         setTooltip(copyBtn, 'Copy all records as text (for pasting into a bug report)');
         copyBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -71,16 +71,16 @@ export class IssueTracerModal extends Modal {
             attr: { type: 'button', 'aria-label': 'Clear all records' },
         });
         setIcon(clearBtn, 'trash-2');
-        clearBtn.createEl('span', { text: 'Clear' });
+        clearBtn.createSpan({ text: 'Clear' });
         setTooltip(clearBtn, 'Discard every recorded issue');
         clearBtn.addEventListener('click', (e) => {
             e.preventDefault();
             clearIssueTracer();
         });
 
-        this.bannerEl = contentEl.createEl('div', { cls: 'issue-tracer-modal__banner' });
+        this.bannerEl = contentEl.createDiv({ cls: 'issue-tracer-modal__banner' });
 
-        this.listEl = contentEl.createEl('div', { cls: 'issue-tracer-modal__list' });
+        this.listEl = contentEl.createDiv({ cls: 'issue-tracer-modal__list' });
 
         this.unsubscribe = subscribeIssueTracer((snapshot) => this.render(snapshot));
         this.render(getIssueTracerSnapshot());
@@ -127,7 +127,7 @@ export class IssueTracerModal extends Modal {
         this.listEl.empty();
 
         if (snapshot.issues.length === 0) {
-            this.listEl.createEl('div', {
+            this.listEl.createDiv({
                 cls: 'issue-tracer-modal__empty',
                 text: 'No issues recorded so far. Anything captured here would be a known plugin bug — silence is good.',
             });
@@ -143,32 +143,32 @@ export class IssueTracerModal extends Modal {
     }
 
     private renderRecord(parent: HTMLElement, rec: IssueRecord): void {
-        const item = parent.createEl('div', {
+        const item = parent.createDiv({
             cls: `issue-tracer-item issue-tracer-item--${rec.severity}`,
         });
 
-        const head = item.createEl('div', { cls: 'issue-tracer-item__head' });
+        const head = item.createDiv({ cls: 'issue-tracer-item__head' });
 
-        const iconEl = head.createEl('span', { cls: 'issue-tracer-item__icon' });
+        const iconEl = head.createSpan({ cls: 'issue-tracer-item__icon' });
         setIcon(iconEl, rec.severity === 'error' ? 'circle-alert' : 'triangle-alert');
 
-        const titleWrap = head.createEl('div', { cls: 'issue-tracer-item__title-wrap' });
-        const titleRow = titleWrap.createEl('div', { cls: 'issue-tracer-item__title-row' });
-        titleRow.createEl('span', {
+        const titleWrap = head.createDiv({ cls: 'issue-tracer-item__title-wrap' });
+        const titleRow = titleWrap.createDiv({ cls: 'issue-tracer-item__title-row' });
+        titleRow.createSpan({
             cls: 'issue-tracer-item__source',
             text: rec.source,
         });
-        titleRow.createEl('span', {
+        titleRow.createSpan({
             cls: 'issue-tracer-item__code',
             text: rec.code,
         });
-        titleWrap.createEl('div', {
+        titleWrap.createDiv({
             cls: 'issue-tracer-item__message',
             text: rec.message,
         });
 
-        const meta = head.createEl('div', { cls: 'issue-tracer-item__meta' });
-        meta.createEl('span', {
+        const meta = head.createDiv({ cls: 'issue-tracer-item__meta' });
+        meta.createSpan({
             cls: 'issue-tracer-item__time',
             text: formatTime(rec.timestamp),
         });
@@ -193,12 +193,12 @@ export class IssueTracerModal extends Modal {
             });
 
             if (isOpen) {
-                const details = item.createEl('div', { cls: 'issue-tracer-item__details' });
+                const details = item.createDiv({ cls: 'issue-tracer-item__details' });
                 if (rec.context && Object.keys(rec.context).length > 0) {
-                    const section = details.createEl('div', {
+                    const section = details.createDiv({
                         cls: 'issue-tracer-item__section',
                     });
-                    section.createEl('div', {
+                    section.createDiv({
                         cls: 'issue-tracer-item__section-label',
                         text: 'Context',
                     });
@@ -208,10 +208,10 @@ export class IssueTracerModal extends Modal {
                     });
                 }
                 if (rec.stack) {
-                    const section = details.createEl('div', {
+                    const section = details.createDiv({
                         cls: 'issue-tracer-item__section',
                     });
-                    section.createEl('div', {
+                    section.createDiv({
                         cls: 'issue-tracer-item__section-label',
                         text: 'Stack',
                     });

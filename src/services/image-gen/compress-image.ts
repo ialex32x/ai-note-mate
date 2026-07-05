@@ -43,7 +43,7 @@ export async function compressImage(
         canvas = new OffscreenCanvas(img.width, img.height);
         ctx = canvas.getContext('2d');
     } else {
-        canvas = activeDocument.createElement('canvas');
+        canvas = createEl('canvas');
         canvas.width = img.width;
         canvas.height = img.height;
         ctx = canvas.getContext('2d');

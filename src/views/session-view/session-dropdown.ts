@@ -84,12 +84,12 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
     const sessions = sessionManager.getAllSessions();
 
     if (sessions.length === 0) {
-        dropdownEl.createEl('div', { cls: 'session-dropdown__empty', text: t('view.noSessions') });
+        dropdownEl.createDiv({ cls: 'session-dropdown__empty', text: t('view.noSessions') });
         return;
     }
 
     for (const session of sessions) {
-        const item = dropdownEl.createEl('div', { cls: 'session-dropdown__item' });
+        const item = dropdownEl.createDiv({ cls: 'session-dropdown__item' });
         const isActive = session.id === sessionManager.activeSessionId;
         if (isActive) item.addClass('session-dropdown__item--active');
 
@@ -97,11 +97,11 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         // active-check. Both slots are always rendered so column width
         // stays stable regardless of which session is active or which
         // runtimes are warm.
-        const iconCol = item.createEl('span', { cls: 'session-dropdown__item-icons' });
+        const iconCol = item.createSpan({ cls: 'session-dropdown__item-icons' });
 
         const status = deps.getStatus?.(session.id) ?? 'unloaded';
         const statusSpec = STATUS_ICONS[status];
-        const statusIcon = iconCol.createEl('span', {
+        const statusIcon = iconCol.createSpan({
             cls: `session-dropdown__item-status ${statusSpec.cls}`,
         });
         setIcon(statusIcon, statusSpec.icon);
@@ -109,11 +109,11 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         setTooltip(statusIcon, statusTooltip);
         statusIcon.setAttr('aria-label', statusTooltip);
 
-        const checkIcon = iconCol.createEl('span', { cls: 'session-dropdown__item-check' });
+        const checkIcon = iconCol.createSpan({ cls: 'session-dropdown__item-check' });
         if (isActive) setIcon(checkIcon, 'check');
 
-        const textWrapper = item.createEl('span', { cls: 'session-dropdown__item-body' });
-        const titleRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-text' });
+        const textWrapper = item.createSpan({ cls: 'session-dropdown__item-body' });
+        const titleRow = textWrapper.createSpan({ cls: 'session-dropdown__item-text' });
 
         // Optional pending-checkpoint badge (icon + count). Sits to the
         // LEFT of the title so it never gets clipped by the title's
@@ -121,14 +121,14 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
         // — see `getPendingCheckpoints` contract.
         const pendingCount = deps.getPendingCheckpoints?.(session.id) ?? 0;
         if (pendingCount > 0) {
-            const pendingEl = titleRow.createEl('span', {
+            const pendingEl = titleRow.createSpan({
                 cls: 'session-dropdown__item-pending-checkpoints',
             });
-            const pendingIcon = pendingEl.createEl('span', {
+            const pendingIcon = pendingEl.createSpan({
                 cls: 'session-dropdown__item-pending-checkpoints-icon',
             });
             setIcon(pendingIcon, 'list-checks');
-            pendingEl.createEl('span', {
+            pendingEl.createSpan({
                 cls: 'session-dropdown__item-pending-checkpoints-count',
                 text: String(pendingCount),
             });
@@ -137,34 +137,34 @@ export function rebuildSessionDropdown(deps: SessionDropdownDeps): void {
             pendingEl.setAttr('aria-label', pendingTooltip);
         }
 
-        const titleEl = titleRow.createEl('span', { cls: 'session-dropdown__item-title' });
+        const titleEl = titleRow.createSpan({ cls: 'session-dropdown__item-title' });
         const displayTitle = session.title || session.firstUserMessage || t('view.newChat');
         titleEl.setText(displayTitle);
 
-        const metaRow = textWrapper.createEl('span', { cls: 'session-dropdown__item-meta' });
+        const metaRow = textWrapper.createSpan({ cls: 'session-dropdown__item-meta' });
         const d = new Date(session.createdAt);
         const dateStr = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-        metaRow.createEl('span', { cls: 'session-dropdown__item-time' })
+        metaRow.createSpan({ cls: 'session-dropdown__item-time' })
             .setText(dateStr);
 
         // Token usage (prompt / completion). Hidden when no tokens were ever spent.
         const usage = session.tokenUsage;
         if (usage && (usage.promptTokens > 0 || usage.completionTokens > 0)) {
-            const tokensEl = metaRow.createEl('span', { cls: 'session-dropdown__item-time' });
+            const tokensEl = metaRow.createSpan({ cls: 'session-dropdown__item-time' });
             const promptStr = formatCompact(usage.promptTokens);
             const completionStr = formatCompact(usage.completionTokens);
-            tokensEl.createEl('span', {
+            tokensEl.createSpan({
                 cls: 'session-dropdown__item-token',
                 text: `↑${promptStr}`,
             });
-            tokensEl.createEl('span', {
+            tokensEl.createSpan({
                 cls: 'session-dropdown__item-token',
                 text: `↓${completionStr}`,
             });
         }
 
         // Session ID
-        const sessionIdEl = metaRow.createEl('span', { cls: 'session-dropdown__item-time' });
+        const sessionIdEl = metaRow.createSpan({ cls: 'session-dropdown__item-time' });
         sessionIdEl.setText(session.id);
 
         // Delete button (shown for all sessions including active)

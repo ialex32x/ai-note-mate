@@ -288,7 +288,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 	): void {
 		select.innerHTML = '';
 		for (const item of items) {
-			const opt = activeDocument.createElement('option');
+			const opt = createEl('option');
 			opt.value = item.id;
 			opt.textContent = labelFn(item);
 			select.appendChild(opt);
@@ -311,15 +311,15 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 	): void {
 		select.innerHTML = '';
 		// "None" option first
-		const noneOpt = activeDocument.createElement('option');
+		const noneOpt = createEl('option');
 		noneOpt.value = '';
 		noneOpt.textContent = t('settings.embeddingNone');
 		select.appendChild(noneOpt);
 		// Config options
 		for (const item of items) {
-			const opt = activeDocument.createElement('option');
+			const opt = createEl('option');
 			opt.value = item.id;
-			opt.textContent = item['name' as keyof T] as unknown as string || 'Unnamed';
+			opt.textContent = String(item['name' as keyof T] || 'Unnamed');
 			select.appendChild(opt);
 		}
 		if (savedValue === '' || validIds.has(savedValue)) {

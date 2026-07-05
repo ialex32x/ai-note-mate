@@ -245,7 +245,7 @@ export function attachMermaidPreviewHandler(
 
         // ── Copy button (hover-revealed, top-right) ───────────────────
         if (sourceCode) {
-            const copyBtn = activeDocument.createElement('button');
+            const copyBtn = createEl('button');
             copyBtn.type = 'button';
             copyBtn.className = 'session-mermaid-copy-btn';
             copyBtn.setAttribute('aria-label', t('common.copy'));

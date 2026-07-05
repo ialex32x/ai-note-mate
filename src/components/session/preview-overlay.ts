@@ -81,22 +81,22 @@ export class PreviewOverlay {
 	mount(): void {
 		if (this.el) return;
 
-		this.el = this.host.createEl('div', {
+		this.el = this.host.createDiv({
 			cls: 'session-preview-overlay session-preview-overlay--hidden',
 			attr: { 'aria-hidden': 'true', tabindex: '-1' },
 		});
 
 		// Backdrop: clicking it dismisses.
-		const backdrop = this.el.createEl('div', { cls: 'session-preview__backdrop' });
+		const backdrop = this.el.createDiv({ cls: 'session-preview__backdrop' });
 		backdrop.addEventListener('click', () => this.hide());
 
 		// ── Content wrapper (zoom-pan target) ──────────────────────────
-		this.contentWrapper = this.el.createEl('div', {
+		this.contentWrapper = this.el.createDiv({
 			cls: 'session-preview__content',
 		});
 
 		// ── Control bar (bottom) ───────────────────────────────────────
-		this.controlBar = this.el.createEl('div', {
+		this.controlBar = this.el.createDiv({
 			cls: 'session-preview__controls',
 		});
 
@@ -217,7 +217,7 @@ export class PreviewOverlay {
 	// ── Content renderers ───────────────────────────────────────────────
 
 	private renderImage(content: ImagePreviewContent): HTMLElement {
-		const img = activeDocument.createElement('img');
+		const img = createEl('img');
 		img.className = 'session-preview__image';
 		img.src = content.src;
 		if (content.alt) img.alt = content.alt;
@@ -227,7 +227,7 @@ export class PreviewOverlay {
 	}
 
 	private renderMermaid(content: MermaidPreviewContent): HTMLElement {
-		const wrapper = activeDocument.createElement('div');
+		const wrapper = createDiv();
 		wrapper.className = 'session-preview__mermaid';
 		// Parse SVG string via DOMParser to avoid innerHTML.
 		try {

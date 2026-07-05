@@ -65,14 +65,14 @@ export class InsightCard {
         this.hide();
         this.ownerMessageId = messageId;
 
-        const block = this.parent.createEl('div', { cls: 'session-insight-card is-loading' });
+        const block = this.parent.createDiv({ cls: 'session-insight-card is-loading' });
 
         this.renderTitle(block);
 
-        const statusWrap = block.createEl('div', { cls: 'session-insight-card__status' });
-        const spinner = statusWrap.createEl('span', { cls: 'session-insight-card__spinner' });
+        const statusWrap = block.createDiv({ cls: 'session-insight-card__status' });
+        const spinner = statusWrap.createSpan({ cls: 'session-insight-card__spinner' });
         setIcon(spinner, 'loader');
-        const status = statusWrap.createEl('span', {
+        const status = statusWrap.createSpan({
             cls: 'session-insight-card__status-text',
             text: t('view.insightCardLoading'),
         });
@@ -100,7 +100,7 @@ export class InsightCard {
         if (!this.el || this.ownerMessageId !== messageId) {
             this.hide();
             this.ownerMessageId = messageId;
-            this.el = this.parent.createEl('div', { cls: 'session-insight-card' });
+            this.el = this.parent.createDiv({ cls: 'session-insight-card' });
         }
 
         const block = this.el;
@@ -111,7 +111,7 @@ export class InsightCard {
         if (insights.length === 0) {
             block.addClass('is-empty');
             this.renderTitle(block);
-            block.createEl('div', {
+            block.createDiv({
                 cls: 'session-insight-card__status-text',
                 text: t('view.insightCardEmpty'),
             });
@@ -123,7 +123,7 @@ export class InsightCard {
         block.removeClass('is-empty');
         this.renderTitle(block);
 
-        const list = block.createEl('div', { cls: 'session-insight-card__list' });
+        const list = block.createDiv({ cls: 'session-insight-card__list' });
         for (const item of insights) {
             this.renderItem(list, item);
         }
@@ -141,7 +141,7 @@ export class InsightCard {
         if (!this.el || this.ownerMessageId !== messageId) {
             this.hide();
             this.ownerMessageId = messageId;
-            this.el = this.parent.createEl('div', { cls: 'session-insight-card' });
+            this.el = this.parent.createDiv({ cls: 'session-insight-card' });
         }
         const block = this.el;
         block.removeClass('is-loading');
@@ -150,7 +150,7 @@ export class InsightCard {
 
         this.renderTitle(block, 'alert-triangle');
 
-        block.createEl('div', {
+        block.createDiv({
             cls: 'session-insight-card__status-text',
             text: message ?? t('view.insightCardError'),
         });
@@ -219,24 +219,24 @@ export class InsightCard {
      * the visual style of `.session-followup-bar__title`.
      */
     private renderTitle(parent: HTMLElement, iconName = 'lightbulb'): void {
-        const title = parent.createEl('div', { cls: 'session-insight-card__title' });
-        const titleIcon = title.createEl('span', { cls: 'session-insight-card__title-icon' });
+        const title = parent.createDiv({ cls: 'session-insight-card__title' });
+        const titleIcon = title.createSpan({ cls: 'session-insight-card__title-icon' });
         setIcon(titleIcon, iconName);
-        title.createEl('span', {
+        title.createSpan({
             cls: 'session-insight-card__title-label',
             text: t('view.insightCardTitle'),
         });
     }
 
     private renderItem(parent: HTMLElement, item: ConversationInsight): void {
-        const row = parent.createEl('div', { cls: 'session-insight-card__item' });
+        const row = parent.createDiv({ cls: 'session-insight-card__item' });
 
-        const main = row.createEl('div', { cls: 'session-insight-card__item-main' });
-        main.createEl('div', { cls: 'session-insight-card__item-title', text: item.title });
-        main.createEl('div', { cls: 'session-insight-card__item-summary', text: item.summary });
+        const main = row.createDiv({ cls: 'session-insight-card__item-main' });
+        main.createDiv({ cls: 'session-insight-card__item-title', text: item.title });
+        main.createDiv({ cls: 'session-insight-card__item-summary', text: item.summary });
 
         if (item.tags.length > 0 || item.linkedNotes.length > 0) {
-            const meta = main.createEl('div', { cls: 'session-insight-card__item-meta' });
+            const meta = main.createDiv({ cls: 'session-insight-card__item-meta' });
             for (const tag of item.tags) {
                 this.renderTag(meta, tag);
             }
@@ -245,7 +245,7 @@ export class InsightCard {
             }
         }
 
-        const actions = row.createEl('div', { cls: 'session-insight-card__item-actions' });
+        const actions = row.createDiv({ cls: 'session-insight-card__item-actions' });
 
         // ── "Deepen" — kicks off a follow-up turn that expands this insight.
         // Hidden entirely when no host callback is wired (defensive — keeps
@@ -256,7 +256,7 @@ export class InsightCard {
                 cls: 'session-insight-card__deepen-btn',
                 attr: { type: 'button' },
             });
-            const deepenIcon = deepenBtn.createEl('span', {
+            const deepenIcon = deepenBtn.createSpan({
                 cls: 'session-insight-card__deepen-icon',
             });
             setIcon(deepenIcon, 'sparkles');

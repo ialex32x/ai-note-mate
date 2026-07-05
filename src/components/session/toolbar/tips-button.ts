@@ -39,7 +39,7 @@ export function createTipsButton(
     dropdownManager: DropdownManager,
 ): TipsButtonHandle {
     parent.addClass('session-thinking-row--has-tips');
-    const wrapper = parent.createEl('span', { cls: 'session-selector session-tips' });
+    const wrapper = parent.createSpan({ cls: 'session-selector session-tips' });
 
     const button = wrapper.createEl('button', {
         cls: 'session-thinking-row__icon-btn session-tips__btn',
@@ -50,7 +50,7 @@ export function createTipsButton(
 
     // Note: `session-dropdown-menu` MUST be the first class so that
     // DropdownManager derives the `--open` toggle class from it.
-    const popover = wrapper.createEl('div', {
+    const popover = wrapper.createDiv({
         cls: 'session-dropdown-menu session-tips-popover',
     });
 
@@ -101,12 +101,12 @@ export function createTipsButton(
 
     const renderTipsView = (): void => {
         popover.empty();
-        tipsView = popover.createEl('div', { cls: 'session-tips-popover__view' });
+        tipsView = popover.createDiv({ cls: 'session-tips-popover__view' });
         previewView = null;
 
         currentList = getEligibleTips(ctx);
         if (currentList.length === 0) {
-            tipsView.createEl('div', {
+            tipsView.createDiv({
                 cls: 'session-tips-popover__empty',
                 text: t('tips.empty'),
             });
@@ -119,13 +119,13 @@ export function createTipsButton(
         const tip = currentList[currentIndex]!;
 
         // ── Header: prev / counter / next ──────────────────────────
-        const header = tipsView.createEl('div', { cls: 'session-tips-popover__nav' });
+        const header = tipsView.createDiv({ cls: 'session-tips-popover__nav' });
 
         const prevBtn = header.createEl('button', {
             cls: 'session-tips-popover__nav-btn',
             attr: { type: 'button', 'aria-label': t('tips.prev') },
         });
-        const prevIcon = prevBtn.createEl('span', { cls: 'session-tips-popover__nav-btn-icon' });
+        const prevIcon = prevBtn.createSpan({ cls: 'session-tips-popover__nav-btn-icon' });
         setIcon(prevIcon, 'chevron-left');
         setTooltip(prevBtn, t('tips.prev'));
         prevBtn.disabled = currentList.length <= 1;
@@ -137,7 +137,7 @@ export function createTipsButton(
             renderTipsView();
         });
 
-        header.createEl('span', {
+        header.createSpan({
             cls: 'session-tips-popover__counter',
             text: `${currentIndex + 1}/${currentList.length}`,
         });
@@ -146,7 +146,7 @@ export function createTipsButton(
             cls: 'session-tips-popover__nav-btn',
             attr: { type: 'button', 'aria-label': t('tips.next') },
         });
-        const nextIcon = nextBtn.createEl('span', { cls: 'session-tips-popover__nav-btn-icon' });
+        const nextIcon = nextBtn.createSpan({ cls: 'session-tips-popover__nav-btn-icon' });
         setIcon(nextIcon, 'chevron-right');
         setTooltip(nextBtn, t('tips.next'));
         nextBtn.disabled = currentList.length <= 1;
@@ -159,18 +159,18 @@ export function createTipsButton(
         });
 
         // ── Body: title + description ───────────────────────────────
-        const body = tipsView.createEl('div', { cls: 'session-tips-popover__body' });
-        body.createEl('div', {
+        const body = tipsView.createDiv({ cls: 'session-tips-popover__body' });
+        body.createDiv({
             cls: 'session-tips-popover__title',
             text: t(tip.titleKey),
         });
-        body.createEl('div', {
+        body.createDiv({
             cls: 'session-tips-popover__text',
             text: t(tip.bodyKey),
         });
 
         // ── Actions: Got it / Try it ────────────────────────────────
-        const actions = tipsView.createEl('div', { cls: 'session-tips-popover__actions' });
+        const actions = tipsView.createDiv({ cls: 'session-tips-popover__actions' });
 
         const gotItBtn = actions.createEl('button', {
             cls: 'session-tips-popover__btn session-tips-popover__btn--secondary',
@@ -205,11 +205,11 @@ export function createTipsButton(
             cls: 'session-tips-popover__btn session-tips-popover__btn--primary',
             attr: { type: 'button' },
         });
-        tryBtn.createEl('span', {
+        tryBtn.createSpan({
             cls: 'session-tips-popover__btn-label',
             text: t('tips.tryIt'),
         });
-        const tryIcon = tryBtn.createEl('span', { cls: 'session-tips-popover__btn-icon' });
+        const tryIcon = tryBtn.createSpan({ cls: 'session-tips-popover__btn-icon' });
         setIcon(tryIcon, 'arrow-right');
         tryBtn.addEventListener('click', (e) => {
             e.preventDefault();
@@ -241,7 +241,7 @@ export function createTipsButton(
 
     const renderPreviewView = (tip: TipDefinition, preview: TipPreview): void => {
         popover.empty();
-        previewView = popover.createEl('div', { cls: 'session-tips-popover__view session-tips-popover__view--preview' });
+        previewView = popover.createDiv({ cls: 'session-tips-popover__view session-tips-popover__view--preview' });
         tipsView = null;
 
         // ── Header: title only ─────────────────────────────────────
@@ -249,49 +249,49 @@ export function createTipsButton(
         // so a second arrow up here would just duplicate the affordance
         // and force the user to scan two locations to know how to bail.
         // The CSS centres the lone title within the bordered nav row.
-        const header = previewView.createEl('div', { cls: 'session-tips-popover__nav' });
+        const header = previewView.createDiv({ cls: 'session-tips-popover__nav' });
 
-        header.createEl('span', {
+        header.createSpan({
             cls: 'session-tips-popover__counter',
             text: t('tips.preview.title'),
         });
 
         // ── Body: description + settings changes + prompt preview ──
-        const body = previewView.createEl('div', { cls: 'session-tips-popover__body' });
-        body.createEl('div', {
+        const body = previewView.createDiv({ cls: 'session-tips-popover__body' });
+        body.createDiv({
             cls: 'session-tips-popover__preview-desc',
             text: preview.description,
         });
 
         if (preview.settingsChanges && preview.settingsChanges.length > 0) {
-            const section = body.createEl('div', { cls: 'session-tips-popover__preview-section' });
-            section.createEl('div', {
+            const section = body.createDiv({ cls: 'session-tips-popover__preview-section' });
+            section.createDiv({
                 cls: 'session-tips-popover__preview-header',
                 text: t('tips.preview.settingsHeader'),
             });
-            const list = section.createEl('div', {
+            const list = section.createDiv({
                 cls: 'session-tips-popover__preview-changes',
             });
             for (const change of preview.settingsChanges) {
-                const row = list.createEl('div', { cls: 'session-tips-popover__preview-change' });
-                row.createEl('span', {
+                const row = list.createDiv({ cls: 'session-tips-popover__preview-change' });
+                row.createSpan({
                     cls: 'session-tips-popover__preview-change-label',
                     text: change.label,
                 });
-                const valueWrap = row.createEl('span', {
+                const valueWrap = row.createSpan({
                     cls: 'session-tips-popover__preview-change-value',
                 });
                 if (change.before !== undefined && change.before.length > 0) {
-                    valueWrap.createEl('span', {
+                    valueWrap.createSpan({
                         cls: 'session-tips-popover__preview-change-before',
                         text: change.before,
                     });
-                    const arrowEl = valueWrap.createEl('span', {
+                    const arrowEl = valueWrap.createSpan({
                         cls: 'session-tips-popover__preview-change-arrow',
                     });
                     setIcon(arrowEl, 'arrow-right');
                 }
-                valueWrap.createEl('span', {
+                valueWrap.createSpan({
                     cls: 'session-tips-popover__preview-change-after',
                     text: change.after,
                 });
@@ -299,8 +299,8 @@ export function createTipsButton(
         }
 
         if (preview.prompt && preview.prompt.length > 0) {
-            const section = body.createEl('div', { cls: 'session-tips-popover__preview-section' });
-            section.createEl('div', {
+            const section = body.createDiv({ cls: 'session-tips-popover__preview-section' });
+            section.createDiv({
                 cls: 'session-tips-popover__preview-header',
                 text: t('tips.preview.promptHeader'),
             });
@@ -311,7 +311,7 @@ export function createTipsButton(
         }
 
         // ── Actions: cancel / confirm ───────────────────────────────
-        const actions = previewView.createEl('div', { cls: 'session-tips-popover__actions' });
+        const actions = previewView.createDiv({ cls: 'session-tips-popover__actions' });
 
         const cancelBtn = actions.createEl('button', {
             cls: 'session-tips-popover__btn session-tips-popover__btn--secondary',

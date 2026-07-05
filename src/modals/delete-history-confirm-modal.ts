@@ -86,7 +86,7 @@ export class DeleteHistoryConfirmModal extends PromiseModal<DeleteHistoryConfirm
             });
             checkbox.checked = this.includeBusy;
             this.includeBusyCheckbox = checkbox;
-            checkboxLabel.createEl('span', {
+            checkboxLabel.createSpan({
                 cls: 'delete-history-modal__checkbox-text',
                 text: t('view.deleteHistorySessionsConfirmIncludeBusy'),
             });

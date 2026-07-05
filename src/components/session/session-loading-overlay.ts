@@ -15,23 +15,23 @@ export class SessionLoadingOverlay {
     constructor(private readonly wrapperEl: HTMLElement) {}
 
     mount(): void {
-        this.el = this.wrapperEl.createEl('div', {
+        this.el = this.wrapperEl.createDiv({
             cls: 'session-history-loading session-history-loading--hidden',
             attr: { 'aria-hidden': 'true', 'aria-live': 'polite' },
         });
 
-        const panel = this.el.createEl('div', { cls: 'session-history-loading__panel' });
-        const spinner = panel.createEl('span', { cls: 'session-history-loading__spinner' });
+        const panel = this.el.createDiv({ cls: 'session-history-loading__panel' });
+        const spinner = panel.createSpan({ cls: 'session-history-loading__spinner' });
         setIcon(spinner, 'loader');
 
-        panel.createEl('div', {
+        panel.createDiv({
             cls: 'session-history-loading__title',
             text: t('view.historyLoading'),
         });
 
-        const track = panel.createEl('div', { cls: 'session-history-loading__track' });
-        this.progressBarEl = track.createEl('div', { cls: 'session-history-loading__bar' });
-        this.progressTextEl = panel.createEl('div', { cls: 'session-history-loading__text' });
+        const track = panel.createDiv({ cls: 'session-history-loading__track' });
+        this.progressBarEl = track.createDiv({ cls: 'session-history-loading__bar' });
+        this.progressTextEl = panel.createDiv({ cls: 'session-history-loading__text' });
     }
 
     dispose(): void {

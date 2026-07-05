@@ -32,7 +32,7 @@ export class SkillSettingsSection implements SettingsSection {
 			setTooltip(detailsBtn, t('settings.skillShowDetails'));
 			// Count badge — show enabled count
 			const enabledCount = allSkills.filter(s => !s.disabled).length;
-			detailsBtn.createEl('span', {
+			detailsBtn.createSpan({
 				cls: 'oap-settings-header-action-badge',
 				text: enabledCount > 99 ? '99+' : String(enabledCount),
 			});
@@ -67,7 +67,7 @@ export class SkillSettingsSection implements SettingsSection {
 		const skillPaths = plugin.settings.skillSearchPaths;
 
 		if (skillPaths.length === 0) {
-			container.createEl('div', {
+			container.createDiv({
 				cls: 'oap-settings-empty',
 				text: t('settings.skillsEmpty'),
 			});
@@ -75,18 +75,18 @@ export class SkillSettingsSection implements SettingsSection {
 
 		// Chip list for skill search directories
 		if (skillPaths.length > 0) {
-			const chipList = container.createEl('div', {
+			const chipList = container.createDiv({
 				cls: 'oap-settings-chip-list',
 			});
 			const { app } = plugin;
 			const chipEls: HTMLElement[] = [];
 			for (let idx = 0; idx < skillPaths.length; idx++) {
 				const path = skillPaths[idx]!;
-				const chip = chipList.createEl('div', {
+				const chip = chipList.createDiv({
 					cls: 'oap-settings-chip',
 				});
 				chipEls.push(chip);
-				chip.createEl('span', {
+				chip.createSpan({
 					cls: 'oap-settings-chip-label',
 					text: path || t('settings.skillPathPlaceholder'),
 				});
@@ -119,7 +119,7 @@ export class SkillSettingsSection implements SettingsSection {
 		}
 
 		// Add path: inline input row
-		const inputRow = container.createEl('div', {
+		const inputRow = container.createDiv({
 			cls: 'oap-settings-chip-input-row',
 		});
 		const input = inputRow.createEl('input', {
@@ -271,22 +271,22 @@ export class SkillSettingsSection implements SettingsSection {
 	): void {
 		const { plugin } = this.ctx;
 
-		const wrap = container.createEl('div', {
+		const wrap = container.createDiv({
 			cls: 'oap-settings-skill-tester',
 		});
 		if (!isAdvancedSettingsVisible()) {
 			wrap.addClass('oap-setting--advanced-collapsed');
 		}
-		wrap.createEl('div', {
+		wrap.createDiv({
 			cls: 'oap-settings-skill-tester-title',
 			text: t('settings.skillTesterTitle'),
 		});
-		wrap.createEl('div', {
+		wrap.createDiv({
 			cls: 'oap-settings-skill-tester-desc',
 			text: t('settings.skillTesterDesc'),
 		});
 
-		const row = wrap.createEl('div', {
+		const row = wrap.createDiv({
 			cls: 'oap-settings-skill-tester-row',
 		});
 		const queryInput = row.createEl('input', {
@@ -301,7 +301,7 @@ export class SkillSettingsSection implements SettingsSection {
 			text: t('settings.skillTesterRun'),
 		});
 
-		const resultsEl = wrap.createEl('div', {
+		const resultsEl = wrap.createDiv({
 			cls: 'oap-settings-skill-tester-results',
 		});
 
@@ -333,7 +333,7 @@ export class SkillSettingsSection implements SettingsSection {
 				});
 			} catch (err) {
 				console.error('SkillTester: retriever failed', err);
-				resultsEl.createEl('div', {
+				resultsEl.createDiv({
 					cls: 'oap-settings-skill-tester-error',
 					text: t('settings.skillTesterFailed'),
 				});
@@ -475,7 +475,7 @@ function renderTesterResults(
 	hasEmbedding: boolean,
 ): void {
 	if (skills.length === 0) {
-		container.createEl('div', {
+		container.createDiv({
 			cls: 'oap-settings-skill-tester-empty',
 			text: t('settings.skillTesterNoSkills'),
 		});
@@ -483,7 +483,7 @@ function renderTesterResults(
 	}
 
 	if (!hasEmbedding) {
-		container.createEl('div', {
+		container.createDiv({
 			cls: 'oap-settings-skill-tester-banner',
 			text: t('settings.skillTesterBm25OnlyBanner'),
 		});
@@ -525,25 +525,25 @@ function renderTesterResults(
 		if (i === 0 && rank !== null) {
 			classes.push('oap-settings-skill-tester-result--top');
 		}
-		const row = container.createEl('div', { cls: classes.join(' ') });
+		const row = container.createDiv({ cls: classes.join(' ') });
 
-		row.createEl('span', {
+		row.createSpan({
 			cls: 'oap-settings-skill-tester-result-rank',
 			text: rank !== null ? `#${rank}` : '—',
 		});
-		row.createEl('span', {
+		row.createSpan({
 			cls: 'oap-settings-skill-tester-result-name',
 			text: skill.name,
 		});
-		row.createEl('span', {
+		row.createSpan({
 			cls: 'oap-settings-skill-tester-result-bm25',
 			text: bm25 !== null ? `BM25 ${bm25.toFixed(2)}` : '—',
 		});
-		row.createEl('span', {
+		row.createSpan({
 			cls: 'oap-settings-skill-tester-result-cosine',
 			text: cosine !== null ? `cos ${cosine.toFixed(3)}` : '—',
 		});
-		row.createEl('span', {
+		row.createSpan({
 			cls: 'oap-settings-skill-tester-result-band',
 			text: t(bandLabelKey(band)),
 		});

@@ -29,16 +29,16 @@ export class StreamingLoader {
 
     /** Create the loader DOM as the last child of `messagesEl`. */
     mount(): void {
-        this.el = this.messagesEl.createEl('div', {
+        this.el = this.messagesEl.createDiv({
             cls: 'session-streaming-loader session-streaming-loader--hidden',
         });
-        this.dotsEl = this.el.createEl('div', {
+        this.dotsEl = this.el.createDiv({
             cls: 'session-streaming-loader__dots',
         });
         // Three independent dot spans so each can ride its own
         // staggered up/down keyframe — yielding the wave effect.
         for (let i = 0; i < 3; i++) {
-            const dot = this.dotsEl.createEl('span', {
+            const dot = this.dotsEl.createSpan({
                 cls: 'session-streaming-loader__dot',
                 text: '.',
             });
@@ -98,7 +98,7 @@ export class StreamingLoader {
         if (this.dotsEl) this.dotsEl.addClass('session-streaming-loader__dots--hidden');
         // Create or update the status element
         if (!this.statusEl) {
-            this.statusEl = this.el.createEl('div', {
+            this.statusEl = this.el.createDiv({
                 cls: 'session-streaming-loader__status',
             });
         }

@@ -61,7 +61,7 @@ export class SpeechController {
      * no longer be opened" after selecting an item).
      */
     renderSpeakButtonGroup(actions: HTMLElement, content: string): void {
-        const speakGroup = actions.createEl('span', { cls: 'session-bubble__speak-group' });
+        const speakGroup = actions.createSpan({ cls: 'session-bubble__speak-group' });
 
         const speakBtn = speakGroup.createEl('button', {
             cls: 'session-icon-btn session-bubble__action-btn session-bubble__speak-btn',
@@ -100,7 +100,7 @@ export class SpeechController {
             menu.empty();
             const voices = speechSynthesis.getVoices();
             if (voices.length === 0) {
-                menu.createEl('div', {
+                menu.createDiv({
                     cls: 'session-dropdown-item session-bubble__voice-item',
                     text: 'Loading voices…',
                 });
@@ -111,9 +111,9 @@ export class SpeechController {
                 return a.lang.localeCompare(b.lang);
             });
             for (const v of sorted) {
-                const item = menu.createEl('div', { cls: 'session-dropdown-item session-bubble__voice-item' });
-                const checkSpan = item.createEl('span', { cls: 'session-bubble__voice-item-check' });
-                item.createEl('span', {
+                const item = menu.createDiv({ cls: 'session-dropdown-item session-bubble__voice-item' });
+                const checkSpan = item.createSpan({ cls: 'session-bubble__voice-item-check' });
+                item.createSpan({
                     cls: 'session-bubble__voice-item-label',
                     text: v.localService ? `${v.name} (${v.lang})` : `${v.name} (${v.lang}) ★`,
                 });

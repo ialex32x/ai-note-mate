@@ -138,11 +138,11 @@ export class DropdownManager {
         let textEl: HTMLElement;
         
         if (icon) {
-            const iconEl = button.createEl('span', { cls: `${cls}-icon` });
+            const iconEl = button.createSpan({ cls: `${cls}-icon` });
             setIcon(iconEl, icon);
-            textEl = button.createEl('span', { cls: `${cls}-text` });
+            textEl = button.createSpan({ cls: `${cls}-text` });
         } else {
-            textEl = button.createEl('span', { cls: `${cls}-text` });
+            textEl = button.createSpan({ cls: `${cls}-text` });
         }
 
         if (text) {
@@ -150,7 +150,7 @@ export class DropdownManager {
         }
 
         if (showArrow) {
-            const arrow = button.createEl('span', { cls: `${cls}-arrow` });
+            const arrow = button.createSpan({ cls: `${cls}-arrow` });
             setIcon(arrow, 'chevron-up');
         }
 
@@ -170,10 +170,10 @@ export class DropdownManager {
 
         // Handle section headers
         if ('type' in item && item.type === 'header') {
-            const header = parent.createEl('div', {
+            const header = parent.createDiv({
                 cls: `${itemCls.replace('__item', '__section-header')}`,
             });
-            header.createEl('span', {
+            header.createSpan({
                 cls: `${itemCls.replace('__item', '__section-header-text')}`,
                 text: item.label,
             });
@@ -184,23 +184,23 @@ export class DropdownManager {
         const dropdownItem = item as DropdownItem;
         
         if (dropdownItem.disabled) {
-            const el = parent.createEl('div', {
+            const el = parent.createDiv({
                 cls: `${itemCls} ${itemCls}--disabled`,
             });
-            el.createEl('span', { text: dropdownItem.label });
+            el.createSpan({ text: dropdownItem.label });
             return el;
         }
 
-        const el = parent.createEl('div', { cls: itemCls });
+        const el = parent.createDiv({ cls: itemCls });
         
         // Check icon for active state
-        const checkIcon = el.createEl('span', { cls: `${itemCls}-check` });
+        const checkIcon = el.createSpan({ cls: `${itemCls}-check` });
         if (dropdownItem.isActive) {
             el.addClass(`${itemCls}--active`);
             setIcon(checkIcon, 'check');
         }
 
-        el.createEl('span', { text: dropdownItem.label });
+        el.createSpan({ text: dropdownItem.label });
 
         if (onSelect) {
             el.addEventListener('click', onSelect);

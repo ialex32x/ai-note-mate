@@ -67,7 +67,7 @@ export function renderCollapsibleCodeBlock(
     // Add code-specific styling marker on the wrapper
     collapsible.wrapper.addClass('collapsible-block--code');
 
-    const codeWrap = collapsible.body.createEl('div', { cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
+    const codeWrap = collapsible.body.createDiv({ cls: COLLAPSIBLE_CLASSES.CODE_WRAP });
     codeWrap.createEl('pre', { cls: COLLAPSIBLE_CLASSES.CODE, text: code });
 
     if (copyLabel) {

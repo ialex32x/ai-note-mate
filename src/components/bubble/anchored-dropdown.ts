@@ -90,7 +90,7 @@ export function openAnchoredDropdown(
     const layer = ctx.getFloatingLayer();
     const baseCls = 'session-dropdown-menu session-dropdown-menu--anchored';
     const fullCls = opts.cls ? `${baseCls} ${opts.cls}` : baseCls;
-    const menu = layer.createEl('div', {
+    const menu = layer.createDiv({
         cls: fullCls,
         attr: opts.attr,
     });

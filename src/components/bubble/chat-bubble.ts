@@ -133,7 +133,7 @@ export class ChatBubble {
         msg: ChatMessage,
         opts: ChatBubbleOptions = {},
     ): HTMLElement {
-        const bubble = createEl('div', { cls: computeBubbleClasses(msg) });
+        const bubble = createDiv({ cls: computeBubbleClasses(msg) });
         ChatBubble.renderIntoBubble(bubble, ctx, msg, opts);
         return bubble;
     }
@@ -151,7 +151,7 @@ export class ChatBubble {
         msg: ChatMessage,
         opts: ChatBubbleOptions = {},
     ): HTMLElement {
-        const bubble = parentEl.createEl('div', { cls: computeBubbleClasses(msg) });
+        const bubble = parentEl.createDiv({ cls: computeBubbleClasses(msg) });
         ChatBubble.renderIntoBubble(bubble, ctx, msg, opts);
         return bubble;
     }
@@ -221,16 +221,16 @@ export class ChatBubble {
         // ── System message (special layout: no body wrapper) ──────────
         if (msg.role === 'system' && msg.content === 'aborted') {
             bubble.addClass('session-bubble--abort');
-            const bodyEl = bubble.createEl('div', { cls: BUBBLE_BODY_CLS });
-            const divider = bodyEl.createEl('div', { cls: 'session-bubble__abort-divider' });
-            divider.createEl('span', { cls: 'session-bubble__abort-text', text: t('view.responseAborted') });
+            const bodyEl = bubble.createDiv({ cls: BUBBLE_BODY_CLS });
+            const divider = bodyEl.createDiv({ cls: 'session-bubble__abort-divider' });
+            divider.createSpan({ cls: 'session-bubble__abort-text', text: t('view.responseAborted') });
             return;
         }
 
         if (msg.role === 'system') {
             ChatBubble.renderRole(bubble, msg, 'System');
-            const bodyEl = bubble.createEl('div', { cls: BUBBLE_BODY_CLS });
-            const contentEl = bodyEl.createEl('div', { cls: BUBBLE_CONTENT_CLS });
+            const bodyEl = bubble.createDiv({ cls: BUBBLE_BODY_CLS });
+            const contentEl = bodyEl.createDiv({ cls: BUBBLE_CONTENT_CLS });
             contentEl.setText(msg.content);
             return;
         }
@@ -251,7 +251,7 @@ export class ChatBubble {
         }
 
         // ── Body wrapper (background box) ─────────────────────────────
-        const bodyEl = bubble.createEl('div', { cls: BUBBLE_BODY_CLS });
+        const bodyEl = bubble.createDiv({ cls: BUBBLE_BODY_CLS });
 
         // ── Thinking section ─────────────────────────────────────────
         if (msg.role === 'assistant' && msg.thinkingContent) {
@@ -260,7 +260,7 @@ export class ChatBubble {
         }
 
         // ── Content area ──────────────────────────────────────────────
-        const contentEl = bodyEl.createEl('div', { cls: BUBBLE_CONTENT_CLS });
+        const contentEl = bodyEl.createDiv({ cls: BUBBLE_CONTENT_CLS });
 
         switch (msg.role) {
             case 'tool_call':
@@ -329,7 +329,7 @@ export class ChatBubble {
         beforeChild?: HTMLElement,
         onPreviewImage?: (src: string, fileName: string) => void,
     ): void {
-        const wrapper = activeDocument.createElement('div');
+        const wrapper = createDiv();
         wrapper.className = 'session-bubble__attachments';
         if (beforeChild && beforeChild.parentNode === container) {
             container.insertBefore(wrapper, beforeChild);
@@ -547,7 +547,7 @@ export class ChatBubble {
 
         // 5. Aborted indicator (text span, not a button)
         if (isMessageInterrupted(msg, abortedMessageIds)) {
-            actions.createEl('span', {
+            actions.createSpan({
                 cls: 'session-bubble__abort-label',
                 text: t('view.responseStopped'),
             });
@@ -580,17 +580,17 @@ export class ChatBubble {
 
     /** Append the role label element with a hover-revealed model name and timestamp. */
     private static renderRole(bubble: HTMLElement, msg: ChatMessage, text: string): void {
-        const roleEl = bubble.createEl('span', { cls: BUBBLE_ROLE_CLS });
-        roleEl.createEl('span', { cls: 'session-bubble__role-label', text });
+        const roleEl = bubble.createSpan({ cls: BUBBLE_ROLE_CLS });
+        roleEl.createSpan({ cls: 'session-bubble__role-label', text });
         if (msg.role === 'assistant' && msg.modelName) {
-            roleEl.createEl('span', {
+            roleEl.createSpan({
                 cls: 'session-bubble__role-model',
                 text: msg.modelName,
             });
         }
         if (msg.timestamp) {
             const timeStr = ChatBubble.formatTimestamp(msg.timestamp);
-            roleEl.createEl('span', {
+            roleEl.createSpan({
                 cls: 'session-bubble__role-time',
                 text: timeStr,
                 attr: { 'data-timestamp': String(msg.timestamp) },
@@ -646,7 +646,7 @@ function renderDelegateTaskContent(contentEl: HTMLElement, msg: ChatMessage): vo
         ?? msg.toolCallMeta?.toolArgs?.['inputs'];
 
     if (taskText) {
-        contentEl.createEl('div', {
+        contentEl.createDiv({
             cls: 'session-bubble__delegate-task-text',
             text: taskText,
         });

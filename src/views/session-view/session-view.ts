@@ -389,10 +389,10 @@ export class SessionView extends ItemView {
      *          {@link buildInputArea}.
      */
     private buildToolbar(root: HTMLElement): HTMLElement {
-        const toolbar = root.createEl('div', { cls: 'session-toolbar' });
+        const toolbar = root.createDiv({ cls: 'session-toolbar' });
 
         // Left group: session switcher button + token usage
-        const leftGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--left' });
+        const leftGroup = toolbar.createDiv({ cls: 'session-toolbar__group session-toolbar__group--left' });
 
         // Session switcher button with dropdown and more actions
         this.sessionNavigator = new SessionNavigator({
@@ -456,8 +456,8 @@ export class SessionView extends ItemView {
         this.sessionNavigator.mount(leftGroup);
 
         // Center group: session title
-        const centerGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--center' });
-        const sessionTitleEl = centerGroup.createEl('span', { cls: 'session-toolbar__title' });
+        const centerGroup = toolbar.createDiv({ cls: 'session-toolbar__group session-toolbar__group--center' });
+        const sessionTitleEl = centerGroup.createSpan({ cls: 'session-toolbar__title' });
         // Delegate to the status controller (constructed later in
         // buildInputArea). The closure captures `this`; by the time the
         // user clicks, the controller will exist.
@@ -469,10 +469,10 @@ export class SessionView extends ItemView {
         renderSessionTitle(sessionTitleEl, this.sessionManager);
 
         // Right group: new chat button with dropdown
-        const rightGroup = toolbar.createEl('div', { cls: 'session-toolbar__group session-toolbar__group--right' });
+        const rightGroup = toolbar.createDiv({ cls: 'session-toolbar__group session-toolbar__group--right' });
 
         // Toolbar buttons - New Chat button with dropdown
-        const newChatBtnGroup = rightGroup.createEl('span', {
+        const newChatBtnGroup = rightGroup.createSpan({
             cls: 'session-toolbar__btn-group',
         });
 
@@ -491,23 +491,23 @@ export class SessionView extends ItemView {
         });
         setIcon(moreActionsBtn, 'chevron-down');
 
-        const moreActionsDropdown = newChatBtnGroup.createEl('div', {
+        const moreActionsDropdown = newChatBtnGroup.createDiv({
             cls: 'session-dropdown-menu session-dropdown-menu--toolbar-right',
         });
 
-        const searchItem = moreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
-        const searchIcon = searchItem.createEl('span', { cls: 'session-dropdown-item__icon' });
+        const searchItem = moreActionsDropdown.createDiv({ cls: 'session-dropdown-item' });
+        const searchIcon = searchItem.createSpan({ cls: 'session-dropdown-item__icon' });
         setIcon(searchIcon, 'search');
-        searchItem.createEl('span', { text: t('search.title') });
+        searchItem.createSpan({ text: t('search.title') });
         searchItem.addEventListener('click', () => {
             this.dropdownManager.closeActive();
             void this.openSessionSearch();
         });
 
-        const saveAsNoteItem = moreActionsDropdown.createEl('div', { cls: 'session-dropdown-item' });
-        const saveIcon = saveAsNoteItem.createEl('span', { cls: 'session-dropdown-item__icon' });
+        const saveAsNoteItem = moreActionsDropdown.createDiv({ cls: 'session-dropdown-item' });
+        const saveIcon = saveAsNoteItem.createSpan({ cls: 'session-dropdown-item__icon' });
         setIcon(saveIcon, 'download');
-        saveAsNoteItem.createEl('span', { text: t('view.exportSession') });
+        saveAsNoteItem.createSpan({ text: t('view.exportSession') });
         saveAsNoteItem.addEventListener('click', () => {
             this.dropdownManager.closeActive();
             this.exportSession();
@@ -543,8 +543,8 @@ export class SessionView extends ItemView {
         this.previewOverlay = new PreviewOverlay(root);
         this.previewOverlay.mount();
 
-        const messagesWrapper = root.createEl('div', { cls: 'session-messages-wrapper' });
-        this.messagesEl = messagesWrapper.createEl('div', { cls: 'session-messages' });
+        const messagesWrapper = root.createDiv({ cls: 'session-messages-wrapper' });
+        this.messagesEl = messagesWrapper.createDiv({ cls: 'session-messages' });
 
         this.historyLoadingOverlay = new SessionLoadingOverlay(messagesWrapper);
         this.historyLoadingOverlay.mount();
@@ -703,7 +703,7 @@ export class SessionView extends ItemView {
         // clicked — same ergonomic as a mobile bottom sheet, so
         // the user never has to scroll to the top of the chat to
         // see what the LLM is working on next.
-        const todoPanelHost = root.createEl('div', { cls: 'session-todo-panel-host' });
+        const todoPanelHost = root.createDiv({ cls: 'session-todo-panel-host' });
         this.todoPanel = new TodoPanel(todoPanelHost);
 
         // QuickAsk panel — mounted on body with position:fixed, never
@@ -718,11 +718,11 @@ export class SessionView extends ItemView {
         );
 
         // ── Input container ───────────────────────────────────────────────────────
-        const inputContainer = root.createEl('div', { cls: 'session-input-container' });
+        const inputContainer = root.createDiv({ cls: 'session-input-container' });
 
         // Checkpoint list control — full-width row docked to the top of the
         // compose card (dropdown opens as a sheet from the top edge).
-        const checkpointRow = inputContainer.createEl('div', { cls: 'session-checkpoint-row' });
+        const checkpointRow = inputContainer.createDiv({ cls: 'session-checkpoint-row' });
         this.checkpointSelector = createCheckpointSelector(checkpointRow, this.dropdownManager, {
             app: this.app,
             onGotoMessage: (messageId) => { void this.historyLoader.scrollToMessage(messageId); },
@@ -731,14 +731,14 @@ export class SessionView extends ItemView {
         // ── Image attachment thumbnail row ──────────────────────────────────
         // Placed between the checkpoint row and the input row so the
         // user can see the pasted image before typing their message.
-        this.attachmentRow = inputContainer.createEl('div', { cls: 'session-attachment-row session-attachment-row--hidden' });
+        this.attachmentRow = inputContainer.createDiv({ cls: 'session-attachment-row session-attachment-row--hidden' });
         // Wrapper that sizes to the actual thumbnail dimensions so the
         // delete button always sits exactly on the image's top-right corner.
-        const thumbWrap = this.attachmentRow.createEl('span', { cls: 'session-attachment-thumb-wrap' });
+        const thumbWrap = this.attachmentRow.createSpan({ cls: 'session-attachment-thumb-wrap' });
         // Thumbnail image
         this.attachmentThumb = thumbWrap.createEl('img', { cls: 'session-attachment-thumb' });
         // Delete button (×) in the top-right corner of the thumbnail
-        this.attachmentDeleteBtn = thumbWrap.createEl('span', {
+        this.attachmentDeleteBtn = thumbWrap.createSpan({
             cls: 'session-attachment-delete',
             attr: { role: 'button', 'aria-label': t('view.removeAttachment') },
         });
@@ -762,8 +762,8 @@ export class SessionView extends ItemView {
         });
 
         // Input area with CodeMirror 6 editor
-        const inputRow = inputContainer.createEl('div', { cls: 'session-input-row' });
-        const cmContainer = inputRow.createEl('div', { cls: 'session-cm-input' });
+        const inputRow = inputContainer.createDiv({ cls: 'session-input-row' });
+        const cmContainer = inputRow.createDiv({ cls: 'session-cm-input' });
         this.cmInput = new CMInput(cmContainer, {
             app: this.app,
             placeholder: t('view.inputPlaceholder'),
@@ -944,7 +944,7 @@ export class SessionView extends ItemView {
         sessionStatusPanelEl: HTMLElement;
     } {
         // ── Thinking level selector ───────────────────────────────────────────
-        const thinkingRow = inputContainer.createEl('div', { cls: 'session-thinking-row' });
+        const thinkingRow = inputContainer.createDiv({ cls: 'session-thinking-row' });
 
         // ── Add file reference button (mirrors typing `[[`) ────────────────────
         const addFileRefBtn = thinkingRow.createEl('button', {
@@ -979,7 +979,7 @@ export class SessionView extends ItemView {
         // Pushed right via `margin-left: auto` on the group itself, so the
         // left-aligned controls above keep their natural packing order.
         // Order inside the group: assets → session status → refine prompt → send.
-        const thinkingRowRight = thinkingRow.createEl('div', {
+        const thinkingRowRight = thinkingRow.createDiv({
             cls: 'session-thinking-row__right',
         });
 
@@ -1052,10 +1052,10 @@ export class SessionView extends ItemView {
         // Primary metric: context-usage ring that also opens a
         // detailed panel on click. Placed before refine → send so
         // the eye-flow is "status → refine → send".
-        const sessionStatusEl = thinkingRowRight.createEl('div', {
+        const sessionStatusEl = thinkingRowRight.createDiv({
             cls: 'session-toolbar__status',
         });
-        const sessionStatusMainEl = sessionStatusEl.createEl('div', {
+        const sessionStatusMainEl = sessionStatusEl.createDiv({
             cls: 'session-toolbar__status-main',
             attr: {
                 role: 'button',
@@ -1064,7 +1064,7 @@ export class SessionView extends ItemView {
         });
         // Note: `session-dropdown-menu` MUST be the first class so that
         // DropdownManager derives the `--open` toggle class from it.
-        const sessionStatusPanelEl = sessionStatusEl.createEl('div', {
+        const sessionStatusPanelEl = sessionStatusEl.createDiv({
             cls: 'session-dropdown-menu session-dropdown-menu--toolbar-up-right session-status-panel',
         });
         this.dropdownManager.registerToggle({
@@ -1616,7 +1616,7 @@ export class SessionView extends ItemView {
                     width = Math.round(width * ratio);
                     height = Math.round(height * ratio);
                 }
-                const canvas = activeDocument.createElement('canvas');
+                const canvas = createEl('canvas');
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');

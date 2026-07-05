@@ -224,7 +224,7 @@ export class MessageWindowController {
         }
 
         if (!this.sentinelEl) {
-            this.sentinelEl = this.messagesEl.createEl('div', {
+            this.sentinelEl = this.messagesEl.createDiv({
                 cls: 'session-history-sentinel',
             });
             this.messagesEl.insertBefore(this.sentinelEl, this.messagesEl.firstChild);

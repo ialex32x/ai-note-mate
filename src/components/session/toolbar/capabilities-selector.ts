@@ -41,7 +41,7 @@ export function createCapabilitiesSelector(
     };
     const allowedCapabilities: ToolCapability[] = normalize(options.initial);
 
-    const capabilitiesWrapper = parent.createEl('span', { cls: 'session-selector session-capabilities' });
+    const capabilitiesWrapper = parent.createSpan({ cls: 'session-selector session-capabilities' });
     const { button, textEl } = DropdownManager.createButton({
         parent: capabilitiesWrapper,
         cls: 'session-dropdown-btn',
@@ -50,7 +50,7 @@ export function createCapabilitiesSelector(
     });
     const capabilitiesBtnText = textEl;
 
-    const capabilitiesDropdown = capabilitiesWrapper.createEl('div', {
+    const capabilitiesDropdown = capabilitiesWrapper.createDiv({
         cls: 'session-dropdown-menu',
     });
 
@@ -98,7 +98,7 @@ export function createCapabilitiesSelector(
             updateBtnText();
             options.onChange?.([...allowedCapabilities]);
         });
-        itemEl.createEl('span', { text: cap.label });
+        itemEl.createSpan({ text: cap.label });
     }
 
     dropdownManager.registerToggle({

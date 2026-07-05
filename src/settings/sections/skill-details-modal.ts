@@ -44,24 +44,24 @@ export class SkillDetailsModal extends Modal {
 
 		this.setTitle(t('settings.skillDetailsTitle'));
 
-		const listEl = contentEl.createEl('div', {
+		const listEl = contentEl.createDiv({
 			cls: 'oap-settings-skill-list',
 		});
 		for (const skill of this.skills) {
-			const itemEl = listEl.createEl('div', {
+			const itemEl = listEl.createDiv({
 				cls: 'oap-settings-skill-item',
 			});
 			if (skill.disabled) {
 				itemEl.addClass('oap-settings-skill-item--disabled');
 			}
-			const nameRow = itemEl.createEl('div', {
+			const nameRow = itemEl.createDiv({
 				cls: 'oap-settings-skill-name-row',
 			});
-			nameRow.createEl('div', {
+			nameRow.createDiv({
 				cls: 'oap-settings-skill-name',
 				text: skill.name,
 			});
-			nameRow.createEl('div', {
+			nameRow.createDiv({
 				cls: 'oap-settings-skill-location',
 				text: skill.location,
 			});
@@ -85,11 +85,11 @@ export class SkillDetailsModal extends Modal {
 				});
 			}
 			if (badges.length > 0) {
-				const badgeRow = itemEl.createEl('div', {
+				const badgeRow = itemEl.createDiv({
 					cls: 'oap-settings-skill-badges',
 				});
 				for (const b of badges) {
-					const badge = badgeRow.createEl('span', {
+					const badge = badgeRow.createSpan({
 						cls: b.cls,
 						text: b.label,
 					});
@@ -97,12 +97,12 @@ export class SkillDetailsModal extends Modal {
 				}
 			}
 
-			itemEl.createEl('div', {
+			itemEl.createDiv({
 				cls: 'oap-settings-skill-desc',
 				text: skill.description,
 			});
 			if (skill.whenToUse) {
-				itemEl.createEl('div', {
+				itemEl.createDiv({
 					cls: 'oap-settings-skill-when',
 					text: `${t('settings.skillWhenToUseLabel')}: ${skill.whenToUse}`,
 				});

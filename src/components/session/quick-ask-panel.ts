@@ -67,7 +67,7 @@ export class QuickAskPanel {
 
     private render(): void {
         if (!this.el) {
-            this.el = activeDocument.body.createEl('div', {
+            this.el = activeDocument.body.createDiv({
                 cls: `session-quick-ask-panel ${PANEL_HIDDEN_CLS}`,
             });
         }
@@ -81,14 +81,14 @@ export class QuickAskPanel {
         this.el.empty();
 
         // Header
-        const header = this.el.createEl('div', { cls: 'session-quick-ask-panel__header' });
-        const titleEl = header.createEl('span', { cls: 'session-quick-ask-panel__title' });
-        const titleIcon = titleEl.createEl('span', { cls: 'session-quick-ask-panel__title-icon' });
+        const header = this.el.createDiv({ cls: 'session-quick-ask-panel__header' });
+        const titleEl = header.createSpan({ cls: 'session-quick-ask-panel__title' });
+        const titleIcon = titleEl.createSpan({ cls: 'session-quick-ask-panel__title-icon' });
         setIcon(titleIcon, 'message-circle-question');
         titleEl.appendText(' ' + t('view.quickAskTitle'));
 
         // Button group (delete + close)
-        const btnGroup = header.createEl('div', { cls: 'session-quick-ask-panel__header-actions' });
+        const btnGroup = header.createDiv({ cls: 'session-quick-ask-panel__header-actions' });
 
         if (this._activeMessageId && (this._state === 'result' || this._state === 'loading')) {
             const deleteBtn = btnGroup.createEl('button', {
@@ -114,7 +114,7 @@ export class QuickAskPanel {
         closeBtn.addEventListener('click', () => this.hide());
 
         // Body
-        this.bodyEl = this.el.createEl('div', { cls: 'session-quick-ask-panel__body' });
+        this.bodyEl = this.el.createDiv({ cls: 'session-quick-ask-panel__body' });
 
         switch (this._state) {
             case 'input': this.renderInput(); break;
@@ -127,13 +127,13 @@ export class QuickAskPanel {
 
     private renderInput(): void {
         if (!this.bodyEl) return;
-        const wrapper = this.bodyEl.createEl('div', { cls: 'session-quick-ask-panel__input-wrapper' });
+        const wrapper = this.bodyEl.createDiv({ cls: 'session-quick-ask-panel__input-wrapper' });
         this.textareaEl = wrapper.createEl('textarea', {
             cls: 'session-quick-ask-panel__input',
             attr: { placeholder: t('view.quickAskPlaceholder'), rows: '3' },
         });
 
-        const actions = wrapper.createEl('div', { cls: 'session-quick-ask-panel__actions' });
+        const actions = wrapper.createDiv({ cls: 'session-quick-ask-panel__actions' });
         const sendBtn = actions.createEl('button', {
             cls: 'session-quick-ask-panel__send-btn clickable-icon',
             attr: { type: 'button' },
@@ -163,10 +163,10 @@ export class QuickAskPanel {
         if (turn) {
             this.renderCompactBubble(this.bodyEl, turn.userMessage, 'user');
         }
-        this.bodyEl.createEl('div', {
+        this.bodyEl.createDiv({
             cls: 'session-quick-ask-panel__loading',
             text: '\u00A0' + t('view.quickAskWaiting'),
-        }, (el) => { el.createEl('span', { cls: 'session-quick-ask-panel__spinner' }); });
+        }, (el) => { el.createSpan({ cls: 'session-quick-ask-panel__spinner' }); });
     }
 
     private renderResult(): void {
@@ -180,11 +180,11 @@ export class QuickAskPanel {
 
     private renderCompactBubble(parent: HTMLElement, msg: ChatMessage, role: 'user' | 'assistant'): void {
         const cls = computeBubbleClasses(msg);
-        const bubble = parent.createEl('div', { cls: `${BUBBLE_BASE_CLS} ${cls}` });
+        const bubble = parent.createDiv({ cls: `${BUBBLE_BASE_CLS} ${cls}` });
         const roleLabel = role === 'user' ? t('view.roleYou') : t('view.roleAI');
-        bubble.createEl('div', { cls: 'session-bubble__role', text: roleLabel });
-        const body = bubble.createEl('div', { cls: 'session-bubble__body' });
-        const content = body.createEl('div', { cls: 'session-bubble__content' });
+        bubble.createDiv({ cls: 'session-bubble__role', text: roleLabel });
+        const body = bubble.createDiv({ cls: 'session-bubble__body' });
+        const content = body.createDiv({ cls: 'session-bubble__content' });
         content.setText(msg.content || '');
     }
 

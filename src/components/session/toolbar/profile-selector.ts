@@ -114,10 +114,10 @@ function appendModelName(parent: HTMLElement, model: string | undefined | null):
     const safeModel = model ?? '';
     const def = getModelIconDef(safeModel);
     if (def) {
-        const iconEl = parent.createEl('span', { cls: 'session-dropdown-item__model-icon' });
+        const iconEl = parent.createSpan({ cls: 'session-dropdown-item__model-icon' });
         iconEl.appendChild(buildSvgIcon(def));
     }
-    parent.createEl('span', { cls: 'session-dropdown-item__model', text: safeModel });
+    parent.createSpan({ cls: 'session-dropdown-item__model', text: safeModel });
 }
 
 /** Small gap between the dropdown top edge and the session-view top boundary. */
@@ -179,24 +179,24 @@ function renderConfigSection<T>(
 ): void {
     if (opts.configs.length === 0 && !opts.emptyMessage) return;
 
-    const header = host.createEl('div', { cls: 'session-dropdown-section-header' });
-    header.createEl('span', {
+    const header = host.createDiv({ cls: 'session-dropdown-section-header' });
+    header.createSpan({
         cls: 'session-dropdown-section-header__text',
         text: t(opts.titleKey),
     });
     appendSectionSettingsAction(header, plugin, dropdownManager, opts.sectionId);
 
     if (opts.configs.length === 0 && opts.emptyMessage) {
-        host.createEl('div', {
+        host.createDiv({
             cls: 'session-dropdown-item session-dropdown-item--disabled',
-        }).createEl('span', { text: opts.emptyMessage });
+        }).createSpan({ text: opts.emptyMessage });
         return;
     }
 
     for (const cfg of opts.configs) {
-        const item = host.createEl('div', { cls: 'session-dropdown-item' });
-        const checkIcon = item.createEl('span', { cls: 'session-dropdown-item__check' });
-        item.createEl('span', { cls: 'session-dropdown-item__name', text: opts.getName(cfg) });
+        const item = host.createDiv({ cls: 'session-dropdown-item' });
+        const checkIcon = item.createSpan({ cls: 'session-dropdown-item__check' });
+        item.createSpan({ cls: 'session-dropdown-item__name', text: opts.getName(cfg) });
         appendModelName(item, opts.getModel(cfg));
 
         opts.badges?.(item, cfg);
@@ -232,7 +232,7 @@ export function createProfileSelector(
     plugin: NoteAssistantPlugin,
     dropdownManager: DropdownManager,
 ): ProfileSelectorHandle {
-    const profileWrapper = parent.createEl('span', { cls: 'session-selector session-profile-selector' });
+    const profileWrapper = parent.createSpan({ cls: 'session-selector session-profile-selector' });
     const { button, textEl } = DropdownManager.createButton({
         parent: profileWrapper,
         cls: 'session-dropdown-btn',
@@ -242,11 +242,11 @@ export function createProfileSelector(
     const profileBtnTextEl = textEl;
 
     // Model icon displayed inline on the button, before the profile name
-    const profileBtnIconEl = profileBtnEl.createEl('span', { cls: 'session-dropdown-btn-model-icon' });
+    const profileBtnIconEl = profileBtnEl.createSpan({ cls: 'session-dropdown-btn-model-icon' });
     // Insert before the text element
     profileBtnEl.insertBefore(profileBtnIconEl, profileBtnTextEl);
 
-    const profileDropdownEl = profileWrapper.createEl('div', {
+    const profileDropdownEl = profileWrapper.createDiv({
         cls: 'session-dropdown-menu',
     });
 
@@ -292,14 +292,14 @@ export function createProfileSelector(
             onSelect: p => { profileBtnTextEl.setText(p.name); },
             badges: (item, p) => {
                 if (p.id === current.summarizerProfileId) {
-                    const badge = item.createEl('span', {
+                    const badge = item.createSpan({
                         cls: 'session-dropdown-item__badge session-dropdown-item__badge--summarizer',
                     });
                     setIcon(badge, 'scroll-text');
                     setTooltip(badge, t('view.profileSummarizerBadge'));
                 }
                 if (effectiveInsightsId && p.id === effectiveInsightsId) {
-                    const badge = item.createEl('span', {
+                    const badge = item.createSpan({
                         cls: 'session-dropdown-item__badge session-dropdown-item__badge--insights',
                     });
                     setIcon(badge, 'lightbulb');
