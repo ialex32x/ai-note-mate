@@ -32,6 +32,7 @@ export interface RegexMatch {
  */
 export function findAllOccurrences(haystack: string, needle: string): number[] {
     const out: number[] = [];
+    if (!needle) return out;
     let from = 0;
     while (true) {
         const idx = haystack.indexOf(needle, from);
@@ -53,6 +54,9 @@ export function findAllOccurrences(haystack: string, needle: string): number[] {
  */
 export function findAllOccurrencesRegex(haystack: string, source: string): RegexHit[] {
     const out: RegexHit[] = [];
+    // Empty or whitespace-only source would match zero-length at every position
+    // and never advance lastIndex, causing an infinite loop.
+    if (!source || /^\s*$/.test(source)) return out;
     const re = new RegExp(source, "gmu");
     let m: RegExpExecArray | null;
     while ((m = re.exec(haystack)) !== null) {
@@ -65,6 +69,7 @@ export function findAllOccurrencesRegex(haystack: string, source: string): Regex
 /** Like `findAllOccurrencesRegex` but also captures groups for `$N` substitution. */
 export function findAllRegexMatches(haystack: string, source: string): RegexMatch[] {
     const out: RegexMatch[] = [];
+    if (!source || /^\s*$/.test(source)) return out;
     const re = new RegExp(source, "gmu");
     let m: RegExpExecArray | null;
     while ((m = re.exec(haystack)) !== null) {
