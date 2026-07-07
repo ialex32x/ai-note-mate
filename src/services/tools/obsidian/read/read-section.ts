@@ -132,8 +132,12 @@ export function vaultReadSection(plugin: NoteAssistantPlugin): RegisteredTool {
 
             // Read file content first — we may need to parse headings ourselves
             // if the metadata cache hasn't indexed this file yet.
-            const content = await plugin.app.vault.read(file);
-            const lines = content.split("\n");
+            const rawContent = await plugin.app.vault.read(file);
+            // Normalise line endings to match the same `\n`-only handling in
+            // set_section, so that body-hash comparison is consistent even when
+            // files contain \r\n or \r (e.g. synced from Windows).
+            const normalized = rawContent.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+            const lines = normalized.split("\n");
             const totalLines = lines.length;
 
             const cache = plugin.app.metadataCache.getFileCache(file);
