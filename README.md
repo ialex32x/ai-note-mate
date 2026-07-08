@@ -1,6 +1,6 @@
 # Note Mate
 
-A vault-connected sidebar assistant: persistent chat that searches and drafts with you, customizable editor shortcuts, plus checkpoints so you review or rewind AI edits cleanly.
+A vault-connected sidebar assistant: persistent chat that searches and drafts with you, customisable editor shortcuts, sub-agent delegation, plus checkpoints so you review or rewind AI edits cleanly.
 
 It's an [Obsidian](https://obsidian.md) plugin. Plug in AI accounts you already use, chat beside your notes, pull in vault context, polish text where the cursor sits, and rewind changes when needed—still inside Obsidian.
 
@@ -15,7 +15,7 @@ Under **Settings → Note Mate → Tools**, turn on the **vault tools** you want
 - **Read notes** — open by path or wiki link and quote what matters.
 - **Search the vault** — find notes by text or tags and follow links between them.
 - **Create & edit** — draft new notes or update existing ones; every change stays traceable.
-- **Speech-to-text** — transcribe audio files directly in chat. Works with DashScope (Alibaba) out of the box; configure your key under **Settings → Note Mate → Tools → Speech to Text** and attach audio files from your vault. More providers may be added in future releases.
+- **Speech-to-text** — transcribe audio files directly in chat. Works with DashScope (Alibaba) and Tencent Cloud out of the box; configure your key under **Settings → Note Mate → Tools → Speech to Text** and attach audio files from your vault.
 - **Auto-tag** — send a note to chat so the assistant can add tags that match your vault's conventions.
 
 ![ai-auto-tag](readme-assets/ai-auto-tag.png)
@@ -28,11 +28,24 @@ Beyond markdown, the assistant understands Obsidian **Bases** (`.base`) and **Ca
 
 ![ai-generated-canvas](readme-assets/ai-generated-canvas.png)
 
-**Insights**
+### Sub-agent delegation
 
-Controlled separately from vault tooling. After a reply, optional cards surface takeaway angles—new vantage points, sharper questions, hooks worth promoting into notes. The goal is fresher momentum, not circling what you already said.
+When a task needs specialised handling—searching the web, inspecting your vault, rewriting a long note, or running a script—the assistant delegates to a **sub-agent** built for that job. Built-in agents include:
 
-![insights](readme-assets/insights.png)
+- **Vault Inspector** — read, search, and list vault content with full read-only access.
+- **Vault Editor** — rewrite an entire note body without bloating the main conversation context.
+- **Web Search** — search the internet, fetch pages, and skim RSS feeds for research tasks.
+- **Code Executor** — run short JavaScript snippets for calculations or data reshaping (disabled by default, opt-in).
+
+The orchestrator routes each task to the right agent, and delegation bubbles in chat show which agent handled each step. The **Web Search** and **Code Executor** agents can be toggled individually in settings.
+
+### Custom agents (experimental)
+
+Define your own sub-agents under **Settings → Note Mate → Agents**. Each custom agent gets an inline system prompt, a description, a target model override (pick a different provider per agent), and an enable/disable toggle. Built-in agents are shown in a read-only card so you can inspect their configuration alongside your own.
+
+### AGENT.md project guidance
+
+The plugin reads an `AGENT.md` file from your vault (configurable under **Settings → Note Mate → General**) and appends it to the system prompt for that vault. Use it for per-project AI instructions—coding conventions, writing style, domain knowledge—that apply across every conversation. Changes to the file are picked up automatically as you edit.
 
 ### Custom menu & editor shortcuts
 
@@ -42,13 +55,16 @@ Right from the editor and file menu:
 
 - **Custom actions** — one-click prompts built from your selection, cursor position, or the open file.
 - **Send to AI session** — push the open file—plus cursor or selection—into chat for deeper back-and-forth.
+- **Send to new session** — same as above, but starts a fresh conversation first.
 - **AI Edit History** — browse AI-driven edits across sessions.
 
 In the chat sidebar:
 
 - **Edit a message** — fix a typo or adjust a prompt, then re-send without copy-paste.
 - **Refine prompt** — polish your draft before sending, using the previous turn for context when helpful.
-- **Context at a glance** — a ring in the input toolbar shows how much of the model's context window is in use; click for token and session details.
+- **Context at a glance** — a ring in the input toolbar shows how much of the model's context window is in use; click for token and session details, including cached prompt token savings.
+- **Image paste** — paste images from the clipboard into the chat input; they'll be sent as message content or saved to the vault on demand.
+- **Pinned prompt bar** — when you scroll up in a conversation, your active prompt pins to the top so you can reference it without losing your place.
 
 ![session-status](readme-assets/session-status.png)
 
@@ -70,6 +86,12 @@ Turn on **Memory** under **Settings → Note Mate → Memory** when you want the
 
 ![ai-memory](readme-assets/ai-memory.png)
 
+### Insights & follow-up suggestions
+
+After a reply, optional cards surface takeaway angles—new vantage points, sharper questions, hooks worth promoting into notes. The goal is fresher momentum, not circling what you already said. **Follow-up suggestions** appear as quick-pick chips below the assistant's reply, offering one-click next questions to keep the conversation moving forward.
+
+![insights](readme-assets/insights.png)
+
 ### QuickAsk
 
 Click the **Ask** button on any assistant bubble to open a floating panel for a follow-up question—one shot, no tools, no streaming. The side conversation stays anchored to that message without adding to the main context, so you can dig deeper into a single reply without derailing the session.
@@ -78,16 +100,16 @@ Click the **Ask** button on any assistant bubble to open a floating panel for a 
 
 ### Models and accounts
 
-Add your own keys: **OpenAI-compatible** endpoints (including OpenAI, Azure OpenAI, and comparable hosts), **Anthropic (Claude)**, **Google Gemini**, and saved **profiles** so switching models isn't rewriting forms each time. Vendor logos and model icons in the profile picker make it easy to spot what you're using.
+Add your own keys: **OpenAI-compatible** endpoints (including OpenAI, Azure OpenAI, and comparable hosts), **Anthropic (Claude)**, **Google Gemini**, and saved **profiles** so switching models isn't rewriting forms each time. Vendor logos and model icons in the profile picker make it easy to spot what you're using. Each assistant bubble shows the model name that generated the response.
 
 ### Optional extras (when you turn them on)
 
 - **Lookups** — Web search, open a page from a URL, skim feeds—useful for research next to notes.
-- **Images** — generate pictures and drop them straight into your vault (provider-dependent).
+- **Images** — generate pictures with Gemini, Qwen, OpenAI (DALL·E), or Seedream (ByteDance) and drop them straight into your vault. Click any generated image for a full-screen preview with pinch-to-zoom and pan. Adjust JPEG quality under **Settings → Note Mate → Image** to balance fidelity against file size.
 - **Richer tooling** — connect **MCP** servers for capabilities your admin or community provides.
-- **Skills** — reusable instruction packs loaded from folders you choose—great for repeatable workflows.
+- **Skills** — reusable instruction packs loaded from folders you choose—great for repeatable workflows. Skills can be disabled individually via frontmatter; disabled skills are dimmed in the details modal.
 - **Embeddings** (**experimental**) — connect an embedding provider so **tools** and **skills** can be relevance-ranked before entering the prompt, saving tokens. Vault-wide semantic search is **not** here yet; whole-library search "by meaning" is **planned / TBD**. Expect drift as this settles.
-- **JavaScript snippets** (**experimental**) — run short scripts from chat for arithmetic or reshaping pasted text when enabled. Executes through the plugin, **not** a hardened sandbox; expect sizeable shifts between releases.
+- **JavaScript snippets** (**experimental**) — run short scripts from chat for arithmetic or reshaping pasted text when enabled (via the Code Executor sub-agent). Executes through the plugin, **not** a hardened sandbox; expect sizeable shifts between releases.
 
 **Platforms & languages:** Runs on desktop and mobile (**Windows**, **macOS**, **Linux**, **iOS**, **Android**).  
 UI copy ships in **English**, **日本語**, **한국어**, **简体中文**, and **繁體中文**—defaults follow locale; overrides live in plugin settings.
@@ -112,10 +134,11 @@ UI copy ships in **English**, **日本語**, **한국어**, **简体中文**, an
 2. Under **General**, pick your active **text generation** profile (or add one first under **LLM**).
 3. Add at least one **LLM** profile: an **OpenAI-compatible** endpoint, **Anthropic**, or **Gemini**, plus your model and key.
 4. Optionally wire integrations—you can skip these until you need them:
-   - **Image** — saves generated visuals into your vault when enabled.
+   - **Image** — saves generated visuals into your vault when enabled. Supports Gemini, Qwen, OpenAI (DALL·E), and Seedream (ByteDance) backends.
    - **Embeddings** (**experimental**) — provider needed for embedding-based **tool/skill** filtering (saves tokens). Not for vault-wide semantic search yet; that mode is **planned / TBD**.
-   - **Tools** — MCP servers, built-in web lookup toggles, and **tool permissions** for vault moves.
+   - **Tools** — MCP servers, built-in web lookup toggles, and **tool permissions** for vault moves. Speech-to-text setup for DashScope or Tencent Cloud.
    - **Skills** — folders where optional instruction bundles live on disk.
+   - **Agents** (**experimental**) — define custom sub-agents with per-agent profiles and tool sets, plus toggle built-in agents (Web Search, Code Executor).
    - **Memory** — long-term facts stored in a vault note you control.
    - **Menu note** — path to `MENU.md` (or your own file) for custom right-click actions; create from the default template if you haven't yet.
    - **Save as note directory** — default folder for exporting a session to a vault note without a prompt each time.

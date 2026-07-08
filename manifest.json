@@ -3,7 +3,7 @@
 	"name": "Note Mate",
 	"version": "1.6.3",
 	"minAppVersion": "1.12.3",
-	"description": "A vault-connected sidebar assistant: persistent chat that searches and drafts with you, in-editor rewrite and explain shortcuts, plus checkpoints so you review or rewind AI edits cleanly.",
+	"description": "A vault-connected sidebar assistant: persistent chat that searches and drafts with you, customisable editor shortcuts, sub-agent delegation, plus checkpoints so you review or rewind AI edits cleanly.",
 	"author": "ialex32x",
 	"authorUrl": "https://github.com/ialex32x",
 	"fundingUrl": "https://buymeacoffee.com/ialex32x",
