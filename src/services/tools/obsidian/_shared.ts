@@ -171,12 +171,34 @@ export const MAX_PDF_INLINE_BYTES = 20 * 1024 * 1024;
  * Returns either the file, or a failure `ToolCallResult` describing why it could not be resolved.
  */
 export function requireFile(app: App, path: string): TFile | ToolCallResult {
+    if (!path || path.trim().length === 0) {
+        return {
+            success: false,
+            type: "text",
+            content:
+                "Missing required parameter `path` — please provide a vault-relative file path. " +
+                'Example: `"path": "Notes/MyNote.md"`.',
+        };
+    }
     const entry = app.vault.getAbstractFileByPath(path);
     if (!entry) {
-        return { success: false, type: "text", content: `File not found: ${path}` };
+        return {
+            success: false,
+            type: "text",
+            content:
+                `File not found: '${path}'. ` +
+                "Double-check the file path — it must be vault-relative and include the file extension. " +
+                `Use \`search_content\` with \`glob: "${path.replace(/[.*?]/g, '')}*"\` to locate it if unsure.`,
+        };
     }
     if (!(entry instanceof TFile)) {
-        return { success: false, type: "text", content: `Path is a folder, not a file: ${path}` };
+        return {
+            success: false,
+            type: "text",
+            content:
+                `'${path}' is a folder, not a file. Use \`browse_folder\` to list its contents, ` +
+                "then specify the full path to the target file.",
+        };
     }
     return entry;
 }
@@ -186,12 +208,33 @@ export function requireFile(app: App, path: string): TFile | ToolCallResult {
  * Returns either the folder, or a failure `ToolCallResult` describing why it could not be resolved.
  */
 export function requireFolder(app: App, path: string): TFolder | ToolCallResult {
+    if (!path || path.trim().length === 0) {
+        return {
+            success: false,
+            type: "text",
+            content:
+                "Missing required parameter `path` — please provide a vault-relative folder path. " +
+                'Example: `"path": "Notes/"`.',
+        };
+    }
     const entry = app.vault.getAbstractFileByPath(path);
     if (!entry) {
-        return { success: false, type: "text", content: `Folder not found: ${path}` };
+        return {
+            success: false,
+            type: "text",
+            content:
+                `Folder not found: '${path}'. ` +
+                "Double-check the path — it must be vault-relative. " +
+                `Use \`browse_folder\` to explore the vault structure if unsure.`,
+        };
     }
     if (!(entry instanceof TFolder)) {
-        return { success: false, type: "text", content: `Path is a file, not a folder: ${path}` };
+        return {
+            success: false,
+            type: "text",
+            content:
+                `'${path}' is a file, not a folder. Use file-oriented tools like \`read_file\` or \`get_metadata\` instead.`,
+        };
     }
     return entry;
 }
@@ -218,10 +261,20 @@ const VAULT_PATHS_ARG_EXAMPLE = '{"paths": ["Notes/A.md"]}';
 export function normalizeVaultPathsArg(args: Record<string, unknown>): string[] | ToolCallResult {
     let raw: unknown = args["paths"];
 
+    // Accept `file_paths` as an alias for `paths` (some models use this name).
+    if ((raw === undefined || raw === null) && args["file_paths"] !== undefined) {
+        raw = args["file_paths"];
+    }
+
     if (raw === undefined || raw === null) {
         const singlePath = args["path"];
-        if (typeof singlePath === "string" && singlePath.length > 0) {
-            raw = [singlePath];
+        // Also accept `file_path` as a singular alias.
+        const filePath = args["file_path"];
+        const effectiveSingle = typeof singlePath === "string" ? singlePath
+            : typeof filePath === "string" ? filePath
+            : undefined;
+        if (effectiveSingle && effectiveSingle.length > 0) {
+            raw = [effectiveSingle];
         }
     } else if (typeof raw === "string") {
         raw = raw.length > 0 ? [raw] : [];
@@ -252,6 +305,30 @@ export function normalizeVaultPathsArg(args: Record<string, unknown>): string[] 
     }
 
     return raw as string[];
+}
+
+// ─────────────────────────────────────────────
+// Parameter name aliases (LLM sometimes uses snake_case variants)
+// ─────────────────────────────────────────────
+
+/**
+ * Normalize a single path argument, accepting both the canonical `path` and
+ * the alternative `file_path` parameter name. Some models naturally use
+ * `file_path` for the path parameter; silently remap to `path` so downstream
+ * code only needs to check one key.
+ *
+ * Modifies `args` in place so that `args["path"]` is populated regardless
+ * of which name the model used. Returns the resolved path string or
+ * `undefined`.
+ */
+export function normalizePathArg(args: Record<string, unknown>): string | undefined {
+    if (typeof args["path"] === "string") return args["path"];
+    const alt = args["file_path"];
+    if (typeof alt === "string") {
+        args["path"] = alt;
+        return alt;
+    }
+    return undefined;
 }
 
 // ─────────────────────────────────────────────

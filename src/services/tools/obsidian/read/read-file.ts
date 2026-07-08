@@ -13,6 +13,7 @@ import {
     MAX_PDF_INLINE_BYTES,
     mediaKindFromMime,
     PREVIEW_LINE_COUNT,
+    normalizePathArg,
     requireFile,
     validateLineRange,
 } from "../_shared";
@@ -173,7 +174,18 @@ export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
         },
         capabilities: ["read_file"] as ToolCapability[],
         exec: async (_chatStream, args, _signal): Promise<ToolCallResult> => {
-            const path = args["path"] as string;
+            // Accept `file_path` as an alias for `path` — some models use this parameter name.
+            const path = normalizePathArg(args);
+            if (!path) {
+                return {
+                    success: false,
+                    type: "text",
+                    content:
+                        "Missing required parameter `path` (or `file_path`). " +
+                        "Please provide a vault-relative file path. " +
+                        'Example: `"path": "Notes/MyNote.md"`.',
+                };
+            }
             const fileOrErr = requireFile(plugin.app, path);
             if (isFailure(fileOrErr)) return fileOrErr;
             const file = fileOrErr;
