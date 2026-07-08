@@ -645,7 +645,6 @@ export const ja: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '元のパス {0}',
 	'editHistory.fileChanges.deletedHint': '削除済み — 開けません',
 	'editHistory.fileChanges.clearAll': 'すべてクリア',
-	'editHistory.fileChanges.sessionUnknown': '未紐付けの変更',
 	'view.checkpointsAriaLabel': 'AI ファイル変更チェックポイント',
 	'view.checkpointEmpty': 'このセッションではまだファイル変更がありません。',
 	'view.checkpointEmptyFiles': 'このラウンドで記録されたファイルはありません。',

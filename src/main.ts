@@ -27,6 +27,10 @@ export default class NoteAssistantPlugin extends Plugin {
 	 * Log of vault file mutations performed by AI tool calls (create /
 	 * modify / rename / delete). Metadata-only — no file content. Shown
 	 * in the AI Edit History sidebar view.
+	 *
+	 * Read-side aggregator — entries are written to disk by each
+	 * session's own {@link EditLogWriter} instance and added here via
+	 * {@link VaultEditLogStore.addEntry}.
 	 */
 	vaultEditLog!: VaultEditLogStore;
 	/**
@@ -185,10 +189,13 @@ export default class NoteAssistantPlugin extends Plugin {
 
 		this.registerView(SessionView.VIEW_TYPE, (leaf) => new SessionView(leaf, this));
 
-		// AI file-changes log — persisted under cache/ since it's rebuildable
-		// audit metadata, not user-owned content.
+		// Read-side aggregator — scans per-session JSONL files at startup
+		// and stays in sync via `addEntry()` calls from VaultMutator.
+		// The legacy `cache/vault-edit-log.json` is deleted on load
+		// (one-shot migration cleanup, removable in a future version).
 		this.vaultEditLog = new VaultEditLogStore(this.app, {
-			persistPath: `${this.paths.cache()}/vault-edit-log.json`,
+			sessionsDir: this.paths.sessions(),
+			legacyPersistPath: `${this.paths.cache()}/vault-edit-log.json`,
 		});
 		void this.vaultEditLog.load();
 		// Cross-session file lock table; consulted by VaultMutator before

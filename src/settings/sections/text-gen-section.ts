@@ -8,7 +8,8 @@ import {
 	type ModalityCapability,
 	type ThinkingLevel,
 } from "../../services/llm-provider";
-import { createDefaultProfile, generateId } from "../defaults";
+import { createDefaultProfile } from "../defaults";
+import { generateId } from "../../utils/id-utils";
 import type { TextGenConfig } from "../types";
 import {
 	createSettingsGroupHeading,

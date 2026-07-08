@@ -645,7 +645,6 @@ export const zhCN: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '原路径 {0}',
 	'editHistory.fileChanges.deletedHint': '已删除 — 无法打开',
 	'editHistory.fileChanges.clearAll': '全部清空',
-	'editHistory.fileChanges.sessionUnknown': '未归属的改动',
 	'view.checkpointsAriaLabel': 'AI 文件变更检查点',
 	'view.checkpointEmpty': '本会话尚未产生文件变更。',
 	'view.checkpointEmptyFiles': '本轮未记录任何文件。',

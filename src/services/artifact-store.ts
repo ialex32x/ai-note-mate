@@ -42,7 +42,7 @@
 // live entry into a `session_end` tombstone before dropping the map.
 
 import type { DataAdapter } from "obsidian";
-import { generateId } from "../settings/defaults";
+import { generateId } from "../utils/id-utils";
 
 /** Reason an entry is no longer recoverable. */
 export type EvictionReason = "lru" | "ttl" | "session_end" | "too_large_for_store";

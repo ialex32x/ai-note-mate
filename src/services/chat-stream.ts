@@ -24,11 +24,11 @@ import {
     buildToolEmbeddingText,
     toolResultApiContent,
     backfillChatMessageBudgetHints,
-    generateId,
     toMediaAttachment,
     inferKindFromMime,
     mediaKindLabel,
 } from "./chat-stream-helpers";
+import { generateId } from "../utils/id-utils";
 
 import {
     quickAskPrompt,

@@ -645,7 +645,6 @@ Write the result directly into the note — do not reply with the edited text in
 	'editHistory.fileChanges.renamedFrom': 'from {0}',
 	'editHistory.fileChanges.deletedHint': 'Deleted — cannot open',
 	'editHistory.fileChanges.clearAll': 'Clear all',
-	'editHistory.fileChanges.sessionUnknown': 'Unattributed changes',
 	'view.checkpointsAriaLabel': 'AI file change checkpoints',
 	'view.checkpointEmpty': 'No file changes in this session yet.',
 	'view.checkpointEmptyFiles': 'No files captured in this round.',

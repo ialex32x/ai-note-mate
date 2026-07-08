@@ -7,6 +7,7 @@ import type {
 	TextGenConfig,
 } from "./types";
 import { ALL_TOOL_CAPABILITIES } from "../services/llm-provider";
+import { generateId } from "../utils/id-utils";
 
 /**
  * Built-in fallback for the soft per-turn call budget on `web_fetch_url`.
@@ -104,10 +105,6 @@ export const DEFAULT_SKILL_HINT_THRESHOLD = 0.55;
  * queries. Should normally stay > {@link DEFAULT_SKILL_HINT_THRESHOLD}.
  */
 export const DEFAULT_SKILL_AUTO_INJECT_THRESHOLD = 0.75;
-
-export function generateId(): string {
-	return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
 
 export function createDefaultProfile(): TextGenConfig {
 	return {

@@ -31,8 +31,8 @@
  * - `chatStream` is passed per-call so the gateway can resolve the
  *   owning session's checkpoint store via
  *   `plugin.runtimePool.get(chatStream.contextTag)`.
- * - Mutations from contexts without a session (no `contextTag`, or
- *   the runtime is not in the pool) fall through to a plain
+ * - When the runtime is not in the pool (rare — only if the session
+ *   was evicted mid-turn), mutations fall through to a plain
  *   perform + audit path — they neither acquire locks nor produce
  *   checkpoints.
  */
@@ -41,6 +41,8 @@ import { TFile } from "obsidian";
 import type NoteAssistantPlugin from "../../main";
 import type { ChatStream, ToolCallResult } from "../chat-stream";
 import type { VaultEditKind } from "../../edit-history/vault-edit-log-types";
+import type { VaultEditLogEntry } from "../../edit-history/vault-edit-log-types";
+import { generateId } from "../../utils/id-utils";
 import type { CheckpointStore } from "./checkpoint-store";
 
 /**
@@ -61,7 +63,7 @@ export class VaultLockConflictError extends Error {
 }
 
 /**
- * One vault mutation. Mirrors the shape of `RecordVaultEditInput`
+ * One vault mutation. Mirrors the shape of {@link VaultEditLogEntry}
  * (so audit-log integration stays a near-identity mapping) plus a
  * `perform` closure that the gateway invokes to actually mutate the
  * vault.
@@ -146,8 +148,8 @@ export class VaultMutator {
      *      happen.
      *   7. Record audit row.
      */
-    async run(chatStream: ChatStream | undefined, mutation: VaultMutation): Promise<void> {
-        const sessionId = chatStream?.contextTag;
+    async run(chatStream: ChatStream, mutation: VaultMutation): Promise<void> {
+        const sessionId = chatStream.contextTag;
         const runtime = sessionId ? this.plugin.runtimePool.get(sessionId) : undefined;
         const checkpointStore = runtime?.checkpointStore;
 
@@ -252,18 +254,31 @@ export class VaultMutator {
         }
     }
 
-    private recordAudit(chatStream: ChatStream | undefined, mutation: VaultMutation): void {
+    private recordAudit(
+        chatStream: ChatStream,
+        mutation: VaultMutation,
+    ): void {
         try {
-            const store = this.plugin.vaultEditLog;
-            if (!store) return;
-            store.record({
+            // contextTag is always set by SessionRuntime before any
+            // tool call; the `?` on ChatStream is a legacy artefact.
+            const sessionId = chatStream.contextTag!;
+            const entry: VaultEditLogEntry = {
+                id: generateId(),
                 kind: mutation.kind,
                 path: mutation.path,
                 previousPath: mutation.previousPath,
                 isFolder: mutation.isFolder,
                 toolName: mutation.toolName,
-                sessionId: chatStream?.contextTag,
-            });
+                sessionId,
+                createdAt: Date.now(),
+            };
+
+            // The store owns every writer — get (or create) this
+            // session's instance and fire-and-forget the append.
+            this.plugin.vaultEditLog.getWriter(sessionId).append(entry);
+
+            // Keep the in-memory aggregator in sync for the view.
+            this.plugin.vaultEditLog.addEntry(entry);
         } catch (e) {
             console.warn("[vault-mutator] audit log failed", e);
         }
@@ -295,7 +310,7 @@ export type { CheckpointStore };
  */
 export async function runVaultMutation(
     plugin: NoteAssistantPlugin,
-    chatStream: ChatStream | undefined,
+    chatStream: ChatStream,
     mutation: VaultMutation,
 ): Promise<ToolCallResult | null> {
     try {

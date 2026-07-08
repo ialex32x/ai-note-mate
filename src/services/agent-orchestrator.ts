@@ -45,7 +45,7 @@ import {
     buildSubAgentCandidateTexts,
 } from "./sub-agent-router";
 import { buildDelegationSystemPrompt, type SubAgentDescriptor } from "./prompts/session-prompts";
-import { generateId } from "../settings/defaults";
+import { generateId } from "../utils/id-utils";
 import { isAbortError } from "../utils/abortable-request";
 import { buildDelegatePayload } from "./agent-orchestrator/delegate-payload";
 import { buildInitialStore } from "./agent-orchestrator/handoff-seed";

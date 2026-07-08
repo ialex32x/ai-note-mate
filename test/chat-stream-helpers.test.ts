@@ -2,11 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
     toolResultApiContent,
     backfillChatMessageBudgetHints,
-    generateId,
     toMediaAttachment,
     inferKindFromMime,
     mediaKindLabel,
 } from '../src/services/chat-stream-helpers';
+import { generateId } from '../src/utils/id-utils';
 import type { ToolCallResultInfo, ChatMessage, ChatMessageParam } from '../src/services/chat-stream-types';
 
 // ── toolResultApiContent ─────────────────────────────────────────────────

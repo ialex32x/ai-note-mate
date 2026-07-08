@@ -42,7 +42,7 @@ interface SharedExecParams {
     /** The underlying operation. */
     opName: "add" | "remove" | "set";
     /** Chat stream for checkpoint integration. */
-    chatStream: ChatStream | undefined;
+    chatStream: ChatStream;
     /** Already-validated array of vault-relative paths. */
     paths: string[];
     /** Tag names (with or without '#') — validated inside executeTagsEdit. */

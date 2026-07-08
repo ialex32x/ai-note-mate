@@ -4,7 +4,7 @@
  * An entry represents a single vault mutation that was performed by an AI
  * tool call (create / modify / rename / delete). The log is a lightweight
  * audit trail — it stores ONLY metadata (paths, tool name, timestamp,
- * optional sessionId), never the pre/post file content.
+ * sessionId), never the pre/post file content.
  */
 
 /** Kind of vault mutation that produced a log entry. */
@@ -13,6 +13,9 @@ export type VaultEditKind =
     | "modify"   // existing file content changed (append / prepend / replace / edit / write)
     | "rename"   // renamed or moved (file or folder)
     | "delete";  // moved to trash (file or folder)
+
+/** Filename inside a session folder that holds the edit log. */
+export const EDIT_LOG_FILENAME = "edit-log.jsonl";
 
 /** Maximum number of entries kept in memory and persisted to disk. */
 export const VAULT_EDIT_LOG_MAX_ENTRIES = 500;
@@ -49,24 +52,11 @@ export interface VaultEditLogEntry {
     toolName: string;
     /**
      * Logical session this mutation belongs to. Used by the view to group
-     * consecutive edits that happened in the same chat turn. Absent for
-     * mutations triggered outside a SessionRuntime (none today, but kept
-     * optional for safety).
+     * consecutive edits that happened in the same chat turn.
      */
-    sessionId?: string;
+    sessionId: string;
     /** Creation timestamp in ms since epoch. */
     createdAt: number;
 }
 
-/**
- * Input accepted by `VaultEditLogStore.record`. The store fills in `id` and
- * `createdAt`; callers supply the mutation metadata.
- */
-export interface RecordVaultEditInput {
-    kind: VaultEditKind;
-    path: string;
-    previousPath?: string;
-    isFolder?: boolean;
-    toolName: string;
-    sessionId?: string;
-}
+

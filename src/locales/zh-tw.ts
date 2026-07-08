@@ -645,7 +645,6 @@ export const zhTW: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '原路徑 {0}',
 	'editHistory.fileChanges.deletedHint': '已刪除 — 無法開啟',
 	'editHistory.fileChanges.clearAll': '全部清除',
-	'editHistory.fileChanges.sessionUnknown': '未歸屬的變更',
 	'view.checkpointsAriaLabel': 'AI 檔案變更檢查點',
 	'view.checkpointEmpty': '本工作階段尚未產生檔案變更。',
 	'view.checkpointEmptyFiles': '本輪未記錄任何檔案。',

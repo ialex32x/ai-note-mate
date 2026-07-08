@@ -645,7 +645,6 @@ export const ko: Record<string, string> = {
 	'editHistory.fileChanges.renamedFrom': '이전 경로 {0}',
 	'editHistory.fileChanges.deletedHint': '삭제됨 — 열 수 없음',
 	'editHistory.fileChanges.clearAll': '모두 지우기',
-	'editHistory.fileChanges.sessionUnknown': '귀속되지 않은 변경',
 	'view.checkpointsAriaLabel': 'AI 파일 변경 체크포인트',
 	'view.checkpointEmpty': '이 세션에서 발생한 파일 변경이 없습니다.',
 	'view.checkpointEmptyFiles': '이 라운드에 기록된 파일이 없습니다.',

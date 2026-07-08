@@ -83,7 +83,7 @@ export class EditHistoryView extends ItemView {
             return;
         }
 
-        type Group = { sessionId: string | undefined; entries: VaultEditLogEntry[] };
+        type Group = { sessionId: string; entries: VaultEditLogEntry[] };
         const groups: Group[] = [];
         for (const entry of entries) {
             const last = groups[groups.length - 1];
@@ -95,22 +95,15 @@ export class EditHistoryView extends ItemView {
         }
 
         for (const group of groups) {
-            if (group.sessionId) {
-                const sid = group.sessionId;
-                const metaLine = this.plugin.sessionManager.getSessionMetadataDisplayLine(sid);
-                const tooltipText =
-                    metaLine !== undefined && metaLine.length > 0 ? metaLine : sid;
-                const header = this.listEl.createDiv({
-                    cls: "ai-edit-history-group-title",
-                    text: sid,
-                });
-                setTooltip(header, tooltipText);
-            } else {
-                this.listEl.createDiv({
-                    cls: "ai-edit-history-group-title",
-                    text: t("editHistory.fileChanges.sessionUnknown"),
-                });
-            }
+            const sid = group.sessionId;
+            const metaLine = this.plugin.sessionManager.getSessionMetadataDisplayLine(sid);
+            const tooltipText =
+                metaLine !== undefined && metaLine.length > 0 ? metaLine : sid;
+            const header = this.listEl.createDiv({
+                cls: "ai-edit-history-group-title",
+                text: sid,
+            });
+            setTooltip(header, tooltipText);
 
             for (const entry of group.entries) {
                 this.listEl.appendChild(this.renderFileChangeItem(entry));

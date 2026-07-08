@@ -1,39 +1,50 @@
 /**
- * In-memory + on-disk store for the AI file-changes log.
+ * In-memory aggregator + writer-owner for the AI file-changes log.
  *
  * The store owns:
  * - a bounded list of {@link VaultEditLogEntry} records (newest first),
  * - a tiny event bus (`change`) for the view to subscribe to,
- * - throttled JSON persistence to `<plugin-root>/cache/vault-edit-log.json`.
+ * - the {@link EditLogWriter} registry (one per session).
+ *
+ * Each session's vault mutations are persisted via its own
+ * {@link EditLogWriter} instance — obtained through {@link getWriter} —
+ * into `sessions/{sessionId}/edit-log.jsonl`.  The store aggregates
+ * per-session files on startup and stays in sync via {@link addEntry}.
+ *
+ * Because the store owns every writer, {@link clear} can drain all
+ * pending writes, delete every file, and reset the writer registry in
+ * one controlled pass — no race between independent writers and a
+ * separate file sweep.
  *
  * Design notes:
- * - Capacity is bounded by {@link VAULT_EDIT_LOG_MAX_ENTRIES}; we trim from
- *   the oldest tail on every `record()` so memory stays O(cap).
- * - Entries are metadata-only (no content); writes are cheap even at
- *   hundreds of entries.
- * - Persistence is throttled so a burst of tool calls inside one chat turn
- *   results in a single disk write.
+ * - Capacity is bounded by {@link VAULT_EDIT_LOG_MAX_ENTRIES}; we trim
+ *   from the oldest tail on every `addEntry()` so memory stays O(cap).
+ * - Entries are metadata-only (no content).
  */
 
 import type { App } from "obsidian";
 import {
-    RecordVaultEditInput,
+    EDIT_LOG_FILENAME,
     VAULT_EDIT_LOG_MAX_ENTRIES,
     VaultEditLogEntry,
 } from "./vault-edit-log-types";
+import { EditLogWriter } from "./edit-log-writer";
 
 type ChangeListener = () => void;
 
-/** Throttle window for persistence writes. */
-const PERSIST_THROTTLE_MS = 1000;
-
-function generateEntryId(): string {
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
 export interface VaultEditLogStoreOptions {
-    /** Vault-relative path to the JSON file used for persistence. */
-    persistPath: string;
+    /** Vault-relative path to the sessions directory (e.g. `"<plugin>/sessions"`). */
+    sessionsDir: string;
+    /**
+     * Vault-relative path to the legacy centralised edit-log file
+     * (`cache/vault-edit-log.json`).  If present on `load()`, it is
+     * deleted — per-session JSONL files have replaced the old
+     * single-file format.
+     *
+     * This is a one-shot migration helper; the field can be removed
+     * in a future version once every user has migrated.
+     */
+    legacyPersistPath: string;
 }
 
 export class VaultEditLogStore {
@@ -41,11 +52,12 @@ export class VaultEditLogStore {
     private _entries: VaultEditLogEntry[] = [];
     private readonly _changeListeners = new Set<ChangeListener>();
 
-    private _persistTimer: number | null = null;
-    private _disposed = false;
     private _loaded = false;
     /** In-flight load promise so concurrent calls do not race. */
     private _loadPromise: Promise<void> | null = null;
+
+    /** Per-session write chain registry. */
+    private readonly _writers = new Map<string, EditLogWriter>();
 
     constructor(
         private readonly app: App,
@@ -54,10 +66,18 @@ export class VaultEditLogStore {
 
     // ── Lifecycle ────────────────────────────────────────────────────────
 
+    /** Dispose every writer.  Safe to call multiple times. */
+    dispose(): void {
+        for (const w of this._writers.values()) w.dispose();
+        this._writers.clear();
+    }
+
     /**
-     * Load persisted entries from disk. Idempotent — subsequent calls are
-     * no-ops. Errors during read / parse are swallowed — the store simply
-     * starts empty rather than blocking plugin startup.
+     * Load persisted entries from per-session JSONL files.  Idempotent.
+     * Errors during read / parse are swallowed.
+     *
+     * Also performs a one-shot migration: deletes the legacy
+     * `cache/vault-edit-log.json` if it still exists.
      */
     async load(): Promise<void> {
         if (this._loaded) return;
@@ -71,34 +91,61 @@ export class VaultEditLogStore {
     }
 
     private async _doLoad(): Promise<void> {
-        try {
-            const exists = await this.app.vault.adapter.exists(this.options.persistPath);
-            if (!exists) return;
-            const raw = await this.app.vault.adapter.read(this.options.persistPath);
-            const parsed = JSON.parse(raw) as { entries?: VaultEditLogEntry[] } | null;
-            if (!parsed || !Array.isArray(parsed.entries)) return;
+        const adapter = this.app.vault.adapter;
 
-            const cleaned: VaultEditLogEntry[] = [];
-            for (const e of parsed.entries) {
-                if (!e || typeof e !== "object") continue;
-                if (typeof e.id !== "string" || typeof e.path !== "string") continue;
-                if (typeof e.kind !== "string" || typeof e.toolName !== "string") continue;
-                if (typeof e.createdAt !== "number") continue;
-                cleaned.push(e);
+        // ── One-shot migration: delete the legacy centralised edit-log file ──
+        // Before v8, edit-log entries were persisted as a single JSON blob at
+        // `cache/vault-edit-log.json`. We now store entries per-session in JSONL
+        // format under `sessions/{sessionId}/edit-log.jsonl`. The old file is
+        // intentionally NOT migrated — it is simply removed. This block can be
+        // deleted in a future release once all users have migrated.
+        try {
+            if (await adapter.exists(this.options.legacyPersistPath)) {
+                await adapter.remove(this.options.legacyPersistPath);
             }
-            this._entries = cleaned.slice(0, VAULT_EDIT_LOG_MAX_ENTRIES);
+        } catch {
+            // Best-effort — a leftover file is harmless.
+        }
+
+        // ── Read per-session edit-log.jsonl files ──
+        try {
+            const sessionIds = await this.resolveSessionIds();
+            if (sessionIds.length === 0) return;
+
+            const allEntries: VaultEditLogEntry[] = [];
+            for (const sid of sessionIds) {
+                const jsonlPath = this.editLogPath(sid);
+                if (!(await adapter.exists(jsonlPath))) continue;
+
+                try {
+                    const raw = await adapter.read(jsonlPath);
+                    const lines = raw.split('\n');
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed) continue;
+                        try {
+                            const e = JSON.parse(trimmed) as VaultEditLogEntry;
+                            if (!e || typeof e !== "object") continue;
+                            if (typeof e.id !== "string" || typeof e.path !== "string") continue;
+                            if (typeof e.kind !== "string" || typeof e.toolName !== "string") continue;
+                            if (typeof e.sessionId !== "string") continue;
+                            if (typeof e.createdAt !== "number") continue;
+                            allEntries.push(e);
+                        } catch {
+                            // Skip malformed lines
+                        }
+                    }
+                } catch {
+                    // Skip unreadable files
+                }
+            }
+
+            // Sort newest-first and cap.
+            allEntries.sort((a, b) => b.createdAt - a.createdAt);
+            this._entries = allEntries.slice(0, VAULT_EDIT_LOG_MAX_ENTRIES);
             this.emit();
         } catch {
             this._entries = [];
-        }
-    }
-
-    /** Cancel any pending writes. Safe to call multiple times. */
-    dispose(): void {
-        this._disposed = true;
-        if (this._persistTimer !== null) {
-            window.clearTimeout(this._persistTimer);
-            this._persistTimer = null;
         }
     }
 
@@ -109,44 +156,90 @@ export class VaultEditLogStore {
         return this._entries;
     }
 
-    // ── Mutation API ─────────────────────────────────────────────────────
+    // ── Writer registry ──────────────────────────────────────────────────
 
     /**
-     * Record a new vault mutation and push it to the front of the list.
-     * Excess entries are trimmed from the tail (oldest first).
+     * Get or create the {@link EditLogWriter} for a given session.
+     *
+     * Called by {@link VaultMutator.recordAudit} every time a vault
+     * mutation is recorded so the writer is always the store's canonical
+     * instance.  After a {@link clear}, the registry is reset and future
+     * calls get a fresh writer.
      */
-    record(input: RecordVaultEditInput): VaultEditLogEntry {
-        const entry: VaultEditLogEntry = {
-            id: generateEntryId(),
-            kind: input.kind,
-            path: input.path,
-            previousPath: input.previousPath,
-            isFolder: input.isFolder,
-            toolName: input.toolName,
-            sessionId: input.sessionId,
-            createdAt: Date.now(),
-        };
+    getWriter(sessionId: string): EditLogWriter {
+        let writer = this._writers.get(sessionId);
+        if (!writer || writer.disposed) {
+            writer = new EditLogWriter(
+                this.app,
+                this.options.sessionsDir,
+                sessionId,
+            );
+            this._writers.set(sessionId, writer);
+        }
+        return writer;
+    }
+
+    // ── In-memory mutation (called by VaultMutator) ──────────────────────
+
+    /**
+     * Register a newly-persisted entry in the in-memory list.
+     *
+     * Called by {@link VaultMutator} immediately after the entry has
+     * been handed to the session's writer.  The disk write is
+     * fire-and-forget; this keeps the memory view in sync.
+     */
+    addEntry(entry: VaultEditLogEntry): void {
         this._entries.unshift(entry);
         if (this._entries.length > VAULT_EDIT_LOG_MAX_ENTRIES) {
             this._entries.length = VAULT_EDIT_LOG_MAX_ENTRIES;
         }
         this.emit();
-        this.schedulePersist();
-        return entry;
     }
 
-    /** Drop all entries. */
+    /**
+     * Clear all in-memory entries, drain every pending write, delete
+     * every edit-log.jsonl file, and reset the writer registry.
+     *
+     * Memory is cleared first so the view updates immediately; file
+     * deletion and registry reset are fire-and-forget.  Because the
+     * store owns every writer, there is no race between independent
+     * writers and a separate file sweep — after drain, all writes are
+     * settled; after registry reset, new writes get fresh writers that
+     * create new files.
+     */
     clear(): void {
         if (this._entries.length === 0) return;
         this._entries = [];
         this.emit();
-        this.schedulePersist();
+
+        // Snapshot session IDs now.  Drain all writers.  Delete files.
+        // Reset the registry so future writes get fresh writers.
+        void this._clearFilesAndWriters();
+    }
+
+    private async _clearFilesAndWriters(): Promise<void> {
+        const sessionIds = await this.resolveSessionIds();
+
+        // Drain every writer's pending chain.
+        const writers = Array.from(this._writers.values());
+        await Promise.allSettled(writers.map(w => w.drain()));
+
+        // Delete all per-session files.
+        await this.deleteEditLogFiles(sessionIds);
+
+        // Dispose every writer and remove disposed entries from the
+        // map so getWriter() creates fresh instances.  We dispose
+        // rather than simply clearing the map so that any writer
+        // created by a concurrent recordAudit between drain and here
+        // is also terminated — its pending append will be a no-op
+        // and the entry is already in memory via addEntry().
+        for (const w of this._writers.values()) w.dispose();
+        this._writers.clear();
     }
 
     // ── Events ───────────────────────────────────────────────────────────
 
-    on(event: "change", cb: ChangeListener): () => void {
-        if (event !== "change") return () => { /* no-op */ };
+    on(_event: "change", cb: ChangeListener): () => void {
         this._changeListeners.add(cb);
         return () => this._changeListeners.delete(cb);
     }
@@ -157,36 +250,51 @@ export class VaultEditLogStore {
         }
     }
 
-    // ── Persistence ──────────────────────────────────────────────────────
+    // ── Helpers ──────────────────────────────────────────────────────────
 
-    private schedulePersist(): void {
-        if (this._disposed) return;
-        if (this._persistTimer !== null) return;
-        this._persistTimer = window.setTimeout(() => {
-            this._persistTimer = null;
-            void this.persistNow();
-        }, PERSIST_THROTTLE_MS);
+    private editLogPath(sessionId: string): string {
+        return `${this.options.sessionsDir}/${sessionId}/${EDIT_LOG_FILENAME}`;
     }
 
-    private async persistNow(): Promise<void> {
-        if (this._disposed) return;
+    /**
+     * Resolve the authoritative session-id list from
+     * `sessions/list.json` (maintained by {@link SessionManager}).
+     * Returns an empty array when the file is absent or unreadable.
+     */
+    private async resolveSessionIds(): Promise<string[]> {
         try {
-            const payload = {
-                version: 1 as const,
-                entries: this._entries,
-            };
-            const dir = this.options.persistPath.replace(/\/[^/]+$/, "");
-            if (dir && dir !== this.options.persistPath) {
-                if (!(await this.app.vault.adapter.exists(dir))) {
-                    await this.app.vault.adapter.mkdir(dir);
+            const adapter = this.app.vault.adapter;
+            const listPath = `${this.options.sessionsDir}/list.json`;
+            if (!(await adapter.exists(listPath))) return [];
+
+            const raw = await adapter.read(listPath);
+            const parsed = JSON.parse(raw) as { sessions?: { id: string }[] } | null;
+            if (!parsed || !Array.isArray(parsed.sessions)) return [];
+
+            return parsed.sessions
+                .map((s: { id: string }) => s.id)
+                .filter((id: string): id is string => typeof id === "string" && id.length > 0);
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * Delete edit-log.jsonl files for the given session IDs.
+     */
+    private async deleteEditLogFiles(sessionIds: string[]): Promise<void> {
+        try {
+            const adapter = this.app.vault.adapter;
+            for (const sid of sessionIds) {
+                const jsonlPath = this.editLogPath(sid);
+                if (await adapter.exists(jsonlPath)) {
+                    try {
+                        await adapter.remove(jsonlPath);
+                    } catch { /* best-effort per file */ }
                 }
             }
-            await this.app.vault.adapter.write(
-                this.options.persistPath,
-                JSON.stringify(payload),
-            );
         } catch (e) {
-            console.error("[vault-edit-log] failed to persist", e);
+            console.error("[vault-edit-log] failed to clear session files", e);
         }
     }
 }

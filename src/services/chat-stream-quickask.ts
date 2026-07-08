@@ -11,7 +11,7 @@
 
 import { QUICK_ASK_SYSTEM_PROMPT } from "./chat-stream-constants";
 import { createChatCompletion } from "./context-compression";
-import { generateId } from "./chat-stream-helpers";
+import { generateId } from "../utils/id-utils";
 import type { MinimalModelConfig } from "./llm-provider";
 import type { ChatMessage, QuickAskTurn } from "./chat-stream-types";
 
