@@ -45,3 +45,6 @@ export {
 export {
     maybeExtractMemoriesAfterFinish,
 } from './memory-runner';
+export {
+    maybeConsolidateMemories,
+} from './memory-consolidator';

@@ -85,3 +85,62 @@ function shorten(s: string, max: number): string {
     if (collapsed.length <= max) return collapsed;
     return collapsed.slice(0, max - 1) + '…';
 }
+
+// ── Consolidation prompt ───────────────────────────────────────────────────
+
+export const MEMORY_CONSOLIDATION_SYSTEM_PROMPT = `\
+You maintain a long-term memory store. The non-critical ("relevant") pool has grown too large ({count} entries against a capacity of {threshold}). Your job is to CONSOLIDATE: merge related entries into fewer, denser entries, and delete entries that are clearly obsolete or trivial.
+
+Rules:
+- The goal is to reduce the entry COUNT while preserving ALL durable information. Merge, don't drop facts.
+- Merge entries that overlap semantically. Examples:
+  * "user prefers dark mode" + "uses OLED screen" → "prefers dark mode; uses OLED screens which benefit from true blacks"
+  * "working on Project X" + "Project X deadline is Friday" → "working on Project X (deadline Friday)"
+- Delete entries that are:
+  * Clearly obsolete (stale one-off facts, preferences the user has since contradicted in another entry)
+  * Trivial noise (e.g., "user asked about weather once")
+  * Redundant after a merge (the merged entry absorbs them)
+- Do NOT delete durable preferences, recurring projects, or identity facts unless they are fully absorbed by a merge.
+- Critical entries are listed as READ-ONLY reference. Do NOT modify or delete them — only use them to avoid creating duplicate non-critical entries.
+
+Output format: a JSON array of operations (optionally wrapped in \`\`\`json). Each operation is:
+- { "op": "upsert", "heading": "<≤60 chars>", "critical": false, "body": "<≤600 chars>" } — add/replace an entry
+- { "op": "delete", "heading": "<exact logical heading to remove>" } — delete an entry
+
+Important:
+- heading does NOT contain the \` [!]\` marker.
+- heading and body should be in the same language as the existing entries.
+- Return \`[]\` only if no consolidation is needed (pool is already clean).
+- Aim to reduce non-critical entries by at least 30%.`;
+
+/** Build the user message listing all current entries for consolidation. */
+export function buildConsolidationUserPrompt(entries: ReadonlyArray<{
+    heading: string;
+    critical: boolean;
+    body: string;
+}>): string {
+    const nonCritical = entries.filter(e => !e.critical);
+    const critical = entries.filter(e => e.critical);
+
+    const nonCriticalBlock = nonCritical.length === 0
+        ? '(no non-critical entries — nothing to consolidate)'
+        : nonCritical
+            .map(e => `- ${e.heading}: ${shorten(e.body, 400)}`)
+            .join('\n');
+
+    const criticalBlock = critical.length === 0
+        ? '(none)'
+        : critical
+            .map(e => `- [CRITICAL, READ-ONLY] ${e.heading}: ${shorten(e.body, 200)}`)
+            .join('\n');
+
+    return [
+        `NON-CRITICAL ENTRIES (these are the target for consolidation — you may merge, replace, or delete them):`,
+        nonCriticalBlock,
+        '',
+        `CRITICAL ENTRIES (READ-ONLY — do NOT touch; listed only so you don't create duplicate non-critical entries):`,
+        criticalBlock,
+        '',
+        'Output the JSON array now. Remember: only upsert/delete NON-CRITICAL entries.',
+    ].join('\n');
+}

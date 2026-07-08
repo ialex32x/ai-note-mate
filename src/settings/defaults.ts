@@ -212,6 +212,8 @@ export const DEFAULT_SETTINGS: NoteAssistantPluginSettings = {
 	memoryExtractMaxUpserts: 2,
 	memoryExtractMaxDeletes: 1,
 	memoryExtractMinReplyChars: 400,
+	memoryConsolidateThreshold: 50,
+	memoryConsolidateCooldownHours: 24,
 	followUpSuggestionsEnabled: true,
 	insightExtractionEnabled: true,
 	insightExtractionMinReplyChars: 400,

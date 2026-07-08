@@ -524,6 +524,19 @@ export interface NoteAssistantPluginSettings {
 	 * runs. Replies shorter than this are skipped.
 	 */
 	memoryExtractMinReplyChars: number;
+	/**
+	 * When the non-critical memory pool grows beyond this many entries,
+	 * trigger a one-shot LLM consolidation pass that merges related
+	 * entries and deletes obsolete ones. Set to 0 to disable.
+	 * Default: 50.
+	 */
+	memoryConsolidateThreshold: number;
+	/**
+	 * Minimum hours between two consolidation passes, to avoid burning
+	 * tokens on repeated runs. Actual trigger is the next auto-extract
+	 * cycle after the cooldown expires. Default: 24.
+	 */
+	memoryConsolidateCooldownHours: number;
 
 	// ── Follow-up quick-pick suggestions ────────────────────────────────────
 	/** Master switch: render quick-pick buttons for next actions proposed at the end of an assistant reply. */

@@ -191,6 +191,38 @@ export class MemorySettingsSection implements SettingsSection {
 				await plugin.saveSettings();
 			},
 		});
+
+		// ── Consolidation (advanced) ────────────────────────────────
+		createSettingsGroupHeading(container, {
+			name: t('settings.memoryConsolidation'),
+			advancedOnly: true,
+		});
+		this.renderNumberField({
+			container,
+			name: t('settings.memoryConsolidateThreshold'),
+			desc: t('settings.memoryConsolidateThresholdDesc'),
+			value: plugin.settings.memoryConsolidateThreshold,
+			min: 0,
+			max: 500,
+			advanced: true,
+			onChange: async (n) => {
+				plugin.settings.memoryConsolidateThreshold = n;
+				await plugin.saveSettings();
+			},
+		});
+		this.renderNumberField({
+			container,
+			name: t('settings.memoryConsolidateCooldownHours'),
+			desc: t('settings.memoryConsolidateCooldownHoursDesc'),
+			value: plugin.settings.memoryConsolidateCooldownHours,
+			min: 0,
+			max: 720,
+			advanced: true,
+			onChange: async (n) => {
+				plugin.settings.memoryConsolidateCooldownHours = n;
+				await plugin.saveSettings();
+			},
+		});
 	}
 
 	/**

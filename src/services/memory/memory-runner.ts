@@ -28,6 +28,7 @@ import { findTailTurn } from '../turn-utils';
 import type { SessionRuntime } from '../session-runtime/session-runtime';
 import { extractMemoryOps, type MemoryExtractOp } from './memory-extractor';
 import { isMemoryConfigured, MemoryStoreError } from './memory-store';
+import { maybeConsolidateMemories } from './memory-consolidator';
 import { isAbortError } from '../../utils/abortable-request';
 
 export async function maybeExtractMemoriesAfterFinish(
@@ -87,7 +88,18 @@ export async function maybeExtractMemoriesAfterFinish(
         console.warn('[Memory] extractor threw:', err);
         return;
     }
-    if (ops.length === 0) return;
+    if (ops.length === 0) {
+        // Even when extraction produced no ops, the non-critical pool
+        // may still be over the consolidation threshold from previous
+        // turns — check and consolidate if needed.
+        try {
+            await maybeConsolidateMemories(plugin, runtime.disposeSignal);
+        } catch (err) {
+            if (isAbortError(err)) return;
+            console.warn('[Memory] consolidation threw:', err);
+        }
+        return;
+    }
 
     // No mid-loop `disposeSignal.aborted` gate here on purpose. The
     // expensive part (LLM call) is already done; each remaining op is
@@ -112,6 +124,15 @@ export async function maybeExtractMemoriesAfterFinish(
                 console.warn('[Memory] auto-extract op failed:', err);
             }
         }
+    }
+
+    // After extraction, check if the non-critical pool needs consolidation.
+    // Runs as a best-effort follow-up — failures are logged but never block.
+    try {
+        await maybeConsolidateMemories(plugin, runtime.disposeSignal);
+    } catch (err) {
+        if (isAbortError(err)) return;
+        console.warn('[Memory] consolidation threw:', err);
     }
 }
 
