@@ -19,6 +19,7 @@ interface FakeAdapter {
     exists(path: string): Promise<boolean>;
     read(path: string): Promise<string>;
     write(path: string, content: string): Promise<void>;
+    append(path: string, content: string): Promise<void>;
     mkdir(path: string): Promise<void>;
     remove(path: string): Promise<void>;
 }
@@ -39,6 +40,10 @@ function makeAdapter(): FakeAdapter {
         },
         async write(path: string, content: string) {
             files.set(path, content);
+        },
+        async append(path: string, content: string) {
+            const existing = files.get(path) ?? '';
+            files.set(path, existing + content);
         },
         async mkdir(path: string) {
             folders.add(path);

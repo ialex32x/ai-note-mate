@@ -78,10 +78,11 @@ export class EditLogWriter {
             }
 
             const line = `${JSON.stringify(entry)}\n`;
-            const existing = (await adapter.exists(filePath))
-                ? await adapter.read(filePath)
-                : '';
-            await adapter.write(filePath, existing + line);
+            if (await adapter.exists(filePath)) {
+                await adapter.append(filePath, line);
+            } else {
+                await adapter.write(filePath, line);
+            }
         } catch (e) {
             console.error("[edit-log-writer] failed to append entry", e);
         }

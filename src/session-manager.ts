@@ -1555,14 +1555,10 @@ export class SessionManager {
                 await adapter.write(jsonlPath, lines.join('\n') + '\n');
                 this.persistedMessageCounts.set(id, messages.length);
             } else if (messages.length > persisted) {
-                // Grew (normal turn-end) → read existing content, append new lines
+                // Grew (normal turn-end) → append new lines
                 const newMessages = messages.slice(persisted);
                 const newLines = newMessages.map(m => JSON.stringify(m));
-                const existingContent = await adapter.exists(jsonlPath)
-                    ? await adapter.read(jsonlPath)
-                    : '';
-                const fullContent = existingContent + newLines.join('\n') + '\n';
-                await adapter.write(jsonlPath, fullContent);
+                await adapter.append(jsonlPath, newLines.join('\n') + '\n');
                 this.persistedMessageCounts.set(id, messages.length);
             }
             // else: same count, nothing to do
