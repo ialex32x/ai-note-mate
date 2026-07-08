@@ -204,7 +204,6 @@ export class ChatBubble {
             wasToolDetailExpanded = false,
             abortedMessageIds = new Set(),
             pendingConfirmations = new Map<string, (approved: boolean) => void>(),
-            isBusy = false,
             speechController,
             onEdit,
             onBranch,
@@ -300,7 +299,6 @@ export class ChatBubble {
             onExtractInsights,
             onQuickAsk,
             hasQuickAskData,
-            isBusy,
             onJumpToPrevUser,
             onJumpToNextUser,
             onEdit,
@@ -408,7 +406,7 @@ export class ChatBubble {
         opts: Pick<
             ChatBubbleOptions,
             'abortedMessageIds' | 'onExtractInsights' | 'onQuickAsk' | 'hasQuickAskData'
-            | 'isBusy' | 'onJumpToPrevUser' | 'onJumpToNextUser'
+            | 'onJumpToPrevUser' | 'onJumpToNextUser'
             | 'onEdit' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
     ): IconActionOptions[] {
@@ -417,7 +415,6 @@ export class ChatBubble {
             onExtractInsights,
             onQuickAsk,
             hasQuickAskData,
-            isBusy = false,
             onJumpToPrevUser,
             onJumpToNextUser,
             onEdit,
@@ -449,7 +446,13 @@ export class ChatBubble {
                     defs.push({ icon: 'arrow-down', label: t('view.jumpToNextUser'), onClick: () => onJumpToNextUser(msg) });
                 }
                 // Copy button handled separately
-                if (onExtractInsights && !isMessageInterrupted(msg, abortedMessageIds) && !isBusy) {
+                // Use msg.streaming instead of the runtime-level isBusy:
+                // isBusy is still true when finalizeInFlightAssistantMessage fires
+                // (markIdle runs later in onFinish), so the toolbar would render
+                // without the insights button and the subsequent 'finish' event
+                // never refreshes it. msg.streaming is already false at this point,
+                // and handleExtractInsights has its own isStreaming guard.
+                if (onExtractInsights && !isMessageInterrupted(msg, abortedMessageIds) && !msg.streaming) {
                     defs.push({ icon: 'lightbulb', label: t('view.extractInsights'), onClick: () => onExtractInsights(msg) });
                 }
                 // QuickAsk: only for non-side-turn, non-sub-agent assistant messages
@@ -486,7 +489,7 @@ export class ChatBubble {
         opts: Pick<
             ChatBubbleOptions,
             'abortedMessageIds' | 'speechController' | 'onExtractInsights' | 'onQuickAsk' | 'hasQuickAskData'
-            | 'isBusy' | 'onJumpToPrevUser' | 'onJumpToNextUser'
+            | 'onJumpToPrevUser' | 'onJumpToNextUser'
             | 'onEdit' | 'onBranch' | 'canJumpToPrevUser' | 'canJumpToNextUser'
         >,
     ): void {
