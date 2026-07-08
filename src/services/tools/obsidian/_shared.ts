@@ -188,7 +188,7 @@ export function requireFile(app: App, path: string): TFile | ToolCallResult {
             content:
                 `File not found: '${path}'. ` +
                 "Double-check the file path — it must be vault-relative and include the file extension. " +
-                `Use \`search_content\` with \`glob: "${path.replace(/[.*?]/g, '')}*"\` to locate it if unsure.`,
+                `Use \`search_content\` with \`glob: "${path}*"\` to locate it if unsure.`,
         };
     }
     if (!(entry instanceof TFile)) {
