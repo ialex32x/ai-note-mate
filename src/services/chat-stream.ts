@@ -188,6 +188,39 @@ export class ChatStream implements IChatAgent {
         return String(result.content);
     }
 
+    private _normalizeToolCallArguments(rawArgs: string): string {
+        if (rawArgs === "") {
+            return rawArgs;
+        }
+
+        try {
+            JSON.parse(rawArgs);
+            return rawArgs;
+        } catch {
+            // Some OpenAI-compatible streaming providers emit no-argument tool
+            // calls as `{}` followed by an extra empty-string literal (`""`).
+            // Only recover that narrow shape: a valid JSON object with a
+            // trailing empty string literal. All other malformed arguments keep
+            // the existing parse-error behavior so the model can self-correct.
+        }
+
+        if (!rawArgs.endsWith('""')) {
+            return rawArgs;
+        }
+
+        const withoutTrailingEmptyString = rawArgs.slice(0, -2).trimEnd();
+        try {
+            const parsed = JSON.parse(withoutTrailingEmptyString) as unknown;
+            if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+                return withoutTrailingEmptyString;
+            }
+        } catch {
+            // Keep the original malformed string below.
+        }
+
+        return rawArgs;
+    }
+
     // ── Public getters ──────────────────────────────────────────────────────
 
     /** Read-only snapshot of the current message history */
@@ -1187,11 +1220,12 @@ export class ChatStream implements IChatAgent {
         // required params (e.g. get_active_file). Treat them as {} directly
         // rather than letting JSON.parse("") throw a spurious SyntaxError.
         const rawArgs = toolCall.function.arguments.trim();
-        if (rawArgs === "") {
+        const normalizedArgs = this._normalizeToolCallArguments(rawArgs);
+        if (normalizedArgs === "") {
             toolArgs = {};
         } else {
             try {
-                toolArgs = JSON.parse(rawArgs) as Record<string, unknown>;
+                toolArgs = JSON.parse(normalizedArgs) as Record<string, unknown>;
             } catch {
                 // Surface the parse failure as a tool_result error rather than
                 // throwing — otherwise a single malformed tool_call (often caused
