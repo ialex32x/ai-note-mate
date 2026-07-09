@@ -1,4 +1,4 @@
-import { setIcon, setTooltip, Notice } from 'obsidian';
+import { setIcon, setTooltip, Notice, TAbstractFile, TFile } from 'obsidian';
 import { t } from '../../../i18n';
 import { DropdownManager } from '../dropdown-manager';
 import {
@@ -14,7 +14,6 @@ import {
     invalidateActiveNoteImageCache,
     warmActiveNoteImageCache,
 } from '../../../services/tips/builtin/_active-note';
-import { TFile } from 'obsidian';
 
 export interface TipsButtonHandle {
     /** Unsubscribe settings listener; safe to call multiple times. */
@@ -400,7 +399,8 @@ export function createTipsButton(
         invalidateActiveNoteImageCache();
         refreshActiveNoteCacheAndVisibility();
     };
-    const onVaultModify = (file: TFile): void => {
+    const onVaultModify = (file: TAbstractFile): void => {
+        if (!(file instanceof TFile)) return;
         if (file.path !== plugin.app.workspace.getActiveFile()?.path) return;
         invalidateActiveNoteImageCache();
         refreshActiveNoteCacheAndVisibility();

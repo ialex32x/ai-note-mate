@@ -21,22 +21,26 @@ const SESSION_HEADER = "Mcp-Session-Id";
 /**
  * Creates a fetch-compatible function backed by Obsidian's `requestUrl`.
  */
-function createRequestUrlFetch(): (
-    url: string | URL,
-    init?: RequestInit,
-) => Promise<Response> {
-    return async (url, init?) => {
-        if (init?.signal?.aborted) {
+function createRequestUrlFetch(): typeof fetch {
+    return async (input, init?) => {
+        const request = input instanceof Request ? input : undefined;
+        const effectiveSignal = init?.signal ?? request?.signal;
+        if (effectiveSignal?.aborted) {
             throw new DOMException('The operation was aborted.', 'AbortError');
         }
 
-        const urlStr = url instanceof URL ? url.toString() : url;
-        const method = init?.method ?? 'GET';
+        const urlStr = input instanceof URL
+            ? input.toString()
+            : input instanceof Request
+                ? input.url
+                : input;
+        const method = init?.method ?? request?.method ?? 'GET';
         const body = init?.body as string | ArrayBuffer | undefined;
 
         const headers: Record<string, string> = {};
-        if (init?.headers) {
-            const h = init.headers;
+        const initHeaders = init?.headers ?? request?.headers;
+        if (initHeaders) {
+            const h = initHeaders;
             if (h instanceof Headers) {
                 h.forEach((v, k) => { headers[k] = v; });
             } else if (Array.isArray(h)) {
