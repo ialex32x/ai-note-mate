@@ -452,6 +452,7 @@ export default class NoteAssistantPlugin extends Plugin {
 		// the reliable cleanup happens at the NEXT startup via the
 		// `clearAll()` call in `onload`.
 		void this.snapshotManager?.clearAll().catch(() => { /* swallow */ });
+		this._settingsListeners.length = 0;
 	}
 
 	private async createSessionView(activate: boolean) {
