@@ -131,6 +131,8 @@ export class Embedder {
 	private flushTimer: number | null = null;
 	/** In-flight flush promise, for serializing writes. */
 	private flushPromise: Promise<void> | null = null;
+	/** True after final teardown starts; prevents stale async tails from scheduling writes. */
+	private disposed = false;
 
 	// ── Chunked-cache state ──────────────────────────────────────────────
 
@@ -238,6 +240,9 @@ export class Embedder {
 	 * batched API call for misses. Returns vectors in the same order as input.
 	 */
 	async embed(texts: string[], signal?: AbortSignal): Promise<number[][]> {
+		if (this.disposed) {
+			throw new Error("Embedder: instance has been disposed.");
+		}
 		if (texts.length === 0) return [];
 		if (!this.config) {
 			throw new Error(
@@ -246,9 +251,15 @@ export class Embedder {
 		}
 
 		await this.load();
+		if (this.disposed) {
+			throw new Error("Embedder: instance has been disposed.");
+		}
 
 		// Resolve per-text keys in parallel.
 		const keys = await Promise.all(texts.map(t => sha256(t)));
+		if (this.disposed) {
+			throw new Error("Embedder: instance has been disposed.");
+		}
 
 		const result: (number[] | null)[] = new Array<number[] | null>(texts.length).fill(null);
 		const missIndices: number[] = [];
@@ -300,6 +311,13 @@ export class Embedder {
 				this._lastErrorMessage = msg;
 				throw new Error(`Embedder: ${msg}`);
 			}
+			if (this.disposed) {
+				for (let j = 0; j < missIndices.length; j++) {
+					const idx = missIndices[j]!;
+					result[idx] = fresh[j]!;
+				}
+				return result as number[][];
+			}
 			for (let j = 0; j < missIndices.length; j++) {
 				const idx = missIndices[j]!;
 				const vec = fresh[j]!;
@@ -349,9 +367,12 @@ export class Embedder {
 	 * the on-disk files.
 	 */
 	async updateConfig(config: MinimalModelConfig): Promise<void> {
+		if (this.disposed) return;
 		const prevSig = this.config ? await this.getSignature() : null;
+		if (this.disposed) return;
 		this.config = config;
 		this.signature = null;
+		if (this.disposed) return;
 		const nextSig = await this.getSignature();
 		if (prevSig !== null && prevSig !== nextSig) {
 			this.entries.clear();
@@ -369,6 +390,7 @@ export class Embedder {
 
 	/** Clear the cache (in-memory and on disk on next flush). */
 	clear(): void {
+		if (this.disposed) return;
 		if (this.entries.size === 0 && !this.manifestDirty && this.dirtyChunks.size === 0) return;
 		this.entries.clear();
 		this.hashIndex.clear();
@@ -390,12 +412,44 @@ export class Embedder {
 			window.clearTimeout(this.flushTimer);
 			this.flushTimer = null;
 		}
+		if (this.disposed) {
+			if (this.flushPromise) await this.flushPromise;
+			return;
+		}
 		if (!this.manifestDirty && this.dirtyChunks.size === 0) {
 			// Still await any in-flight write to provide a strong barrier.
 			if (this.flushPromise) await this.flushPromise;
 			return;
 		}
 		return this.doFlush();
+	}
+
+	/**
+	 * Final teardown. Flushes already-dirty cache state once, then prevents
+	 * stale in-flight embed calls from scheduling a later debounced write.
+	 */
+	async dispose(): Promise<void> {
+		if (this.disposed) {
+			if (this.flushTimer) {
+				window.clearTimeout(this.flushTimer);
+				this.flushTimer = null;
+			}
+			if (this.flushPromise) await this.flushPromise;
+			return;
+		}
+		this.disposed = true;
+		if (this.flushTimer) {
+			window.clearTimeout(this.flushTimer);
+			this.flushTimer = null;
+		}
+		if (this.loadPromise) {
+			try {
+				await this.loadPromise;
+			} catch {
+				// Load errors are swallowed by doLoad; this is defensive only.
+			}
+		}
+		await this.doFlush({ force: true });
 	}
 
 	/** Current in-memory entry count (mostly for diagnostics/tests). */
@@ -714,6 +768,7 @@ export class Embedder {
 
 	private markDirty(): void {
 		this.dirty = true;
+		if (this.disposed) return;
 		if (this.flushDebounceMs <= 0) return;
 		if (this.flushTimer) return;
 		this.flushTimer = window.setTimeout(() => {
@@ -722,10 +777,11 @@ export class Embedder {
 		}, this.flushDebounceMs);
 	}
 
-	private async doFlush(): Promise<void> {
+	private async doFlush(options: { force?: boolean } = {}): Promise<void> {
 		if (this.flushPromise) {
 			await this.flushPromise;
 		}
+		if (this.disposed && !options.force) return;
 		if (!this.manifestDirty && this.dirtyChunks.size === 0) return;
 		this.flushPromise = this.writeCacheFile().finally(() => {
 			this.flushPromise = null;
@@ -1005,10 +1061,12 @@ let globalEmbedder: Embedder | null = null;
  */
 export async function initGlobalEmbedder(opts: EmbedderOptions): Promise<Embedder> {
 	if (globalEmbedder) {
+		const oldEmbedder = globalEmbedder;
+		globalEmbedder = null;
 		try {
-			await globalEmbedder.flush();
+			await oldEmbedder.dispose();
 		} catch (err) {
-			console.warn("Embedder: flush during re-init failed", err);
+			console.warn("Embedder: dispose during re-init failed", err);
 		}
 	}
 	globalEmbedder = new Embedder(opts);
@@ -1028,10 +1086,11 @@ export function getGlobalEmbedder(): Embedder | null {
  */
 export async function disposeGlobalEmbedder(): Promise<void> {
 	if (!globalEmbedder) return;
-	try {
-		await globalEmbedder.flush();
-	} catch (err) {
-		console.warn("Embedder: flush during dispose failed", err);
-	}
+	const oldEmbedder = globalEmbedder;
 	globalEmbedder = null;
+	try {
+		await oldEmbedder.dispose();
+	} catch (err) {
+		console.warn("Embedder: dispose during unload failed", err);
+	}
 }
