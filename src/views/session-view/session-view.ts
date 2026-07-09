@@ -1136,6 +1136,7 @@ export class SessionView extends ItemView {
         if ('speechSynthesis' in window) {
             speechSynthesis.cancel();
         }
+        this.quickAskPanel?.dispose();
         this.dropdownManager.closeActive();
         // Clear bubble map + aborted-id set + drop continue-button ref
         this.bubbleList?.clear();

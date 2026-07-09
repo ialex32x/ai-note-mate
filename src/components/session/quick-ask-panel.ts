@@ -20,6 +20,7 @@ export class QuickAskPanel {
     private bodyEl: HTMLElement | null = null;
     private textareaEl: HTMLTextAreaElement | null = null;
     private outsideClickHandler: ((ev: MouseEvent) => void) | null = null;
+    private disposed = false;
 
     private _state: PanelState = 'hidden';
     private _activeMessageId: string | null = null;
@@ -36,6 +37,7 @@ export class QuickAskPanel {
     ) {}
 
     show(messageId: string): void {
+        if (this.disposed) return;
         this._activeMessageId = messageId;
         const existing = this.getQuickAskTurns().find(t => t.parentMessageId === messageId);
         if (existing) {
@@ -57,15 +59,29 @@ export class QuickAskPanel {
     }
 
     refresh(): void {
+        if (this.disposed) return;
         if (this._activeMessageId === null) return;
         const existing = this.getQuickAskTurns().find(t => t.parentMessageId === this._activeMessageId);
         this._state = existing ? (existing.loading ? 'loading' : 'result') : 'input';
         this.render();
     }
 
+    dispose(): void {
+        if (this.disposed) return;
+        this.disposed = true;
+        this._state = 'hidden';
+        this._activeMessageId = null;
+        this.detachOutsideClick();
+        this.el?.remove();
+        this.el = null;
+        this.bodyEl = null;
+        this.textareaEl = null;
+    }
+
     // ── Rendering ────────────────────────────────────────────────────────
 
     private render(): void {
+        if (this.disposed) return;
         if (!this.el) {
             this.el = activeDocument.body.createDiv({
                 cls: `session-quick-ask-panel ${PANEL_HIDDEN_CLS}`,
@@ -257,6 +273,7 @@ export class QuickAskPanel {
     private attachOutsideClick(): void {
         this.detachOutsideClick();
         window.requestAnimationFrame(() => {
+            if (this.disposed) return;
             if (this._state === 'hidden') return;
             const handler = (ev: MouseEvent) => {
                 const target = ev.target as Node | null;
