@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.6.4
+
+### What's new
+
+- **Chunked embedding cache** — Embedding data now migrates to a chunked binary cache format, reducing large JSON writes and making vault indexing more resilient as the embedding cache grows.
+- **Memory consolidation** — Memory now supports non-critical pool consolidation, helping long-running memory notes stay cleaner without blocking regular chat flow.
+- **Obsidian 1.12 support** — The plugin now targets Obsidian 1.12.3 and uses Obsidian DOM helpers throughout the UI for better compatibility with current app APIs.
+
+### Refinements
+
+- **Per-session edit history storage** — Vault edit history entries are now persisted per session as JSONL, improving write efficiency and reducing contention around shared history files.
+- **Faster append-only writes** — Several storage paths now append new data instead of reading and rewriting the full file, reducing disk churn during active sessions.
+- **Debug logging cleanup** — Debug logging has been centralised and is now gated by the debug setting, keeping normal sessions quieter while preserving diagnostics when needed.
+- **Sub-agent and feature docs refreshed** — The README now better reflects sub-agents and recent workflow features.
+- **Test coverage expanded** — Added focused tests for assistant lifecycle, retry handling, generated assets, session export, prompt optimisation, context compression, tool argument handling, and utility edge cases.
+
+### Fixes
+
+- **Quick Ask disposal guard** — Quick Ask panels no longer run actions after they have been disposed.
+- **Settings listener cleanup** — Settings listeners and tab bar observers are now cleared correctly during unload and re-render, preventing leaked callbacks.
+- **Embedding disposal safety** — Stale asynchronous embedding writes are ignored after disposal, avoiding writes from outdated indexing runs.
+- **Vault path handling** — Obsidian tools now accept more path aliases, provide clearer errors, and avoid unnecessary escaping in glob patterns.
+- **Read section line endings** — `read_section` now normalizes line endings for more consistent section extraction.
+- **Streaming insight state** — Insight bubbles now rely on message streaming state instead of global busy state, preventing incorrect loading indicators.
+- **Tool call argument parsing** — Tool calls with a trailing empty argument string no longer fail parsing.
+- **Regex safety** — Empty regex sources no longer risk an infinite loop in helper utilities.
+
+---
+
 ## 1.6.3
 
 ### What's new
