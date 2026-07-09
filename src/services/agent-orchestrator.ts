@@ -13,6 +13,10 @@
  * - Abort cascades from main-agent to all active sub-agents.
  */
 
+import { logger } from "../utils/logger";
+
+const log = logger("[AgentOrchestrator]");
+
 import {
     ChatStream,
     ChatMessage,
@@ -438,7 +442,7 @@ export class AgentOrchestrator implements IChatAgent {
                 // cross-turn case can only be caught here.
                 const mainAgentTool = this._mainAgent.findRegisteredTool(toolName);
                 if (mainAgentTool) {
-                    console.debug(
+                    log.debug(
                         `[AgentOrchestrator] Tool "${toolName}" was registered on the main ` +
                         `agent but filtered out of this turn's tool surface; executing via ` +
                         `fallback so the model doesn't get a spurious "Unknown tool" error.`,

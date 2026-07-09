@@ -8,38 +8,10 @@
  * three escalation modes are picked transparently per turn:
  *
  *   - **Auto-inject** (top-1 cosine ≥ {@link DEFAULT_SKILL_AUTO_INJECT_THRESHOLD}):
- *     the full body of the top-matched skill is injected inline (above
- *     the catalogue). The model can follow it directly — no `load_skill`
- *     round trip needed. The skill is marked active so subsequent turns
- *     in the same session don't re-inject it.
- *
- *   - **Strong hint** (top-1 cosine ≥ {@link DEFAULT_SKILL_HINT_THRESHOLD}):
- *     the catalogue gets a one-line directive at the top naming the
- *     best match, but the full body stays out of context. Saves tokens
- *     vs. auto-inject while still concentrating the model's attention.
- *
- *   - **Plain shortlist**: the catalogue lists the top-K matching skills,
- *     without any extra steering. This is the historical behaviour.
- *
- * Both escalation gates are cosine-based and therefore fire ONLY when
- * embedding contributed (config supplied + embedder ready + call
- * succeeded). Under pure-BM25 mode the model still gets a ranked
- * shortlist, but no hint / auto-inject — BM25 scores have no stable
- * cross-model scale to threshold against.
- *
- * **Fallback paths**:
- *   - Query too short / signal-poor → full enabled-skill catalogue.
- *   - Retriever returns zero results (BM25 found nothing AND embedding
- *     wasn't used / failed) → full catalogue. A misconfigured embedding
- *     setup can never *reduce* what the model can discover.
- *   - Retriever throws (non-abort) → full catalogue.
- *
- * Active-skill tracking ({@link SkillManager.getActiveSkillNames}) is
- * woven through every mode: skills whose body is already in context are
- * rendered with `[loaded]` so the model knows to reuse them. The set is
- * cleared by ChatStream's `onContextCompressed` hook so post-compression
- * the catalogue can re-trigger them again.
  */
+import { logger } from "../utils/logger";
+
+const log = logger("[SkillCatalogue]");
 
 import { retrieve, isQueryTooShort } from '../services/retriever';
 import type { MinimalModelConfig } from '../services/llm-provider';
@@ -207,7 +179,7 @@ export async function buildSkillSystemPromptForQuery(
                 passed: passedIndices.has(i),
             });
         }
-        console.debug(scoreTable);
+        log.debug(scoreTable);
 
         const droppedCount = enabledSkills.length - kept.length;
         const filterRate = enabledSkills.length > 0
@@ -216,7 +188,7 @@ export async function buildSkillSystemPromptForQuery(
         const mode = embeddingConfig
             ? (ranked.some(r => r.cosineSimilarity !== undefined) ? 'hybrid' : 'bm25')
             : 'bm25';
-        console.debug(
+        log.debug(
             `Skill catalogue retriever: total=${enabledSkills.length} → kept ${kept.length}; ` +
             `dropped ${droppedCount} (filterRate=${(filterRate * 100).toFixed(1)}%, ` +
             `topK=${topK}, mode=${mode})`,

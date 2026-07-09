@@ -4,9 +4,7 @@ import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
 import { requestUrlWithRetry } from "../../utils/retry-helper";
 import { resolveSecret } from "../../utils/secret-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[QwenImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 /**
  * Parameters for Qwen image generation.
@@ -209,7 +207,7 @@ export async function generateImageWithQwen(
                 throw: false,
             },
             signal,
-            { onRetry: retryLogger("generate") },
+            { onRetry: retryLogger("[QwenImageGen]", "generate") },
         );
 
         // Handle HTTP error responses with detailed error extraction

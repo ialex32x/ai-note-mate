@@ -1,6 +1,9 @@
 import { createOpenAIEmbeddings } from "./providers/openai-provider";
 import { createGeminiEmbeddings } from "./providers/gemini-provider";
 import { MinimalModelConfig } from "./llm-provider";
+import { logger } from "../utils/logger";
+
+const log = logger("[TextEmbedding]");
 
 // ─────────────────────────────────────────────
 // Embedding API
@@ -70,7 +73,7 @@ export async function createEmbeddings(
     const chunks = texts.length <= EMBEDDING_BATCH_SIZE
         ? [texts]
         : chunk(texts, EMBEDDING_BATCH_SIZE);
-    console.debug(
+    log.debug(
         `Embedding: dispatching ${texts.length} text(s) in ${chunks.length} chunk(s) (batch=${EMBEDDING_BATCH_SIZE}, provider=${config.type}, model=${config.model})`,
     );
 

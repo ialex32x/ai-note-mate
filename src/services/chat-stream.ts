@@ -14,6 +14,9 @@ import type {
 import { retrieve, isQueryTooShort } from "./retriever";
 import { recordIssue } from "./diagnostics/issue-tracer";
 import { isAbortError } from "../utils/abortable-request";
+import { logger } from "../utils/logger";
+
+const log = logger("[ChatStream]");
 
 import {
     SUMMARIZER_SYSTEM_PROMPT,
@@ -769,7 +772,7 @@ export class ChatStream implements IChatAgent {
                 // surprises at a glance without diffing against the
                 // detailed score table above.
                 const agentLabel = this._config.agentLabel ?? 'agent';
-                console.debug(
+                log.debug(
                     `[agent="${agentLabel}"] sending ${toolSchemas.length} tool(s) to LLM` +
                     (toolSchemas.length > 0
                         ? `: ${toolSchemas.map(s => s.function.name).join(', ')}`
@@ -1289,7 +1292,7 @@ export class ChatStream implements IChatAgent {
 
         // ── Filter-miss telemetry ──────────────────────────
         if (recoveredFromFilterMiss) {
-            console.debug(
+            log.debug(
                 `[embedding tool filter] miss recovered: model called "${toolName}" `
                 + `but it was filtered out (capability-allowed, dispatching directly; `
                 + `consider lowering threshold or revising its description)`,
@@ -1598,14 +1601,14 @@ export class ChatStream implements IChatAgent {
                     passed: keptIndexSet.has(i),
                 });
             }
-            console.debug(scoreTable);
+            log.debug(scoreTable);
 
             const droppedOndemand = ondemand.length - selectedOndemand.length;
             const filterRate = ondemand.length > 0
                 ? droppedOndemand / ondemand.length
                 : 0;
             const mode = config ? (ranked.some(r => r.cosineSimilarity !== undefined) ? 'hybrid' : 'bm25') : 'bm25';
-            console.debug(
+            log.debug(
                 `Tool retriever: total=${tools.length} (always=${always.length}, ondemand=${ondemand.length}) → kept ${always.length + selectedOndemand.length} (always=${always.length}, ondemand=${selectedOndemand.length}); dropped ${droppedOndemand} ondemand (filterRate=${(filterRate * 100).toFixed(1)}%, topK=${topK}, mode=${mode})`,
             );
             return [...always, ...selectedOndemand];
@@ -1818,7 +1821,7 @@ export class ChatStream implements IChatAgent {
         const streamMs = performance.now() - streamStart;
         const totalSkips = contentSkips + thinkingSkips;
         if (chunkCount > 50 || streamMs > 500 || totalSkips > 10) {
-            console.debug(
+            log.debug(
                 `[ChatStream._processStream] ${chunkCount} chunk(s) in ${streamMs.toFixed(0)}ms; ` +
                 `emitted content=${contentEmits}/${contentEmits + contentSkips} ` +
                 `thinking=${thinkingEmits}/${thinkingEmits + thinkingSkips} ` +
@@ -1882,7 +1885,7 @@ export class ChatStream implements IChatAgent {
                 const len = typeof m.content === 'string' ? m.content.length : 0;
                 return `[${idx}] ${m.role}${tcIds ? ` toolCalls=${tcIds}` : ''}${tcId ? ` toolCallId=${tcId}` : ''} len=${len}`;
             }).join('\n');
-            console.debug(
+            log.debug(
                 `[agent="${agentLabel}"] final context: ${messagesToSend.length} msgs ` +
                 `(${breakdown}), ~${estTokens} est-tokens, status=${compressTag}\n${seq}`,
             );

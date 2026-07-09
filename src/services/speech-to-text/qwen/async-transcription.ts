@@ -8,13 +8,10 @@
  *
  *  1. Upload the audio file to DashScope OSS via `oss-upload.ts`.
  *  2. Submit an async transcription task (`/api/v1/services/audio/asr/transcription`).
- *  3. Poll `/api/v1/tasks/{task_id}` until the task completes or times out.
- *  4. Download the result JSON from the returned `transcription_url`.
- *
- * The caller is responsible for wiring artifact storage so long-running
- * tasks can survive plugin reload / session loss. See `index.ts` for the
- * orchestrator that combines upload + submission + polling + artifact update.
  */
+import { logger } from "../../../utils/logger";
+
+const log = logger("[AsyncTranscription]");
 
 import { requestUrlWithRetry } from "../../../utils/retry-helper";
 import type { SpeechToTextResult } from "../types";
@@ -105,7 +102,7 @@ export async function submitAsyncTranscription(
         (payload.parameters as Record<string, unknown>).language_hints = [language];
     }
 
-    console.debug("transcription url:", url);
+    log.debug("transcription url:", url);
     const response = await requestUrlWithRetry(
         {
             url,

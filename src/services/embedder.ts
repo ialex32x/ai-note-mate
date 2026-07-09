@@ -3,6 +3,9 @@ import type { MinimalModelConfig } from "./llm-provider";
 import { createEmbeddings } from "./text-embedding";
 import { sha256 } from "../utils/hash";
 import { truncate } from "../utils/string-truncate";
+import { logger } from "../utils/logger";
+
+const log = logger("[Embedder]");
 import { isAbortError } from "../utils/abortable-request";
 import {
 	getEntryByteSize,
@@ -268,7 +271,7 @@ export class Embedder {
 		}
 
 		const hitCount = texts.length - missTexts.length;
-		console.debug(
+		log.debug(
 			`Embedder: embed() received ${texts.length} text(s), cache hit=${hitCount}, miss=${missTexts.length}`,
 		);
 

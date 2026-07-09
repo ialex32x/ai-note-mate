@@ -17,6 +17,7 @@ import { CustomMenuService } from './services/custom-menu/custom-menu-service';
 import type { CustomMenuItem } from './services/custom-menu/types';
 import { replaceMenuVariables } from './services/custom-menu/variable-replacer';
 import { parseFrontmatterFromContent } from './utils/frontmatter';
+import { setDebugEnabledGetter } from './utils/logger';
 
 export default class NoteAssistantPlugin extends Plugin {
 	settings!: NoteAssistantPluginSettings;
@@ -155,6 +156,10 @@ export default class NoteAssistantPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
+
+		// Wire the debug-enabled getter so the centralised logger can
+		// gate console.debug / console.info by the user's setting.
+		setDebugEnabledGetter(() => this.settings.debugEnabled);
 
 		// Pre-read AGENT.md so createChatAgent can access it synchronously.
 		void this.refreshAgentMd();

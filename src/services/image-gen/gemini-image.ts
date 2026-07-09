@@ -4,9 +4,7 @@ import { resolveSecret } from "../../utils/secret-helper";
 import type { ImageGenResult, ReferenceImage } from "./types";
 import { GEMINI_BASE_URL, API_KEY_HEADER } from "../providers/gemini-provider";
 import { fetchWithRetry } from "../../utils/retry-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[GeminiImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 /**
  * Parameters for Gemini image generation.
@@ -87,7 +85,7 @@ export async function generateImageWithGemini(
                 body: JSON.stringify(body),
                 signal,
             },
-            { onRetry: retryLogger("generateContent") },
+            { onRetry: retryLogger("[GeminiImageGen]", "generateContent") },
         );
 
         // Check abort after the long API call

@@ -1,5 +1,8 @@
 import type { MinimalModelConfig } from "../llm-provider";
 import type { ArtifactStore } from "../artifact-store";
+import { logger } from "../../utils/logger";
+
+const log = logger("[ContextCompressor]");
 
 import {
     type HistoryMessage,
@@ -113,7 +116,7 @@ export class ContextCompressor {
             if (resolvedByID >= 0) {
                 cutoffIndex = resolvedByID;
                 if (resolvedByID !== lastSummary.lastMessageIndex) {
-                    console.debug("[ContextCompressor] cutoff anchored by id (", anchorId,
+                    log.debug("cutoff anchored by id (", anchorId,
                         ") →", resolvedByID, "(recorded index was", lastSummary.lastMessageIndex, ")");
                 }
             } else {
@@ -899,7 +902,7 @@ export class ContextCompressor {
         for (let i = 0; i < messages.length; i++) {
             if (messages[i]!.role === "user") {
                 if (i > 0) {
-                    console.debug("[ContextCompressor] sliceFromNextTurnBoundary: dropped", i,
+                    log.debug("sliceFromNextTurnBoundary: dropped", i,
                         "leading non-user messages to align with turn boundary");
                 }
                 return messages.slice(i);

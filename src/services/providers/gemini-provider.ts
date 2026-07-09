@@ -12,9 +12,7 @@ import type {
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
 import { fetchWithRetry } from "../../utils/retry-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[gemini-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -128,7 +126,7 @@ export class GeminiProvider implements LLMProvider {
             const url = `${GEMINI_BASE_URL}/models?${params.toString()}`;
             const response = await fetchWithRetry(url, {
                 headers: { [API_KEY_HEADER]: this.apiKey },
-            }, { onRetry: retryLogger("listModels") });
+            }, { onRetry: retryLogger("[gemini-provider]", "listModels") });
 
             if (!response.ok) {
                 const errorBody = await response.text().catch(() => "");
@@ -231,7 +229,7 @@ export class GeminiProvider implements LLMProvider {
                 body: JSON.stringify(body),
                 signal,
             },
-            { onRetry: retryLogger("createStream") },
+            { onRetry: retryLogger("[gemini-provider]", "createStream") },
         );
 
         if (!response.ok) {
@@ -631,7 +629,7 @@ export async function createGeminiCompletion(
             body: JSON.stringify(body),
             signal,
         },
-        { onRetry: retryLogger("completion") },
+        { onRetry: retryLogger("[gemini-provider]", "completion") },
     );
 
     if (!response.ok) {
@@ -740,7 +738,7 @@ export async function createGeminiEmbeddings(
                 body: JSON.stringify(body),
                 signal,
             },
-            { onRetry: retryLogger("embeddings") },
+            { onRetry: retryLogger("[gemini-provider]", "embeddings") },
         );
 
         if (!response.ok) {

@@ -1,5 +1,8 @@
 import type { HistoryMessage } from "./types";
 import { toolResultRunEnd } from "./tool-sequence";
+import { logger } from "../../utils/logger";
+
+const log = logger("[ContextCompressor]");
 
 /**
  * End-to-end validation & sanitization of the final messages list sent to the LLM.
@@ -38,7 +41,7 @@ export function validateAndSanitizeForLLM<T extends HistoryMessage>(messages: T[
             const len = typeof m.content === "string" ? m.content.length : 0;
             return `[${idx}] ${m.role}${tcIds ? ` toolCalls=${tcIds}` : ""}${tcId ? ` toolCallId=${tcId}` : ""} len=${len}`;
         }).join("\n");
-        console.debug("[ContextCompressor] validate: pre-sanitize sequence\n" + summary);
+        log.debug("validate: pre-sanitize sequence\n" + summary);
     } catch { /* noop */ }
 
     // Pass 1 — drop empty assistant messages & leading orphan tool_results,

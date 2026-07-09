@@ -4,9 +4,7 @@ import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
 import { requestUrlWithRetry } from "../../utils/retry-helper";
 import { resolveSecret } from "../../utils/secret-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[SeedreamImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 /**
  * Parameters for Seedream image generation via Ark (方舟).
@@ -143,7 +141,7 @@ export async function generateImageWithSeedream(
                 throw: false,
             },
             signal,
-            { onRetry: retryLogger("generate") },
+            { onRetry: retryLogger("[SeedreamImageGen]", "generate") },
         );
 
         // Handle HTTP error responses

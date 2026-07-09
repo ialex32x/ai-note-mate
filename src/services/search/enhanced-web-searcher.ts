@@ -3,6 +3,9 @@ import { getUserAgent, SearchResult } from './types';
 import { SearchEngineScheduler } from './search-engine-scheduler';
 import { withAbort, checkAbort, isAbortError } from 'utils/abortable-request';
 import { parseDocument } from './dom-utils';
+import { logger } from '../../utils/logger';
+
+const log = logger("[EnhancedWebSearch]");
 
 type SearchEngineId = 'bing' | 'baidu' | 'duckduckgo';
 
@@ -64,7 +67,7 @@ export class EnhancedWebSearcher {
                 }
             });
 
-            console.debug(`Bing search returned ${results.length} results`);
+            log.debug(`Bing search returned ${results.length} results`);
         } catch (err) {
             console.warn(`Bing search failed: ${err instanceof Error ? err.message : String(err)}`);
             throw err;
@@ -98,7 +101,7 @@ export class EnhancedWebSearcher {
                 }
             });
 
-            console.debug(`Baidu search returned ${results.length} results`);
+            log.debug(`Baidu search returned ${results.length} results`);
         } catch (err) {
             console.warn(`Baidu search failed: ${err instanceof Error ? err.message : String(err)}`);
             throw err;
@@ -138,7 +141,7 @@ export class EnhancedWebSearcher {
                 }
             });
 
-            console.debug(`DuckDuckGo search returned ${results.length} results`);
+            log.debug(`DuckDuckGo search returned ${results.length} results`);
         } catch (err) {
             console.warn(`DuckDuckGo search failed: ${err instanceof Error ? err.message : String(err)}`);
             throw err;
@@ -157,24 +160,24 @@ export class EnhancedWebSearcher {
         limit: number = 10,
         signal?: AbortSignal,
     ): Promise<SearchResult[]> {
-        console.debug(`[EnhancedWebSearch] Starting search for: '${query}' (limit=${limit})`);
+        log.debug(`Starting search for: '${query}' (limit=${limit})`);
 
         let results: SearchResult[] = [];
         const engines = this._scheduler.getSorted();
 
         for (const engine of engines) {
             checkAbort(signal);
-            console.debug(`Trying ${engine.name} (priority=${this._scheduler.getPriority(engine.id)})`);
+            log.debug(`Trying ${engine.name} (priority=${this._scheduler.getPriority(engine.id)})`);
             try {
                 const engineResults = await engine.search(query, limit, signal) as SearchResult[];
                 this._scheduler.markSuccess(engine.id);
 
                 if (engineResults.length > 0) {
                     results = engineResults.slice(0, limit);
-                    console.debug(`Using ${engine.name} — got ${results.length} results`);
+                    log.debug(`Using ${engine.name} — got ${results.length} results`);
                     break;
                 } else {
-                    console.debug(`${engine.name} returned 0 results, trying next engine`);
+                    log.debug(`${engine.name} returned 0 results, trying next engine`);
                 }
             } catch (err) {
                 if (isAbortError(err)) throw err;

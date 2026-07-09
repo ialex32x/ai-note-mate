@@ -11,9 +11,7 @@ import type {
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
 import { fetchWithRetry } from "../../utils/retry-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[anthropic-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -152,7 +150,7 @@ export class AnthropicProvider implements LLMProvider {
                 "x-api-key": this.apiKey,
                 "anthropic-version": ANTHROPIC_VERSION,
             },
-        }, { onRetry: retryLogger("listModels") });
+        }, { onRetry: retryLogger("[anthropic-provider]", "listModels") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -227,7 +225,7 @@ export class AnthropicProvider implements LLMProvider {
             },
             body: JSON.stringify(body),
             signal,
-        }, { onRetry: retryLogger("createStream") });
+        }, { onRetry: retryLogger("[anthropic-provider]", "createStream") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -698,7 +696,7 @@ export async function createAnthropicCompletion(
         },
         body: JSON.stringify(body),
         signal,
-    }, { onRetry: retryLogger("completion") });
+    }, { onRetry: retryLogger("[anthropic-provider]", "completion") });
 
     if (!response.ok) {
         const errorBody = await response.text().catch(() => "");

@@ -4,9 +4,7 @@ import type { ImageGenResult, ReferenceImage } from "./types";
 import { downloadAsBase64 } from "../../utils/abortable-request";
 import { resolveSecret } from "../../utils/secret-helper";
 import { fetchWithRetry } from "../../utils/retry-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[OpenAIImageGen] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 /** Default base URL for the OpenAI API. */
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
@@ -80,7 +78,7 @@ export async function generateImageWithOpenAI(
                 },
                 body: formData,
                 signal,
-            }, { onRetry: retryLogger("edits") });
+            }, { onRetry: retryLogger("[OpenAIImageGen]", "edits") });
 
             if (signal?.aborted) {
                 return { success: false, error: "Aborted" };
@@ -115,7 +113,7 @@ export async function generateImageWithOpenAI(
                 },
                 body: JSON.stringify(body),
                 signal,
-            }, { onRetry: retryLogger("generations") });
+            }, { onRetry: retryLogger("[OpenAIImageGen]", "generations") });
 
             if (signal?.aborted) {
                 return { success: false, error: "Aborted" };

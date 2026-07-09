@@ -2,6 +2,9 @@ import type { IMCPClient, MCPToolInfo } from './mcp-types';
 import { requestUrl } from 'obsidian';
 import { parseSSEFrames } from '../../utils/sse-parser';
 import { resolveFetch } from '../../utils/resolve-fetch';
+import { logger } from '../../utils/logger';
+
+const log = logger("[mcp]");
 
 // ─────────────────────────────────────────────
 // MCP Protocol Constants
@@ -126,7 +129,7 @@ function parseResponse(data: unknown): unknown {
  */
 async function readMCPResult(resp: Response): Promise<unknown> {
     const contentType = resp.headers.get("Content-Type") ?? "";
-    console.debug("[mcp] response Content-Type:", contentType);
+    log.debug("[mcp] response Content-Type:", contentType);
 
     if (contentType.includes("text/event-stream") && resp.body) {
         // SSE path.  If `readSSEResult` throws, the error already
@@ -137,7 +140,7 @@ async function readMCPResult(resp: Response): Promise<unknown> {
 
     // Non-SSE: read raw text FIRST so we never lose the body.
     const rawText = await resp.text();
-    console.debug("[mcp] JSON response:", rawText.slice(0, 500));
+    log.debug("[mcp] JSON response:", rawText.slice(0, 500));
 
     try {
         const data = JSON.parse(rawText) as JsonRpcResponse;
@@ -186,13 +189,13 @@ function processSSEFrameForResult(frame: string): unknown {
     if (!jsonStr || jsonStr === "{}") return undefined;
     try {
         const parsed = JSON.parse(jsonStr) as JsonRpcResponse;
-        console.debug("[mcp] SSE frame parsed, has result:", parsed.result !== undefined, "has error:", parsed.error !== undefined);
+        log.debug("[mcp] SSE frame parsed, has result:", parsed.result !== undefined, "has error:", parsed.error !== undefined);
         if (parsed.result !== undefined) {
             return parseResponse(parsed);
         }
-        console.debug("[mcp] SSE frame skipped (no result):", jsonStr.slice(0, 200));
+        log.debug("[mcp] SSE frame skipped (no result):", jsonStr.slice(0, 200));
     } catch (e) {
-        console.debug("[mcp] SSE frame JSON parse failed:", jsonStr.slice(0, 200), String(e));
+        log.debug("[mcp] SSE frame JSON parse failed:", jsonStr.slice(0, 200), String(e));
     }
     return undefined;
 }

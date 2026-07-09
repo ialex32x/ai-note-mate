@@ -2,9 +2,7 @@ import type NoteAssistantPlugin from "../../../main";
 import type { SpeechToTextResult } from "../types";
 import { resolveSecret } from "../../../utils/secret-helper";
 import { fetchWithRetry } from "../../../utils/retry-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[QwenASR] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../../utils/logger";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 
@@ -119,7 +117,7 @@ export async function transcribeWithQwenASR(
             },
             body: JSON.stringify(requestBody),
             signal,
-        }, { onRetry: retryLogger("transcribe") });
+        }, { onRetry: retryLogger("[QwenASR]", "transcribe") });
 
         if (signal?.aborted) {
             return { success: false, error: "Aborted" };

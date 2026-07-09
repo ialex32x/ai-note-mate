@@ -4,6 +4,9 @@ import {
     normalizeMarkdownForObsidian,
     extractMermaidSources,
 } from '../../utils/markdown-sanitizer';
+import { logger } from '../../utils/logger';
+
+const log = logger("[StreamingMarkdown]");
 
 /**
  * Default minimum interval (ms) between two consecutive renders.
@@ -426,7 +429,7 @@ export class StreamingMarkdownController {
             //     phase didn't run; total ≈ sanitize).
             const totalMs = performance.now() - passStart;
             if (totalMs >= DORENDER_SLOW_LOG_THRESHOLD_MS) {
-                console.debug(
+                log.debug(
                     `[StreamingMarkdownController] slow render: ` +
                     `content=${this.latestContent.length} chars, ` +
                     `sanitize=${sanitizeMs.toFixed(1)}ms, ` +

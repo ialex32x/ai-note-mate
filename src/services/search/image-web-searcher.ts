@@ -4,6 +4,9 @@ import { sha256 } from 'utils/hash';
 import { SearchEngineScheduler } from './search-engine-scheduler';
 import { withAbort, checkAbort, isAbortError } from 'utils/abortable-request';
 import { getUserAgent } from './types';
+import { logger } from '../../utils/logger';
+
+const log = logger("[ImageWebSearch]");
 
 type ImageEngineId = 'duckduckgo' | 'google' | 'bing';
 
@@ -235,17 +238,17 @@ export class ImageWebSearcher {
 
         for (const engine of engines) {
             checkAbort(signal);
-            console.debug(`Trying ${engine.name} (priority=${this._scheduler.getPriority(engine.id)})`);
+            log.debug(`Trying ${engine.name} (priority=${this._scheduler.getPriority(engine.id)})`);
             try {
                 const engineResults = await engine.search(query, 0, signal) as string[];
                 this._scheduler.markSuccess(engine.id);
 
                 if (engineResults.length > 0) {
                     results = engineResults;
-                    console.debug(`Using ${engine.name} — got ${results.length} results`);
+                    log.debug(`Using ${engine.name} — got ${results.length} results`);
                     break;
                 } else {
-                    console.debug(`${engine.name} returned 0 results, trying next engine`);
+                    log.debug(`${engine.name} returned 0 results, trying next engine`);
                 }
             } catch (err) {
                 if (isAbortError(err)) throw err;

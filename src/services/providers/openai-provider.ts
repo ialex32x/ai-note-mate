@@ -11,9 +11,7 @@ import type {
 import { sanitizeChatMessages } from "./_shared";
 import { parseSSEFrames } from "../../utils/sse-parser";
 import { fetchWithRetry } from "../../utils/retry-helper";
-
-const retryLogger = (ctx: string) =>
-    (err: unknown, n: number) => console.warn(`[openai-provider] ${ctx} retry ${n}: ${err instanceof Error ? err.message : String(err)}`);
+import { retryLogger } from "../../utils/logger";
 
 // ─────────────────────────────────────────────
 // Constants
@@ -100,7 +98,7 @@ export class OpenAIProvider implements LLMProvider {
             headers: {
                 Authorization: `Bearer ${this.apiKey}`,
             },
-        }, { onRetry: retryLogger("listModels") });
+        }, { onRetry: retryLogger("[openai-provider]", "listModels") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -225,7 +223,7 @@ export class OpenAIProvider implements LLMProvider {
             },
             body: JSON.stringify(body),
             signal,
-        }, { onRetry: retryLogger("createStream") });
+        }, { onRetry: retryLogger("[openai-provider]", "createStream") });
 
         if (!response.ok) {
             const errorBody = await response.text().catch(() => "");
@@ -397,7 +395,7 @@ export async function createOpenAICompletion(
         },
         body: JSON.stringify(body),
         signal,
-    }, { onRetry: retryLogger("completion") });
+    }, { onRetry: retryLogger("[openai-provider]", "completion") });
 
     if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
@@ -441,7 +439,7 @@ export async function createOpenAIEmbeddings(
         },
         body: JSON.stringify(body),
         signal,
-    }, { onRetry: retryLogger("embeddings") });
+    }, { onRetry: retryLogger("[openai-provider]", "embeddings") });
 
     if (!response.ok) {
         const errorBody = await response.text().catch(() => "");
