@@ -87,6 +87,7 @@ export class EmbeddingSettingsSection implements SettingsSection {
 				deleteTooltip: t('settings.deleteEmbeddingConfigDesc'),
 				disableDelete: embeddingConfigs.length <= 1,
 			});
+			this.ctx.registerCleanup(tabBarResult.dispose);
 
 			// ── Embedding config editor ──
 			this.renderEmbeddingEditor(

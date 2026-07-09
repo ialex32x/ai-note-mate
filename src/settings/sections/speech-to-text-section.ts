@@ -72,6 +72,7 @@ export class SpeechToTextSettingsSection implements SettingsSection {
 				deleteTooltip: t('settings.deleteSpeechToTextConfigDesc'),
 				disableDelete: sttConfigs.length <= 1,
 			});
+			this.ctx.registerCleanup(tabBarResult.dispose);
 
 			this.renderSttEditor(
 				container,

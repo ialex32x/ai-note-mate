@@ -368,6 +368,7 @@ export class ToolsSettingsSection implements SettingsSection {
 			deleteTooltip: t('settings.deleteMcpServer'),
 			disableDelete: !editingServer,
 		});
+		this.ctx.registerCleanup(tabBarResult.dispose);
 
 		// Augment each tab with a small status dot.
 		for (const server of mcpServers) {

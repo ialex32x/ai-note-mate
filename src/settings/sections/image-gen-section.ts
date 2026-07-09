@@ -90,6 +90,7 @@ export class ImageGenSettingsSection implements SettingsSection {
 				deleteTooltip: t('settings.deleteImageGenConfigDesc'),
 				disableDelete: imageGenConfigs.length <= 1,
 			});
+			this.ctx.registerCleanup(tabBarResult.dispose);
 
 			// ── Image Gen config editor ──
 			this.renderImageGenEditor(

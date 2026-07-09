@@ -20,6 +20,12 @@ export interface SectionContext {
 	 * it before the first render is a no-op.
 	 */
 	readonly refreshSection: (section: SettingsSection) => void;
+	/**
+	 * Register a cleanup owned by the section currently being rendered.
+	 * The host calls these before re-rendering, hiding, or rebuilding that
+	 * section.
+	 */
+	readonly registerCleanup: (cleanup: () => void) => void;
 	/** The root container element of the settings tab. */
 	readonly containerEl: HTMLElement;
 	/**

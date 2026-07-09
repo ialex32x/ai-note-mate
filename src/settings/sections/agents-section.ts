@@ -114,6 +114,7 @@ export class AgentsSettingsSection implements SettingsSection {
 			},
 			deleteTooltip: t("settings.deleteAgentDesc"),
 		});
+		this.ctx.registerCleanup(tabBar.dispose);
 
 		// ── Editor / read-only view ────────────────────────────
 		if (isBuiltinEditing) {

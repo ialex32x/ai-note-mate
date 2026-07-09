@@ -103,6 +103,7 @@ export class TextGenSettingsSection implements SettingsSection {
 			deleteTooltip: t('settings.deleteProfileDesc'),
 			disableDelete: profiles.length <= 1,
 		});
+		this.ctx.registerCleanup(tabBarResult.dispose);
 
 		// ── Profile editor fields ──
 		this.renderProfileEditor(

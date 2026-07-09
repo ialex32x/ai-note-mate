@@ -221,6 +221,8 @@ export interface TabBarResult {
 	/** The dropdown component if created */
 	scrollLeftBtn: HTMLButtonElement;
 	scrollRightBtn: HTMLButtonElement;
+	/** Release observers/listeners owned by this tab bar. */
+	dispose: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -285,7 +287,9 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 
 	// Scroll helper buttons
 	const scrollStep = 200;
+	let disposed = false;
 	const updateScrollBtns = () => {
+		if (disposed) return;
 		const { scrollLeft, scrollWidth, clientWidth } = tabScroll;
 		scrollLeftBtn.classList.toggle('is-disabled', scrollLeft <= 0);
 		scrollRightBtn.classList.toggle('is-disabled', scrollLeft + clientWidth >= scrollWidth - 1);
@@ -311,7 +315,7 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 	});
 
 	// Initial state – hide both buttons if tabs don't overflow
-	window.requestAnimationFrame(updateScrollBtns);
+	const initialFrame = window.requestAnimationFrame(updateScrollBtns);
 
 	// Add button
 	if (onAdd) {
@@ -372,6 +376,13 @@ export function createTabBar<T extends TabItem>(options: TabBarOptions<T>): TabB
 		refreshTabLabel,
 		scrollLeftBtn,
 		scrollRightBtn,
+		dispose: () => {
+			if (disposed) return;
+			disposed = true;
+			window.cancelAnimationFrame(initialFrame);
+			scrollObserver.disconnect();
+			tabScroll.removeEventListener('scroll', updateScrollBtns);
+		},
 	};
 }
 
@@ -995,5 +1006,4 @@ export function createStatusIcon(options: {
 
 	return { el, setState };
 }
-
 

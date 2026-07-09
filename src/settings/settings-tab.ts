@@ -27,6 +27,8 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 	/** Outer section cards (parent of each body), used as anchor targets. */
 	private sectionCards: HTMLElement[] = [];
 	private anchorNav: SectionAnchorNav | null = null;
+	private readonly sectionCleanups = new Map<SettingsSection, Array<() => void>>();
+	private renderingSection: SettingsSection | null = null;
 
 	/** Per-section header action elements, populated on each display() call. */
 	private headerActionsEls: HTMLElement[] = [];
@@ -41,6 +43,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 			containerEl: this.containerEl,
 			refreshAll: () => this.display(),
 			refreshSection: (section) => this.refreshSection(section),
+			registerCleanup: (cleanup) => this.registerCleanup(cleanup),
 			onProfilesChanged: () => this.rebuildGlobalProfileDropdowns(),
 		};
 
@@ -66,9 +69,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 
 		// Release any resources held by sections from the previous render
 		// (e.g. MCP state listeners) before wiping the DOM.
-		for (const section of this.sections) {
-			section.dispose?.();
-		}
+		this.disposeAllSections();
 
 		// Tear down a previous anchor nav (if any) before wiping the DOM.
 		this.anchorNav?.destroy();
@@ -92,7 +93,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		}[] = [];
 		for (const section of this.sections) {
 			const { body, headerActions } = createSettingsSection(containerEl, t(section.titleKey));
-			section.render(body);
+			this.renderSection(section, body);
 			if (section.renderHeaderActions) {
 				section.renderHeaderActions(headerActions);
 			}
@@ -126,9 +127,7 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 	}
 
 	hide(): void {
-		for (const section of this.sections) {
-			section.dispose?.();
-		}
+		this.disposeAllSections();
 		this.anchorNav?.destroy();
 		this.anchorNav = null;
 		super.hide();
@@ -171,9 +170,10 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		const oldTabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
 		const savedScrollLeft = oldTabScroll?.scrollLeft ?? 0;
 
+		this.disposeSection(section);
 		body.empty();
 		setAdvancedSettingsVisible(this.plugin.settings.showAdvanced);
-		section.render(body);
+		this.renderSection(section, body);
 
 		// Restore the tab bar scroll position on the newly created element.
 		const newTabScroll = body.querySelector<HTMLElement>('.oap-profile-tabs__scroll');
@@ -185,6 +185,43 @@ export class NoteAssistantSettingTab extends PluginSettingTab {
 		if (headerActions && section.renderHeaderActions) {
 			headerActions.empty();
 			section.renderHeaderActions(headerActions);
+		}
+	}
+
+	private renderSection(section: SettingsSection, body: HTMLElement): void {
+		this.renderingSection = section;
+		try {
+			section.render(body);
+		} finally {
+			this.renderingSection = null;
+		}
+	}
+
+	private registerCleanup(cleanup: () => void): void {
+		const section = this.renderingSection;
+		if (!section) return;
+		const cleanups = this.sectionCleanups.get(section) ?? [];
+		cleanups.push(cleanup);
+		this.sectionCleanups.set(section, cleanups);
+	}
+
+	private disposeSection(section: SettingsSection): void {
+		section.dispose?.();
+		const cleanups = this.sectionCleanups.get(section);
+		if (!cleanups) return;
+		for (const cleanup of cleanups) {
+			try {
+				cleanup();
+			} catch (err) {
+				console.warn('[NoteMate] Settings section cleanup failed:', err);
+			}
+		}
+		this.sectionCleanups.delete(section);
+	}
+
+	private disposeAllSections(): void {
+		for (const section of this.sections) {
+			this.disposeSection(section);
 		}
 	}
 
