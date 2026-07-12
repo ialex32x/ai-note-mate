@@ -213,7 +213,11 @@ const DELEGATION_VAULT_INSPECTOR_TIPS = `
 2. Delegate a *narrow read*: ask vault_inspector to \`read_file\` with \`start_line\`/\`end_line\` covering just that section.
 3. Apply the edit yourself with \`replace_text\` or \`insert_text\`.
 
-**Task phrasing**: the \`task\` MUST describe ONE goal (use locate-only verbs: "locate", "find", "grep"). Put file paths and search terms under \`handoff\` — refer to them by bare key name in backticks (e.g. "the \`path\` key"), never \`handoff.path\` / \`inputs.path\`. Do NOT chain verbs ("Read X. Search for Y."). Do NOT request a full-file dump when you only need a narrow range.
+**Task phrasing**: the \`task\` MUST describe ONE goal (use locate-only verbs: "locate", "find", "grep"). Put file paths and search terms under \`handoff\`. In the \`task\`, ALWAYS inline the actual value alongside the key reference — the sub-agent routinely confuses bare backtick-wrapped key names with literal search strings. Use this pattern:
+  WRONG: "Find the \`term\` key's value in the file at \`path\`"
+  WRONG: "Find all occurrences of \`term\` in \`path\`"
+  RIGHT: "Find 'InK Pro' (handoff key: \`term\`) in the file at \`path\`"
+Backticks = handoff key, single-quoted string = the literal value to search for. This applies to ALL key names, not just common English words — even a key like \`project_name\` needs its value inlined. Do NOT chain verbs ("Read X. Search for Y."). Do NOT request a full-file dump when you only need a narrow range.
 
 **Full-file read exception** — only when you already know exactly what to write AND need verbatim pre-edit bytes to anchor \`replace_text\` AND grep cannot give a usable anchor. Say so explicitly.
 

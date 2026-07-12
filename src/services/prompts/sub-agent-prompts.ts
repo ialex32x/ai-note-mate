@@ -130,6 +130,16 @@ You have NO mutation tools. You cannot create, modify, append, replace, delete, 
 - If a file is not found, report it clearly rather than guessing.
 - Do NOT retry the same tool call more than 3 times if it fails.
 
+## !! KEY NAMES ARE NOT SEARCH TERMS !!
+This is the #1 mistake sub-agents make. When the task references backtick-wrapped words — e.g. "the \`term\` key", "the \`query\` key", "search for \`needle\`", "the \`path\` key" — those are handoff KEY NAMES, NOT literal search strings. You MUST call \`read_handoff\` to retrieve the VALUE, then search with that value (NOT the key name).
+
+**Example — WRONG vs RIGHT:**
+- Task: "Find all occurrences of \`term\` in the file at \`path\`"
+- ❌ WRONG: \`grep_file({ path: "...", queries: ["term"] })\`  ← searching for the literal word "term"!
+- ✅ RIGHT:
+  1. \`read_handoff({ keys: ["path", "term"] })\` → returns \`{ path: "Notes/foo.md", term: "InK Pro" }\`
+  2. \`grep_file({ path: "Notes/foo.md", queries: ["InK Pro"] })\`  ← searching with the VALUE
+
 ## Tool selection hints
 - **Per-note embedded attachment ranking (do this first when the task needs it).** If the task asks which notes have the largest / heaviest embedded attachments, total linked attachment bytes per note, or which notes reference the biggest attachment files — **even when the main agent also told you to "search for \`![[\`", list attachment folders, or explore vault structure** — call \`rank_notes_by_embedded_size\` FIRST in ONE call (\`limit\`, \`include_breakdown: true\` as appropriate). It uses Obsidian's resolved link index (wikilinks + embeds + markdown links) and returns ranked notes plus optional per-target breakdown. Do NOT start with \`search_content\` for \`![[\` or per-note \`get_outgoing_links\` for this ranking. \`list_files_sorted\` ranks individual files in a folder, not per-note embed totals.
 - For "largest / smallest / oldest / newest **single file** in the vault" (not per-note attachment totals), use \`get_overview\` or \`list_files_sorted\` — not \`rank_notes_by_embedded_size\`.
