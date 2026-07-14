@@ -756,6 +756,37 @@ export const ko: Record<string, string> = {
 	'tool.triggers.image_search':   '이미지 검색, 사진 검색, 그림 검색, 이미지 찾기, 사진 찾기',
 	'tool.triggers.generate_image': '이미지 생성, 이미지 만들기, AI 이미지, 그림 생성, 일러스트 생성, 그림 그리기, AI 그림',
 	'tool.triggers.save_chat_attachment': '이미지 저장, 첨부 저장, 이미지 보관, 노트에 저장, 이 이미지 저장, 다운로드, 이미지 보관하기',
+	// edit — 파일 라이프사이클
+	'tool.triggers.create_note':    '노트 만들기, 새 노트, 새 파일, 새 마크다운, 노트 생성, 노트 추가, 파일 생성, 노트로 저장, 노트에 저장, 저장해서 노트로',
+	'tool.triggers.append_file':    '파일 뒤에 추가, 끝에 추가, 내용 추가, 텍스트 추가, 노트에 추가, 뒤에 붙이기',
+	'tool.triggers.prepend_file':   '앞에 삽입, 맨 앞에 추가, 파일 앞에 추가, 처음에 삽입, 상단에 추가, 시작 부분 추가',
+	'tool.triggers.set_section':    '섹션 교체, 섹션 다시 쓰기, 제목 아래 덮어쓰기, 제목 내용 교체, 섹션 재작성',
+	'tool.triggers.delete_files':   '파일 삭제, 노트 삭제, 파일 제거, 노트 제거, 여러 파일 삭제, 일괄 삭제',
+	'tool.triggers.delete_folder':  '폴더 삭제, 디렉터리 삭제, 폴더 제거, 폴더 전체 삭제, 폴더 비우기, 하위 폴더 삭제',
+	'tool.triggers.batch_set_frontmatter':   '프론트매터 설정, yaml 설정, 프론트매터 업데이트, 속성 추가, 속성 설정, yaml 속성',
+	'tool.triggers.batch_unset_frontmatter': '프론트매터 제거, 프론트매터 키 삭제, 속성 제거, yaml 키 삭제, 속성 삭제',
+	// tags
+	'tool.triggers.list_tags':          '태그 목록, 모든 태그, 태그 리스트, 태그 표시, 볼트 태그, 태그 집계',
+	'tool.triggers.search_by_tag':      '태그로 검색, 태그가 있는 노트 찾기, 태그 필터, 태그별 필터, 태그로 찾기',
+	'tool.triggers.rename_tag':         '태그 이름 변경, 태그 이름 바꾸기, 태그 교체, 태그 삭제, 태그 제거, 전체 태그 변경',
+	'tool.triggers.batch_add_note_tags':    '태그 추가, 태그 붙이기, 노트에 태그, 태그 부여, 해시태그 추가',
+	'tool.triggers.batch_remove_note_tags': '태그 제거, 태그 떼기, 노트 태그 삭제, 태그 해제, 해시태그 제거',
+	'tool.triggers.batch_set_note_tags':    '태그 설정, 태그 덮어쓰기, 태그 재설정, 노트 태그 교체, 노트 태그 지정',
+	// vault 구조 / 탐색
+	'tool.triggers.browse_folder':      '폴더 보기, 폴더 목록, 폴더 내용, 폴더 열기, 디렉터리 목록, 폴더 표시',
+	'tool.triggers.get_overview':       '볼트 개요, 볼트 통계, 볼트 크기, 볼트 요약, 전체 개요, 개요',
+	'tool.triggers.list_files_sorted': '최근 파일, 최신 노트, 수정일 순, 생성일 순, 크기 순, 최근 수정, 가장 최신',
+	'tool.triggers.get_backlinks':      '백링크, 역참조, 어디서 링크, 인바운드 링크, 링크 원본, 참조 원본',
+	'tool.triggers.get_outgoing_links': '아웃고잉 링크, 나가는 링크, 링크 대상 노트, 순방향 링크, 어디로 링크, 링크 목적지',
+	'tool.triggers.find_orphan_files':  '고아 노트, 고아 파일, 백링크 없음, 참조되지 않은, 고립된 노트, 고아 찾기',
+	// read (메타데이터. 상주지만 랭킹에도 참여)
+	'tool.triggers.get_active_file':    '현재 노트, 활성 파일, 현재 파일, 지금 열린 노트, 이 노트, 편집 중인 노트',
+	'tool.triggers.get_metadata':       '노트 메타데이터, 프론트매터, 제목 구조, 노트 태그, 노트 구조 정보, 노트 속성',
+	// canvas / base 진입점
+	'tool.triggers.read_canvas':        '캔버스 읽기, 캔버스 확인, 캔버스 정보, 캔버스 개요, canvas 파일',
+	'tool.triggers.create_canvas':      '새 캔버스, 캔버스 생성, 캔버스 만들기, canvas 새로, 빈 캔버스',
+	'tool.triggers.read_base':          'base 읽기, base 확인, obsidian base, base 파일, 데이터베이스 뷰',
+	'tool.triggers.create_base':        '새 base, base 생성, base 만들기, base 파일 새로, obsidian bases',
 
 	// ─── 인사이트 "더 깊이 파고들기" 프롬프트 ───────────────
 	// 인사이트 카드의 "더 깊이 파고들기" 버튼을 누를 때 사용자

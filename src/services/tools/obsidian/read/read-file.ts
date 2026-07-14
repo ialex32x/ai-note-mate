@@ -120,7 +120,11 @@ function buildRepeatReadFileNotice(
 
 export function vaultReadFile(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
-        ondemand: true,
+        // Always-on: reading a file is the single most common first step
+        // for any vault task ("open X", "what's in Y", "quote from Z").
+        // Keeping it resident avoids first-turn misses when the retriever
+        // has weak signal (short queries, embedding provider off).
+        ondemand: false,
 
         schema: {
             type: "function",

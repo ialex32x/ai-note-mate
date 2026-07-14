@@ -756,6 +756,37 @@ export const ja: Record<string, string> = {
 	'tool.triggers.image_search':   '画像検索, 写真検索, 画像を探す, 画像を見つける, 写真を探す',
 	'tool.triggers.generate_image': '画像生成, 画像作成, AI画像, 絵を描く, イラスト生成, 画像を作る, AIイラスト',
 	'tool.triggers.save_chat_attachment': '画像を保存, 添付を保存, 画像保存, ノートに保存, この画像を保存, ダウンロード, 画像を保管',
+	// edit — ファイルライフサイクル
+	'tool.triggers.create_note':    'ノート作成, 新規ノート, 新規ファイル, 新規マークダウン, ノートを作る, ノートを新規作成, ノート追加, ノートとして保存, ノートに保存, 保存してノート化',
+	'tool.triggers.append_file':    '追記, 末尾追記, ファイル末尾に追加, テキスト追記, 内容を追記, ノートに追記',
+	'tool.triggers.prepend_file':   '先頭挿入, 冒頭に追加, ファイル先頭に挿入, 先頭に追記, トップに挿入, 冒頭追加',
+	'tool.triggers.set_section':    'セクション置換, 章を書き換え, 見出し配下を上書き, 見出し内容を置換, セクション書き換え',
+	'tool.triggers.delete_files':   'ファイル削除, ノート削除, ファイル除去, ノート除去, 複数ファイル削除, 一括削除',
+	'tool.triggers.delete_folder':  'フォルダ削除, ディレクトリ削除, フォルダ除去, フォルダごと削除, フォルダ内すべて削除',
+	'tool.triggers.batch_set_frontmatter':   'フロントマター設定, yaml 設定, フロントマター更新, プロパティ追加, プロパティ設定, yaml プロパティ',
+	'tool.triggers.batch_unset_frontmatter': 'フロントマター削除, フロントマターキー削除, プロパティ削除, yaml キー削除, プロパティ除去',
+	// tags
+	'tool.triggers.list_tags':          'タグ一覧, すべてのタグ, タグリスト, タグ表示, ノート庫のタグ, タグ集計',
+	'tool.triggers.search_by_tag':      'タグで検索, タグ付きノートを探す, タグでフィルタ, タグ絞り込み, 特定タグのノート',
+	'tool.triggers.rename_tag':         'タグ名変更, タグリネーム, タグ置換, タグ削除, タグ除去, タグ一括変更',
+	'tool.triggers.batch_add_note_tags':    'タグ追加, タグを付ける, ノートにタグ, タグ付与, ハッシュタグ追加',
+	'tool.triggers.batch_remove_note_tags': 'タグ削除, タグを外す, ノートのタグ削除, タグ解除, ハッシュタグ除去',
+	'tool.triggers.batch_set_note_tags':    'タグ設定, タグ上書き, タグリセット, ノートのタグを設定, タグ入れ替え',
+	// vault 構造 / ブラウズ
+	'tool.triggers.browse_folder':      'フォルダを見る, フォルダ一覧, フォルダ内容, フォルダを開く, ディレクトリ一覧, フォルダ表示',
+	'tool.triggers.get_overview':       'Vault 概要, Vault 統計, Vault サイズ, ノート庫の概要, 全体概要, 概要',
+	'tool.triggers.list_files_sorted': '最近のファイル, 最新ノート, 更新日順, 作成日順, サイズ順, 最新の, 最近更新',
+	'tool.triggers.get_backlinks':      'バックリンク, 被リンク, 引用元, リンク元, どのノートから, 参照元',
+	'tool.triggers.get_outgoing_links': 'アウトゴーイングリンク, 発リンク, リンク先ノート, 前方リンク, どこにリンクしている, リンク先',
+	'tool.triggers.find_orphan_files':  '孤立ノート, 孤児ファイル, バックリンクなし, 参照されていない, 孤立を探す',
+	// read（メタデータ系。常駐だがランキングにも参加）
+	'tool.triggers.get_active_file':    '現在のノート, アクティブファイル, 現在のファイル, 今開いているノート, このノート, 編集中のノート',
+	'tool.triggers.get_metadata':       'ノートのメタデータ, フロントマター, 見出し構造, ノートのタグ, ノート構造情報, ノートプロパティ',
+	// canvas / base 入口
+	'tool.triggers.read_canvas':        'キャンバスを読む, キャンバス確認, キャンバス情報, キャンバス概要, canvas ファイル',
+	'tool.triggers.create_canvas':      '新規キャンバス, キャンバス作成, キャンバスを作る, canvas 新規, 空のキャンバス',
+	'tool.triggers.read_base':          'base を読む, base 確認, obsidian base, base ファイル, データベースビュー',
+	'tool.triggers.create_base':        '新規 base, base 作成, base を作る, base ファイル新規, obsidian bases',
 
 	// ─── インサイト「深掘り」プロンプト ────────────────────
 	// インサイトカードの「深掘り」ボタンを押したときに、ユーザーの

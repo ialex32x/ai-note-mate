@@ -756,6 +756,37 @@ export const zhTW: Record<string, string> = {
 	'tool.triggers.image_search':   '圖片搜尋, 搜尋圖片, 找圖, 找圖片, 搜圖, 圖像搜尋, 搜尋照片',
 	'tool.triggers.generate_image': '生成圖片, 畫圖, 畫一張, AI畫圖, AI繪圖, 圖片生成, 製作圖片, 創作圖片, 出圖, AI作畫',
 	'tool.triggers.save_chat_attachment': '儲存圖片, 存圖, 儲存附件, 存到筆記庫, 儲存這張圖, 下載圖片, 儲存圖片, 儲存圖像',
+	// edit — 檔案生命週期
+	'tool.triggers.create_note':    '建立筆記, 新增筆記, 新建檔案, 新增 markdown, 新筆記, 建筆記, 建檔案, 加入筆記, 存成筆記, 儲存為筆記, 存為筆記, 儲存筆記, 存到筆記, 存下來, 記下來',
+	'tool.triggers.append_file':    '附加, 附加到檔案, 附加內容, 附加文字, 結尾新增, 附加到結尾, 附加到筆記',
+	'tool.triggers.prepend_file':   '前置, 前置到檔案, 開頭插入, 頂部插入, 開頭新增, 前置內容, 前置文字',
+	'tool.triggers.set_section':    '取代章節, 重寫章節, 覆寫標題下內容, 取代標題內容, 更新章節, 章節重寫',
+	'tool.triggers.delete_files':   '刪除檔案, 移除檔案, 刪除筆記, 移除筆記, 刪除多個檔案, 批次刪除檔案',
+	'tool.triggers.delete_folder':  '刪除資料夾, 刪除目錄, 移除資料夾, 刪除整個資料夾, 清空資料夾, 刪除子目錄',
+	'tool.triggers.batch_set_frontmatter':   '設定 frontmatter, 設定 yaml, 更新 frontmatter, 新增屬性, 設定屬性, 修改 frontmatter, yaml 屬性',
+	'tool.triggers.batch_unset_frontmatter': '移除 frontmatter, 刪除 frontmatter, 刪除屬性, 移除屬性, 清除 yaml 鍵, 刪除 yaml 鍵',
+	// tags
+	'tool.triggers.list_tags':          '列出標籤, 所有標籤, 標籤列表, 顯示標籤, 筆記庫標籤, 標籤統計',
+	'tool.triggers.search_by_tag':      '依標籤搜尋, 查找帶標籤的筆記, 標籤篩選, 依標籤查找, 標籤下的筆記, 透過標籤找',
+	'tool.triggers.rename_tag':         '重新命名標籤, 改標籤名稱, 替換標籤, 重新命名 tag, 刪除標籤, 移除標籤, 全域改標籤',
+	'tool.triggers.batch_add_note_tags':    '新增標籤, 加標籤, 為筆記加標籤, 新增 tag, 附加標籤, 加 hashtag',
+	'tool.triggers.batch_remove_note_tags': '移除標籤, 去掉標籤, 刪除筆記標籤, 取消標籤, 去除 tag, 移除 hashtag',
+	'tool.triggers.batch_set_note_tags':    '設定標籤, 覆寫標籤, 重設標籤, 取代筆記標籤, 設定筆記標籤',
+	// vault 結構 / 瀏覽
+	'tool.triggers.browse_folder':      '瀏覽資料夾, 列出資料夾, 資料夾內容, 開啟資料夾, 查看目錄, 列目錄, 列出目錄',
+	'tool.triggers.get_overview':       '庫概覽, 筆記庫概覽, 庫統計, 庫大小, 庫摘要, 整體概覽, 概覽',
+	'tool.triggers.list_files_sorted': '最近檔案, 最新筆記, 依修改排序, 依建立時間排序, 依大小排序, 最新的筆記, 最近修改',
+	'tool.triggers.get_backlinks':      '反向連結, 誰引用了, 引用來源, 被誰連結, 反鏈, 傳入連結, 連結到本筆記',
+	'tool.triggers.get_outgoing_links': '出鏈, 連結到的筆記, 前向連結, 本筆記連結到, 引用了哪些, 連出',
+	'tool.triggers.find_orphan_files':  '孤立筆記, 孤兒檔案, 無反鏈, 未引用檔案, 查找孤立筆記, 找孤兒',
+	// read（元資料類工具，雖已常駐但仍參與排序）
+	'tool.triggers.get_active_file':    '目前筆記, 使用中檔案, 目前檔案, 目前開啟的筆記, 正在編輯, 這個筆記, 目前的筆記',
+	'tool.triggers.get_metadata':       '筆記元資料, frontmatter, 標題結構, 筆記標籤, 筆記結構資訊, 筆記屬性, 筆記資訊',
+	// canvas / base 入口
+	'tool.triggers.read_canvas':        '讀取畫布, 查看畫布, 畫布資訊, 畫布概覽, canvas 檔案, 白板',
+	'tool.triggers.create_canvas':      '新建畫布, 建立畫布, 新畫布, 新建 canvas, 空白畫布, 建白板',
+	'tool.triggers.read_base':          '讀取 base, 查看 base, obsidian base, base 檔案, 資料庫檢視, bases',
+	'tool.triggers.create_base':        '新建 base, 建立 base, 新 base 檔案, 建立 base, obsidian bases',
 
 	// ─── 見解「深入」提示詞 ─────────────────────────────────
 	// 使用者點擊見解卡片的「深入」按鈕時，以使用者身分送出的提示詞。

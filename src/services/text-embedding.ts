@@ -137,9 +137,13 @@ export function cosineSimilarity(a: number[], b: number[]): number {
  * filtering. When this returns true, callers should fall back to the full
  * candidate set rather than risk wiping it out with a meaningless query.
  *
- * Heuristic:
- *   - After stripping whitespace / punctuation / symbols, fewer than 8
- *     characters → too short (catches "yes", "ok", "继续", "go on" …).
+ * Heuristic (after stripping whitespace / punctuation / symbols):
+ *   - CJK-bearing text: fewer than 4 chars → too short. CJK is roughly one
+ *     morpheme per character, so 4+ ideographs already convey a complete
+ *     request ("存成笔记", "删除文件夹", "查反链"). Below 4 catches short
+ *     confirmations ("好的", "继续", "确定", "对").
+ *   - Non-CJK text: fewer than 8 chars → too short (catches "yes", "ok",
+ *     "go on", "sure" …).
  *   - No CJK ideograph/kana/hangul AND no English-alphabet word (length ≥ 2)
  *     → too short (catches pure-number/pure-emoji follow-ups).
  *
@@ -153,8 +157,12 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 export function isQueryTooShort(text: string): boolean {
     if (!text) return true;
     const stripped = text.replace(/[\s\p{P}\p{S}]/gu, '');
-    if (stripped.length < 8) return true;
     const hasCJK = /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(text);
     const hasEnglishWord = /[a-zA-Z]{2,}/.test(text);
+    // CJK is information-dense (~1 morpheme/char), so its length floor is
+    // lower than the alphabetic one. Both floors need to hold for the
+    // classifier to consider the query "long enough".
+    const minStripped = hasCJK ? 4 : 8;
+    if (stripped.length < minStripped) return true;
     return !hasCJK && !hasEnglishWord;
 }

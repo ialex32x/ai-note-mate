@@ -756,6 +756,37 @@ export const zhCN: Record<string, string> = {
 	'tool.triggers.image_search':   '图片搜索, 搜索图片, 找图, 找图片, 搜图, 图像搜索, 搜索照片',
 	'tool.triggers.generate_image': '生成图片, 画图, 画一张, AI画图, AI绘图, 图片生成, 制作图片, 创作图片, 出图, AI作画',
 	'tool.triggers.save_chat_attachment': '保存图片, 存图, 保存附件, 存到笔记库, 保存这张图, 下载图片, 存储图片, 保存图像',
+	// edit — 文件生命周期
+	'tool.triggers.create_note':    '创建笔记, 新建笔记, 新建文件, 新建 markdown, 新笔记, 建笔记, 建文件, 添加笔记, 存成笔记, 保存为笔记, 存为笔记, 保存笔记, 存到笔记, 存下来, 记下来',
+	'tool.triggers.append_file':    '追加, 追加到文件, 追加内容, 追加文本, 末尾添加, 追加到末尾, 追加到笔记',
+	'tool.triggers.prepend_file':   '前置, 前置到文件, 开头插入, 顶部插入, 开头添加, 前置内容, 前置文本',
+	'tool.triggers.set_section':    '替换章节, 重写章节, 覆盖标题下内容, 替换标题内容, 更新章节, 章节重写',
+	'tool.triggers.delete_files':   '删除文件, 移除文件, 删除笔记, 移除笔记, 删除多个文件, 批量删除文件',
+	'tool.triggers.delete_folder':  '删除文件夹, 删除目录, 移除文件夹, 删除整个文件夹, 清空文件夹, 删除子目录',
+	'tool.triggers.batch_set_frontmatter':   '设置 frontmatter, 设置 yaml, 更新 frontmatter, 添加属性, 设置属性, 修改 frontmatter, yaml 属性',
+	'tool.triggers.batch_unset_frontmatter': '移除 frontmatter, 删除 frontmatter, 删除属性, 移除属性, 清除 yaml 键, 删除 yaml 键',
+	// tags
+	'tool.triggers.list_tags':          '列出标签, 所有标签, 标签列表, 显示标签, 笔记库标签, 标签统计',
+	'tool.triggers.search_by_tag':      '按标签搜索, 查找带标签的笔记, 标签筛选, 按标签查找, 标签下的笔记, 通过标签找',
+	'tool.triggers.rename_tag':         '重命名标签, 改标签名, 替换标签, 重命名 tag, 删除标签, 移除标签, 全局改标签',
+	'tool.triggers.batch_add_note_tags':    '添加标签, 打标签, 给笔记加标签, 添加 tag, 附加标签, 添加 hashtag',
+	'tool.triggers.batch_remove_note_tags': '移除标签, 去掉标签, 删除笔记标签, 取消标签, 去除 tag, 移除 hashtag',
+	'tool.triggers.batch_set_note_tags':    '设置标签, 覆盖标签, 重置标签, 替换笔记标签, 设定笔记标签',
+	// vault 结构 / 浏览
+	'tool.triggers.browse_folder':      '浏览文件夹, 列出文件夹, 文件夹内容, 打开文件夹, 查看目录, 列目录, 列出目录',
+	'tool.triggers.get_overview':       '库概览, 笔记库概览, 库统计, 库大小, 库摘要, 整体概览, 概览',
+	'tool.triggers.list_files_sorted': '最近文件, 最新笔记, 按修改排序, 按创建时间排序, 按大小排序, 最新的笔记, 最近修改',
+	'tool.triggers.get_backlinks':      '反向链接, 谁引用了, 引用来源, 被谁链接, 反链, 传入链接, 链接到本笔记',
+	'tool.triggers.get_outgoing_links': '出链, 链接到的笔记, 前向链接, 本笔记链接到, 引用了哪些, 链出',
+	'tool.triggers.find_orphan_files':  '孤立笔记, 孤儿文件, 无反链, 未引用文件, 查找孤立笔记, 找孤儿',
+	// read（元数据类工具，虽已常驻但仍参与排序）
+	'tool.triggers.get_active_file':    '当前笔记, 活跃文件, 当前文件, 当前打开的笔记, 正在编辑, 这个笔记, 目前的笔记',
+	'tool.triggers.get_metadata':       '笔记元数据, frontmatter, 标题结构, 笔记标签, 笔记结构信息, 笔记属性, 笔记信息',
+	// canvas / base 入口
+	'tool.triggers.read_canvas':        '读取画布, 查看画布, 画布信息, 画布概览, canvas 文件, 白板',
+	'tool.triggers.create_canvas':      '新建画布, 创建画布, 新画布, 新建 canvas, 空白画布, 建白板',
+	'tool.triggers.read_base':          '读取 base, 查看 base, obsidian base, base 文件, 数据库视图, bases',
+	'tool.triggers.create_base':        '新建 base, 创建 base, 新 base 文件, 建立 base, obsidian bases',
 
 	// ─── 见解"深入"提示词 ─────────────────────────────────
 	// 用户点击见解卡片的"深入"按钮时，以用户身份发送的提示词。

@@ -15,7 +15,10 @@ import { checkRegexSafety, isFailure, requireFolder } from "../_shared";
 
 export function vaultSearchContent(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
-        ondemand: true,
+        // Always-on: full-text search is the standard first step for
+        // "find/summarize/answer about X" prompts. Making it resident
+        // prevents the model from fabricating paths when retrieval is weak.
+        ondemand: false,
 
         schema: {
             type: "function",

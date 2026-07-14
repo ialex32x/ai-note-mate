@@ -15,7 +15,10 @@ import {
 
 export function vaultGetMetadata(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
-        ondemand: true,
+        // Always-on: cheap structural probe (frontmatter + headings + tags)
+        // used as a routine second step after locating a file, before
+        // deciding whether to read/edit it.
+        ondemand: false,
 
         schema: {
             type: "function",

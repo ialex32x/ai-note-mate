@@ -7,7 +7,10 @@ import type { RegisteredTool } from "../../../chat-stream";
 
 export function vaultSearchFiles(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
-        ondemand: true,
+        // Always-on: path/filename lookup is the natural entry point for
+        // "the note called ...", complementing `search_content` (which
+        // matches BODY text). Cheap schema, high recall value.
+        ondemand: false,
 
         schema: {
             type: "function",

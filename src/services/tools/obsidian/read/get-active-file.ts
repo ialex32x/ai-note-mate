@@ -16,7 +16,9 @@ import {
 
 export function vaultGetActiveFile(plugin: NoteAssistantPlugin): RegisteredTool {
     return {
-        ondemand: true,
+        // Always-on: "the current note" is referenced constantly and the
+        // model has no other way to discover the focused file.
+        ondemand: false,
 
         schema: {
             type: "function",

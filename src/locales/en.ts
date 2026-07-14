@@ -756,6 +756,37 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tool.triggers.image_search':   'image search, find images, search pictures, photo search, search photos, find pictures',
 	'tool.triggers.generate_image': 'generate image, create image, make image, ai image, dall-e, draw picture, image generation, ai art',
 	'tool.triggers.save_chat_attachment': 'save image, save attachment, store image, save picture, keep image, download image, save to vault, save to library',
+	// edit — file lifecycle
+	'tool.triggers.create_note':    'create note, new note, new markdown, new file, make note, start note, create markdown, add note, save as note, save to note, persist as note',
+	'tool.triggers.append_file':    'append to file, add to end, append text, add lines, append content, tack on, append note',
+	'tool.triggers.prepend_file':   'prepend to file, add to top, insert at top, prepend text, prepend content, add at beginning',
+	'tool.triggers.set_section':    'replace section, rewrite section, overwrite heading, update heading content, replace under heading, section rewrite',
+	'tool.triggers.delete_files':   'delete file, remove file, delete note, remove note, trash file, delete files, remove files',
+	'tool.triggers.delete_folder':  'delete folder, remove folder, delete directory, remove directory, trash folder, drop folder, delete whole folder',
+	'tool.triggers.batch_set_frontmatter':   'set frontmatter, set yaml, update frontmatter, add property, set property, edit frontmatter, yaml property',
+	'tool.triggers.batch_unset_frontmatter': 'remove frontmatter, delete frontmatter key, unset property, drop yaml key, remove property, clear frontmatter field',
+	// tags
+	'tool.triggers.list_tags':          'list tags, all tags, show tags, tag list, vault tags, enumerate tags',
+	'tool.triggers.search_by_tag':      'search by tag, find tagged, notes with tag, filter by tag, tagged notes, tag search',
+	'tool.triggers.rename_tag':         'rename tag, retag, change tag name, replace tag, rename hashtag, tag rename, delete tag, remove tag',
+	'tool.triggers.batch_add_note_tags':    'add tag, tag note, add tags to note, apply tag, attach tag, add hashtag',
+	'tool.triggers.batch_remove_note_tags': 'remove tag from note, untag, delete tag from note, strip tag, remove hashtag',
+	'tool.triggers.batch_set_note_tags':    'set tags on note, replace tags, overwrite tags, reset tags, set note tags',
+	// vault browsing / structure
+	'tool.triggers.browse_folder':      'browse folder, list folder, folder contents, open folder, ls folder, show folder, list directory',
+	'tool.triggers.get_overview':       'vault overview, vault stats, vault summary, file counts, vault size, overview of vault',
+	'tool.triggers.list_files_sorted': 'recent files, latest notes, sort by modified, sort by created, sort by size, newest notes, most recent',
+	'tool.triggers.get_backlinks':      'backlinks, who links here, incoming links, notes linking to, references to, linked from',
+	'tool.triggers.get_outgoing_links': 'outgoing links, linked notes, forward links, notes this links to, references, links from',
+	'tool.triggers.find_orphan_files':  'orphan notes, unlinked files, no backlinks, isolated notes, unreferenced files, find orphans',
+	// read (metadata-only helpers made resident but still useful for ranking peers)
+	'tool.triggers.get_active_file':    'current note, active file, focused file, current file, open note, this note',
+	'tool.triggers.get_metadata':       'note metadata, frontmatter, headings, tags of note, structural info, note properties, note stats',
+	// canvas / base entry points
+	'tool.triggers.read_canvas':        'read canvas, inspect canvas, canvas info, canvas overview, canvas file',
+	'tool.triggers.create_canvas':      'new canvas, create canvas, make canvas, canvas file new, blank canvas',
+	'tool.triggers.read_base':          'read base, inspect base, obsidian base, base file, database view',
+	'tool.triggers.create_base':        'new base, create base, make base, base file new, obsidian bases',
 
 	// ─── Insight "deepen" prompt ────────────────────────────────
 	// Composed and sent on the user's behalf when they click the
