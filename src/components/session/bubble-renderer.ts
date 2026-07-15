@@ -154,7 +154,7 @@ export class BubbleRenderer extends Component {
          * preview overlay for the diagram. `sourceEl` is the clicked
          * `.mermaid` wrapper — used by the host for gallery navigation.
          */
-        private onPreviewMermaid?: (svg: string, code?: string, sourceEl?: HTMLElement) => void,
+        private onPreviewMermaid?: (svg: SVGElement, code?: string, sourceEl?: HTMLElement) => void,
     ) {
         super();
         this.ctx = {

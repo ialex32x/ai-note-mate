@@ -252,7 +252,7 @@ export function attachLinkContextMenu(
  */
 export function attachMermaidPreviewHandler(
     container: HTMLElement,
-    onPreview?: (svg: string, code?: string, sourceEl?: HTMLElement) => void,
+    onPreview?: (svg: SVGElement, code?: string, sourceEl?: HTMLElement) => void,
     mermaidSources?: string[],
 ): void {
     const mermaidContainers = container.querySelectorAll('.mermaid');
@@ -292,12 +292,11 @@ export function attachMermaidPreviewHandler(
 
         // ── Preview click handler ─────────────────────────────────────
         if (onPreview) {
-            const serializer = new XMLSerializer();
-            const svgString = serializer.serializeToString(svgEl);
-
             wrapper.addEventListener('click', (e) => {
                 e.stopPropagation();
-                onPreview(svgString, sourceCode, wrapper as HTMLElement);
+                // Pass the live SVG node — the overlay clones it, so the
+                // bubble's diagram is never detached.
+                onPreview(svgEl, sourceCode, wrapper as HTMLElement);
             });
         }
 

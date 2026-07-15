@@ -1266,7 +1266,7 @@ export class SessionView extends ItemView {
         }
     }
 
-    private handlePreviewMermaid(svg: string, code?: string, sourceEl?: HTMLElement): void {
+    private handlePreviewMermaid(svg: SVGElement, code?: string, sourceEl?: HTMLElement): void {
         const content: MermaidPreviewContent = {
             kind: 'mermaid',
             svg,
@@ -1350,8 +1350,7 @@ export class SessionView extends ItemView {
         if (el.classList.contains('mermaid')) {
             const svgEl = el.querySelector('svg');
             if (!svgEl) return null;
-            const svgString = new XMLSerializer().serializeToString(svgEl);
-            return { kind: 'mermaid', svg: svgString };
+            return { kind: 'mermaid', svg: svgEl };
         }
         return null;
     }

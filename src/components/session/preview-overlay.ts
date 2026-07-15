@@ -18,7 +18,14 @@ export interface ImagePreviewContent {
 
 export interface MermaidPreviewContent {
 	kind: 'mermaid';
-	svg: string;
+	/**
+	 * The live rendered mermaid `<svg>` node from the bubble.  The overlay
+	 * clones it on render, so passing the live node is safe (it is never
+	 * reparented out of the bubble).  Using the DOM node directly — rather
+	 * than a serialized string — preserves `<foreignObject>` HTML labels and
+	 * lets the overlay reuse the exact diagram the user sees in the bubble.
+	 */
+	svg: SVGElement;
 	code?: string;
 }
 
@@ -330,19 +337,15 @@ export class PreviewOverlay {
 	}
 
 	private renderMermaid(content: MermaidPreviewContent): HTMLElement {
+		// The `.mermaid` class lets Obsidian's theme CSS recolor the diagram
+		// exactly as in the bubble (style consistency); `data-processed`
+		// prevents mermaid.js from re-scanning / re-rendering the clone.
 		const wrapper = createDiv();
-		wrapper.className = 'session-preview__mermaid';
-		// Parse SVG string via DOMParser to avoid innerHTML.
-		try {
-			const parser = new DOMParser();
-			const doc = parser.parseFromString(content.svg, 'image/svg+xml');
-			const svgEl = doc.documentElement;
-			if (svgEl.instanceOf(SVGElement)) {
-				wrapper.appendChild(svgEl);
-			}
-		} catch {
-			// Fallback: if parsing fails, leave the wrapper empty.
-		}
+		wrapper.className = 'mermaid session-preview__mermaid';
+		wrapper.setAttribute('data-processed', 'true');
+		// Clone the bubble's live SVG node so the overlay shows the identical
+		// diagram (labels, colors, layout) without detaching it from the bubble.
+		wrapper.appendChild(content.svg.cloneNode(true));
 		return wrapper;
 	}
 
