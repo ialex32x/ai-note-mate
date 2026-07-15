@@ -809,4 +809,7 @@ export const zhTW: Record<string, string> = {
 
 	// ── 預覽層 ─────────────────────────────────────────────
 	'preview.close': '關閉',
+	'preview.previous': '上一個',
+	'preview.next': '下一個',
+	'preview.openFile': '開啟檔案',
 };

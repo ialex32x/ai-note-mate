@@ -809,4 +809,7 @@ The user has not filled in their name yet, nor mentioned which city they live in
 
 	// ── Preview overlay ────────────────────────────────────
 	'preview.close': 'Close',
+	'preview.previous': 'Previous',
+	'preview.next': 'Next',
+	'preview.openFile': 'Open file',
 };

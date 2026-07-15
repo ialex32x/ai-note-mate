@@ -809,4 +809,7 @@ export const zhCN: Record<string, string> = {
 
 	// ── 预览层 ─────────────────────────────────────────────
 	'preview.close': '关闭',
+	'preview.previous': '上一个',
+	'preview.next': '下一个',
+	'preview.openFile': '打开文件',
 };

@@ -142,15 +142,19 @@ export class BubbleRenderer extends Component {
         /**
          * Optional callback fired when the user clicks an attachment
          * image in a user message bubble. The host should open a
-         * full-screen preview overlay for the image.
+         * full-screen preview overlay for the image. `sourceEl` is the
+         * clicked `<img>` in the message list — used by the host to
+         * assemble a prev/next gallery of nearby previewables.
+         * `vaultPath` is present when the image is a vault file.
          */
-        private onPreviewImage?: (src: string, fileName: string) => void,
+        private onPreviewImage?: (src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string) => void,
         /**
          * Optional callback fired when the user clicks a mermaid diagram
          * in an assistant message. The host should open a full-screen
-         * preview overlay for the diagram.
+         * preview overlay for the diagram. `sourceEl` is the clicked
+         * `.mermaid` wrapper — used by the host for gallery navigation.
          */
-        private onPreviewMermaid?: (svg: string, code?: string) => void,
+        private onPreviewMermaid?: (svg: string, code?: string, sourceEl?: HTMLElement) => void,
     ) {
         super();
         this.ctx = {
@@ -422,7 +426,7 @@ export class BubbleRenderer extends Component {
         if (!controller) {
             controller = new StreamingMarkdownController(this.app, this);
             controller.setAfterRenderCallback((el) => {
-                attachImageContextMenu(this.ctx, el);
+                attachImageContextMenu(this.ctx, el, this.onPreviewImage);
                 attachLinkContextMenu(this.ctx, el);
                 attachMermaidPreviewHandler(el, this.onPreviewMermaid);
                 // The streaming renderer runs asynchronously (markdown render
@@ -504,7 +508,7 @@ export class BubbleRenderer extends Component {
         return renderFinalMarkdown(this.app, this, contentEl, markdown, {
             preprocess: stripStructuredBlock,
             afterRender: (el) => {
-                attachImageContextMenu(this.ctx, el);
+                attachImageContextMenu(this.ctx, el, this.onPreviewImage);
                 attachLinkContextMenu(this.ctx, el);
                 attachMermaidPreviewHandler(el, this.onPreviewMermaid, mermaidSources);
             },

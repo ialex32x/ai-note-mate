@@ -17,4 +17,4 @@ export { showInitializationError } from './init-error-screen';
 export { SessionLoadingOverlay } from './session-loading-overlay';
 export { AssetPanelButton } from './asset-panel';
 export { PreviewOverlay } from './preview-overlay';
-export type { PreviewContent, ImagePreviewContent, MermaidPreviewContent } from './preview-overlay';
+export type { PreviewContent, ImagePreviewContent, MermaidPreviewContent, PreviewGallery } from './preview-overlay';

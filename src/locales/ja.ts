@@ -809,4 +809,7 @@ export const ja: Record<string, string> = {
 
 	// ── プレビューオーバーレイ ─────────────────────────────
 	'preview.close': '閉じる',
+	'preview.previous': '前へ',
+	'preview.next': '次へ',
+	'preview.openFile': 'ファイルを開く',
 };

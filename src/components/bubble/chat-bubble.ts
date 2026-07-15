@@ -62,7 +62,7 @@ export interface ChatBubbleOptions {
     /** Whether this assistant message already has QuickAsk data (to show active state). */
     hasQuickAskData?: boolean;
     /** Host callback for previewing an attachment image in a full-screen overlay. */
-    onPreviewImage?: (src: string, fileName: string) => void;
+    onPreviewImage?: (src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string) => void;
 }
 
 // ── Role label lookup ─────────────────────────────────────────────────
@@ -325,7 +325,7 @@ export class ChatBubble {
         container: HTMLElement,
         attachments: ChatAttachment[],
         beforeChild?: HTMLElement,
-        onPreviewImage?: (src: string, fileName: string) => void,
+        onPreviewImage?: (src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string) => void,
     ): void {
         const wrapper = createDiv();
         wrapper.className = 'session-bubble__attachments';
@@ -351,7 +351,7 @@ export class ChatBubble {
                     e.stopPropagation();
                     const src = img.src;
                     if (src) {
-                        onPreviewImage(src, att.fileName);
+                        onPreviewImage(src, att.fileName, img);
                     }
                 });
             }

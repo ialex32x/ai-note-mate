@@ -40,7 +40,7 @@ export function renderToolCallContent(
     msg: ChatMessage,
     wasToolDetailExpanded: boolean,
     pendingConfirmations: Map<string, (approved: boolean) => void>,
-    onPreviewImage?: (src: string, fileName: string) => void,
+    onPreviewImage?: (src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string) => void,
 ): void {
     const hasDetail = !!(msg.toolCallMeta || msg.toolCallResult);
     const labelText = msg.streaming ? `${msg.content}  …` : msg.content;
@@ -196,7 +196,7 @@ function renderGeneratedImages(
     container: HTMLElement,
     msg: ChatMessage,
     ctx: BubbleContext,
-    onPreviewImage?: (src: string, fileName: string) => void,
+    onPreviewImage?: (src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string) => void,
 ): void {
     const resultText = msg.toolCallResult?.result ?? '';
     // Use exec() loop instead of matchAll() for ES2019 lib compatibility
@@ -225,13 +225,14 @@ function renderGeneratedImages(
                 src,
                 alt: altText || fileName,
                 title: fileName,
+                'data-vault-path': vaultPath,
             },
         });
 
         if (onPreviewImage) {
             img.addEventListener('click', (e) => {
                 e.stopPropagation();
-                onPreviewImage(src, fileName);
+                onPreviewImage(src, fileName, img, vaultPath);
             });
         }
     }

@@ -33,6 +33,8 @@ import {
     PreviewOverlay,
     type ImagePreviewContent,
     type MermaidPreviewContent,
+    type PreviewContent,
+    type PreviewGallery,
 } from '../../components/session';
 import {
     buildInsightDeepenPrompt,
@@ -540,7 +542,9 @@ export class SessionView extends ItemView {
      */
     private buildMessageArea(root: HTMLElement): void {
         // ── Preview overlay (covers entire session view, above all content) ──
-        this.previewOverlay = new PreviewOverlay(root);
+        this.previewOverlay = new PreviewOverlay(root, (vaultPath) => {
+            this.openVaultImageFile(vaultPath);
+        });
         this.previewOverlay.mount();
 
         const messagesWrapper = root.createDiv({ cls: 'session-messages-wrapper' });
@@ -575,9 +579,9 @@ export class SessionView extends ItemView {
             (msg) => { void this.handleQuickAskRequest(msg); },
             () => new Set((this.runtime?.quickAskTurns ?? []).map(t => t.parentMessageId)),
             // Preview overlay callback: open when user clicks an attachment image.
-            (src, fileName) => this.handlePreviewImage(src, fileName),
+            (src, fileName, sourceEl, vaultPath) => this.handlePreviewImage(src, fileName, sourceEl, vaultPath),
             // Preview overlay callback: open when user clicks a mermaid diagram.
-            (svg, code) => this.handlePreviewMermaid(svg, code),
+            (svg, code, sourceEl) => this.handlePreviewMermaid(svg, code, sourceEl),
         );
         this.addChild(this.bubbleRenderer);
 
@@ -1241,23 +1245,115 @@ export class SessionView extends ItemView {
 
     /**
      * Open the preview overlay for an attachment image.
+     *
+     * When `sourceEl` is the DOM node that was clicked inside the message
+     * list, we build a gallery snapshot of all previewable items
+     * (attachment images + mermaid diagrams) in current DOM order so
+     * the overlay can offer previous/next navigation.
      */
-    private handlePreviewImage(src: string, fileName: string): void {
+    private handlePreviewImage(src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string): void {
         const content: ImagePreviewContent = {
             kind: 'image',
             src,
             alt: fileName,
+            vaultPath,
         };
-        this.previewOverlay.show(content);
+        const gallery = sourceEl ? this.buildPreviewGallery(sourceEl) : null;
+        if (gallery) {
+            this.previewOverlay.show(content, gallery);
+        } else {
+            this.previewOverlay.show(content);
+        }
     }
 
-    private handlePreviewMermaid(svg: string, code?: string): void {
+    private handlePreviewMermaid(svg: string, code?: string, sourceEl?: HTMLElement): void {
         const content: MermaidPreviewContent = {
             kind: 'mermaid',
             svg,
             code,
         };
-        this.previewOverlay.show(content);
+        const gallery = sourceEl ? this.buildPreviewGallery(sourceEl) : null;
+        if (gallery) {
+            this.previewOverlay.show(content, gallery);
+        } else {
+            this.previewOverlay.show(content);
+        }
+    }
+
+    /**
+     * Open a vault image file in the current leaf — the original click
+     * behaviour before it was moved to the preview overlay. Called by
+     * the overlay's "Open file" toolbar button.
+     */
+    private openVaultImageFile(vaultPath: string): void {
+        const file = this.app.vault.getAbstractFileByPath(vaultPath);
+        if (file instanceof TFile) {
+            const leaf = this.app.workspace.getLeaf(false);
+            void leaf.openFile(file);
+        }
+    }
+
+    /**
+     * Enumerate all previewable items (attachment/generated images and
+     * mermaid diagrams) currently rendered in the message list, in DOM
+     * order, and locate `sourceEl` inside that list. Returns a gallery
+     * snapshot suitable for {@link PreviewOverlay.show}, or `null` when
+     * the source element cannot be located or is a solitary item.
+     *
+     * The snapshot is built lazily at click time (rather than tracked
+     * eagerly) so it always reflects the current session state — new
+     * messages arriving after the overlay closes will be picked up on
+     * the next open.
+     */
+    private buildPreviewGallery(sourceEl: HTMLElement): PreviewGallery | null {
+        if (!this.messagesEl) return null;
+
+        const selector = [
+            'img.session-bubble__attachment-img',
+            'img.session-image-preview-clickable',
+            '.mermaid.session-mermaid-clickable',
+        ].join(', ');
+        const nodes = Array.from(
+            this.messagesEl.querySelectorAll<HTMLElement>(selector),
+        );
+
+        const items: PreviewContent[] = [];
+        let currentIndex = -1;
+
+        for (const node of nodes) {
+            const item = this.previewItemFromElement(node);
+            if (!item) continue;
+            if (node === sourceEl) {
+                currentIndex = items.length;
+            }
+            items.push(item);
+        }
+
+        if (currentIndex < 0 || items.length <= 1) return null;
+        return { items, index: currentIndex };
+    }
+
+    /**
+     * Convert a DOM node from the message list into a {@link PreviewContent}
+     * suitable for the preview overlay. Returns `null` when the node
+     * cannot produce a valid preview (e.g. an image whose `src` is not
+     * yet loaded, or a mermaid wrapper without an `<svg>` child).
+     */
+    private previewItemFromElement(el: HTMLElement): PreviewContent | null {
+        if (el.instanceOf(HTMLImageElement)) {
+            const src = el.src;
+            if (!src) return null;
+            const alt = el.getAttribute('title') || el.alt || '';
+            const vaultPath = el.dataset['vaultPath'] || undefined;
+            return { kind: 'image', src, alt, vaultPath };
+        }
+        if (el.classList.contains('mermaid')) {
+            const svgEl = el.querySelector('svg');
+            if (!svgEl) return null;
+            const svgString = new XMLSerializer().serializeToString(svgEl);
+            return { kind: 'mermaid', svg: svgString };
+        }
+        return null;
     }
 
     // ── Conversation insights ────────────────────────────────────────────

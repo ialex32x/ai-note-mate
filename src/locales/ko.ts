@@ -809,4 +809,7 @@ export const ko: Record<string, string> = {
 
 	// ── 미리보기 오버레이 ──────────────────────────────────
 	'preview.close': '닫기',
+	'preview.previous': '이전',
+	'preview.next': '다음',
+	'preview.openFile': '파일 열기',
 };

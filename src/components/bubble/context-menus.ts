@@ -12,7 +12,12 @@ import type { BubbleContext } from './bubble-context';
 /**
  * Attach click + context-menu handlers to every `<img>` inside `container`.
  *
- * - Vault-relative images become clickable and open in the current leaf.
+ * - When `onPreviewImage` is provided, vault images open the zoomable
+ *   preview overlay (and receive class `session-image-preview-clickable`
+ *   so they can be included in the gallery). Non-vault images are unaffected
+ *   by this callback.
+ * - When `onPreviewImage` is omitted, vault images fall back to opening the
+ *   file in the current leaf (legacy behaviour).
  * - Right-click exposes copy-link, reveal-in-explorer (for vault files), and
  *   open-in-browser (for external URLs).
  *
@@ -22,6 +27,7 @@ import type { BubbleContext } from './bubble-context';
 export function attachImageContextMenu(
     ctx: BubbleContext,
     container: HTMLElement,
+    onPreviewImage?: (src: string, fileName: string, sourceEl?: HTMLElement, vaultPath?: string) => void,
 ): void {
     const app = ctx.app;
     const images = container.querySelectorAll('img');
@@ -38,10 +44,17 @@ export function attachImageContextMenu(
             if (vaultPath) {
                 e.preventDefault();
                 e.stopPropagation();
-                const file = app.vault.getAbstractFileByPath(vaultPath);
-                if (file instanceof TFile) {
-                    const leaf = app.workspace.getLeaf(false);
-                    void leaf.openFile(file);
+                if (onPreviewImage) {
+                    // Open in preview overlay; pass vaultPath so the overlay
+                    // can show the "Open file" button.
+                    onPreviewImage(img.src, img.getAttribute('alt') || vaultPath, img, vaultPath);
+                } else {
+                    // Legacy fallback: open the file in the current leaf.
+                    const file = app.vault.getAbstractFileByPath(vaultPath);
+                    if (file instanceof TFile) {
+                        const leaf = app.workspace.getLeaf(false);
+                        void leaf.openFile(file);
+                    }
                 }
             }
         });
@@ -84,6 +97,13 @@ export function attachImageContextMenu(
             menu.showAtPosition({ x: e.clientX, y: e.clientY });
         });
 
+        // Mark vault images that will open via the preview overlay so the
+        // gallery builder can enumerate them.
+        const vaultPathForMark = onPreviewImage ? getVaultPath() : null;
+        if (vaultPathForMark) {
+            img.addClass('session-image-preview-clickable');
+            img.dataset['vaultPath'] = vaultPathForMark;
+        }
         img.addClass('session-image-clickable');
     });
 }
@@ -228,7 +248,7 @@ export function attachLinkContextMenu(
  */
 export function attachMermaidPreviewHandler(
     container: HTMLElement,
-    onPreview?: (svg: string, code?: string) => void,
+    onPreview?: (svg: string, code?: string, sourceEl?: HTMLElement) => void,
     mermaidSources?: string[],
 ): void {
     const mermaidContainers = container.querySelectorAll('.mermaid');
@@ -273,7 +293,7 @@ export function attachMermaidPreviewHandler(
 
             wrapper.addEventListener('click', (e) => {
                 e.stopPropagation();
-                onPreview(svgString, sourceCode);
+                onPreview(svgString, sourceCode, wrapper as HTMLElement);
             });
         }
 

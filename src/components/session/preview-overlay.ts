@@ -7,6 +7,13 @@ export interface ImagePreviewContent {
 	kind: 'image';
 	src: string;
 	alt?: string;
+	/**
+	 * Vault-relative path of the image file, when the source is a vault
+	 * attachment (e.g. `assets/photo.png`). Present only for images
+	 * rendered from `app://` resource URLs — not for data-URLs or external
+	 * http images. Used by the overlay's "Open file" toolbar button.
+	 */
+	vaultPath?: string;
 }
 
 export interface MermaidPreviewContent {
@@ -16,6 +23,21 @@ export interface MermaidPreviewContent {
 }
 
 export type PreviewContent = ImagePreviewContent | MermaidPreviewContent;
+
+/**
+ * A snapshot of previewable items surrounding the currently-shown one.
+ * Enables the overlay to render "previous / next" navigation controls
+ * without knowing anything about the source of the items.
+ *
+ * Callers build the snapshot at open-time (e.g. by enumerating the DOM
+ * of the containing view). The overlay treats it as immutable during
+ * its lifetime — closing and reopening the overlay is the natural way
+ * to pick up new items.
+ */
+export interface PreviewGallery {
+	items: PreviewContent[];
+	index: number;
+}
 
 // ── Zoom / pan state ───────────────────────────────────────────────────
 
@@ -54,6 +76,18 @@ export class PreviewOverlay {
 	private contentWrapper: HTMLElement | null = null;
 	private controlBar: HTMLElement | null = null;
 
+	// ── Gallery navigation state ──────────────────────────────────────
+	/** Prev/next buttons flanking the content (null until mounted). */
+	private prevBtn: HTMLButtonElement | null = null;
+	private nextBtn: HTMLButtonElement | null = null;
+	/** Current gallery snapshot; null when only a single item is shown. */
+	private gallery: PreviewGallery | null = null;
+	/** The content item currently displayed, kept for the "Open file" action. */
+	private currentContent: PreviewContent | null = null;
+
+	/** "Open file" toolbar button; shown only when current item has a vaultPath. */
+	private openFileBtn: HTMLButtonElement | null = null;
+
 	/** Current transform state. */
 	private transform: TransformState = { scale: 1, tx: 0, ty: 0 };
 	/** Dragging state (pointer-tracking in viewport coordinates). */
@@ -74,7 +108,15 @@ export class PreviewOverlay {
 	private prevPinchCenterX = 0;
 	private prevPinchCenterY = 0;
 
-	constructor(private readonly host: HTMLElement) {}
+	constructor(
+		private readonly host: HTMLElement,
+		/**
+		 * Called when the user clicks the "Open file" button in the control
+		 * bar. Receives the vault-relative path of the currently-shown image.
+		 * When omitted the button is never shown.
+		 */
+		private readonly onOpenFile?: (vaultPath: string) => void,
+	) {}
 
 	// ── Mount / dispose ──────────────────────────────────────────────────
 
@@ -95,9 +137,28 @@ export class PreviewOverlay {
 			cls: 'session-preview__content',
 		});
 
+		// ── Side navigation buttons (prev / next) ──────────────────────
+		// Rendered as siblings of the content wrapper so their position is
+		// unaffected by the zoom/pan transform applied to the content.
+		this.prevBtn = this.createNavButton('prev');
+		this.nextBtn = this.createNavButton('next');
+
 		// ── Control bar (bottom) ───────────────────────────────────────
 		this.controlBar = this.el.createDiv({
 			cls: 'session-preview__controls',
+		});
+
+		// "Open file" button — only visible for vault images.
+		// Created unconditionally so show/hide is a simple class toggle;
+		// the actual callback guard means clicking it when hidden is a no-op.
+		this.openFileBtn = this.controlBar.createEl('button', {
+			cls: 'session-preview__open-file-btn session-preview__open-file-btn--hidden',
+			attr: { 'aria-label': t('preview.openFile'), type: 'button' },
+		});
+		setIcon(this.openFileBtn, 'external-link');
+		this.openFileBtn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.triggerOpenFile();
 		});
 
 		const closeBtn = this.controlBar.createEl('button', {
@@ -114,6 +175,15 @@ export class PreviewOverlay {
 		this.el.addEventListener('keydown', (e) => {
 			if (e.key === 'Escape') {
 				this.hide();
+				return;
+			}
+			if (e.key === 'ArrowLeft') {
+				if (this.navigate(-1)) e.preventDefault();
+				return;
+			}
+			if (e.key === 'ArrowRight') {
+				if (this.navigate(1)) e.preventDefault();
+				return;
 			}
 		});
 
@@ -159,42 +229,32 @@ export class PreviewOverlay {
 		this.el = null;
 		this.contentWrapper = null;
 		this.controlBar = null;
+		this.prevBtn = null;
+		this.nextBtn = null;
+		this.openFileBtn = null;
+		this.gallery = null;
+		this.currentContent = null;
 	}
 
 	// ── Show / hide ─────────────────────────────────────────────────────
 
 	/**
 	 * Show the overlay and render the given preview content.
+	 *
+	 * When `gallery` is supplied and holds more than one item, previous
+	 * / next side buttons (and arrow-key navigation) are enabled. The
+	 * `content` argument must match `gallery.items[gallery.index]` —
+	 * callers may pass any equivalent instance; the gallery version is
+	 * what's actually rendered.
 	 */
-	show(content: PreviewContent): void {
+	show(content: PreviewContent, gallery?: PreviewGallery): void {
 		if (!this.el || !this.contentWrapper) return;
 
-		// Reset transform and gesture state.
-		this.transform = { scale: 1, tx: 0, ty: 0 };
-		this.dragging = false;
-		this.pinching = false;
-		this.capturedPointerId = -1;
+		// Store gallery snapshot (null when single-item mode).
+		this.gallery = gallery && gallery.items.length > 1 ? gallery : null;
 
-		// Clear previous content.
-		this.contentWrapper.empty();
-
-		// Render according to kind.
-		let contentEl: HTMLElement;
-		switch (content.kind) {
-			case 'image':
-				contentEl = this.renderImage(content);
-				break;
-			case 'mermaid':
-				contentEl = this.renderMermaid(content);
-				break;
-			default:
-				return;
-		}
-
-		this.contentWrapper.appendChild(contentEl);
-
-		// Apply initial transform.
-		this.applyTransform();
+		this.renderContent(this.gallery ? this.gallery.items[this.gallery.index] ?? content : content);
+		this.updateNavButtons();
 
 		// Show.
 		this.el.removeClass('session-preview-overlay--hidden');
@@ -210,11 +270,54 @@ export class PreviewOverlay {
 		this.pinching = false;
 		this.capturedPointerId = -1;
 		this.contentWrapper?.removeClass('is-dragging');
+		this.gallery = null;
+		this.currentContent = null;
+		this.updateNavButtons();
+		this.updateOpenFileButton(null);
 		this.el.addClass('session-preview-overlay--hidden');
 		this.el.setAttribute('aria-hidden', 'true');
 	}
 
 	// ── Content renderers ───────────────────────────────────────────────
+
+	/**
+	 * Reset gesture / transform state and render the given content into
+	 * the content wrapper. Shared by initial show and gallery navigation.
+	 */
+	private renderContent(content: PreviewContent): void {
+		if (!this.contentWrapper) return;
+
+		// Reset transform and gesture state for each new item.
+		this.transform = { scale: 1, tx: 0, ty: 0 };
+		this.dragging = false;
+		this.pinching = false;
+		this.capturedPointerId = -1;
+		this.contentWrapper.removeClass('is-dragging');
+
+		// Clear previous content.
+		this.contentWrapper.empty();
+
+		// Render according to kind.
+		let contentEl: HTMLElement | null;
+		switch (content.kind) {
+			case 'image':
+				contentEl = this.renderImage(content);
+				break;
+			case 'mermaid':
+				contentEl = this.renderMermaid(content);
+				break;
+			default:
+				contentEl = null;
+		}
+
+		if (contentEl) {
+			this.contentWrapper.appendChild(contentEl);
+		}
+
+		this.currentContent = content;
+		this.applyTransform();
+		this.updateOpenFileButton(content);
+	}
 
 	private renderImage(content: ImagePreviewContent): HTMLElement {
 		const img = createEl('img');
@@ -241,6 +344,88 @@ export class PreviewOverlay {
 			// Fallback: if parsing fails, leave the wrapper empty.
 		}
 		return wrapper;
+	}
+
+	// ── Gallery navigation ──────────────────────────────────────────────
+
+	/**
+	 * Create a chevron nav button for the given direction and wire it
+	 * to {@link navigate}. Returns the button element.
+	 */
+	private createNavButton(direction: 'prev' | 'next'): HTMLButtonElement {
+		if (!this.el) throw new Error('createNavButton called before mount');
+		const btn = this.el.createEl('button', {
+			cls: `session-preview__nav-btn session-preview__nav-btn--${direction} session-preview__nav-btn--hidden`,
+			attr: {
+				type: 'button',
+				'aria-label': t(direction === 'prev' ? 'preview.previous' : 'preview.next'),
+			},
+		});
+		setIcon(btn, direction === 'prev' ? 'chevron-left' : 'chevron-right');
+		btn.addEventListener('click', (e) => {
+			e.stopPropagation();
+			this.navigate(direction === 'prev' ? -1 : 1);
+		});
+		return btn;
+	}
+
+	/**
+	 * Move the gallery cursor by `delta` (-1 for prev, +1 for next) and
+	 * re-render. No-op when no gallery is active or the boundary is
+	 * reached (no wrap-around). Returns true if navigation happened.
+	 */
+	private navigate(delta: number): boolean {
+		if (!this.gallery) return false;
+		const nextIndex = this.gallery.index + delta;
+		if (nextIndex < 0 || nextIndex >= this.gallery.items.length) return false;
+		const nextItem = this.gallery.items[nextIndex];
+		if (!nextItem) return false;
+		this.gallery = { items: this.gallery.items, index: nextIndex };
+		this.renderContent(nextItem);
+		this.updateNavButtons();
+		return true;
+	}
+
+	/**
+	 * Toggle visibility / disabled state of the prev/next buttons
+	 * according to the current gallery position. Hidden entirely when
+	 * there's no gallery (single-item view).
+	 */
+	private updateNavButtons(): void {
+		if (!this.prevBtn || !this.nextBtn) return;
+		if (!this.gallery) {
+			this.prevBtn.addClass('session-preview__nav-btn--hidden');
+			this.nextBtn.addClass('session-preview__nav-btn--hidden');
+			return;
+		}
+		this.prevBtn.removeClass('session-preview__nav-btn--hidden');
+		this.nextBtn.removeClass('session-preview__nav-btn--hidden');
+		this.prevBtn.disabled = this.gallery.index <= 0;
+		this.nextBtn.disabled = this.gallery.index >= this.gallery.items.length - 1;
+	}
+
+	/**
+	 * Show or hide the "Open file" button depending on whether the current
+	 * content item is a vault image. Pass `null` to always hide (e.g. on close).
+	 */
+	private updateOpenFileButton(content: PreviewContent | null): void {
+		if (!this.openFileBtn) return;
+		const vaultPath =
+			content?.kind === 'image' && this.onOpenFile ? content.vaultPath : undefined;
+		if (vaultPath) {
+			this.openFileBtn.removeClass('session-preview__open-file-btn--hidden');
+		} else {
+			this.openFileBtn.addClass('session-preview__open-file-btn--hidden');
+		}
+	}
+
+	/** Fire the host's open-file callback for the current vault image. */
+	private triggerOpenFile(): void {
+		if (!this.currentContent || this.currentContent.kind !== 'image') return;
+		const vaultPath = this.currentContent.vaultPath;
+		if (vaultPath && this.onOpenFile) {
+			this.onOpenFile(vaultPath);
+		}
 	}
 
 	// ── Transform helpers ───────────────────────────────────────────────
