@@ -1690,43 +1690,43 @@ export class SessionManager {
             }
 
             // Slow path: metadata from an older plugin version lacks
-            // messageVersion. Read the file once to discover the real
-            // version, then backfill so subsequent startups skip this.
-            // Check new path first, then fall back to old path.
-            let readPath: string | null = null;
+            // messageVersion. Determine the real version and backfill so
+            // subsequent startups take the fast path above.
+            //
+            // The current per-session format is JSONL (`messages.jsonl`):
+            // line-delimited JSON with NO internal `version` field. Its
+            // mere existence means v5+, so we must NOT JSON.parse the whole
+            // file to read a version — a file with two or more lines is not
+            // valid single-object JSON, so the parse throws and the old
+            // code mis-classified a perfectly good session as "corrupt" and
+            // purged it (deleting messages.jsonl and dropping the session
+            // from the list on the next launch). Just backfill v5 and keep.
             if (await adapter.exists(newPath)) {
-                readPath = newPath;
-            } else if (await adapter.exists(oldPath)) {
-                readPath = oldPath;
+                meta.messageVersion = 5;
+                metadataDirty = true;
+                continue;
             }
 
-            if (readPath) {
+            // Legacy single-object fallback (`{id}.json`): this format DOES
+            // carry a `version` field, so read + parse it to detect (and
+            // purge) deprecated v1–v4 sessions.
+            if (await adapter.exists(oldPath)) {
                 try {
-                    const msgContent = await adapter.read(readPath);
+                    const msgContent = await adapter.read(oldPath);
                     const sessionData = JSON.parse(msgContent) as { version: number };
                     // Backfill for future fast startups.
                     meta.messageVersion = sessionData.version;
                     metadataDirty = true;
                     if (sessionData.version >= 1 && sessionData.version <= 4) {
                         console.warn(`[SessionManager] Purging deprecated v${sessionData.version} session: ${id}`);
-                        await adapter.remove(readPath);
-                        // Also clean up the other path if it exists
-                        const otherPath = readPath === newPath ? oldPath : newPath;
-                        if (await adapter.exists(otherPath)) {
-                            await adapter.remove(otherPath);
-                        }
+                        await adapter.remove(oldPath);
                         this.metadataMap.delete(id);
                         purgedCount++;
                     }
                 } catch {
-                    // Corrupt file — also purge
+                    // Corrupt legacy file — purge.
                     console.warn(`[SessionManager] Purging corrupt session file: ${id}`);
-                    await adapter.remove(readPath);
-                    // Also clean up the other path if it exists
-                    const otherPath = readPath === newPath ? oldPath : newPath;
-                    if (await adapter.exists(otherPath)) {
-                        await adapter.remove(otherPath);
-                    }
+                    await adapter.remove(oldPath);
                     this.metadataMap.delete(id);
                     purgedCount++;
                 }
@@ -1852,6 +1852,17 @@ export class SessionManager {
                 await adapter.mkdir(this.sessionsDir);
             }
 
+            // Persist per-session messages FIRST so each session's metadata
+            // (notably `messageVersion`, stamped by saveMessages) is current
+            // before we snapshot it into list.json below. Otherwise a
+            // brand-new session whose only write is a single saveToCache
+            // (e.g. an aborted first turn that never triggers a follow-up
+            // flush) would land in list.json WITHOUT a messageVersion,
+            // forcing the reload slow-path.
+            for (const id of this.loadedMessages) {
+                await this.saveMessages(id);
+            }
+
             // Save metadata list (excluding per-session fields stored in their own files)
             const listData: SessionListFile = {
                 version: 1,
@@ -1870,11 +1881,6 @@ export class SessionManager {
                 cachedPromptTokens: this._globalTokenStats.cachedPromptTokens,
             };
             await adapter.write(this.statisticsFilePath, JSON.stringify(statsData, null, 2));
-
-            // Save all loaded messages to individual files
-            for (const id of this.loadedMessages) {
-                await this.saveMessages(id);
-            }
         } catch (error) {
             console.warn('[SessionManager] Failed to save cache:', error);
         }

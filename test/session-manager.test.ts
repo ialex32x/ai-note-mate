@@ -187,4 +187,72 @@ describe("SessionManager.loadFromCache", () => {
         expect(snap?.messages.length).toBe(1);
         expect(snap?.messages[0]?.content).toBe("round-trip");
     });
+
+    it("does NOT purge a multi-line JSONL session whose metadata lacks messageVersion", async () => {
+        // Regression: an interrupted first turn leaves a multi-line
+        // messages.jsonl (user + system 'aborted') and — because list.json
+        // was flushed before saveMessages stamped messageVersion — a
+        // metadata entry with no `messageVersion`. On the next launch the
+        // slow-path used to JSON.parse the whole JSONL file, throw, and
+        // purge the session as "corrupt" (deleting messages.jsonl and
+        // dropping it from the list). It must now survive.
+        const { adapter } = makeManager();
+
+        const sessionId = "session-26";
+        // Metadata WITHOUT messageVersion (mirrors the pre-fix on-disk state).
+        adapter.files.set("sessions/list.json", JSON.stringify({
+            version: 1,
+            nextId: 27,
+            sessions: [{
+                id: sessionId,
+                title: "",
+                firstUserMessage: "hello",
+                tokenUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cachedPromptTokens: 0 },
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+            }],
+        }));
+        adapter.folders.add(`sessions/${sessionId}`);
+        // Two-line JSONL — this is what JSON.parse(wholeFile) chokes on.
+        const jsonlPath = `sessions/${sessionId}/messages.jsonl`;
+        adapter.files.set(jsonlPath, [
+            JSON.stringify({ id: "u1", role: "user", content: "hello", streaming: false, timestamp: 1, turn: 1 }),
+            JSON.stringify({ id: "s1", role: "system", content: "aborted", streaming: false, timestamp: 2 }),
+        ].join('\n') + '\n');
+        adapter.files.set("sessions/active.json", JSON.stringify({ activeSessionId: sessionId }));
+
+        const app = { vault: { adapter } };
+        const mgr = new SessionManager(app as never, "sessions");
+        await mgr.loadFromCache();
+
+        // The session must still be in the list and its file untouched.
+        expect(mgr.getAllSessions().some(s => s.id === sessionId)).toBe(true);
+        expect(adapter.files.has(jsonlPath)).toBe(true);
+
+        // And its messages load back intact.
+        await mgr.ensureMessagesLoaded(sessionId);
+        const snap = mgr.getSessionSync(sessionId);
+        expect(snap?.messages.length).toBe(2);
+        expect(snap?.messages[0]?.content).toBe("hello");
+    });
+
+    it("writes messageVersion into list.json on the very first saveToCache", async () => {
+        // The slow-path above only triggers when metadata lacks
+        // messageVersion. Guarantee it is present after a single flush so
+        // reloads take the fast path (and never risk the purge).
+        const { mgr, adapter } = makeManager();
+        const sessionId = mgr.createSession();
+        await mgr.saveSession(
+            sessionId,
+            [makeUserMessage("first", "u1")],
+            { promptTokens: 1, completionTokens: 1, totalTokens: 2, cachedPromptTokens: 0 },
+        );
+        await mgr.saveToCache();
+
+        const list = JSON.parse(adapter.files.get("sessions/list.json") ?? "{}") as {
+            sessions?: Array<{ id: string; messageVersion?: number }>;
+        };
+        const meta = list.sessions?.find(s => s.id === sessionId);
+        expect(meta?.messageVersion).toBe(5);
+    });
 });

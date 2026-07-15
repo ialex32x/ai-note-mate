@@ -98,6 +98,70 @@ describe('ChatStream interrupted assistant persistence', () => {
         expect(assistants[0]!.wasInterrupted).toBe(true);
     });
 
+    it('routes abort through the epilogue when the user stops during the first-round pre-flight build', async () => {
+        // Regression: a new session's first turn is aborted while the
+        // abort-aware pre-flight work (memory / skill embedding retrieval
+        // inside _buildEffectiveSystemPrompt) is still running, before the
+        // provider stream starts. The AbortError must NOT escape prompt();
+        // it has to flow through the normal abort epilogue so the persist
+        // hooks fire — otherwise the brand-new session is never written and
+        // vanishes on reload.
+        const onAbort = vi.fn();
+        let createStreamCalled = false;
+
+        const chat = new ChatStream({
+            onAbort,
+            // Simulate blocking, abort-aware retrieval that rejects with
+            // AbortError the instant the user stops.
+            systemPromptPrefix: (_input, signal) =>
+                new Promise<string>((_resolve, reject) => {
+                    const onAbortSignal = () =>
+                        reject(new DOMException('Aborted', 'AbortError'));
+                    if (signal?.aborted) {
+                        onAbortSignal();
+                        return;
+                    }
+                    signal?.addEventListener('abort', onAbortSignal, { once: true });
+                }),
+        });
+
+        const provider: LLMProvider = {
+            createStream: async function* () {
+                createStreamCalled = true;
+                yield {
+                    content: 'should never stream',
+                    reasoningContent: null,
+                    toolCallDeltas: null,
+                    finishReason: 'stop',
+                    usage: null,
+                };
+            },
+            listModels: async () => ['mock-model'],
+        } as LLMProvider;
+
+        const turn = chat.prompt('hello', { provider });
+        await new Promise(r => setTimeout(r, 20));
+        chat.abort();
+        // Before the fix, this would reject with AbortError; after the fix
+        // the epilogue swallows it and resolves normally.
+        await turn;
+
+        expect(chat.state).toBe('aborted');
+        expect(onAbort).toHaveBeenCalledTimes(1);
+        expect(createStreamCalled).toBe(false);
+
+        // The user's first message survives so the session is persistable.
+        const users = chat.messages.filter(m => m.role === 'user');
+        expect(users).toHaveLength(1);
+        expect(users[0]!.content).toBe('hello');
+
+        // The turn is recorded as aborted in history (display-only).
+        const aborted = chat.messages.filter(
+            m => m.role === 'system' && m.content === 'aborted',
+        );
+        expect(aborted).toHaveLength(1);
+    });
+
     it('includes the interrupted API note on the next prompt', async () => {
         const chat = new ChatStream({});
         let capturedMessages: ChatMessageParam[] | undefined;

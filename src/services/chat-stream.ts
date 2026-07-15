@@ -530,34 +530,45 @@ export class ChatStream implements IChatAgent {
         //   * Orphan `tool_call` messages (no preceding assistant, or no
         //     completed result yet) are skipped \u2014 they would produce orphan
         //     tool_results that the validator would drop anyway.
-        const { text: effectiveSystemPrompt, breakdown: spBreakdown } =
-            await this._buildEffectiveSystemPrompt(userInput);
-
-        const rawMessages = await this._rebuildApiMessages(effectiveSystemPrompt);
-
-        // Filter tools based on allowed capabilities
-        const allowedCapabilities = options?.allowedCapabilities;
-
-        // Collect static (registered) tools and dynamic tools
-        const dynamicTools = this._config.dynamicTools?.() ?? [];
-        const allTools = [...this._tools, ...dynamicTools];
-
-        // Capability filtering is independent of embedding-based filtering
-        // and doesn't change within a single prompt() call, so we compute it
-        // once up-front. Embedding-based filtering runs separately at the
-        // top of every tool-call loop iteration (see below).
-        const capabilityFilteredTools: RegisteredTool[] = allowedCapabilities
-            ? allTools.filter(tool => {
-                // If tool has no capabilities declared, allow it (backward compatibility)
-                if (!tool.capabilities || tool.capabilities.length === 0) {
-                    return true;
-                }
-                // Tool is allowed if ALL its capabilities are in the allowed list
-                return tool.capabilities.every(cap => allowedCapabilities.includes(cap));
-            })
-            : allTools;
-
+        // NOTE: the try MUST wrap the pre-flight builds below
+        // (`_buildEffectiveSystemPrompt` / `_rebuildApiMessages`), not just
+        // the tool-call loop. Those helpers await abort-aware work (memory /
+        // skill embedding retrieval propagates AbortError via Promise.all).
+        // When the user aborts the very first turn during this "preparing"
+        // phase, that AbortError would otherwise escape prompt() before any
+        // epilogue runs — so neither onAbort nor onFinish/onError fires, and
+        // the brand-new session is never persisted (its messages.jsonl is
+        // never written and it vanishes on the next reload). Keeping them
+        // inside the try routes the abort through the catch → onAbort →
+        // persist path like every other abort point.
         try {
+            const { text: effectiveSystemPrompt, breakdown: spBreakdown } =
+                await this._buildEffectiveSystemPrompt(userInput);
+
+            const rawMessages = await this._rebuildApiMessages(effectiveSystemPrompt);
+
+            // Filter tools based on allowed capabilities
+            const allowedCapabilities = options?.allowedCapabilities;
+
+            // Collect static (registered) tools and dynamic tools
+            const dynamicTools = this._config.dynamicTools?.() ?? [];
+            const allTools = [...this._tools, ...dynamicTools];
+
+            // Capability filtering is independent of embedding-based filtering
+            // and doesn't change within a single prompt() call, so we compute it
+            // once up-front. Embedding-based filtering runs separately at the
+            // top of every tool-call loop iteration (see below).
+            const capabilityFilteredTools: RegisteredTool[] = allowedCapabilities
+                ? allTools.filter(tool => {
+                    // If tool has no capabilities declared, allow it (backward compatibility)
+                    if (!tool.capabilities || tool.capabilities.length === 0) {
+                        return true;
+                    }
+                    // Tool is allowed if ALL its capabilities are in the allowed list
+                    return tool.capabilities.every(cap => allowedCapabilities.includes(cap));
+                })
+                : allTools;
+
             let finalMessage: ChatMessage | null = null;
 
             // Per-turn tool-call counter, used to enforce each tool's
