@@ -4,11 +4,11 @@ import { sanitizeStreamingMarkdown } from "../src/utils/markdown-sanitizer";
 // ─────────────────────────────────────────────────────────────────────────────
 // Mermaid deferral tests for sanitizeStreamingMarkdown
 //
-// The deferTrailingMermaidBlock logic ensures streaming mermaid code blocks
-// are not incrementally rendered, which would cause the Mermaid renderer to
-// display transient syntax errors while the block is incomplete.  An unclosed
-// mermaid block at the end of content is stripped entirely until its closing
-// ``` arrives, at which point it is rendered in one piece.
+// Strategy: only strip trailing *unclosed* mermaid blocks.  A complete block
+// (opening + closing fence both present) is kept so the streaming controller
+// can render it immediately when the closing fence arrives.  The controller's
+// SVG caching layer (snapshotMermaidSvgs / restoreMermaidSvgs) is responsible
+// for preventing per-tick flicker once the SVG is rendered.
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
@@ -40,18 +40,18 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
     });
 
     // ── Complete mermaid block (closed) ────────────────────────────────────
+    // A complete block is preserved so the controller can render it immediately.
 
-    it("renders a complete mermaid block (closing fence present)", () => {
+    it("keeps a complete mermaid block (closing fence present)", () => {
         const input = "Before\n\n```mermaid\ngraph TD\nA --> B\n```\n\nAfter";
         const result = sanitize(input);
         expect(result).toContain("mermaid");
         expect(result).toContain("graph TD");
         expect(result).toContain("A --> B");
-        expect(result).toContain("```");
         expect(result).toContain("After");
     });
 
-    it("renders a complete mermaid block followed by another code block", () => {
+    it("keeps a complete mermaid block followed by another code block", () => {
         const input =
             "```mermaid\ngraph TD\nA --> B\n```\n\n```python\nprint('hello')\n```";
         const result = sanitize(input);
@@ -63,7 +63,7 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
 
     // ── Streaming simulation ───────────────────────────────────────────────
 
-    it("streaming: defers throughout and renders after closing fence arrives", () => {
+    it("streaming: strips while unclosed, then keeps once closed", () => {
         // Step 1: only mermaid opener
         const s1 = sanitize("Intro\n\n```mermaid\n");
         expect(s1).not.toContain("mermaid");
@@ -79,14 +79,13 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
         expect(s3).not.toContain("mermaid");
         expect(s3).not.toContain("A --> B");
 
-        // Step 4: mermaid block complete with closing fence
+        // Step 4: mermaid block complete — now kept for immediate rendering
         const s4 = sanitize(
             "Intro\n\n```mermaid\ngraph TD\nA --> B\n```\n\nConclusion",
         );
         expect(s4).toContain("mermaid");
         expect(s4).toContain("graph TD");
         expect(s4).toContain("A --> B");
-        expect(s4).toContain("```");
         expect(s4).toContain("Conclusion");
     });
 
@@ -118,7 +117,7 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
         expect(result).not.toContain("graph TD");
     });
 
-    it("renders a complete mermaid block with extra text after 'mermaid'", () => {
+    it("keeps a complete mermaid block with extra text after 'mermaid'", () => {
         const input = "```mermaid\ngraph TD\nA --> B\n```\n";
         const result = sanitize(input);
         expect(result).toContain("mermaid");
@@ -135,7 +134,7 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
         expect(result).toContain("Text");
     });
 
-    it("renders complete mermaid block when opener has space: ``` mermaid ... ```", () => {
+    it("keeps complete mermaid block when opener has space: ``` mermaid ... ```", () => {
         const input = "Text\n\n``` mermaid\ngraph TD\nA --> B\n```\n\nAfter";
         const result = sanitize(input);
         expect(result).toContain("mermaid");
@@ -145,15 +144,15 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
 
     // ── Multiple mermaid blocks ────────────────────────────────────────────
 
-    it("renders a complete first mermaid block, defers an unclosed trailing second", () => {
+    it("keeps a complete first mermaid block, strips an unclosed trailing second", () => {
         const input =
             "```mermaid\ngraph TD\nA --> B\n```\n\nMid\n\n```mermaid\nsequenceDiagram\n";
         const result = sanitize(input);
-        // First mermaid block is complete → rendered
+        // First mermaid block is complete → kept
         expect(result).toContain("graph TD");
         expect(result).toContain("A --> B");
         expect(result).toContain("Mid");
-        // Second mermaid block is trailing and unclosed → deferred
+        // Second mermaid block is trailing and unclosed → stripped
         expect(result).not.toContain("sequenceDiagram");
     });
 
@@ -163,27 +162,23 @@ describe("deferTrailingMermaidBlock (via sanitizeStreamingMarkdown)", () => {
         const input =
             "Intro\n\n```mermaid\ngraph TD\nA --> B\n\n\n| X | Y |\n| --- | --- |\n";
         const result = sanitize(input);
-        // Mermaid block is unclosed and trailing → deferred
+        // Mermaid block is unclosed and trailing → stripped
         expect(result).not.toContain("mermaid");
         expect(result).not.toContain("graph TD");
-        // Table is trailing (though it's after the stripped mermaid block,
-        // after stripping mermaid it's still trailing) → deferred
+        // Table is trailing → deferred
         expect(result).not.toContain("| X | Y |");
         // Only Intro remains
         expect(result).toContain("Intro");
     });
 
-    it("defers mermaid until closed, then renders table and text after it", () => {
-        // When the mermaid block is closed and followed by a table + text,
-        // both the mermaid block and the table are rendered (the table is
-        // followed by non-table content so deferTrailingTable keeps it).
+    it("keeps a closed mermaid block, and renders table followed by text", () => {
         const input =
             "Intro\n\n```mermaid\ngraph TD\nA --> B\n```\n\n| X | Y |\n| --- | --- |\n\nDone";
         const result = sanitize(input);
-        // Mermaid is closed → rendered
+        // Mermaid is closed → kept
         expect(result).toContain("mermaid");
         expect(result).toContain("graph TD");
-        // Table is followed by "Done" (non-table text) → rendered
+        // Table is followed by "Done" → rendered
         expect(result).toContain("| X | Y |");
         expect(result).toContain("Done");
     });

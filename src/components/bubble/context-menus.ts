@@ -241,8 +241,12 @@ export function attachLinkContextMenu(
  *   pannable preview overlay.
  * - Idempotent: safe to call multiple times per container.
  *
+ * Both Obsidian's natively-rendered diagrams and the pre-rendered SVGs
+ * injected during streaming use the `.mermaid` class, so a single selector
+ * covers both.
+ *
  * @param mermaidSources  Source strings extracted from the original markdown,
- *   matched to `.mermaid` containers by DOM order. Obsidian's
+ *   matched to mermaid containers by DOM order. Obsidian's
  *   MarkdownRenderer does not preserve mermaid sources in the rendered DOM,
  *   so they must be supplied externally.
  */

@@ -427,6 +427,18 @@
     }
 }
 
+// Temporary off-screen container used by the streaming controller to
+// pre-render mermaid diagrams via window.mermaid.render().  Must be
+// attached to the live DOM (not a detached element) so that CSS custom
+// properties (var(--...)) resolve correctly inside the generated SVG.
+// Positioned far off-screen so it is never visible to the user.
+.mermaid-prerender-host {
+    position: absolute;
+    left: -9999px;
+    top: -9999px;
+    pointer-events: none;
+}
+
 // Bubble action bar (outside the background box, aligned with body content)
 .session-bubble__actions {
     display: flex;

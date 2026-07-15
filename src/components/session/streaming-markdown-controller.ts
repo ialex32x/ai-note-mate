@@ -2,7 +2,8 @@ import { MarkdownRenderer, App, Component } from 'obsidian';
 import {
     sanitizeStreamingMarkdown,
     normalizeMarkdownForObsidian,
-    extractMermaidSources,
+    substituteMermaidSvgs,
+    mermaidSourceKey,
 } from '../../utils/markdown-sanitizer';
 import { logger } from '../../utils/logger';
 
@@ -47,68 +48,126 @@ const LARGE_CONTENT_INTERVAL = 400;
  */
 const DORENDER_SLOW_LOG_THRESHOLD_MS = 50;
 
-// ── Mermaid SVG preservation ───────────────────────────────────────────────
+// ── Mermaid SVG pre-rendering ─────────────────────────────────────────────────
 
 /**
- * A preserved mermaid SVG snapshot — the source code and a deep-cloned
- * copy of the rendered SVG DOM.  Used to transplant unchanged mermaid
- * diagrams across streaming render passes so their SVGs aren't torn down
- * and rebuilt on every tick (which causes visible flicker).
+ * Max time (ms) to wait for Obsidian's built-in mermaid post-processor to
+ * finish rendering an SVG into a pre-render host.  Real renders finish well
+ * under 100 ms even on slow machines; this bound just prevents us from
+ * hanging forever if mermaid silently fails (e.g. malformed source that
+ * neither errors nor produces a diagram).
  */
-interface PreservedMermaid {
-    source: string;
-    svgEl: SVGElement;
+const MERMAID_PRERENDER_TIMEOUT_MS = 3000;
+
+/**
+ * Render a mermaid diagram source string to a cloned SVG **DOM node** by
+ * running it through Obsidian's full MarkdownRenderer pipeline (the exact
+ * same path used for the final, post-streaming render).  Returns null if
+ * rendering fails or times out.
+ *
+ * We deliberately do NOT call `window.mermaid.render()` directly — that
+ * bypasses Obsidian's mermaid post-processor, which applies its own theme
+ * configuration and container structure.  The resulting SVG then looks
+ * subtly different from what Obsidian produces natively, causing a visible
+ * style flip when streaming ends and Obsidian re-renders the block.
+ *
+ * We also return a cloned DOM node rather than a serialized string: mermaid
+ * flowchart labels live inside `<foreignObject>` as HTML, and serializing the
+ * SVG then re-parsing it as HTML loses those labels (Obsidian's HTML sanitizer
+ * strips foreignObject contents), producing diagrams with empty shapes.
+ * Cloning the live node keeps everything intact.
+ *
+ * We render a synthetic markdown snippet (` ```mermaid\n...\n``` `) into an
+ * off-screen host attached to `activeDocument.body` — deliberately OUTSIDE the
+ * message list subtree.  Rendering scratch content inside the bubble's
+ * `contentEl` would pollute the live DOM that other controllers watch
+ * (scroll-follow and prompt-pin MutationObservers on `messagesEl`, and
+ * `attachMermaidPreviewHandler`'s `.mermaid` query), causing scroll jitter,
+ * source/diagram misalignment, and duplicate mermaid processing.  The host in
+ * `body` is fully isolated.  Diagram colors are unaffected: they come from the
+ * external `.mermaid` theme CSS applied when the cloned node is injected into
+ * the bubble, not from where the SVG was generated.
+ *
+ * We wait for Obsidian's async post-processor to inject the `<svg>` element via
+ * a MutationObserver (no polling), then clone it before removing the host.
+ */
+async function renderMermaidToSvg(
+    app: App,
+    component: Component,
+    source: string,
+): Promise<SVGElement | null> {
+    // Attach the scratch host OUTSIDE the message subtree so it can't trigger
+    // the observers/queries that operate on the live conversation DOM.
+    const host = activeDocument.body.createDiv({ cls: 'mermaid-prerender-host' });
+    try {
+        // Kick off the full Obsidian markdown render (same code path as the
+        // final render).  This creates a `.mermaid` container inside `host`
+        // and asynchronously hands it to Obsidian's mermaid post-processor.
+        await MarkdownRenderer.render(
+            app,
+            '```mermaid\n' + source + '\n```',
+            host,
+            '',
+            component,
+        );
+
+        // Wait for the mermaid post-processor to inject an <svg> element.
+        const svgEl = await waitForMermaidSvg(host, MERMAID_PRERENDER_TIMEOUT_MS);
+        if (!svgEl) return null;
+
+        // Clone before the host is removed so the node survives detachment.
+        return svgEl.cloneNode(true) as SVGElement;
+    } catch (err) {
+        log.debug('[StreamingMarkdownController] mermaid pre-render failed:', err);
+        return null;
+    } finally {
+        host.remove();
+    }
 }
 
 /**
- * Snapshot every closed mermaid block's rendered SVG from the live DOM.
+ * Resolve with the first `<svg>` element that appears inside a `.mermaid`
+ * container under `host`, or null on timeout / render error.  Uses a
+ * MutationObserver so we neither busy-wait nor over-delay past the moment the
+ * SVG is ready.
  *
- * Uses `rawMarkdown` (the *previous* render's unsanitized content) to
- * extract source code for positional matching.  Only blocks that have a
- * closing fence and an actual rendered `<svg>` child are captured.
+ * When mermaid fails to parse, Obsidian injects an error node (a `<pre>` with
+ * the parse error, and/or marks the container) instead of an `<svg>`.  We
+ * detect that and fail fast rather than waiting the full timeout.
  */
-function snapshotMermaidSvgs(container: HTMLElement, rawMarkdown: string): PreservedMermaid[] {
-    const sources = extractMermaidSources(rawMarkdown);
-    const mermaidEls = container.querySelectorAll('.mermaid');
-    const result: PreservedMermaid[] = [];
-    for (let i = 0; i < sources.length && i < mermaidEls.length; i++) {
-        const svg = mermaidEls[i]!.querySelector('svg');
-        if (svg) {
-            result.push({
-                source: sources[i]!,
-                svgEl: svg.cloneNode(true) as SVGElement,
-            });
-        }
-    }
-    return result;
-}
+function waitForMermaidSvg(
+    host: HTMLElement,
+    timeoutMs: number,
+): Promise<SVGElement | null> {
+    const probe = (): SVGElement | null | undefined => {
+        const svg = host.querySelector('.mermaid svg');
+        if (svg) return svg as SVGElement;
+        // Mermaid parse error → Obsidian renders a <pre> error block. Treat as
+        // failure (undefined = keep waiting, null = fail fast).
+        if (host.querySelector('pre')) return null;
+        return undefined;
+    };
 
-/**
- * Transplant unchanged mermaid SVGs from a previous render pass into the
- * freshly-rendered DOM.
- *
- * For each preserved entry, the new DOM must contain a mermaid block at
- * the same position with **identical source code**.  When matched, the
- * newly-rendered (expensive) SVG is replaced with the preserved one via
- * {@link ChildNode.replaceWith}.
- *
- * Blocks whose source changed (LLM edited them mid-stream) are left
- * alone so the renderer's fresh output is kept.
- */
-function restoreMermaidSvgs(
-    container: HTMLElement,
-    rawMarkdown: string,
-    preserved: PreservedMermaid[],
-): void {
-    const newSources = extractMermaidSources(rawMarkdown);
-    const newMermaidEls = container.querySelectorAll('.mermaid');
-    for (let i = 0; i < preserved.length && i < newSources.length && i < newMermaidEls.length; i++) {
-        const entry = preserved[i]!;
-        if (entry.source !== newSources[i]) continue;
-        const newSvg = newMermaidEls[i]!.querySelector('svg');
-        if (!newSvg) continue;
-        newSvg.replaceWith(entry.svgEl.cloneNode(true));
-    }
+    // Fast path: SVG (or error) may already be present.
+    const immediate = probe();
+    if (immediate !== undefined) return Promise.resolve(immediate);
+
+    return new Promise<SVGElement | null>((resolve) => {
+        let done = false;
+        const finish = (result: SVGElement | null) => {
+            if (done) return;
+            done = true;
+            observer.disconnect();
+            window.clearTimeout(timer);
+            resolve(result);
+        };
+        const observer = new MutationObserver(() => {
+            const r = probe();
+            if (r !== undefined) finish(r);
+        });
+        observer.observe(host, { childList: true, subtree: true });
+        const timer = window.setTimeout(() => finish(null), timeoutMs);
+    });
 }
 
 /**
@@ -163,6 +222,11 @@ export async function renderFinalMarkdown(
  * 2. **Async mutex** — prevents concurrent MarkdownRenderer.render() calls.
  * 3. **Markdown sanitization** — temporarily closes unclosed syntax elements
  *    during streaming so the renderer produces correct output.
+ * 4. **Mermaid pre-rendering** — complete mermaid blocks are rendered to SVG
+ *    strings via `window.mermaid.render()` and cached.  Subsequent render
+ *    passes substitute the cached SVG directly into the markdown as inline
+ *    HTML, bypassing Obsidian's async mermaid post-processor entirely and
+ *    eliminating the source-code↔diagram flicker.
  *
  * Usage:
  * - Call `update()` every time new content arrives (every SSE chunk).
@@ -183,7 +247,7 @@ export class StreamingMarkdownController {
     /** The content that was last actually rendered. */
     private lastRenderedContent = '';
 
-    /** The sanitized content that was last actually rendered. */
+    /** The sanitized+substituted content that was last actually rendered. */
     private lastRenderedSanitized = '';
 
     /** Timestamp (ms) when the last render completed. */
@@ -217,6 +281,31 @@ export class StreamingMarkdownController {
 
     /** Callback invoked after each successful render (e.g. to attach context menus). */
     private onAfterRender: ((contentEl: HTMLElement) => void) | null = null;
+
+    /**
+     * Cache of pre-rendered mermaid SVG DOM nodes keyed by
+     * {@link mermaidSourceKey}(source).  Populated lazily as complete mermaid
+     * blocks appear during streaming.  Values are cloned on injection so the
+     * cached node is never mutated.  Entries are never evicted — a streaming
+     * session is short-lived and the controller itself is disposed after
+     * finalize().
+     */
+    private mermaidSvgCache = new Map<string, SVGElement>();
+
+    /**
+     * Set of mermaid source keys currently being rendered asynchronously.
+     * Prevents duplicate concurrent render() calls for the same diagram.
+     */
+    private mermaidRendering = new Set<string>();
+
+    /**
+     * Keys of mermaid sources whose pre-render failed or timed out (e.g.
+     * malformed syntax).  We never retry these — they stay as raw ```mermaid
+     * fences and Obsidian renders them (showing its own error message) both
+     * during streaming and at finalize.  Without this guard a permanently
+     * invalid diagram would be re-attempted on every render tick.
+     */
+    private mermaidFailed = new Set<string>();
 
     constructor(
         private readonly app: App,
@@ -298,6 +387,9 @@ export class StreamingMarkdownController {
         this.clearPendingTimer();
         this.contentEl = null;
         this.onAfterRender = null;
+        this.mermaidSvgCache.clear();
+        this.mermaidRendering.clear();
+        this.mermaidFailed.clear();
         // If a render is in-flight, resolve the waiter so finalize() doesn't hang
         this.renderCompleteResolve?.();
         this.renderCompleteResolve = null;
@@ -346,6 +438,59 @@ export class StreamingMarkdownController {
         return this.minInterval;
     }
 
+    /**
+     * Fire-and-forget: start async mermaid pre-renders for any `pending`
+     * source strings that are not already in-flight.  When each render
+     * completes the result is stored in {@link mermaidSvgCache} and a new
+     * render pass is scheduled so the diagram appears as soon as the SVG
+     * is available.
+     */
+    private kickMermaidRenders(pending: string[]): void {
+        for (const source of pending) {
+            const key = mermaidSourceKey(source);
+            if (this.mermaidSvgCache.has(key)) continue;
+            if (this.mermaidRendering.has(key)) continue;
+            if (this.mermaidFailed.has(key)) continue;
+            this.mermaidRendering.add(key);
+            void renderMermaidToSvg(this.app, this.component, source).then((svg) => {
+                this.mermaidRendering.delete(key);
+                if (this.disposed) return;
+                if (svg) {
+                    this.mermaidSvgCache.set(key, svg);
+                    // Trigger a new render pass so the diagram is injected
+                    // into the bubble immediately.
+                    this.scheduleRender();
+                } else {
+                    // Pre-render failed or timed out (e.g. malformed syntax).
+                    // Mark as failed so we don't retry every tick; the raw
+                    // fence stays and Obsidian renders it (with its own error
+                    // message) during streaming and at finalize.
+                    this.mermaidFailed.add(key);
+                }
+            });
+        }
+    }
+
+    /**
+     * Fill every mermaid placeholder in `container` with a clone of its cached
+     * SVG node.  Placeholders are the empty `<div class="mermaid"
+     * data-mermaid-key="…">` elements produced by
+     * {@link substituteMermaidSvgs}.  Cloning keeps the cached node pristine so
+     * it can be reused across render passes.
+     */
+    private injectCachedMermaids(container: HTMLElement): void {
+        const placeholders = container.querySelectorAll<HTMLElement>(
+            '.mermaid[data-mermaid-key]',
+        );
+        placeholders.forEach((el) => {
+            const key = el.dataset.mermaidKey;
+            if (!key) return;
+            const svg = this.mermaidSvgCache.get(key);
+            if (!svg) return;
+            el.appendChild(svg.cloneNode(true));
+        });
+    }
+
     private async doRender(): Promise<void> {
         if (this.disposed || !this.contentEl) return;
 
@@ -361,24 +506,38 @@ export class StreamingMarkdownController {
         try {
             const contentToRender = this.latestContent;
             const sanitizeStart = performance.now();
+
+            // Step 1: sanitize (strips unclosed mermaid/dataview, closes open
+            // fences, etc.).  Complete mermaid blocks are kept intact at this
+            // point so substituteMermaidSvgs can find them in step 2.
             const sanitized = sanitizeStreamingMarkdown(contentToRender);
+
+            // Step 2: replace complete mermaid blocks whose SVG is already
+            // cached with empty placeholders (tagged with a source key).
+            // pending[] holds sources that are not yet cached — we kick off
+            // their async renders below so they'll be ready by the next tick.
+            const { result: sanitizedWithSvg, pending } = substituteMermaidSvgs(
+                sanitized,
+                new Set(this.mermaidSvgCache.keys()),
+            );
             sanitizeMs = performance.now() - sanitizeStart;
 
-            // Skip rendering if the sanitized output is identical to what's
-            // already on screen.  This avoids unnecessary DOM rebuilds that
-            // cause table column-width recalculations and layout jumps.
-            if (sanitized === this.lastRenderedSanitized) {
+            // Kick off async pre-renders for any mermaid blocks we haven't
+            // seen before.  The renders run concurrently with the current DOM
+            // update and will schedule a follow-up render pass when done.
+            if (pending.length > 0) {
+                this.kickMermaidRenders(pending);
+            }
+
+            // Skip rendering if the output (including SVG substitutions) is
+            // identical to what's already on screen.  This avoids unnecessary
+            // DOM rebuilds that cause table column-width recalculations and
+            // layout jumps.
+            if (sanitizedWithSvg === this.lastRenderedSanitized) {
                 this.lastRenderedContent = contentToRender;
                 skippedDuplicate = true;
                 return;
             }
-
-            // Snapshot mermaid SVGs from the live DOM *before* we blow it
-            // away with replaceChildren.  These are keyed by the previous
-            // render's raw content so we can later check source equality.
-            const preservedMermaids = this.lastRenderedContent
-                ? snapshotMermaidSvgs(this.contentEl, this.lastRenderedContent)
-                : [];
 
             // Double-buffer: render into an off-screen element first, then
             // swap children in one go to avoid the empty-state layout flash
@@ -387,31 +546,27 @@ export class StreamingMarkdownController {
             const renderStart = performance.now();
             await MarkdownRenderer.render(
                 this.app,
-                sanitized,
+                sanitizedWithSvg,
                 buffer,
                 '',
                 this.component
             );
             renderMs = performance.now() - renderStart;
 
+            // Inject cached mermaid SVG DOM nodes into their placeholders
+            // *before* swapping into the live DOM, so the diagram appears
+            // fully-formed with no empty-shape flash.
+            this.injectCachedMermaids(buffer);
+
             // Swap: replace all children atomically to avoid intermediate
             // empty state that would trigger a layout reflow.
             if (!this.disposed && this.contentEl) {
                 this.contentEl.replaceChildren(...Array.from(buffer.childNodes));
-
-                // Transplant unchanged mermaid SVGs from the previous pass
-                // so their expensive SVG render isn't repeated every tick.
-                // This eliminates the flicker caused by tearing down and
-                // rebuilding mermaid diagrams on each streaming update.
-                if (preservedMermaids.length > 0) {
-                    restoreMermaidSvgs(this.contentEl, contentToRender, preservedMermaids);
-                }
-
                 this.onAfterRender?.(this.contentEl);
             }
 
             this.lastRenderedContent = contentToRender;
-            this.lastRenderedSanitized = sanitized;
+            this.lastRenderedSanitized = sanitizedWithSvg;
         } finally {
             this.isRendering = false;
             this.lastRenderTime = Date.now();

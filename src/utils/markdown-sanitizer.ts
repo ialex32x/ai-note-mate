@@ -46,51 +46,44 @@ function isInsideFencedCodeBlock(content: string): boolean {
 // ── P1: Deferred-language block deferral ───────────────────────────────────
 
 /**
- * Languages whose fenced code blocks should be deferred during streaming.
+ * Languages whose **trailing unclosed** fenced code blocks should be stripped
+ * during streaming.
  *
- * These blocks are stripped from the streaming output until their closing
- * ``` arrives, preventing the associated Obsidian plugin from reacting to
- * incomplete content:
+ * These are languages where showing an incomplete block would cause the
+ * associated renderer to produce errors or flicker:
  *
- * - **mermaid**: Incomplete syntax would trigger transient Mermaid render
- *   errors.
- * - **dataview / dataviewjs**: Incomplete queries would be evaluated by
- *   the Dataview plugin, producing empty results, error messages, or
- *   unexpected output that flickers as more content arrives.
+ * - **mermaid**: An incomplete mermaid diagram triggers render errors.
+ *   Complete mermaid blocks are kept so they can be rendered immediately when
+ *   the closing fence arrives; the streaming controller handles SVG caching
+ *   to prevent per-tick flicker.
  *
- * To add a new deferred language, simply add its name to this array.
+ * To add a new language with this behavior, add its name here.
  */
-const DEFERRED_LANGUAGES: readonly string[] = ['mermaid', 'dataview'];
+const TRAILING_DEFER_LANGUAGES: readonly string[] = ['mermaid'];
 
 /**
- * Check whether the content ends inside an unclosed fenced code block
- * for the given language.
+ * Languages whose **all** fenced code blocks (complete or not) should be
+ * stripped during streaming.
  *
- * Only counts ```<language> openers (with optional space after fence);
- * other language fences and generic ``` fences are ignored.
+ * These are languages where even a complete block must not be evaluated
+ * mid-stream because the content may change and the side-effects of
+ * evaluation are visible (e.g. query results, empty tables):
+ *
+ * - **dataview / dataviewjs**: Incomplete or changing queries are evaluated
+ *   by the Dataview plugin, producing empty results or error messages that
+ *   flicker as more content arrives.
+ *
+ * To add a new language with this behavior, add its name here.
  */
-function isInsideLanguageBlock(content: string, language: string): boolean {
-    const openerRe = new RegExp(`^\`\`\`\\s*${language}`);
-    const lines = content.split('\n');
-    let inside = false;
-    for (const line of lines) {
-        const trimmed = line.trimStart();
-        if (openerRe.test(trimmed)) {
-            inside = true;
-        } else if (inside && /^```\s*$/.test(trimmed)) {
-            inside = false;
-        }
-    }
-    return inside;
-}
+const FULL_DEFER_LANGUAGES: readonly string[] = ['dataview'];
 
 /**
- * Strip a trailing unclosed fenced code block for the given language.
+ * Strip a trailing **unclosed** fenced code block for the given language.
  *
  * While the block is still receiving content (the closing ``` has not
  * arrived yet), the entire block — from the ```<language> opener to the
  * end of content — is stripped.  Once the closing ``` is received the
- * block is rendered in one piece.
+ * block is left intact so it can be rendered immediately.
  *
  * Unlike {@link closeFencedCodeBlock} (which appends a closing fence),
  * this function *strips* the pending block entirely because appending a
@@ -101,9 +94,6 @@ function isInsideLanguageBlock(content: string, language: string): boolean {
  * and will not append its own closing ```.
  */
 function deferTrailingLanguageBlock(content: string, language: string): string {
-    if (!isInsideLanguageBlock(content, language)) return content;
-
-    // Find the last unclosed ```<language> opener and strip from there
     const openerRe = new RegExp(`^\`\`\`\\s*${language}`);
     const lines = content.split('\n');
     let inside = false;
@@ -125,6 +115,47 @@ function deferTrailingLanguageBlock(content: string, language: string): string {
     }
 
     return content;
+}
+
+/**
+ * Strip ALL fenced code blocks for the given language from `content`.
+ *
+ * Both complete blocks (opening + closing fence present) and trailing
+ * unclosed blocks are removed.  Used for languages like dataview where
+ * even a complete block must not be evaluated mid-stream because the
+ * query content may still change.
+ *
+ * Must run BEFORE {@link closeFencedCodeBlock} — once the blocks are
+ * stripped, {@link closeFencedCodeBlock} no longer sees an open fence
+ * and will not append its own closing ```.
+ */
+function deferAllLanguageBlocks(content: string, language: string): string {
+    const openerRe = new RegExp(`^\`\`\`\\s*${language}`, 'i');
+    const lines = content.split('\n');
+    const result: string[] = [];
+    let inside = false;
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i]!.trimStart();
+        if (!inside && openerRe.test(trimmed)) {
+            inside = true;
+            // Remove a trailing blank line that was already pushed so the
+            // block does not leave an orphan blank line after stripping.
+            if (result.length > 0 && result[result.length - 1]!.trim() === '') {
+                result.pop();
+            }
+        } else if (inside && /^```\s*$/.test(trimmed)) {
+            // Closing fence — block is complete, discard it and exit.
+            inside = false;
+        }
+        // While inside a block, skip every line (strip the block).
+        // Outside a block, keep every line.
+        if (!inside) {
+            result.push(lines[i]!);
+        }
+    }
+
+    return result.join('\n');
 }
 
 // ── P0: Fenced code block ────────────────────────────────────────────────────
@@ -435,10 +466,19 @@ export function sanitizeStreamingMarkdown(content: string): string {
 
     let result = content;
 
-    // P1: Deferred-language blocks (must be before closeFencedCodeBlock —
-    // trailing unclosed blocks should be stripped, not closed with ```)
-    for (const language of DEFERRED_LANGUAGES) {
+    // P1a: Strip trailing unclosed blocks for languages where showing an
+    // incomplete block causes render errors (e.g. mermaid syntax errors).
+    // Complete blocks are kept — the streaming controller handles SVG caching.
+    // Must run before closeFencedCodeBlock so stripped blocks don't get a
+    // spurious closing fence appended.
+    for (const language of TRAILING_DEFER_LANGUAGES) {
         result = deferTrailingLanguageBlock(result, language);
+    }
+
+    // P1b: Strip ALL blocks (complete or not) for languages where even a
+    // complete block must not be evaluated mid-stream (e.g. dataview queries).
+    for (const language of FULL_DEFER_LANGUAGES) {
+        result = deferAllLanguageBlocks(result, language);
     }
 
     // P0: Fenced code block (must be first — affects all subsequent checks)
@@ -463,7 +503,7 @@ export function sanitizeStreamingMarkdown(content: string): string {
     return result;
 }
 
-// ── Mermaid source extraction ─────────────────────────────────────────────
+// ── Mermaid source extraction & SVG substitution ─────────────────────────
 
 /**
  * Extract the source code of every closed ```mermaid fenced code block
@@ -485,6 +525,74 @@ export function extractMermaidSources(markdown: string): string[] {
         sources.push(match[1]!.trim());
     }
     return sources;
+}
+
+/**
+ * Compute a short, stable key for a mermaid source string.
+ *
+ * Used to tag pre-rendered-diagram placeholders (`data-mermaid-key`) so the
+ * streaming controller can match a placeholder in the freshly-rendered DOM
+ * back to its cached SVG node.  A djb2 hash rendered in base36, prefixed with
+ * `m` so it is always a valid attribute value / CSS-safe token.
+ */
+export function mermaidSourceKey(source: string): string {
+    let h = 5381;
+    for (let i = 0; i < source.length; i++) {
+        h = ((h << 5) + h + source.charCodeAt(i)) | 0;
+    }
+    return 'm' + (h >>> 0).toString(36);
+}
+
+/**
+ * Replace closed ```mermaid blocks in `markdown` with an empty placeholder
+ * `<div class="mermaid" data-mermaid-key="…">` for every block whose source
+ * is already rendered (its key is in `cachedKeys`), and return the list of
+ * sources that are NOT yet cached (i.e. still need rendering).
+ *
+ * The placeholder is intentionally EMPTY: the streaming controller injects the
+ * cached SVG *DOM node* into it after Obsidian's MarkdownRenderer runs.  We do
+ * NOT inline the SVG markup as a string, because serializing a mermaid SVG and
+ * re-parsing it as HTML loses the `<foreignObject>` node labels (Obsidian's
+ * HTML sanitizer strips their contents), leaving diagrams with empty shapes.
+ * Cloning the live DOM node preserves the labels intact.
+ *
+ * `data-processed="true"` is mermaid.js's standard guard attribute — it stops
+ * mermaid's DOM scanner from treating the (empty) placeholder as an unrendered
+ * diagram and clearing / re-rendering it.
+ *
+ * Only closed blocks (opening + closing fence both present) are considered.
+ * Unclosed trailing blocks have already been stripped by
+ * {@link sanitizeStreamingMarkdown} before this function is called.
+ *
+ * @param markdown    - Sanitized streaming markdown (unclosed mermaid already stripped)
+ * @param cachedKeys  - Set of {@link mermaidSourceKey} values already in the SVG cache
+ * @returns `{ result, pending }` where `result` is the substituted markdown and
+ *   `pending` is the array of source strings that still need to be rendered.
+ */
+export function substituteMermaidSvgs(
+    markdown: string,
+    cachedKeys: ReadonlySet<string>,
+): { result: string; pending: string[] } {
+    const pending: string[] = [];
+    const result = markdown.replace(
+        /```mermaid\s*\n([\s\S]*?)```/g,
+        (_match, body: string) => {
+            const source = body.trim();
+            const key = mermaidSourceKey(source);
+            if (cachedKeys.has(key)) {
+                // Empty placeholder — the controller fills it with the cached
+                // SVG DOM node after rendering.
+                return `<div class="mermaid" data-mermaid-key="${key}" data-processed="true"></div>`;
+            }
+            pending.push(source);
+            // Keep the original fence — the controller will not swap it out
+            // until the SVG is ready.  On the next render tick after the
+            // async pre-render resolves, the cache will have an entry and this
+            // block will be substituted with a placeholder.
+            return _match;
+        },
+    );
+    return { result, pending };
 }
 
 // ── Final normalizer: blank lines around tables ────────────────────────────
