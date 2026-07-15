@@ -17,15 +17,73 @@ import type { HistoryMessage } from "./types";
  * The estimate is still intentionally conservative — actual token counts
  * vary by tokenizer — but the improved per-class ratios are good enough
  * for threshold comparison across a wider variety of content.
+ *
+ * Implementation note: the classification is done in a single `for` pass
+ * over the string via `charCodeAt`, avoiding the ~3× allocation/scan cost
+ * of the previous three-`match()` implementation. This matters when the
+ * ContextCompressor tallies every historical message on every send —
+ * with megabyte-scale tool_result payloads the regex approach was a
+ * measurable main-thread hot spot.
  */
 export function estimateTokens(text: string): number {
-    const cjkRe = /[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g;
-    const alphaRe = /[a-zA-Z0-9]/g;
-    const punctRe = /[^\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7afa-zA-Z0-9\s]/g;
+    let cjkCount = 0;
+    let alphaCount = 0;
+    let punctCount = 0;
 
-    const cjkCount = (text.match(cjkRe) || []).length;
-    const alphaCount = (text.match(alphaRe) || []).length;
-    const punctCount = (text.match(punctRe) || []).length;
+    const len = text.length;
+    for (let i = 0; i < len; i++) {
+        const code = text.charCodeAt(i);
+
+        // Alphanumeric: 0-9, A-Z, a-z
+        if (
+            (code >= 0x30 && code <= 0x39)
+            || (code >= 0x41 && code <= 0x5A)
+            || (code >= 0x61 && code <= 0x7A)
+        ) {
+            alphaCount++;
+            continue;
+        }
+
+        // Whitespace — must match JS `\s` for parity with the previous
+        // regex implementation. Common members enumerated explicitly to
+        // stay cheap; anything else falls through to `punct`.
+        if (
+            (code >= 0x09 && code <= 0x0D)       // \t \n \v \f \r
+            || code === 0x20                     // space
+            || code === 0xA0                     // NBSP
+            || (code >= 0x2000 && code <= 0x200A)
+            || code === 0x2028
+            || code === 0x2029
+            || code === 0x202F
+            || code === 0x205F
+            || code === 0x3000
+            || code === 0xFEFF
+        ) {
+            continue;
+        }
+
+        // CJK / Kana / Hangul — matches the union of ranges in the
+        // previous regex:
+        //   U+3040..U+309F  Hiragana
+        //   U+30A0..U+30FF  Katakana
+        //   U+3400..U+4DBF  CJK Unified Ideographs Ext A
+        //   U+4E00..U+9FFF  CJK Unified Ideographs
+        //   U+AC00..U+D7AF  Hangul syllables
+        if (
+            (code >= 0x3040 && code <= 0x309F)
+            || (code >= 0x30A0 && code <= 0x30FF)
+            || (code >= 0x3400 && code <= 0x4DBF)
+            || (code >= 0x4E00 && code <= 0x9FFF)
+            || (code >= 0xAC00 && code <= 0xD7AF)
+        ) {
+            cjkCount++;
+            continue;
+        }
+
+        // Everything else (including surrogate halves, which the old
+        // regex also counted individually) is punctuation/symbol.
+        punctCount++;
+    }
 
     return Math.ceil(cjkCount / 1.5 + alphaCount / 4 + punctCount);
 }
@@ -50,11 +108,33 @@ export function messageBudgetText(msg: HistoryMessage): string {
     return msg.content;
 }
 
+/**
+ * Per-message memoization for {@link estimateTokens} keyed by the exact
+ * string reference returned from {@link messageBudgetText}. Strings are
+ * immutable in JS, so identity comparison is sufficient — no need to hash
+ * the text. Falls back to a fresh estimation when the message's budget
+ * text is replaced (e.g. after `shrinkLargeToolResults` swaps in a hint,
+ * or `content` is edited).
+ *
+ * A {@link WeakMap} keyed by the message object lets the entry be GC'd
+ * together with the message, so we never leak across sessions.
+ */
+const perMessageTokenCache = new WeakMap<HistoryMessage, { textRef: string; tokens: number }>();
+
+function estimateMessageTokensCached(msg: HistoryMessage): number {
+    const text = messageBudgetText(msg);
+    const hit = perMessageTokenCache.get(msg);
+    if (hit && hit.textRef === text) return hit.tokens;
+    const tokens = estimateTokens(text);
+    perMessageTokenCache.set(msg, { textRef: text, tokens });
+    return tokens;
+}
+
 /** Estimate total tokens for an array of messages. */
 export function estimateMessagesTokens(messages: HistoryMessage[]): number {
     let total = 0;
     for (const msg of messages) {
-        total += estimateTokens(messageBudgetText(msg));
+        total += estimateMessageTokensCached(msg);
         if (msg.media?.length) {
             // Rough flat estimate per attachment. Image budget per OpenAI's
             // tile model averages ~170; audio/video/pdf vary widely so we use

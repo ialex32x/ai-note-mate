@@ -988,33 +988,50 @@ export class ChatStream implements IChatAgent {
         let memoryTokens = 0;
         let skillsTokens = 0;
 
-        // 1. Memory prefix (new callback, takes priority over legacy prefix)
-        const hasSegregated = !!(this._config.memoryPrefix || this._config.skillPrefix);
+        // 1. Memory + skill prefixes (new callbacks, take priority over legacy prefix).
+        //
+        // Both callbacks issue independent embedding-based retrieval calls
+        // (memory-prompt + skill-catalogue) that only depend on `userInput`,
+        // so we fan them out in parallel to save one round-trip's worth of
+        // latency on every send. AbortError still propagates via Promise.all;
+        // other errors are swallowed with a warn per the original semantics.
+        const memoryCb = this._config.memoryPrefix;
+        const skillCb = this._config.skillPrefix;
+        const hasSegregated = !!(memoryCb || skillCb);
 
-        if (this._config.memoryPrefix) {
-            try {
-                const memory = await this._config.memoryPrefix(userInput, signal);
-                if (memory) {
-                    memoryTokens = estimateTokens(memory);
-                    segments.push(memory);
+        const memoryPromise: Promise<string> = memoryCb
+            ? (async () => {
+                try {
+                    return (await memoryCb(userInput, signal)) ?? '';
+                } catch (err) {
+                    if (isAbortError(err)) throw err;
+                    console.warn('ChatStream: memoryPrefix threw, ignoring', err);
+                    return '';
                 }
-            } catch (err) {
-                if (isAbortError(err)) throw err;
-                console.warn('ChatStream: memoryPrefix threw, ignoring', err);
-            }
+            })()
+            : Promise.resolve('');
+
+        const skillPromise: Promise<string> = skillCb
+            ? (async () => {
+                try {
+                    return (await skillCb(userInput, signal)) ?? '';
+                } catch (err) {
+                    if (isAbortError(err)) throw err;
+                    console.warn('ChatStream: skillPrefix threw, ignoring', err);
+                    return '';
+                }
+            })()
+            : Promise.resolve('');
+
+        const [memoryText, skillsText] = await Promise.all([memoryPromise, skillPromise]);
+
+        if (memoryText) {
+            memoryTokens = estimateTokens(memoryText);
+            segments.push(memoryText);
         }
-
-        if (this._config.skillPrefix) {
-            try {
-                const skills = await this._config.skillPrefix(userInput, signal);
-                if (skills) {
-                    skillsTokens = estimateTokens(skills);
-                    segments.push(skills);
-                }
-            } catch (err) {
-                if (isAbortError(err)) throw err;
-                console.warn('ChatStream: skillPrefix threw, ignoring', err);
-            }
+        if (skillsText) {
+            skillsTokens = estimateTokens(skillsText);
+            segments.push(skillsText);
         }
 
         // Legacy fallback: when neither new callback is set but
