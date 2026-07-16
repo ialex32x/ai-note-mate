@@ -20,7 +20,7 @@
 		"useUnknownInCatchVariables": true,
 		"lib": [
 			"DOM",
-			"ES2019"
+			"ES2022"
 		]
 	},
 	"include": [
