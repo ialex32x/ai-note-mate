@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.6.5
+
+### What's new
+
+- **Preview gallery navigation** — The preview overlay now lets you step through all images in a conversation with **Previous** / **Next** buttons, and a new **Open file** button jumps straight to the source note in your vault.
+- **Localized tool triggers & resident core tools** — Vault tools now carry locale-specific trigger phrases across all supported languages, helping the model pick the right tool in non-English conversations. Core retrieval tools (full-text search, file read, metadata, and more) are now always available, so the model doesn't fabricate vault paths when retrieval is weak.
+- **Flicker-free streaming Mermaid** — Mermaid diagrams are now pre-rendered as they stream in, so complex diagrams no longer flash or re-render repeatedly while a reply is generating.
+
+### Refinements
+
+- **Faster prefix assembly** — Memory and skill prefix retrieval now run in parallel instead of sequentially, shaving a round-trip off every message you send.
+- **Leaner token estimation** — Token counting now uses a single-pass character scan instead of several regex passes, cutting overhead when tallying long histories on every turn.
+- **CJK-aware search threshold** — The "query too short" check now uses a 4-character floor for CJK text and 8 for alphabetic text, so short but meaningful Chinese, Japanese, or Korean requests (e.g. "存成笔记") are no longer mistaken for confirmations like "好的".
+- **Test coverage expanded** — Added focused tests for leading-frontmatter neutralization, interrupted-stream session handling, session-manager purge paths, token estimation, and Mermaid / Dataview sanitization.
+
+### Fixes
+
+- **Sessions no longer lost on early abort** — New sessions whose first turn is aborted before any follow-up flush are now persisted correctly instead of vanishing on reload.
+- **JSONL sessions no longer purged as corrupt** — Per-session JSONL message files (v5+) are no longer mis-classified as corrupt and deleted on startup, which previously dropped sessions from the list.
+- **Leading `---` no longer hides replies** — Assistant messages that begin with a horizontal rule (`---`) are rewritten to `***` so Obsidian doesn't parse the reply as YAML frontmatter and hide the entire block.
+- **Mermaid preview passes live SVG** — The Mermaid preview overlay now reuses the live `SVGElement` from the bubble instead of a serialized string, preserving `<foreignObject>` labels and matching the in-bubble diagram exactly.
+- **Vault modify handles folders safely** — The tips button's vault-modify handler now ignores folder events (`TAbstractFile`) instead of assuming every change is a file.
+- **Clearer handoff instructions** — Delegation prompts now spell out that handoff key names are not literal search terms and must be inlined as values, reducing sub-agent mis-searches.
+
+---
+
 ## 1.6.4
 
 ### What's new
