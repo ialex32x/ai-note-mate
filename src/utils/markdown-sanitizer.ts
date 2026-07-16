@@ -43,6 +43,38 @@ function isInsideFencedCodeBlock(content: string): boolean {
     return insideCodeBlock;
 }
 
+// ── Leading frontmatter-fence neutralization ───────────────────────────────
+
+/**
+ * Obsidian's Markdown renderer treats a `---` line at the very start of the
+ * content as the opening fence of YAML frontmatter. When an AI reply itself
+ * begins with a thematic break (`---`) and later emits another `---` line
+ * (e.g. a second horizontal rule), Obsidian swallows everything between the
+ * two fences as frontmatter and hides it from the rendered output — the
+ * visible message abruptly loses its entire front half.
+ *
+ * This is especially insidious during streaming: the front content renders
+ * fine until the *closing* `---` arrives, at which point the whole block
+ * collapses into a (hidden) frontmatter region.
+ *
+ * To preserve the author's intent (a horizontal rule) without triggering
+ * frontmatter parsing, rewrite a leading `---` thematic break to the
+ * equivalent `***` form. `***` renders as <hr> exactly like `---` but is
+ * never interpreted as a frontmatter fence.
+ *
+ * Only the very first line is considered — frontmatter is recognised solely
+ * at absolute position 0 (a leading blank line already prevents it).
+ */
+function neutralizeLeadingFrontmatterFence(content: string): string {
+    const newlineIdx = content.indexOf('\n');
+    const firstLine = newlineIdx === -1 ? content : content.slice(0, newlineIdx);
+    if (/^-{3,}\s*$/.test(firstLine)) {
+        const rest = newlineIdx === -1 ? '' : content.slice(newlineIdx);
+        return '***' + rest;
+    }
+    return content;
+}
+
 // ── P1: Deferred-language block deferral ───────────────────────────────────
 
 /**
@@ -466,6 +498,10 @@ export function sanitizeStreamingMarkdown(content: string): string {
 
     let result = content;
 
+    // P0: Neutralize a leading `---` so Obsidian does not misparse the reply
+    // as YAML frontmatter (which hides everything up to the next `---`).
+    result = neutralizeLeadingFrontmatterFence(result);
+
     // P1a: Strip trailing unclosed blocks for languages where showing an
     // incomplete block causes render errors (e.g. mermaid syntax errors).
     // Complete blocks are kept — the streaming controller handles SVG caching.
@@ -618,7 +654,11 @@ export function substituteMermaidSvgs(
 export function normalizeMarkdownForObsidian(content: string): string {
     if (!content) return content;
 
-    const lines = content.split('\n');
+    // Neutralize a leading `---` so Obsidian does not misparse the reply as
+    // YAML frontmatter (which hides everything up to the next `---`).
+    const normalized = neutralizeLeadingFrontmatterFence(content);
+
+    const lines = normalized.split('\n');
     const result: string[] = [];
     let insideCodeBlock = false;
     let i = 0;
