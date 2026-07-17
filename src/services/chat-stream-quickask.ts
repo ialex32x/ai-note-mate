@@ -59,6 +59,7 @@ export async function quickAskPrompt(
 
     // Create a loading placeholder SideTurn
     const sideTurn: QuickAskTurn = {
+        id: generateId(),
         parentMessageId,
         userMessage: userMsg,
         assistantMessage: {
@@ -117,14 +118,16 @@ export function getQuickAskTurns(state: QuickAskState): QuickAskTurn[] {
 
 /** Restore QuickAsk side-turns from persisted session data. */
 export function restoreQuickAskTurns(state: QuickAskState, turns: QuickAskTurn[]): void {
-    state._quickAskTurns = turns.map(t => ({ ...t }));
+    // Backward compat: old turns may lack `id`; generate one on restore.
+    state._quickAskTurns = turns.map(t => ({
+        ...t,
+        id: t.id || generateId(),
+    }));
 }
 
 // ── removeQuickAskTurn ────────────────────────────────────────────────
 
-/** Remove a QuickAsk turn by parent message ID. */
-export function removeQuickAskTurn(state: QuickAskState, parentMessageId: string): void {
-    state._quickAskTurns = state._quickAskTurns.filter(
-        t => t.parentMessageId !== parentMessageId,
-    );
+/** Remove a QuickAsk turn by its unique turn ID. */
+export function removeQuickAskTurn(state: QuickAskState, turnId: string): void {
+    state._quickAskTurns = state._quickAskTurns.filter(t => t.id !== turnId);
 }

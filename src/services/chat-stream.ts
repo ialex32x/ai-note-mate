@@ -290,8 +290,8 @@ export class ChatStream implements IChatAgent {
         _restoreQuickAskTurns(this as unknown as QuickAskState, turns);
     }
 
-    removeQuickAskTurn(parentMessageId: string): void {
-        _removeQuickAskTurn(this as unknown as QuickAskState, parentMessageId);
+    removeQuickAskTurn(turnId: string): void {
+        _removeQuickAskTurn(this as unknown as QuickAskState, turnId);
     }
 
     // ── Public methods ──────────────────────────────────────────────────────

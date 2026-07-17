@@ -720,7 +720,7 @@ export class SessionView extends ItemView {
             async (parentMessageId, input) => {
                 await this.quickAskHandler.handleQuickAskSubmit(parentMessageId, input);
             },
-            (parentMessageId) => { void this.quickAskHandler.handleQuickAskDelete(parentMessageId); },
+            (turnId, parentMessageId) => { void this.quickAskHandler.handleQuickAskDelete(turnId, parentMessageId); },
         );
 
         // ── Input container ───────────────────────────────────────────────────────

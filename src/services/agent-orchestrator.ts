@@ -680,6 +680,7 @@ export class AgentOrchestrator implements IChatAgent {
         };
 
         const sideTurn: QuickAskTurn = {
+            id: generateId(),
             parentMessageId,
             userMessage: userMsg,
             assistantMessage: {
@@ -728,14 +729,12 @@ export class AgentOrchestrator implements IChatAgent {
     }
 
     restoreQuickAskTurns(turns: QuickAskTurn[]): void {
-        this._quickAskTurns = turns.map(t => ({ ...t }));
+        this._quickAskTurns = turns.map(t => ({ ...t, id: t.id || generateId() }));
     }
 
-    /** Remove a QuickAsk turn by parent message ID. */
-    removeQuickAskTurn(parentMessageId: string): void {
-        this._quickAskTurns = this._quickAskTurns.filter(
-            t => t.parentMessageId !== parentMessageId,
-        );
+    /** Remove a QuickAsk turn by its unique turn ID. */
+    removeQuickAskTurn(turnId: string): void {
+        this._quickAskTurns = this._quickAskTurns.filter(t => t.id !== turnId);
     }
 
         /**

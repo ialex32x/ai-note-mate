@@ -673,6 +673,7 @@ export const ja: Record<string, string> = {
 	'view.quickAskTitle': '追問',
 	'view.quickAskPlaceholder': '質問を入力...',
 	'view.quickAskWaiting': '返信を待っています...',
+	'view.quickAskAdd': '追問を追加',
 	'view.quickAskFailed': '追問リクエストに失敗しました。',
 
 	// ── Usage tips (input toolbar popover) ───────────────

@@ -673,6 +673,7 @@ export const ko: Record<string, string> = {
 	'view.quickAskTitle': '추가 질문',
 	'view.quickAskPlaceholder': '질문을 입력하세요...',
 	'view.quickAskWaiting': '답변을 기다리는 중...',
+	'view.quickAskAdd': '추가 질문 추가',
 	'view.quickAskFailed': '추가 질문 요청에 실패했습니다.',
 
 	// ── Usage tips (input toolbar popover) ───────────────

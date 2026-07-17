@@ -673,6 +673,7 @@ export const zhTW: Record<string, string> = {
 	'view.quickAskTitle': '追問',
 	'view.quickAskPlaceholder': '輸入追問內容...',
 	'view.quickAskWaiting': '等待回覆中...',
+	'view.quickAskAdd': '新增追問',
 	'view.quickAskFailed': '追問請求失敗。',
 
 	// ── Usage tips (input toolbar popover) ───────────────

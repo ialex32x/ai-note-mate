@@ -673,6 +673,7 @@ Write the result directly into the note — do not reply with the edited text in
 	'view.quickAskTitle': 'QuickAsk',
 	'view.quickAskPlaceholder': 'Type your question...',
 	'view.quickAskWaiting': 'Waiting for reply...',
+	'view.quickAskAdd': 'Add follow-up',
 	'view.quickAskFailed': 'QuickAsk request failed.',
 
 	// ── Usage tips (input toolbar popover) ───────────────

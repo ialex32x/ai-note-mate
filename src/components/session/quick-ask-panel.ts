@@ -7,7 +7,11 @@ import { renderFinalMarkdown } from './streaming-markdown-controller';
 const PANEL_HIDDEN_CLS = 'session-quick-ask-panel--hidden';
 
 /**
- * One-shot floating panel for QuickAsk (追问) side-conversations.
+ * Floating panel for QuickAsk (追问) side-conversations.
+ *
+ * Supports multiple QuickAsk turns per assistant message. When more than
+ * one turn exists, a numbered tab bar appears below the title. A `+`
+ * button in the header allows the user to add additional turns.
  *
  * Mounted on `activeDocument.body` with `position: fixed` so it never
  * interferes with the session view's scroll layout. Positioned relative
@@ -25,6 +29,8 @@ export class QuickAskPanel {
 
     private _state: PanelState = 'hidden';
     private _activeMessageId: string | null = null;
+    /** Index of the currently active tab (0-based). -1 means "new input" tab. */
+    private _activeTabIndex = 0;
 
     get state(): PanelState { return this._state; }
     get activeMessageId(): string | null { return this._activeMessageId; }
@@ -36,16 +42,20 @@ export class QuickAskPanel {
         private getMessageBubbleEl: (messageId: string) => HTMLElement | undefined,
         private getQuickAskTurns: () => ReadonlyArray<QuickAskTurn>,
         private onSubmit: (parentMessageId: string, input: string) => Promise<void>,
-        private onDelete: (parentMessageId: string) => void,
+        private onDelete: (turnId: string, parentMessageId: string) => void,
     ) {}
 
     show(messageId: string): void {
         if (this.disposed) return;
         this._activeMessageId = messageId;
-        const existing = this.getQuickAskTurns().find(t => t.parentMessageId === messageId);
-        if (existing) {
-            this._state = existing.loading ? 'loading' : 'result';
+        const turns = this.getTurnsForActive();
+        if (turns.length > 0) {
+            // Default to last existing turn
+            this._activeTabIndex = turns.length - 1;
+            const activeTurn = turns[this._activeTabIndex]!;
+            this._state = activeTurn.loading ? 'loading' : 'result';
         } else {
+            this._activeTabIndex = -1; // new input
             this._state = 'input';
         }
         this.render();
@@ -55,6 +65,7 @@ export class QuickAskPanel {
     hide(): void {
         this._state = 'hidden';
         this._activeMessageId = null;
+        this._activeTabIndex = 0;
         this.detachOutsideClick();
         if (this.el) {
             this.el.addClass(PANEL_HIDDEN_CLS);
@@ -64,8 +75,29 @@ export class QuickAskPanel {
     refresh(): void {
         if (this.disposed) return;
         if (this._activeMessageId === null) return;
-        const existing = this.getQuickAskTurns().find(t => t.parentMessageId === this._activeMessageId);
-        this._state = existing ? (existing.loading ? 'loading' : 'result') : 'input';
+        const turns = this.getTurnsForActive();
+        if (this._activeTabIndex === -1) {
+            // Was on the "new" tab — if a new turn was just added, switch to it
+            if (turns.length > 0) {
+                this._activeTabIndex = turns.length - 1;
+                const lastTurn = turns[this._activeTabIndex]!;
+                this._state = lastTurn.loading ? 'loading' : 'result';
+            } else {
+                this._state = 'input';
+            }
+        } else {
+            // Clamp index (in case a turn was deleted)
+            if (this._activeTabIndex >= turns.length) {
+                this._activeTabIndex = Math.max(0, turns.length - 1);
+            }
+            if (turns.length === 0) {
+                this._activeTabIndex = -1;
+                this._state = 'input';
+            } else {
+                const turn = turns[this._activeTabIndex]!;
+                this._state = turn.loading ? 'loading' : 'result';
+            }
+        }
         this.render();
     }
 
@@ -79,6 +111,16 @@ export class QuickAskPanel {
         this.el = null;
         this.bodyEl = null;
         this.textareaEl = null;
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────
+
+    /** Get all turns anchored to the currently active message. */
+    private getTurnsForActive(): QuickAskTurn[] {
+        if (!this._activeMessageId) return [];
+        return this.getQuickAskTurns().filter(
+            t => t.parentMessageId === this._activeMessageId,
+        );
     }
 
     // ── Rendering ────────────────────────────────────────────────────────
@@ -99,6 +141,8 @@ export class QuickAskPanel {
         this.el.removeClass(PANEL_HIDDEN_CLS);
         this.el.empty();
 
+        const turns = this.getTurnsForActive();
+
         // Header
         const header = this.el.createDiv({ cls: 'session-quick-ask-panel__header' });
         const titleEl = header.createSpan({ cls: 'session-quick-ask-panel__title' });
@@ -106,23 +150,49 @@ export class QuickAskPanel {
         setIcon(titleIcon, 'message-circle-question');
         titleEl.appendText(' ' + t('view.quickAskTitle'));
 
-        // Button group (delete + close)
+        // Tab bar — inline after title, shown when multiple turns exist
+        // or when the user is composing a new turn alongside existing ones.
+        if (turns.length > 1 || (turns.length === 1 && this._activeTabIndex === -1)) {
+            this.renderTabBar(header, turns);
+        }
+
+        // Button group (add + delete + close)
         const btnGroup = header.createDiv({ cls: 'session-quick-ask-panel__header-actions' });
 
-        if (this._activeMessageId && (this._state === 'result' || this._state === 'loading')) {
-            const deleteBtn = btnGroup.createEl('button', {
-                cls: 'session-quick-ask-panel__delete clickable-icon',
-                attr: { type: 'button' },
+        // Add button — always visible (allows adding another turn)
+        if (this._activeMessageId && this._activeTabIndex !== -1) {
+            const addBtn = btnGroup.createEl('button', {
+                cls: 'session-quick-ask-panel__add clickable-icon',
+                attr: { type: 'button', 'aria-label': t('view.quickAskAdd') },
             });
-            setIcon(deleteBtn, 'trash-2');
-            deleteBtn.addEventListener('click', (e: MouseEvent) => {
+            setIcon(addBtn, 'plus');
+            addBtn.addEventListener('click', (e: MouseEvent) => {
                 e.stopPropagation();
-                const id = this._activeMessageId;
-                if (id) {
-                    this.hide();
-                    this.onDelete(id);
-                }
+                this._activeTabIndex = -1;
+                this._state = 'input';
+                this.render();
             });
+        }
+
+        // Delete button — only when viewing an existing turn
+        if (this._activeMessageId && this._activeTabIndex >= 0 && (this._state === 'result' || this._state === 'loading')) {
+            const currentTurn = turns[this._activeTabIndex];
+            if (currentTurn) {
+                const deleteBtn = btnGroup.createEl('button', {
+                    cls: 'session-quick-ask-panel__delete clickable-icon',
+                    attr: { type: 'button' },
+                });
+                setIcon(deleteBtn, 'trash-2');
+                deleteBtn.addEventListener('click', (e: MouseEvent) => {
+                    e.stopPropagation();
+                    const id = this._activeMessageId;
+                    if (id && currentTurn.id) {
+                        this.onDelete(currentTurn.id, id);
+                        // After delete, refresh will handle index clamping
+                        this.refresh();
+                    }
+                });
+            }
         }
 
         const closeBtn = btnGroup.createEl('button', {
@@ -137,11 +207,40 @@ export class QuickAskPanel {
 
         switch (this._state) {
             case 'input': this.renderInput(); break;
-            case 'loading': this.renderLoading(); break;
-            case 'result': this.renderResult(); break;
+            case 'loading': this.renderLoading(turns); break;
+            case 'result': this.renderResult(turns); break;
         }
 
         this.positionPanel();
+    }
+
+    private renderTabBar(parent: HTMLElement, turns: QuickAskTurn[]): void {
+        const tabBar = parent.createDiv({ cls: 'session-quick-ask-panel__tabs' });
+
+        for (let i = 0; i < turns.length; i++) {
+            const isActive = i === this._activeTabIndex;
+            const tab = tabBar.createEl('button', {
+                cls: `session-quick-ask-panel__tab${isActive ? ' session-quick-ask-panel__tab--active' : ''}`,
+                text: String(i + 1),
+                attr: { type: 'button' },
+            });
+            tab.addEventListener('click', (e: MouseEvent) => {
+                e.stopPropagation();
+                this._activeTabIndex = i;
+                const turn = turns[i]!;
+                this._state = turn.loading ? 'loading' : 'result';
+                this.render();
+            });
+        }
+
+        // "New" tab (+) — only when currently not on input
+        if (this._activeTabIndex === -1) {
+            const newTab = tabBar.createEl('button', {
+                cls: 'session-quick-ask-panel__tab session-quick-ask-panel__tab--active session-quick-ask-panel__tab--new',
+                attr: { type: 'button' },
+            });
+            setIcon(newTab, 'plus');
+        }
     }
 
     private renderInput(): void {
@@ -175,10 +274,9 @@ export class QuickAskPanel {
         window.setTimeout(() => this.textareaEl?.focus(), 0);
     }
 
-    private renderLoading(): void {
-        if (!this.bodyEl || !this._activeMessageId) return;
-        const turns = this.getQuickAskTurns();
-        const turn = turns.find(t => t.parentMessageId === this._activeMessageId);
+    private renderLoading(turns: QuickAskTurn[]): void {
+        if (!this.bodyEl) return;
+        const turn = this._activeTabIndex >= 0 ? turns[this._activeTabIndex] : undefined;
         if (turn) {
             this.renderCompactBubble(this.bodyEl, turn.userMessage, 'user');
         }
@@ -188,10 +286,9 @@ export class QuickAskPanel {
         }, (el) => { el.createSpan({ cls: 'session-quick-ask-panel__spinner' }); });
     }
 
-    private renderResult(): void {
-        if (!this.bodyEl || !this._activeMessageId) return;
-        const turns = this.getQuickAskTurns();
-        const turn = turns.find(t => t.parentMessageId === this._activeMessageId);
+    private renderResult(turns: QuickAskTurn[]): void {
+        if (!this.bodyEl) return;
+        const turn = this._activeTabIndex >= 0 ? turns[this._activeTabIndex] : undefined;
         if (!turn) return;
         this.renderCompactBubble(this.bodyEl, turn.userMessage, 'user');
         this.renderCompactBubble(this.bodyEl, turn.assistantMessage, 'assistant');

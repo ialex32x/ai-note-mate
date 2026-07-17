@@ -200,6 +200,8 @@ export interface ChatMessage {
  * no tools or sub-agent capability.
  */
 export interface QuickAskTurn {
+    /** Unique identifier for this turn (generated on creation). */
+    id: string;
     /** ID of the assistant message being asked about */
     parentMessageId: string;
     /** The user's follow-up question */
@@ -822,8 +824,8 @@ export interface IChatAgent {
     /** Restore QuickAsk side-turns from persisted data. */
     restoreQuickAskTurns?(turns: QuickAskTurn[]): void;
 
-    /** Remove a QuickAsk turn by parent message ID. */
-    removeQuickAskTurn?(parentMessageId: string): void;
+    /** Remove a QuickAsk turn by its unique turn ID. */
+    removeQuickAskTurn?(turnId: string): void;
 }
 
 // Re-export ContextCompressionOptions for convenience

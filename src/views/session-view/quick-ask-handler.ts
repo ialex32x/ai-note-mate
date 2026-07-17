@@ -27,20 +27,20 @@ export class QuickAskHandler {
     }
 
     /**
-     * Delete a QuickAsk turn and re-render the parent bubble
-     * to remove the active button state.
+     * Delete a QuickAsk turn by its unique turn ID and re-render
+     * the parent bubble to update the active button state.
      */
-    async handleQuickAskDelete(parentMessageId: string): Promise<void> {
+    async handleQuickAskDelete(turnId: string, parentMessageId: string): Promise<void> {
         const runtime = this.deps.getRuntime();
         if (!runtime) return;
         const chat = runtime.chat;
         if (!chat.removeQuickAskTurn) return;
 
-        chat.removeQuickAskTurn(parentMessageId);
+        chat.removeQuickAskTurn(turnId);
         await runtime.persist();
         await this.deps.plugin.sessionManager.saveToCache();
 
-        // Re-render the parent bubble to drop the orange underline
+        // Re-render the parent bubble to update the orange underline
         this.refreshParentBubble(parentMessageId, chat);
     }
 

@@ -673,6 +673,7 @@ export const zhCN: Record<string, string> = {
 	'view.quickAskTitle': '追问',
 	'view.quickAskPlaceholder': '输入追问内容...',
 	'view.quickAskWaiting': '等待回复中...',
+	'view.quickAskAdd': '添加追问',
 	'view.quickAskFailed': '追问请求失败。',
 
 	// ── Usage tips (input toolbar popover) ───────────────
