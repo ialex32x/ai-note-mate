@@ -805,6 +805,7 @@ export const ko: Record<string, string> = {
 	'prompt.insightDeepen.coverageExamples': '- 구체적인 예시 또는 해당하는 경우 단계별 지침',
 	'prompt.insightDeepen.coveragePitfalls': '- 흔한 함정이나 주의할 점',
 	'prompt.insightDeepen.coverageReferences': '- 참고한 자료 / 출처(있다면)',
+	'prompt.insightDeepen.saveInstruction': '정리한 내용의 품질이 충분하고 정보가 완전하다고 판단되면, create_note 도구를 호출하여 보관소에 새 노트로 저장하세요 (제목은 위의 제목, 태그는 위의 태그, 본문은 정리한 markdown 을 사용). 정보가 부족하거나 내용을 더 보완해야 한다면, 먼저 답변에서 내용을 제시하여 사용자가 확인할 수 있도록 하세요.',
 	'prompt.insightDeepen.outro': '대화의 나머지 부분과 동일한 언어로 답변해 주세요. 짧은 후속 답변이 아니라, 그대로 노트로 저장할 수 있을 만큼 완성도 있는 한 편의 글을 목표로 하세요.',
 
 	// ── 미리보기 오버레이 ──────────────────────────────────

@@ -136,6 +136,8 @@ export function buildInsightDeepenPrompt(input: {
         t('prompt.insightDeepen.coveragePitfalls'),
         t('prompt.insightDeepen.coverageReferences'),
         '',
+        t('prompt.insightDeepen.saveInstruction'),
+        '',
         t('prompt.insightDeepen.outro'),
     );
     return lines.join('\n');

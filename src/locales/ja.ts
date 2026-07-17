@@ -805,6 +805,7 @@ export const ja: Record<string, string> = {
 	'prompt.insightDeepen.coverageExamples': '- 具体例、または該当する場合は段階的な手順',
 	'prompt.insightDeepen.coveragePitfalls': '- よくある落とし穴や注意すべき点',
 	'prompt.insightDeepen.coverageReferences': '- 参照した資料・出典（あれば）',
+	'prompt.insightDeepen.saveInstruction': '整理した内容の品質が十分で情報が完備していると判断したら、create_note ツールを呼び出して保管庫に新しいノートとして保存してください（タイトルは上記のタイトル、タグは上記のタグ、本文は整理した markdown を使用）。情報が不足している、または内容にまだ補足が必要な場合は、まず返信で内容を提示してユーザーの確認を仰いでください。',
 	'prompt.insightDeepen.outro': 'この会話の他の部分と同じ言語で返答してください。短いフォローアップではなく、そのままノートとして残せる完成度の高いまとまりを目指してください。',
 
 	// ── プレビューオーバーレイ ─────────────────────────────

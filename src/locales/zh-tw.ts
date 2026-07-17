@@ -805,6 +805,7 @@ export const zhTW: Record<string, string> = {
 	'prompt.insightDeepen.coverageExamples': '- 具體範例或可逐步遵循的操作指引（如適用）',
 	'prompt.insightDeepen.coveragePitfalls': '- 常見的陷阱或需要留意的注意事項',
 	'prompt.insightDeepen.coverageReferences': '- 參考資料 / 資訊來源（如有引用）',
+	'prompt.insightDeepen.saveInstruction': '如果你認為整理後的內容品質足夠且資訊完整，請呼叫 create_note 工具將其儲存為儲存庫中的一篇新筆記（標題用上述標題，標籤用上述標籤，正文用你整理好的 markdown 內容）。如果資訊不足或內容仍需補充，請先在回覆中呈現內容供使用者確認。',
 	'prompt.insightDeepen.outro': '請使用與本次對話其餘部分相同的語言回覆。目標是產出一段成形的、可直接存為筆記的完整內容，而非簡短的後續回答。',
 
 	// ── 預覽層 ─────────────────────────────────────────────

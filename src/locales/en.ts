@@ -805,6 +805,7 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'prompt.insightDeepen.coverageExamples': '- Concrete examples or step-by-step guidance where applicable',
 	'prompt.insightDeepen.coveragePitfalls': '- Common pitfalls or caveats to watch out for',
 	'prompt.insightDeepen.coverageReferences': '- References / sources you consulted (if any)',
+	'prompt.insightDeepen.saveInstruction': 'If you believe the content is sufficiently complete and informative, call the create_note tool to save it as a new note in the vault (use the title and tags above as the note title and tags, and your polished markdown as the body). If the information is insufficient or the content still needs work, present it in your reply for the user to review first.',
 	'prompt.insightDeepen.outro': 'Reply in the same language as the rest of this conversation. Aim for a polished, note-ready piece — not a brief follow-up answer.',
 
 	// ── Preview overlay ────────────────────────────────────

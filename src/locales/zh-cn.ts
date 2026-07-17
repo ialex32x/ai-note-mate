@@ -805,6 +805,7 @@ export const zhCN: Record<string, string> = {
 	'prompt.insightDeepen.coverageExamples': '- 具体示例或可逐步遵循的操作指引（如适用）',
 	'prompt.insightDeepen.coveragePitfalls': '- 常见的陷阱或需要留意的注意事项',
 	'prompt.insightDeepen.coverageReferences': '- 参考资料 / 信息来源（如有引用）',
+	'prompt.insightDeepen.saveInstruction': '如果你认为整理后的内容质量足够且信息完整，请调用 create_note 工具将其保存为 vault 中的一篇新笔记（标题用上述标题，标签用上述标签，正文用你整理好的 markdown 内容）。如果信息不足或内容仍需补充，请先在回复中呈现内容供用户确认。',
 	'prompt.insightDeepen.outro': '请使用与本次对话其余部分相同的语言回复。目标是产出一段成形的、可直接存为笔记的完整内容，而不是简短的跟进回答。',
 
 	// ── 预览层 ─────────────────────────────────────────────
