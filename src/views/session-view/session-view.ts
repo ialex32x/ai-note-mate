@@ -713,6 +713,8 @@ export class SessionView extends ItemView {
         // QuickAsk panel — mounted on body with position:fixed, never
         // interferes with session view scroll layout.
         this.quickAskPanel = new QuickAskPanel(
+            this.app,
+            this,
             (messageId) => this.bubbleList.messageBubbles.get(messageId),
             () => this.runtime?.quickAskTurns ?? [],
             async (parentMessageId, input) => {

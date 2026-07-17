@@ -1,7 +1,8 @@
-import { setIcon } from 'obsidian';
+import { setIcon, App, Component } from 'obsidian';
 import type { ChatMessage, QuickAskTurn } from '../../services/chat-stream';
 import { t } from '../../i18n';
 import { BUBBLE_BASE_CLS, computeBubbleClasses } from '../bubble/chat-bubble';
+import { renderFinalMarkdown } from './streaming-markdown-controller';
 
 const PANEL_HIDDEN_CLS = 'session-quick-ask-panel--hidden';
 
@@ -30,6 +31,8 @@ export class QuickAskPanel {
     get isVisible(): boolean { return this.el !== null && this._state !== 'hidden'; }
 
     constructor(
+        private app: App,
+        private component: Component,
         private getMessageBubbleEl: (messageId: string) => HTMLElement | undefined,
         private getQuickAskTurns: () => ReadonlyArray<QuickAskTurn>,
         private onSubmit: (parentMessageId: string, input: string) => Promise<void>,
@@ -201,7 +204,11 @@ export class QuickAskPanel {
         bubble.createDiv({ cls: 'session-bubble__role', text: roleLabel });
         const body = bubble.createDiv({ cls: 'session-bubble__body' });
         const content = body.createDiv({ cls: 'session-bubble__content' });
-        content.setText(msg.content || '');
+        if (role === 'assistant' && msg.content) {
+            void renderFinalMarkdown(this.app, this.component, content, msg.content);
+        } else {
+            content.setText(msg.content || '');
+        }
     }
 
     // ── Positioning ──────────────────────────────────────────────────────
