@@ -296,14 +296,16 @@ export function vaultInsertText(plugin: NoteAssistantPlugin): RegisteredTool {
 			type: "function",
 			function: {
 				name: "insert_text",
-				description:
-					"Insert content into a file at a position defined by an anchor. Pick ONE mode:\n\n" +
-					"**Text-anchored** (`anchor` + `where:\"before\"|\"after\"`): finds literal text, inserts adjacent. " +
-					"**Heading-anchored** (`heading_path` + `where:\"prepend_to_body\"|\"append_to_section\"|\"insert_before_section\"`): " +
-					"inserts at structural position relative to a heading.\n\n" +
-					"For REPLACING, use `replace_text` or `set_section` (hash-gated). For start/end of file, use `prepend_file`/`append_file`.\n\n" +
-					"If `anchor` matches multiple times without `occurrence`, the call is refused with `total_occurrences` + `excerpts`. " +
-					"Retry with `occurrence:N` (1-based).",
+			description:
+				"Insert content into a file at a position defined by an anchor. Pick ONE mode:\n\n" +
+				"**Text-anchored** (`anchor` + `where:\"before\"|\"after\"`): finds literal text, inserts adjacent. " +
+				"**Heading-anchored** (`heading_path` + `where:\"prepend_to_body\"|\"append_to_section\"|\"insert_before_section\"`): " +
+				"inserts at structural position relative to a heading.\n\n" +
+				"Use for adding new paragraphs, inserting sections, appending to headings, prepending content. " +
+				"For REPLACING existing text, use `replace_text` or `set_section` (hash-gated). " +
+				"For start/end of file, use `prepend_file`/`append_file`.\n\n" +
+				"If `anchor` matches multiple times without `occurrence`, the call is refused with `total_occurrences` + `excerpts`. " +
+				"Retry with `occurrence:N` (1-based).",
 				parameters: {
 					type: "object",
 					properties: {

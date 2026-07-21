@@ -752,6 +752,7 @@ The user has not filled in their name yet, nor mentioned which city they live in
 	'tool.triggers.write_file':     'write file, create note, save file, overwrite file, new note, new file',
 	'tool.triggers.insert_text':  'insert text, insert content, add text, add content, insert paragraph, insert before, insert after',
 	'tool.triggers.replace_text':   'replace text, find and replace, substitute text, swap text, search and replace',
+	'tool.triggers.batch_replace_text': 'batch replace, bulk replace, replace all, mass replace, multiple replace, batch find and replace, replace multiple, multi replace',
 	'tool.triggers.web_search':     'web search, google, bing, search online, search internet, browse web, look up online',
 	'tool.triggers.web_fetch_url':  'fetch url, open url, browse url, fetch page, get webpage, scrape url, download page',
 	'tool.triggers.image_search':   'image search, find images, search pictures, photo search, search photos, find pictures',

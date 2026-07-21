@@ -54,7 +54,7 @@ export const DEFAULT_RSS_FETCH_HARD_LIMIT = 8;
  * gives high recall (a turn rarely needs more than 1–3 specific on-
  * demand tools).
  */
-export const DEFAULT_TOOL_FILTER_TOP_K = 8;
+export const DEFAULT_TOOL_FILTER_TOP_K = 12;
 
 /**
  * Default cap on sub-agents surfaced per turn. A typical project ships

@@ -344,8 +344,8 @@ export function vaultReplaceText(plugin: NoteAssistantPlugin): RegisteredTool {
                 name: "replace_text",
                 description:
                     "Find-and-replace edit to a file using literal text or JavaScript regex pattern matching. " +
-                    "\n\n" +
-                    "Use for modifying/deleting existing content: typo fixes, term renames, deleting phrases. " +
+                    "Use for modifying/deleting existing content: typo fixes, term renames, deleting phrases, " +
+                    "updating paths or links, normalising text formatting. " +
                     "For INSERTING new content, use `insert_text`. For replacing a whole section, use `set_section` (hash-gated). " +
                     "\n\n" +
                     "⚠️ For multiple atomic edits to the SAME file, use `batch_replace_text` instead — it applies " +
@@ -483,7 +483,8 @@ export function vaultBatchReplaceText(plugin: NoteAssistantPlugin): RegisteredTo
                 description:
                     "Apply multiple atomic find-and-replace edits to a single file via `replacements[]`. " +
                     "All entries match the same pre-edit snapshot with disjoint ranges (overlapping → rejected). " +
-                    "\n\n" +
+                    "Use for batch edits: fix several typos, rename multiple terms across a file, " +
+                    "update many paths or links at once, normalise a set of patterns across one file. " +
                     "For single edits, prefer `replace_text` (simpler schema). Keep batches ≤4 entries. " +
                     "\n\n" +
                     "Tag-shape guard: patterns like `#foo` are refused by default; set `force=true` on that entry for intentional literal replacement. " +

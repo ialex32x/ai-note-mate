@@ -752,6 +752,7 @@ export const zhTW: Record<string, string> = {
 	'tool.triggers.write_file':     '寫入, 寫檔案, 建立檔案, 儲存, 覆寫, 新建筆記, 新建檔案, 新筆記, 儲存檔案',
 	'tool.triggers.insert_text':  '插入文字, 插入內容, 新增文字, 新增內容, 插入段落, 前面插入, 後面插入, 在...前插入, 在...後插入',
 	'tool.triggers.replace_text':   '取代, 取代文字, 查找取代, 替換文字, 文字取代, 批次取代',
+	'tool.triggers.batch_replace_text': '批次取代, 多項取代, 一次性取代, 同時取代, 全部取代, 多處取代',
 	'tool.triggers.web_search':     '聯網搜尋, 網路搜尋, 上網搜, 搜尋網頁, 谷歌, 必應, 網際網路, 線上搜尋',
 	'tool.triggers.web_fetch_url':  '抓取網頁, 取得連結, 開啟連結, 取得連結內容, 存取網頁, 讀取連結, 網頁內容, 下載網頁',
 	'tool.triggers.image_search':   '圖片搜尋, 搜尋圖片, 找圖, 找圖片, 搜圖, 圖像搜尋, 搜尋照片',

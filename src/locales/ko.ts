@@ -752,6 +752,7 @@ export const ko: Record<string, string> = {
 	'tool.triggers.write_file':     '쓰기, 파일 생성, 저장, 덮어쓰기, 새 노트, 새 파일, 파일 저장',
 	'tool.triggers.insert_text':  '텍스트 삽입, 내용 삽입, 추가, 문단 삽입, 앞에 삽입, 뒤에 삽입',
 	'tool.triggers.replace_text':   '바꾸기, 텍스트 바꾸기, 찾아 바꾸기, 텍스트 교체, 일괄 바꾸기',
+	'tool.triggers.batch_replace_text': '일괄 바꾸기, 여러 개 바꾸기, 한번에 바꾸기, 동시 바꾸기, 모두 바꾸기, 여러 곳 바꾸기',
 	'tool.triggers.web_search':     '웹 검색, 인터넷 검색, 구글, 온라인 검색, 검색 엔진, 빙',
 	'tool.triggers.web_fetch_url':  '웹 가져오기, URL 가져오기, 페이지 가져오기, 링크 열기, 웹페이지, 페이지 로드, 웹 다운로드',
 	'tool.triggers.image_search':   '이미지 검색, 사진 검색, 그림 검색, 이미지 찾기, 사진 찾기',
